@@ -7,7 +7,11 @@ import type {
   ThumbnailTemplate,
   ActivityRow,
   Upload,
-  ScrapedVideo
+  ScrapedVideo,
+  Project,
+  ProjectImage,
+  TranscriptWord,
+  RecentUpload
 } from '../../shared/types'
 import { seedIfEmpty } from './seed'
 
@@ -48,11 +52,27 @@ CREATE TABLE IF NOT EXISTS thumbnail_templates (
 );
 CREATE TABLE IF NOT EXISTS render_jobs (
   id TEXT PRIMARY KEY, title TEXT, channel TEXT, status TEXT,
-  pct INTEGER, createdAt TEXT
+  pct INTEGER, createdAt TEXT, projectId TEXT
 );
 CREATE TABLE IF NOT EXISTS activity_log (
   id INTEGER PRIMARY KEY AUTOINCREMENT,
   t TEXT, icon TEXT, color TEXT, text TEXT
+);
+CREATE TABLE IF NOT EXISTS projects (
+  id TEXT PRIMARY KEY, downloadId TEXT, title TEXT, channel TEXT,
+  mp3Path TEXT, durationSec INTEGER,
+  imageMode TEXT, poolSize INTEGER, kenBurns INTEGER, seed INTEGER, crossfade INTEGER,
+  captionPreset TEXT, captionFont TEXT, captionAnim TEXT, captionAspect TEXT,
+  emphasis INTEGER, keywords INTEGER, punchZoom INTEGER,
+  stage TEXT, createdAt TEXT
+);
+CREATE TABLE IF NOT EXISTS project_images (
+  id TEXT PRIMARY KEY, projectId TEXT, ord INTEGER, path TEXT, thumb TEXT,
+  rangeStart REAL, rangeEnd REAL, manual INTEGER
+);
+CREATE TABLE IF NOT EXISTS transcript_words (
+  id TEXT PRIMARY KEY, projectId TEXT, ord INTEGER, word TEXT,
+  start REAL, end REAL, emphasis INTEGER
 );
 `
 
@@ -66,6 +86,10 @@ function migrate(d: Database.Database): void {
   ensureColumn(d, 'my_channels', 'lastScrapedAt', 'TEXT')
   ensureColumn(d, 'source_channels', 'lastScrapedAt', 'TEXT')
   ensureColumn(d, 'downloaded_videos', 'matchedUploadId', 'TEXT')
+  // M4: real download bookkeeping
+  ensureColumn(d, 'downloaded_videos', 'filePath', 'TEXT')
+  ensureColumn(d, 'downloaded_videos', 'durationSec', 'INTEGER')
+  ensureColumn(d, 'render_jobs', 'projectId', 'TEXT')
 }
 
 export interface ChannelStatsPatch {
@@ -100,12 +124,29 @@ export interface Repositories {
   // ---- M3 scraping writes ----
   replaceUploads(channelId: string, rows: Upload[]): void
   getUploads(channelId: string): Upload[]
+  recentUploads(limit: number): RecentUpload[]
   replaceSourceVideos(sourceId: string, rows: ScrapedVideo[]): void
   getSourceVideos(sourceId: string): ScrapedVideo[]
   setChannelStats(id: string, patch: ChannelStatsPatch): void
   setChannelMapping(id: string, mapDone: number, mapTotal: number): void
   markDownloadMatches(matches: Array<{ downloadId: string; uploadId: string }>): void
   updateChannelGoals(id: string, patch: GoalsPatch): void
+  // ---- M4 download + compose writes ----
+  download(id: string): DownloadedVideo | undefined
+  upsertDownload(d: DownloadedVideo): void
+  setDownloadProgress(id: string, patch: { pct?: string; stage?: string; filePath?: string; durationSec?: number; action?: 'Resume' | 'Open' }): void
+  createProject(p: Project): void
+  getProject(id: string): Project | undefined
+  listProjects(): Project[]
+  updateProject(id: string, patch: Partial<Project>): Project | undefined
+  replaceProjectImages(projectId: string, rows: ProjectImage[]): void
+  getProjectImages(projectId: string): ProjectImage[]
+  setImageRanges(projectId: string, ranges: Array<{ id: string; rangeStart: number; rangeEnd: number }>): void
+  replaceTranscript(projectId: string, rows: TranscriptWord[]): void
+  getTranscript(projectId: string): TranscriptWord[]
+  updateWord(wordId: string, text: string): void
+  toggleEmphasis(wordId: string): void
+  createRenderJob(job: { id: string; title: string; channel: string; projectId: string }): void
 }
 
 let db: Database.Database | null = null
@@ -209,6 +250,12 @@ function buildRepositories(d: Database.Database): Repositories {
     },
     getUploads: (channelId) =>
       d.prepare('SELECT * FROM uploads WHERE myChannelId=?').all(channelId) as Upload[],
+    recentUploads: (limit) =>
+      d.prepare(
+        `SELECT u.title AS title, u.views AS views, u.publishedAt AS publishedAt, c.name AS channel
+         FROM uploads u JOIN my_channels c ON c.id = u.myChannelId
+         ORDER BY u.publishedAt DESC LIMIT ?`
+      ).all(limit) as RecentUpload[],
 
     replaceSourceVideos: (sourceId, rows) => {
       const tx = d.transaction(() => {
@@ -253,8 +300,117 @@ function buildRepositories(d: Database.Database): Repositories {
         }
       }
       if (sets.length) d.prepare(`UPDATE my_channels SET ${sets.join(', ')} WHERE id=@id`).run(params)
+    },
+
+    // ---- M4 download + compose writes ----
+    download: (id) => d.prepare('SELECT * FROM downloaded_videos WHERE id=?').get(id) as DownloadedVideo | undefined,
+    upsertDownload: (dl) => {
+      d.prepare(
+        `INSERT INTO downloaded_videos (id,sourceId,title,channel,size,"when",stage,pct,action,thumb,matchedUploadId,filePath,durationSec)
+         VALUES (@id,@sourceId,@title,@channel,@size,@when,@stage,@pct,@action,@thumb,@matchedUploadId,@filePath,@durationSec)
+         ON CONFLICT(id) DO UPDATE SET sourceId=@sourceId, title=@title, channel=@channel, size=@size,
+           "when"=@when, stage=@stage, pct=@pct, action=@action, thumb=@thumb, filePath=@filePath, durationSec=@durationSec`
+      ).run({ matchedUploadId: null, filePath: null, durationSec: null, ...dl })
+    },
+    setDownloadProgress: (id, patch) => {
+      const sets: string[] = []
+      const params: Record<string, unknown> = { id }
+      for (const [k, v] of Object.entries(patch)) {
+        if (v !== undefined) {
+          sets.push(`${k}=@${k}`)
+          params[k] = v
+        }
+      }
+      if (sets.length) d.prepare(`UPDATE downloaded_videos SET ${sets.join(', ')} WHERE id=@id`).run(params)
+    },
+
+    createProject: (p) => {
+      d.prepare(
+        `INSERT INTO projects (id,downloadId,title,channel,mp3Path,durationSec,imageMode,poolSize,kenBurns,seed,crossfade,captionPreset,captionFont,captionAnim,captionAspect,emphasis,keywords,punchZoom,stage,createdAt)
+         VALUES (@id,@downloadId,@title,@channel,@mp3Path,@durationSec,@imageMode,@poolSize,@kenBurns,@seed,@crossfade,@captionPreset,@captionFont,@captionAnim,@captionAspect,@emphasis,@keywords,@punchZoom,@stage,@createdAt)`
+      ).run(projectToRow(p))
+    },
+    getProject: (id) => {
+      const r = d.prepare('SELECT * FROM projects WHERE id=?').get(id) as Record<string, unknown> | undefined
+      return r ? rowToProject(r) : undefined
+    },
+    listProjects: () =>
+      (d.prepare('SELECT * FROM projects ORDER BY createdAt DESC').all() as Array<Record<string, unknown>>).map(rowToProject),
+    updateProject: (id, patch) => {
+      const row = projectPatchToRow(patch)
+      const keys = Object.keys(row)
+      if (keys.length) d.prepare(`UPDATE projects SET ${keys.map((k) => `${k}=@${k}`).join(', ')} WHERE id=@id`).run({ id, ...row })
+      const r = d.prepare('SELECT * FROM projects WHERE id=?').get(id) as Record<string, unknown> | undefined
+      return r ? rowToProject(r) : undefined
+    },
+
+    replaceProjectImages: (projectId, rows) => {
+      const tx = d.transaction(() => {
+        d.prepare('DELETE FROM project_images WHERE projectId=?').run(projectId)
+        const ins = d.prepare(
+          'INSERT INTO project_images (id,projectId,ord,path,thumb,rangeStart,rangeEnd,manual) VALUES (@id,@projectId,@ord,@path,@thumb,@rangeStart,@rangeEnd,@manual)'
+        )
+        rows.forEach((r) => ins.run({ ...r, manual: r.manual ? 1 : 0 }))
+      })
+      tx()
+    },
+    getProjectImages: (projectId) =>
+      (d.prepare('SELECT * FROM project_images WHERE projectId=? ORDER BY ord').all(projectId) as Array<Record<string, unknown>>).map(rowToImage),
+    setImageRanges: (projectId, ranges) => {
+      const tx = d.transaction(() => {
+        const up = d.prepare('UPDATE project_images SET rangeStart=@rangeStart, rangeEnd=@rangeEnd, manual=1 WHERE id=@id AND projectId=@projectId')
+        ranges.forEach((r) => up.run({ ...r, projectId }))
+      })
+      tx()
+    },
+
+    replaceTranscript: (projectId, rows) => {
+      const tx = d.transaction(() => {
+        d.prepare('DELETE FROM transcript_words WHERE projectId=?').run(projectId)
+        const ins = d.prepare(
+          'INSERT INTO transcript_words (id,projectId,ord,word,start,end,emphasis) VALUES (@id,@projectId,@ord,@word,@start,@end,@emphasis)'
+        )
+        rows.forEach((r) => ins.run({ ...r, emphasis: r.emphasis ? 1 : 0 }))
+      })
+      tx()
+    },
+    getTranscript: (projectId) =>
+      (d.prepare('SELECT * FROM transcript_words WHERE projectId=? ORDER BY ord').all(projectId) as Array<Record<string, unknown>>).map(rowToWord),
+    updateWord: (wordId, text) => void d.prepare('UPDATE transcript_words SET word=? WHERE id=?').run(text, wordId),
+    toggleEmphasis: (wordId) =>
+      void d.prepare('UPDATE transcript_words SET emphasis = CASE emphasis WHEN 1 THEN 0 ELSE 1 END WHERE id=?').run(wordId),
+
+    createRenderJob: (job) => {
+      d.prepare(
+        `INSERT INTO render_jobs (id,title,channel,status,pct,createdAt,projectId)
+         VALUES (@id,@title,@channel,'queued',0,@createdAt,@projectId)
+         ON CONFLICT(id) DO UPDATE SET title=@title, channel=@channel, projectId=@projectId`
+      ).run({ ...job, createdAt: new Date().toISOString() })
     }
   }
+}
+
+const PROJECT_BOOL_KEYS = new Set(['kenBurns', 'crossfade', 'emphasis', 'keywords', 'punchZoom'])
+
+function projectToRow(p: Project): Record<string, unknown> {
+  return { ...p, kenBurns: p.kenBurns ? 1 : 0, crossfade: p.crossfade ? 1 : 0, emphasis: p.emphasis ? 1 : 0, keywords: p.keywords ? 1 : 0, punchZoom: p.punchZoom ? 1 : 0 }
+}
+function projectPatchToRow(patch: Partial<Project>): Record<string, unknown> {
+  const out: Record<string, unknown> = {}
+  for (const [k, v] of Object.entries(patch)) {
+    if (v === undefined || k === 'id') continue
+    out[k] = PROJECT_BOOL_KEYS.has(k) ? (v ? 1 : 0) : v
+  }
+  return out
+}
+function rowToProject(r: Record<string, unknown>): Project {
+  return { ...(r as unknown as Project), kenBurns: !!r.kenBurns, crossfade: !!r.crossfade, emphasis: !!r.emphasis, keywords: !!r.keywords, punchZoom: !!r.punchZoom }
+}
+function rowToImage(r: Record<string, unknown>): ProjectImage {
+  return { ...(r as unknown as ProjectImage), manual: !!r.manual }
+}
+function rowToWord(r: Record<string, unknown>): TranscriptWord {
+  return { ...(r as unknown as TranscriptWord), emphasis: !!r.emphasis }
 }
 
 function rowToProfile(r: Record<string, unknown>): Profile {

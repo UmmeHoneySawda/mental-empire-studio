@@ -1,5 +1,6 @@
 import { useEffect } from 'react'
 import { useStore } from './store/useStore'
+import { useData } from './store/useData'
 import { TitleBar } from './components/TitleBar'
 import { Sidebar } from './components/Sidebar'
 import { Library } from './screens/Library'
@@ -26,11 +27,13 @@ const SCREENS: Record<ScreenKey, () => JSX.Element> = {
 export function App(): JSX.Element {
   const { active, accent, ambientGlow } = useStore()
   const hydrate = useStore((s) => s.hydrate)
+  const initData = useData((s) => s.init)
 
-  // load persisted settings (electron-store) once on boot
+  // load persisted settings (electron-store) + live data once on boot
   useEffect(() => {
     hydrate()
-  }, [hydrate])
+    initData()
+  }, [hydrate, initData])
 
   // accent drives the CSS variable palette on :root
   useEffect(() => {

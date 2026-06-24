@@ -1,6 +1,5 @@
-import { BrowserWindow, ipcMain } from 'electron'
+import { ipcMain } from 'electron'
 import type {
-  ActivityRow,
   MyChannel,
   ReminderHit,
   ScrapeOrder,
@@ -13,6 +12,7 @@ import { getRepos } from '../db'
 import { channelUrl, humanizeCount, orderVideos, scrapeChannel } from '../services/scraper'
 import { matchDownloadsToUploads } from '../services/mapping'
 import { notify, reminderHit } from '../services/notify'
+import { emit, hhmm, pushActivity } from './events'
 
 // Orchestration layer: the services are pure; here we wire scrape → DB → mapping →
 // notify and stream progress/activity events to the renderer. (Screens consume these
@@ -38,19 +38,8 @@ function monoFor(name: string): string {
   return (name.slice(0, 2) || '?').toUpperCase()
 }
 
-function hhmm(): string {
-  return new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
-}
-
-function emit(channel: string, payload: unknown): void {
-  for (const w of BrowserWindow.getAllWindows()) w.webContents.send(channel, payload)
-}
 function emitProgress(p: ScrapeProgress): void {
   emit('scrape:progress', p)
-}
-function pushActivity(row: ActivityRow): void {
-  getRepos().addActivity(row)
-  emit('activity:new', row)
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))

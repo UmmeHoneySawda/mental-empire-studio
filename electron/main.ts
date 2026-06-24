@@ -1,12 +1,16 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
+import { existsSync, statSync } from 'node:fs'
 import { initSettings, setSettings, getSettings } from './store/settings'
 import { initDatabase, getRepos, closeDatabase } from './db'
 import { registerIpc } from './ipc/register'
 import { refreshChannel, sourceVideos, checkReminders } from './ipc/scrape'
+import { startDownloads, resume as resumeDownload } from './ipc/download'
+import { createProject, setImages, runTranscribe, sendToRender } from './ipc/compose'
 import { firedNotifications } from './services/notify'
 import { channelUrl } from './services/scraper'
+import { splitRanges } from './services/audio'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -145,10 +149,78 @@ async function runSmokeM3(): Promise<void> {
   }
 }
 
+/**
+ * Headless M4 self-check (ME_SMOKE=m4, with ME_YTDLP_FIXTURE / ME_DOWNLOAD_FIXTURE /
+ * ME_WHISPER_FIXTURE): drives download → probe → compose ranges → transcribe → queue
+ * against fixtures + a real sample mp3, asserting the whole producer backend.
+ */
+async function runSmokeM4(): Promise<void> {
+  const repos = getRepos()
+  try {
+    // pure range math
+    const r1 = splitRanges(12, 1)
+    const r3 = splitRanges(12, 3)
+    const rangesOk =
+      r1.length === 1 && r1[0].rangeEnd === 12 &&
+      r3.length === 3 && r3[0].rangeStart === 0 && r3[0].rangeEnd === 4 && r3[2].rangeEnd === 12
+
+    setSettings({ outputFolder: join(app.getPath('temp'), 'me-m4-out') })
+
+    // pick source videos (ME_YTDLP_FIXTURE) and download mp3s (ME_DOWNLOAD_FIXTURE)
+    const srcUrl = 'https://www.youtube.com/@PowerWithinOfficial'
+    const vids = await sourceVideos(srcUrl, 'Latest', 2)
+    const dls = await startDownloads(vids, { bitrate: 192, sourceUrl: srcUrl })
+    const dl = dls[0]
+    const fileOk = !!dl.filePath && existsSync(dl.filePath) && dl.durationSec === 12 && dl.stage === 'Downloaded only'
+
+    // resume must not re-fetch (mtime unchanged)
+    const before = statSync(dl.filePath as string).mtimeMs
+    const resumed = await resumeDownload(dl.id)
+    const after = statSync(dl.filePath as string).mtimeMs
+    const resumeOk = resumed.filePath === dl.filePath && before === after
+
+    // compose: project + even-split image ranges
+    const project = createProject(dl.id)
+    const imgPaths = ['powerwithin', 'stoichour', 'sleepdeep'].map((n) =>
+      join(process.cwd(), 'test', 'fixtures', 'ytdlp', `${n}.json`)
+    )
+    const imgs = setImages(project.id, imgPaths)
+    const imgOk = imgs.length === 3 && imgs[0].rangeStart === 0 && imgs[0].rangeEnd === 4 && imgs[2].rangeEnd === 12
+
+    // transcript (ME_WHISPER_FIXTURE) + emphasis toggle
+    const words = await runTranscribe(project.id)
+    repos.toggleEmphasis(words[0].id)
+    const t = repos.getTranscript(project.id)
+    const transcriptOk = words.length === 9 && t[0].emphasis === true
+
+    // send to render
+    sendToRender(project.id)
+    const queuedOk = repos.getProject(project.id)?.stage === 'queued'
+
+    console.log(`SMOKE_M4_RANGES ok=${rangesOk}`)
+    console.log(`SMOKE_M4_DOWNLOAD count=${dls.length} fileOk=${fileOk} dur=${dl.durationSec} resumeNoRefetch=${resumeOk}`)
+    console.log(`SMOKE_M4_COMPOSE images=${imgs.length} rangesOk=${imgOk}`)
+    console.log(`SMOKE_M4_TRANSCRIBE words=${words.length} emphasis=${t[0]?.emphasis} ok=${transcriptOk}`)
+    console.log(`SMOKE_M4_RENDER queued=${queuedOk}`)
+    const ok = rangesOk && dls.length === 2 && fileOk && resumeOk && imgOk && transcriptOk && queuedOk
+    console.log(ok ? 'SMOKE_M4_OK' : 'SMOKE_M4_FAIL')
+    closeDatabase()
+    app.exit(ok ? 0 : 1)
+  } catch (e) {
+    console.log('SMOKE_M4_FAIL ' + (e as Error).message)
+    closeDatabase()
+    app.exit(1)
+  }
+}
+
 app.whenReady().then(() => {
   initPersistence()
   registerIpc()
 
+  if (process.env['ME_SMOKE'] === 'm4') {
+    void runSmokeM4()
+    return
+  }
   if (process.env['ME_SMOKE'] === 'm3') {
     void runSmokeM3()
     return

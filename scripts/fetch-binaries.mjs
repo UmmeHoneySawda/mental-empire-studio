@@ -49,3 +49,15 @@ console.log(`Downloading ${url} → ${dest}`)
 await download(url, dest)
 if (process.platform !== 'win32') chmodSync(dest, 0o755)
 console.log('yt-dlp ready.')
+
+// ffmpeg/ffprobe are needed for mp3 extraction (M4) and rendering (M6). Static,
+// single-file builds vary per platform; place ffmpeg(.exe)/ffprobe(.exe) in
+// resources/bin, or have them on PATH (yt-dlp/our downloader fall back to PATH).
+const ffName = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
+if (!existsSync(join(binDir, ffName))) {
+  console.log(
+    '\nℹ ffmpeg/ffprobe not vendored yet. Get static builds from ' +
+      'https://github.com/ffbinaries/ffbinaries-prebuilt/releases and drop ' +
+      `ffmpeg + ffprobe into ${binDir} (or install them on PATH).`
+  )
+}

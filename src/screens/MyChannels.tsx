@@ -1,13 +1,24 @@
+import { useState } from 'react'
 import { ScreenPad, Eyebrow, Title, PrimaryButton } from '../components/primitives'
-import { myChannels } from '../data/mock'
+import { useData } from '../store/useData'
 
 export function MyChannels(): JSX.Element {
+  const channels = useData((s) => s.channels)
+  const scraping = useData((s) => s.scraping)
+  const addChannel = useData((s) => s.addChannel)
+  const [url, setUrl] = useState('')
+
+  const connect = (): void => {
+    void addChannel(url)
+    setUrl('')
+  }
+
   return (
     <ScreenPad>
       <div style={{ display: 'flex', alignItems: 'flex-end', marginBottom: 8 }}>
         <div><Eyebrow>YOUR CHANNELS</Eyebrow><Title>Channels you publish to</Title></div>
         <div style={{ flex: 1 }} />
-        <PrimaryButton>
+        <PrimaryButton onClick={connect}>
           <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><path d="M12 5v14M5 12h14" /></svg>Add channel
         </PrimaryButton>
       </div>
@@ -18,13 +29,13 @@ export function MyChannels(): JSX.Element {
       <div style={{ display: 'flex', gap: 11, marginBottom: 24 }}>
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 10, background: '#12151b', border: '1px dashed #2c303b', borderRadius: 11, padding: '12px 15px' }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5b616f" strokeWidth="2"><path d="M10 13a5 5 0 007 0l2-2a5 5 0 00-7-7l-1 1" /><path d="M14 11a5 5 0 00-7 0l-2 2a5 5 0 007 7l1-1" /></svg>
-          <span style={{ fontSize: 13, color: '#5b616f', fontFamily: 'var(--font-mono)' }}>youtube.com/@your-channel</span>
+          <input value={url} onChange={(e) => setUrl(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && connect()} placeholder="youtube.com/@your-channel" style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', fontSize: 13, color: '#dde0e5', fontFamily: 'var(--font-mono)' }} />
         </div>
-        <div className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 11, padding: '0 20px', display: 'flex', alignItems: 'center', fontSize: 12.5, color: '#c4cad3', cursor: 'pointer' }}>Connect &amp; scrape</div>
+        <div onClick={connect} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 11, padding: '0 20px', display: 'flex', alignItems: 'center', fontSize: 12.5, color: '#c4cad3', cursor: 'pointer' }}>{scraping ? 'Scraping…' : 'Connect & scrape'}</div>
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-        {myChannels.map((c) => {
+        {channels.map((c) => {
           const mapColor = c.mapDone >= c.mapTotal ? '#4fd6a0' : '#f5b323'
           const weekMet = c.weekDone >= c.weekGoal
           const reminderColor = weekMet ? '#4fd6a0' : '#f5b323'

@@ -1,5 +1,5 @@
 import { spawn } from 'node:child_process'
-import { join } from 'node:path'
+import { dirname, join } from 'node:path'
 import { existsSync, readFileSync } from 'node:fs'
 import type { AppSettings } from '../../shared/types'
 
@@ -16,6 +16,11 @@ export function resolveYtdlpPath(): string {
   const packaged = process.resourcesPath ? join(process.resourcesPath, 'bin', exe) : ''
   if (packaged && existsSync(packaged)) return packaged
   return join(process.cwd(), 'resources', 'bin', exe)
+}
+
+/** Directory holding the vendored sidecars (yt-dlp, ffmpeg) — used for --ffmpeg-location. */
+export function resolveBinDir(): string {
+  return dirname(resolveYtdlpPath())
 }
 
 export interface YtdlpEntry {

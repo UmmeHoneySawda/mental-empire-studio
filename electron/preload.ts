@@ -3,11 +3,17 @@ import type {
   ActivityRow,
   AppSettings,
   DeepPartial,
+  DownloadOptions,
+  DownloadProgress,
+  GoalsPatch,
   NativeApi,
   Profile,
+  Project,
   ScrapeOrder,
   ScrapeProgress,
-  ThumbnailTemplate
+  ScrapedVideo,
+  ThumbnailTemplate,
+  TranscribeProgress
 } from '../shared/types'
 
 /** Subscribe to a main→renderer event; returns an unsubscribe fn. */
@@ -38,7 +44,9 @@ const api: NativeApi = {
     templates: () => ipcRenderer.invoke('db:templates'),
     activity: () => ipcRenderer.invoke('db:activity'),
     upsertProfile: (p: Profile) => ipcRenderer.invoke('db:upsertProfile', p),
-    saveTemplate: (t: ThumbnailTemplate) => ipcRenderer.invoke('db:saveTemplate', t)
+    saveTemplate: (t: ThumbnailTemplate) => ipcRenderer.invoke('db:saveTemplate', t),
+    recentUploads: (limit?: number) => ipcRenderer.invoke('db:recentUploads', limit),
+    updateChannelGoals: (id: string, patch: GoalsPatch) => ipcRenderer.invoke('db:updateChannelGoals', id, patch)
   },
 
   scrape: {
@@ -55,8 +63,36 @@ const api: NativeApi = {
     check: () => ipcRenderer.invoke('reminders:check')
   },
 
+  download: {
+    start: (videos: ScrapedVideo[], opts: DownloadOptions) => ipcRenderer.invoke('download:start', videos, opts),
+    resume: (id: string) => ipcRenderer.invoke('download:resume', id),
+    openFolder: (id: string) => ipcRenderer.invoke('download:openFolder', id)
+  },
+
+  compose: {
+    createProject: (downloadId: string) => ipcRenderer.invoke('compose:createProject', downloadId),
+    get: (id: string) => ipcRenderer.invoke('compose:get', id),
+    list: () => ipcRenderer.invoke('compose:list'),
+    images: (projectId: string) => ipcRenderer.invoke('compose:images', projectId),
+    setImages: (projectId: string, paths: string[]) => ipcRenderer.invoke('compose:setImages', projectId, paths),
+    setRanges: (projectId: string, ranges: { id: string; rangeStart: number; rangeEnd: number }[]) =>
+      ipcRenderer.invoke('compose:setRanges', projectId, ranges),
+    setMedia: (projectId: string, patch: Partial<Project>) => ipcRenderer.invoke('compose:setMedia', projectId, patch),
+    setCaptions: (projectId: string, patch: Partial<Project>) => ipcRenderer.invoke('compose:setCaptions', projectId, patch),
+    sendToRender: (projectId: string) => ipcRenderer.invoke('compose:sendToRender', projectId)
+  },
+
+  transcribe: {
+    run: (projectId: string) => ipcRenderer.invoke('transcribe:run', projectId),
+    get: (projectId: string) => ipcRenderer.invoke('transcribe:get', projectId),
+    updateWord: (wordId: string, text: string) => ipcRenderer.invoke('transcribe:updateWord', wordId, text),
+    toggleEmphasis: (wordId: string) => ipcRenderer.invoke('transcribe:toggleEmphasis', wordId)
+  },
+
   onScrapeProgress: (cb: (p: ScrapeProgress) => void) => subscribe('scrape:progress', cb),
-  onActivity: (cb: (row: ActivityRow) => void) => subscribe('activity:new', cb)
+  onActivity: (cb: (row: ActivityRow) => void) => subscribe('activity:new', cb),
+  onDownloadProgress: (cb: (p: DownloadProgress) => void) => subscribe('download:progress', cb),
+  onTranscribeProgress: (cb: (p: TranscribeProgress) => void) => subscribe('transcribe:progress', cb)
 }
 
 contextBridge.exposeInMainWorld('api', api)

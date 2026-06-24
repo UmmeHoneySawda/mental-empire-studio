@@ -1,6 +1,9 @@
+import { useEffect } from 'react'
 import { useStore } from '../store/useStore'
+import { useData } from '../store/useData'
 import { ScreenPad, Eyebrow, Title } from '../components/primitives'
-import { imageList, capPresets, activeCapPreset } from '../data/mock'
+import { capPresets } from '../data/mock'
+import type { ProjectImage, TranscriptWord } from '@shared/types'
 
 function Tab({ id, label, icon }: { id: 'media' | 'captions'; label: string; icon: JSX.Element }): JSX.Element {
   const composeTab = useStore((s) => s.composeTab)
@@ -13,44 +16,63 @@ function Tab({ id, label, icon }: { id: 'media' | 'captions'; label: string; ico
   )
 }
 
+function fmt(sec: number): string {
+  const m = Math.floor(sec / 60)
+  const s = Math.round(sec % 60)
+  return `${m}:${String(s).padStart(2, '0')}`
+}
+
+const IMG_GRADS = ['linear-gradient(135deg,#2a2540,#46243a)', 'linear-gradient(135deg,#1a2e3a,#0f3a32)', 'linear-gradient(135deg,#23304a,#1a2438)', 'linear-gradient(135deg,#2e2440,#3a1f2e)']
+
 function MediaTab(): JSX.Element {
-  const mediaMode = useStore((s) => s.mediaMode)
-  const setMediaMode = useStore((s) => s.setMediaMode)
+  const project = useData((s) => s.activeProject)
+  const images = useData((s) => s.projectImages)
+  const setMedia = useData((s) => s.setMedia)
+  const setProjectImages = useData((s) => s.setProjectImages)
+  const mode = project?.imageMode ?? 'sequence'
+
+  const pickFiles = (e: React.ChangeEvent<HTMLInputElement>): void => {
+    const paths = Array.from(e.target.files ?? []).map((f) => (f as File & { path?: string }).path).filter((p): p is string => !!p)
+    if (paths.length) void setProjectImages(paths)
+  }
+
   return (
     <>
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
         <div style={{ display: 'flex', background: '#0e1116', border: '1px solid #23272f', borderRadius: 10, overflow: 'hidden', fontSize: 12.5 }}>
-          <div onClick={() => setMediaMode('sequence')} style={{ padding: '9px 16px', cursor: 'pointer', background: mediaMode === 'sequence' ? 'var(--accent)' : 'transparent', color: mediaMode === 'sequence' ? 'var(--accent-ink)' : '#8a909c', fontWeight: 600 }}>Sequence</div>
-          <div onClick={() => setMediaMode('pool')} style={{ padding: '9px 16px', cursor: 'pointer', background: mediaMode === 'pool' ? 'var(--accent)' : 'transparent', color: mediaMode === 'pool' ? 'var(--accent-ink)' : '#8a909c', fontWeight: 600 }}>Random pool</div>
+          <div onClick={() => void setMedia({ imageMode: 'sequence' })} style={{ padding: '9px 16px', cursor: 'pointer', background: mode === 'sequence' ? 'var(--accent)' : 'transparent', color: mode === 'sequence' ? 'var(--accent-ink)' : '#8a909c', fontWeight: 600 }}>Sequence</div>
+          <div onClick={() => void setMedia({ imageMode: 'pool' })} style={{ padding: '9px 16px', cursor: 'pointer', background: mode === 'pool' ? 'var(--accent)' : 'transparent', color: mode === 'pool' ? 'var(--accent-ink)' : '#8a909c', fontWeight: 600 }}>Random pool</div>
         </div>
       </div>
       <div style={{ display: 'flex', gap: 20, marginBottom: 20 }}>
         <div style={{ flex: 'none', width: 520 }}>
-          <div style={{ border: '1px solid #1d2129', borderRadius: 14, aspectRatio: '16/9', background: 'linear-gradient(135deg,#23262e,#15171d)', position: 'relative', overflow: 'hidden', display: 'grid', placeItems: 'center' }}>
+          <div style={{ border: '1px solid #1d2129', borderRadius: 14, aspectRatio: '16/9', background: images[0]?.thumb && images[0].thumb.startsWith('linear') ? images[0].thumb : 'linear-gradient(135deg,#23262e,#15171d)', position: 'relative', overflow: 'hidden', display: 'grid', placeItems: 'center' }}>
             <div style={{ position: 'absolute', left: '9%', bottom: 0, width: '36%', height: '88%', background: 'linear-gradient(180deg,#3a4150,#23262e)', borderRadius: '80px 80px 0 0' }} />
             <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.45))' }} />
             <div style={{ position: 'absolute', top: 14, left: 14, border: '1px dashed rgba(255,255,255,.3)', borderRadius: 7, padding: '5px 9px', fontSize: 10, color: '#cdd2da', fontFamily: 'var(--font-mono)' }}>⤢ Ken Burns</div>
             <div style={{ position: 'absolute', bottom: 12, left: 14, right: 14, height: 6, borderRadius: 4, background: 'rgba(255,255,255,.18)', overflow: 'hidden' }}><div style={{ width: '35%', height: '100%', background: 'var(--accent)' }} /></div>
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-            <div className="me-btn" style={{ display: 'flex', alignItems: 'center', gap: 7, border: '1px solid #262b34', background: '#15181f', borderRadius: 9, padding: '8px 13px', fontSize: 11.5, color: '#c4cad3', cursor: 'pointer' }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 11-3-6.7M21 4v5h-5" /></svg>Re-roll</div>
+            <div onClick={() => void setMedia({ seed: Math.floor(Math.random() * 9000) + 1000 })} className="me-btn" style={{ display: 'flex', alignItems: 'center', gap: 7, border: '1px solid #262b34', background: '#15181f', borderRadius: 9, padding: '8px 13px', fontSize: 11.5, color: '#c4cad3', cursor: 'pointer' }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 11-3-6.7M21 4v5h-5" /></svg>Re-roll</div>
             <div style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 9, padding: '8px 13px', fontSize: 11.5, color: '#8a909c' }}>Crossfade ▾</div>
-            <div style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 9, padding: '8px 13px', fontSize: 11.5, color: '#8a909c', fontFamily: 'var(--font-mono)' }}>seed 4821</div>
+            <div style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 9, padding: '8px 13px', fontSize: 11.5, color: '#8a909c', fontFamily: 'var(--font-mono)' }}>seed {project?.seed ?? '—'}</div>
           </div>
         </div>
         <div style={{ flex: 1 }}>
           <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '.6px', color: '#6a7180', marginBottom: 10 }}>IMAGES · EVEN AUTO-SPLIT</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
-            {imageList.map((im) => (
-              <div key={im.name} className="me-row" style={{ display: 'flex', alignItems: 'center', gap: 12, border: '1px solid #1d2129', borderRadius: 11, padding: 10, background: '#12151b' }}>
+            {images.map((im: ProjectImage, i) => (
+              <div key={im.id} className="me-row" style={{ display: 'flex', alignItems: 'center', gap: 12, border: '1px solid #1d2129', borderRadius: 11, padding: 10, background: '#12151b' }}>
                 <span style={{ color: '#444b57', cursor: 'grab' }}>⠿</span>
-                <div style={{ width: 58, height: 33, borderRadius: 6, background: im.thumb, flex: 'none' }} />
-                <div style={{ flex: 1, fontSize: 12.5, color: '#dde0e5', fontFamily: 'var(--font-mono)' }}>{im.name}</div>
-                <div style={{ fontSize: 11, color: '#6a7180', fontFamily: 'var(--font-mono)' }}>{im.range}</div>
-                <span style={{ color: '#5b616f', cursor: 'pointer' }}>✕</span>
+                <div style={{ width: 58, height: 33, borderRadius: 6, background: IMG_GRADS[i % IMG_GRADS.length], flex: 'none' }} />
+                <div style={{ flex: 1, fontSize: 12.5, color: '#dde0e5', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{im.path.split(/[\\/]/).pop()}</div>
+                <div style={{ fontSize: 11, color: '#6a7180', fontFamily: 'var(--font-mono)' }}>{fmt(im.rangeStart)}–{fmt(im.rangeEnd)}</div>
               </div>
             ))}
-            <div style={{ border: '1.5px dashed #262b34', borderRadius: 11, padding: 16, textAlign: 'center', fontSize: 12, color: '#6a7180', background: '#0e1116' }}>＋ Drop images here</div>
+            <label style={{ border: '1.5px dashed #262b34', borderRadius: 11, padding: 16, textAlign: 'center', fontSize: 12, color: '#6a7180', background: '#0e1116', cursor: 'pointer', display: 'block' }}>
+              ＋ Drop images here
+              <input type="file" multiple accept="image/*" onChange={pickFiles} style={{ display: 'none' }} />
+            </label>
           </div>
         </div>
       </div>
@@ -59,14 +81,14 @@ function MediaTab(): JSX.Element {
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 10 }}>
           <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#6a7180', width: 48 }}>AUDIO</span>
           <div style={{ flex: 1, height: 30, borderRadius: 7, background: 'repeating-linear-gradient(90deg,#2b303b,#2b303b 2px,#1a1e26 2px,#1a1e26 5px)' }} />
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#6a7180' }}>20:05</span>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#6a7180' }}>{fmt(project?.durationSec ?? 0)}</span>
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
           <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#6a7180', width: 48 }}>IMAGE</span>
           <div style={{ flex: 1, display: 'flex', gap: 4, height: 24 }}>
-            <div style={{ flex: 1, borderRadius: 6, background: 'var(--accent)', opacity: 0.85, display: 'grid', placeItems: 'center', fontSize: 10, color: 'var(--accent-ink)', fontWeight: 600 }}>img 1</div>
-            <div style={{ flex: 1, borderRadius: 6, background: '#2b303b', display: 'grid', placeItems: 'center', fontSize: 10, color: '#aab0bb' }}>img 2</div>
-            <div style={{ flex: 1, borderRadius: 6, background: '#2b303b', display: 'grid', placeItems: 'center', fontSize: 10, color: '#aab0bb' }}>img 3</div>
+            {(images.length ? images : [null, null, null]).map((im, i) => (
+              <div key={im?.id ?? i} style={{ flex: 1, borderRadius: 6, background: i === 0 ? 'var(--accent)' : '#2b303b', opacity: i === 0 ? 0.85 : 1, display: 'grid', placeItems: 'center', fontSize: 10, color: i === 0 ? 'var(--accent-ink)' : '#aab0bb', fontWeight: i === 0 ? 600 : undefined }}>img {i + 1}</div>
+            ))}
           </div>
         </div>
       </div>
@@ -74,11 +96,19 @@ function MediaTab(): JSX.Element {
   )
 }
 
-function chip(text: string, on = false) {
-  return <span style={{ border: on ? '1px solid var(--accent)' : '1px solid #23272f', color: on ? 'var(--accent)' : '#8a909c', borderRadius: 7, padding: '5px 9px', background: on ? 'var(--accent-soft)' : 'transparent' }}>{text}</span>
+function chip(text: string, on: boolean, onClick?: () => void) {
+  return <span onClick={onClick} style={{ border: on ? '1px solid var(--accent)' : '1px solid #23272f', color: on ? 'var(--accent)' : '#8a909c', borderRadius: 7, padding: '5px 9px', background: on ? 'var(--accent-soft)' : 'transparent', cursor: onClick ? 'pointer' : undefined }}>{text}</span>
 }
 
 function CaptionsTab(): JSX.Element {
+  const project = useData((s) => s.activeProject)
+  const transcript = useData((s) => s.transcript)
+  const transcribing = useData((s) => s.transcribing)
+  const runTranscribe = useData((s) => s.runTranscribe)
+  const toggleWordEmphasis = useData((s) => s.toggleWordEmphasis)
+  const setCaptions = useData((s) => s.setCaptions)
+  const preset = project?.captionPreset ?? 'Hormozi'
+
   return (
     <div style={{ display: 'flex', gap: 18 }}>
       <div style={{ flex: 'none', width: 284, display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -86,44 +116,47 @@ function CaptionsTab(): JSX.Element {
           <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '.6px', color: '#5b616f', marginBottom: 11 }}>PRESET</div>
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
             {capPresets.map((name) => {
-              const on = name === activeCapPreset
-              return <div key={name} className="me-card" style={{ border: on ? '1px solid var(--accent)' : '1px solid #1d2129', background: on ? 'var(--accent-soft)' : '#0e1116', borderRadius: 9, padding: '11px 5px', textAlign: 'center', cursor: 'pointer' }}><div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 12, color: on ? '#f2f4f7' : '#8a909c' }}>{name}</div></div>
+              const on = name === preset
+              return <div key={name} onClick={() => void setCaptions({ captionPreset: name })} className="me-card" style={{ border: on ? '1px solid var(--accent)' : '1px solid #1d2129', background: on ? 'var(--accent-soft)' : '#0e1116', borderRadius: 9, padding: '11px 5px', textAlign: 'center', cursor: 'pointer' }}><div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 12, color: on ? '#f2f4f7' : '#8a909c' }}>{name}</div></div>
             })}
           </div>
         </div>
         <div style={{ border: '1px solid #1d2129', borderRadius: 14, padding: 15, background: '#12151b', display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div><div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 6 }}>Font</div><div style={{ border: '1px solid #23272f', borderRadius: 8, padding: 9, fontSize: 13, color: '#dde0e5', background: '#0e1116', textAlign: 'center', fontWeight: 600 }}>Montserrat ▾</div></div>
-          <div><div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 7 }}>Animation</div><div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, fontSize: 10.5 }}>{chip('Pop-in', true)}{chip('Bounce')}{chip('Slide')}{chip('Type')}</div></div>
+          <div><div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 6 }}>Font</div><div style={{ border: '1px solid #23272f', borderRadius: 8, padding: 9, fontSize: 13, color: '#dde0e5', background: '#0e1116', textAlign: 'center', fontWeight: 600 }}>{project?.captionFont ?? 'Montserrat'} ▾</div></div>
+          <div><div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 7 }}>Animation</div><div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, fontSize: 10.5 }}>{(['Pop-in', 'Bounce', 'Slide', 'Type'] as const).map((a) => chip(a, project?.captionAnim === a, () => void setCaptions({ captionAnim: a })))}</div></div>
           <div style={{ display: 'flex', gap: 9 }}>
-            <div style={{ flex: 1, border: '1px solid #1d2129', borderRadius: 9, padding: 9, background: '#0e1116' }}><div style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ fontSize: 11, fontWeight: 600, color: '#dde0e5' }}>Keywords</span><span style={{ marginLeft: 'auto', fontSize: 8.5, fontWeight: 700, background: '#1f9c6b', color: '#fff', borderRadius: 9, padding: '1px 6px' }}>ON</span></div><div style={{ fontSize: 9, color: '#6a7180', marginTop: 4 }}>Auto-highlight</div></div>
-            <div style={{ flex: 1, border: '1px solid #1d2129', borderRadius: 9, padding: 9, background: '#0e1116' }}><div style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ fontSize: 11, fontWeight: 600, color: '#dde0e5' }}>Punch</span><span style={{ marginLeft: 'auto', fontSize: 8.5, fontWeight: 700, background: '#1f9c6b', color: '#fff', borderRadius: 9, padding: '1px 6px' }}>ON</span></div><div style={{ fontSize: 9, color: '#6a7180', marginTop: 4 }}>Zoom on hit</div></div>
+            <div onClick={() => void setCaptions({ keywords: !project?.keywords })} style={{ flex: 1, border: '1px solid #1d2129', borderRadius: 9, padding: 9, background: '#0e1116', cursor: 'pointer' }}><div style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ fontSize: 11, fontWeight: 600, color: '#dde0e5' }}>Keywords</span><span style={{ marginLeft: 'auto', fontSize: 8.5, fontWeight: 700, background: project?.keywords ? '#1f9c6b' : '#2b303b', color: '#fff', borderRadius: 9, padding: '1px 6px' }}>{project?.keywords ? 'ON' : 'OFF'}</span></div><div style={{ fontSize: 9, color: '#6a7180', marginTop: 4 }}>Auto-highlight</div></div>
+            <div onClick={() => void setCaptions({ punchZoom: !project?.punchZoom })} style={{ flex: 1, border: '1px solid #1d2129', borderRadius: 9, padding: 9, background: '#0e1116', cursor: 'pointer' }}><div style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ fontSize: 11, fontWeight: 600, color: '#dde0e5' }}>Punch</span><span style={{ marginLeft: 'auto', fontSize: 8.5, fontWeight: 700, background: project?.punchZoom ? '#1f9c6b' : '#2b303b', color: '#fff', borderRadius: 9, padding: '1px 6px' }}>{project?.punchZoom ? 'ON' : 'OFF'}</span></div><div style={{ fontSize: 9, color: '#6a7180', marginTop: 4 }}>Zoom on hit</div></div>
           </div>
         </div>
       </div>
 
       <div style={{ flex: 'none', width: 210 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}><span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#6a7180' }}>PREVIEW</span><span style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, background: 'var(--accent-soft)', color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: 10, padding: '2px 8px' }}>16:9</span></div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}><span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#6a7180' }}>PREVIEW</span><span style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, background: 'var(--accent-soft)', color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: 10, padding: '2px 8px' }}>{project?.captionAspect ?? '16:9'}</span></div>
         <div style={{ width: 210, border: '1px solid #1d2129', borderRadius: 12, aspectRatio: '16/9', background: 'linear-gradient(135deg,#23262e,#15171d)', position: 'relative', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', paddingBottom: 18, overflow: 'hidden' }}>
           <div style={{ position: 'absolute', left: '14%', bottom: 0, width: '34%', height: '80%', background: 'linear-gradient(180deg,#3a4150,#23262e)', borderRadius: '50px 50px 0 0' }} />
           <div style={{ position: 'relative', textAlign: 'center', fontFamily: 'var(--font-poster)', fontSize: 19, lineHeight: 1.05, color: '#fff', textShadow: '2px 2px 0 #000' }}>YOU ARE <span style={{ color: '#1f9c6b' }}>NOT</span> CRAZY</div>
         </div>
-        <div style={{ fontSize: 10, color: '#6a7180', textAlign: 'center', marginTop: 9, lineHeight: 1.4 }}>Keyword pops green + scale (Hormozi)</div>
+        <div style={{ fontSize: 10, color: '#6a7180', textAlign: 'center', marginTop: 9, lineHeight: 1.4 }}>Keyword pops green + scale ({preset})</div>
       </div>
 
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}><span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#6a7180' }}>TRANSCRIPT · WORD-LEVEL</span><div style={{ flex: 1 }} /><div className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 8, padding: '6px 11px', fontSize: 11, color: '#c4cad3', cursor: 'pointer' }}>Re-transcribe ↻</div></div>
-        <div style={{ border: '1px solid #1d2129', borderRadius: 12, padding: 16, background: '#12151b', fontSize: 14, lineHeight: 2.1, color: '#cdd2da', height: 178, overflow: 'hidden' }}>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#4f5662' }}>0:02</span> You are <span style={{ background: '#1f9c6b', color: '#fff', borderRadius: 4, padding: '0 5px', fontWeight: 600 }}>not</span> crazy.<br />
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#4f5662' }}>0:04</span> What you're <span style={{ borderBottom: '2px solid var(--accent)' }}>feeling</span> is real.<br />
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#4f5662' }}>0:07</span> Gaslighting makes you doubt…<br />
-          <span style={{ color: '#4f5662', fontSize: 12 }}>— click to fix · drag to retime · ★ to emphasize —</span>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}><span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#6a7180' }}>TRANSCRIPT · WORD-LEVEL</span><div style={{ flex: 1 }} /><div onClick={() => void runTranscribe()} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 8, padding: '6px 11px', fontSize: 11, color: '#c4cad3', cursor: 'pointer' }}>{transcribing ? 'Transcribing…' : 'Re-transcribe ↻'}</div></div>
+        <div style={{ border: '1px solid #1d2129', borderRadius: 12, padding: 16, background: '#12151b', fontSize: 14, lineHeight: 2.1, color: '#cdd2da', height: 178, overflow: 'auto' }}>
+          {transcript.length === 0 ? (
+            <span style={{ color: '#4f5662', fontSize: 12 }}>— no transcript yet · click Re-transcribe to generate word-level timings —</span>
+          ) : (
+            transcript.map((w: TranscriptWord) => (
+              <span key={w.id} onClick={() => void toggleWordEmphasis(w.id)} style={{ cursor: 'pointer', background: w.emphasis ? '#1f9c6b' : undefined, color: w.emphasis ? '#fff' : undefined, borderRadius: 4, padding: w.emphasis ? '0 5px' : undefined, fontWeight: w.emphasis ? 600 : undefined }}>{w.word} </span>
+            ))
+          )}
         </div>
         <div style={{ border: '1px solid #1d2129', borderRadius: 12, padding: 14, background: '#12151b', marginTop: 14 }}>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, color: '#5b616f', marginBottom: 10 }}>WORD TIMELINE</div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, color: '#5b616f', marginBottom: 10 }}>WORD TIMELINE — click ★ to emphasize</div>
           <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center' }}>
-            {wordChip('You')}{wordChip('are')}{wordChip('not ★', 'accent')}{wordChip('crazy')}
-            <span style={{ width: 1, height: 18, background: '#23272f', margin: '0 3px' }} />
-            {wordChip('what')}{wordChip("you're")}{wordChip('feeling ★', 'green')}{wordChip('is')}{wordChip('real')}
+            {transcript.slice(0, 16).map((w) => (
+              <span key={w.id} onClick={() => void toggleWordEmphasis(w.id)} style={{ border: w.emphasis ? '1px solid #1f9c6b' : '1px solid #2c303b', borderRadius: 6, padding: '5px 9px', fontSize: 11.5, color: w.emphasis ? '#fff' : '#aab0bb', background: w.emphasis ? '#1f9c6b' : '#0e1116', fontWeight: w.emphasis ? 600 : undefined, cursor: 'pointer' }}>{w.word}{w.emphasis ? ' ★' : ''}</span>
+            ))}
           </div>
         </div>
       </div>
@@ -131,26 +164,30 @@ function CaptionsTab(): JSX.Element {
   )
 }
 
-function wordChip(text: string, variant?: 'accent' | 'green'): JSX.Element {
-  if (variant === 'accent') return <span style={{ border: '1px solid var(--accent)', borderRadius: 6, padding: '5px 9px', fontSize: 11.5, color: 'var(--accent-ink)', background: 'var(--accent)', fontWeight: 600 }}>{text}</span>
-  if (variant === 'green') return <span style={{ border: '1px solid #1f9c6b', borderRadius: 6, padding: '5px 9px', fontSize: 11.5, color: '#fff', background: '#1f9c6b', fontWeight: 600 }}>{text}</span>
-  return <span style={{ border: '1px solid #2c303b', borderRadius: 6, padding: '5px 9px', fontSize: 11.5, color: '#aab0bb', background: '#0e1116' }}>{text}</span>
-}
-
 export function Compose(): JSX.Element {
   const composeTab = useStore((s) => s.composeTab)
+  const project = useData((s) => s.activeProject)
+  const downloads = useData((s) => s.downloads)
+  const openProject = useData((s) => s.openProject)
+  const sendActiveToRender = useData((s) => s.sendActiveToRender)
+
+  // Open the most recent download as a project if none is active yet.
+  useEffect(() => {
+    if (!project && downloads.length > 0) void openProject(downloads[0].id)
+  }, [project, downloads, openProject])
+
   return (
     <ScreenPad>
       <div style={{ display: 'flex', alignItems: 'flex-end', marginBottom: 18 }}>
         <div><Eyebrow>STEP 02 — COMPOSE</Eyebrow><Title>Build the video</Title></div>
         <div style={{ flex: 1 }} />
-        <div style={{ fontSize: 12, color: '#6a7180' }}>Gaslighting Explained · 20:05</div>
+        <div style={{ fontSize: 12, color: '#6a7180' }}>{project ? `${project.title} · ${Math.floor((project.durationSec || 0) / 60)}:${String(Math.round((project.durationSec || 0) % 60)).padStart(2, '0')}` : 'No project — download a clip first'}</div>
       </div>
       <div style={{ display: 'flex', gap: 9, marginBottom: 22 }}>
         <Tab id="media" label="Audio + Image" icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="5" width="18" height="14" rx="2.5" /><circle cx="8.5" cy="10" r="1.7" /><path d="M4 17l5-4 4 3 2-2 5 4" /></svg>} />
         <Tab id="captions" label="Captions" icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="5" width="18" height="14" rx="2.5" /><path d="M7 14h4" /><path d="M14 14h3" /></svg>} />
         <div style={{ flex: 1 }} />
-        <div className="me-btn" style={{ display: 'flex', alignItems: 'center', gap: 7, border: '1px solid #262b34', background: '#15181f', borderRadius: 10, padding: '9px 16px', fontSize: 12.5, color: '#c4cad3', cursor: 'pointer' }}>Save &amp; send to render<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M5 12h14M13 6l6 6-6 6" /></svg></div>
+        <div onClick={() => void sendActiveToRender()} className="me-btn" style={{ display: 'flex', alignItems: 'center', gap: 7, border: '1px solid #262b34', background: '#15181f', borderRadius: 10, padding: '9px 16px', fontSize: 12.5, color: '#c4cad3', cursor: 'pointer' }}>Save &amp; send to render<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M5 12h14M13 6l6 6-6 6" /></svg></div>
       </div>
       {composeTab === 'media' ? <MediaTab /> : <CaptionsTab />}
     </ScreenPad>

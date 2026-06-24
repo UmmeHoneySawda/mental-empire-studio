@@ -19,6 +19,7 @@
     "better-sqlite3": "^11.10.0",
     "electron-store": "^8.2.0",
     "konva": "^9.3.16",
+    "music-metadata": "^11.13.0",
     "react": "^18.3.1",
     "react-dom": "^18.3.1",
     "react-konva": "^18.2.10",

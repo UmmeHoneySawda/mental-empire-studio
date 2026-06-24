@@ -110,6 +110,20 @@ export function Settings(): JSX.Element {
             </div>
           </Card>
 
+          <Card label="TRANSCRIPTION · GROQ WHISPER">
+            <div style={{ fontSize: 12, color: '#8a909c', marginBottom: 8 }}>Groq API key (free) — powers word-level captions</div>
+            <input
+              type="password"
+              value={settings.transcription.apiKey}
+              onChange={(e) => updateSettings({ transcription: { apiKey: e.target.value } })}
+              placeholder="gsk_…"
+              style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #23272f', borderRadius: 8, padding: '9px 13px', fontSize: 12, color: '#dde0e5', background: '#0e1116', fontFamily: 'var(--font-mono)', outline: 'none' }}
+            />
+            <div style={{ fontSize: 11, color: '#6a7180', marginTop: 8 }}>
+              Model <span style={{ fontFamily: 'var(--font-mono)', color: '#aab0bb' }}>{settings.transcription.model}</span> · get a free key at console.groq.com
+            </div>
+          </Card>
+
           <Card label="BACKGROUND">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 9, fontSize: 12.5 }}>
               {rowToggle('Run in background (system tray)', background.tray, undefined, () => updateSettings({ background: { tray: !background.tray } }))}

@@ -61,6 +61,10 @@ export interface DownloadedVideo {
   thumb: string
   /** id of the Upload this download was fuzzy-matched to (M3 mapping) */
   matchedUploadId?: string
+  /** absolute path to the downloaded mp3 (M4) */
+  filePath?: string
+  /** probed audio duration in seconds (M4) */
+  durationSec?: number
 }
 
 /** A video published on one of my own channels (scraped from its uploads tab). */
@@ -121,6 +125,21 @@ export interface ReminderHit {
   channelName: string
   pending: number
   message: string
+}
+
+/** A row for the Library "Recent uploads" table (upload joined with its channel). */
+export interface RecentUpload {
+  title: string
+  channel: string
+  views: string
+  publishedAt: string
+}
+
+export interface GoalsPatch {
+  weekGoal?: number
+  monthGoal?: number
+  reminder?: string
+  reminderNote?: string
 }
 
 export interface Profile {
@@ -192,6 +211,76 @@ export interface ActivityRow {
   text: string
 }
 
+// ---- Compose projects (M4) ----
+export type ImageMode = 'sequence' | 'pool'
+
+export interface ProjectImage {
+  id: string
+  projectId: string
+  ord: number
+  path: string
+  thumb: string
+  rangeStart: number
+  rangeEnd: number
+  manual: boolean
+}
+
+export interface TranscriptWord {
+  id: string
+  projectId: string
+  ord: number
+  word: string
+  start: number
+  end: number
+  emphasis: boolean
+}
+
+/** One compose project = a downloaded mp3 + its image/caption recipe, headed for render. */
+export interface Project {
+  id: string
+  downloadId: string
+  title: string
+  channel: string
+  mp3Path: string
+  durationSec: number
+  imageMode: ImageMode
+  poolSize: number
+  kenBurns: boolean
+  seed: number
+  crossfade: boolean
+  captionPreset: string
+  captionFont: string
+  captionAnim: string
+  captionAspect: '16:9' | '1:1' | '9:16'
+  emphasis: boolean
+  keywords: boolean
+  punchZoom: boolean
+  stage: string
+  createdAt: string
+}
+
+export interface DownloadProgress {
+  downloadId: string
+  title: string
+  pct: number
+  stage: string
+  done: boolean
+  error?: string
+}
+
+export interface TranscribeProgress {
+  projectId: string
+  phase: 'start' | 'uploading' | 'transcribing' | 'done' | 'error'
+  message: string
+}
+
+/** Options for a download batch (from the Download picker header). */
+export interface DownloadOptions {
+  bitrate: number
+  sourceUrl: string
+}
+
+
 // ---- Settings (persisted via electron-store) ----
 export interface AppSettings {
   accent: AccentName
@@ -199,10 +288,13 @@ export interface AppSettings {
   showActivityRail: boolean
   defaultScreen: ScreenKey
   namingTemplate: string
+  /** where downloads + renders are written; empty = <Downloads>/MentalEmpire_out */
+  outputFolder: string
   concurrency: number
   quality: '720p' | '1080p' | '1440p'
   autoScrape: { enabled: boolean; frequency: string; delaySec: number; retries: number; proxy: string; cookiesPath: string }
   background: { tray: boolean; startOnSignIn: boolean; notifications: boolean; webhook: string }
+  transcription: { apiKey: string; model: string }
 }
 
 /** Canonical defaults — shared by the main-process store and the renderer's initial state. */
@@ -212,10 +304,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
   showActivityRail: true,
   defaultScreen: 'library',
   namingTemplate: '{channel} - {title}',
+  outputFolder: '',
   concurrency: 2,
   quality: '1080p',
   autoScrape: { enabled: true, frequency: 'Every 6 hours', delaySec: 1.5, retries: 3, proxy: '', cookiesPath: '' },
-  background: { tray: true, startOnSignIn: true, notifications: true, webhook: '' }
+  background: { tray: true, startOnSignIn: true, notifications: true, webhook: '' },
+  transcription: { apiKey: '', model: 'whisper-large-v3-turbo' }
 }
 
 /** Recursive partial — used for settings patches that touch only nested keys. */
@@ -242,6 +336,8 @@ export interface NativeApi {
     activity(): Promise<ActivityRow[]>
     upsertProfile(profile: Profile): Promise<Profile[]>
     saveTemplate(template: ThumbnailTemplate): Promise<ThumbnailTemplate[]>
+    recentUploads(limit?: number): Promise<RecentUpload[]>
+    updateChannelGoals(id: string, patch: GoalsPatch): Promise<MyChannel[]>
   }
   scrape: {
     /** preview a channel's stats without persisting */
@@ -259,10 +355,39 @@ export interface NativeApi {
     /** evaluate behind-pace channels, firing desktop notifications */
     check(): Promise<ReminderHit[]>
   }
+  download: {
+    /** download mp3s for the given source video ids; streams progress */
+    start(videos: ScrapedVideo[], opts: DownloadOptions): Promise<DownloadedVideo[]>
+    /** resume an unfinished download (skips if the file already exists) */
+    resume(id: string): Promise<DownloadedVideo>
+    /** reveal a downloaded file in the OS file manager */
+    openFolder(id: string): Promise<void>
+  }
+  compose: {
+    createProject(downloadId: string): Promise<Project>
+    get(id: string): Promise<Project | null>
+    list(): Promise<Project[]>
+    images(projectId: string): Promise<ProjectImage[]>
+    setImages(projectId: string, paths: string[]): Promise<ProjectImage[]>
+    setRanges(projectId: string, ranges: { id: string; rangeStart: number; rangeEnd: number }[]): Promise<ProjectImage[]>
+    setMedia(projectId: string, patch: Partial<Project>): Promise<Project>
+    setCaptions(projectId: string, patch: Partial<Project>): Promise<Project>
+    sendToRender(projectId: string): Promise<void>
+  }
+  transcribe: {
+    run(projectId: string): Promise<TranscriptWord[]>
+    get(projectId: string): Promise<TranscriptWord[]>
+    updateWord(wordId: string, text: string): Promise<void>
+    toggleEmphasis(wordId: string): Promise<void>
+  }
   /** subscribe to live scrape progress; returns an unsubscribe fn */
   onScrapeProgress(cb: (p: ScrapeProgress) => void): () => void
   /** subscribe to new activity-log entries; returns an unsubscribe fn */
   onActivity(cb: (row: ActivityRow) => void): () => void
+  /** subscribe to download progress; returns an unsubscribe fn */
+  onDownloadProgress(cb: (p: DownloadProgress) => void): () => void
+  /** subscribe to transcription progress; returns an unsubscribe fn */
+  onTranscribeProgress(cb: (p: TranscribeProgress) => void): () => void
 }
 
 declare global {
