@@ -2,7 +2,7 @@ import { ScreenPad } from '../components/primitives'
 import { Toggle } from '../components/primitives'
 import { activity } from '../data/mock'
 import { useStore } from '../store/useStore'
-import type { AccentName } from '@shared/types'
+import type { AccentName, AppSettings } from '@shared/types'
 
 const ACCENTS: AccentName[] = ['Amber', 'Violet', 'Emerald', 'Crimson']
 const ACCENT_SWATCH: Record<AccentName, string> = {
@@ -52,9 +52,9 @@ function field(label: string, value: string, mono = false) {
   )
 }
 
-function rowToggle(label: string, on: boolean, right?: React.ReactNode) {
+function rowToggle(label: string, on: boolean, right?: React.ReactNode, onClick?: () => void) {
   return (
-    <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #1d2129', borderRadius: 9, padding: '11px 13px', background: '#0e1116' }}>
+    <div onClick={onClick} style={{ display: 'flex', alignItems: 'center', border: '1px solid #1d2129', borderRadius: 9, padding: '11px 13px', background: '#0e1116', cursor: onClick ? 'pointer' : undefined }}>
       <span style={{ flex: 1, color: on ? '#cdd2da' : '#6a7180' }}>{label}</span>
       {right ?? <Toggle on={on} />}
     </div>
@@ -62,6 +62,11 @@ function rowToggle(label: string, on: boolean, right?: React.ReactNode) {
 }
 
 export function Settings(): JSX.Element {
+  const settings = useStore((s) => s.settings)
+  const updateSettings = useStore((s) => s.updateSettings)
+  const { quality, autoScrape, background } = settings
+  const qualities: AppSettings['quality'][] = ['720p', '1080p', '1440p']
+
   return (
     <ScreenPad>
       <div style={{ marginBottom: 22 }}>
@@ -84,33 +89,33 @@ export function Settings(): JSX.Element {
           <Card label="RENDER">
             <div style={{ display: 'flex', gap: 26, flexWrap: 'wrap' }}>
               <div><div style={{ fontSize: 12, color: '#8a909c', marginBottom: 7 }}>Parallel renders</div><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><div style={{ border: '1px solid #23272f', borderRadius: 8, padding: '8px 17px', fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 15, color: '#eef0f3', background: '#0e1116' }}>2</div><span style={{ fontSize: 11, color: '#6a7180' }}>at a time</span></div></div>
-              <div><div style={{ fontSize: 12, color: '#8a909c', marginBottom: 7 }}>Quality</div><div style={{ display: 'flex', border: '1px solid #23272f', borderRadius: 8, overflow: 'hidden', fontSize: 11.5 }}><div style={{ padding: '8px 12px', color: '#8a909c' }}>720p</div><div style={{ padding: '8px 12px', background: 'var(--accent)', color: 'var(--accent-ink)', fontWeight: 600 }}>1080p</div><div style={{ padding: '8px 12px', color: '#8a909c' }}>1440p</div></div></div>
+              <div><div style={{ fontSize: 12, color: '#8a909c', marginBottom: 7 }}>Quality</div><div style={{ display: 'flex', border: '1px solid #23272f', borderRadius: 8, overflow: 'hidden', fontSize: 11.5 }}>{qualities.map((q) => { const on = q === quality; return <div key={q} onClick={() => updateSettings({ quality: q })} style={{ padding: '8px 12px', cursor: 'pointer', background: on ? 'var(--accent)' : undefined, color: on ? 'var(--accent-ink)' : '#8a909c', fontWeight: on ? 600 : undefined }}>{q}</div> })}</div></div>
               <div><div style={{ fontSize: 12, color: '#8a909c', marginBottom: 7 }}>Encoder</div><div style={{ border: '1px solid #23272f', borderRadius: 8, padding: '8px 13px', fontSize: 11.5, color: '#dde0e5', background: '#0e1116' }}>H.264 · GPU ▾</div></div>
             </div>
           </Card>
 
           <Card label="AUTO-SCRAPE · NO API">
             <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 13 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 9, flex: 1 }}><Toggle on /><span style={{ fontSize: 12.5, color: '#cdd2da' }}>Auto-scrape enabled</span></div>
+              <div onClick={() => updateSettings({ autoScrape: { enabled: !autoScrape.enabled } })} style={{ display: 'flex', alignItems: 'center', gap: 9, flex: 1, cursor: 'pointer' }}><Toggle on={autoScrape.enabled} /><span style={{ fontSize: 12.5, color: autoScrape.enabled ? '#cdd2da' : '#6a7180' }}>Auto-scrape enabled</span></div>
               <span style={{ fontSize: 11, color: '#6a7180' }}>last run 09:30</span>
             </div>
             <div style={{ display: 'flex', gap: 11, flexWrap: 'wrap', marginBottom: 11 }}>
-              {field('Frequency', 'Every 6 hours ▾')}
-              {field('Request delay', '1.5s', true)}
-              {field('Retries on fail', '3×', true)}
+              {field('Frequency', `${autoScrape.frequency} ▾`)}
+              {field('Request delay', `${autoScrape.delaySec}s`, true)}
+              {field('Retries on fail', `${autoScrape.retries}×`, true)}
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 9, fontSize: 12.5 }}>
               <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #1d2129', borderRadius: 9, padding: '11px 13px', background: '#0e1116' }}><span style={{ flex: 1, color: '#cdd2da' }}>Sign-in cookies (age-gated)</span><span style={{ fontSize: 11, color: '#36c98e', fontWeight: 600 }}>✓ imported</span></div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, border: '1px solid #1d2129', borderRadius: 9, padding: '9px 13px', background: '#0e1116' }}><span style={{ color: '#cdd2da', flex: 'none' }}>Proxy (optional)</span><div style={{ flex: 1, border: '1px solid #23272f', borderRadius: 7, padding: '6px 10px', fontSize: 11, color: '#5b616f', fontFamily: 'var(--font-mono)', background: '#0c0d11' }}>http://user:pass@host:port</div></div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, border: '1px solid #1d2129', borderRadius: 9, padding: '9px 13px', background: '#0e1116' }}><span style={{ color: '#cdd2da', flex: 'none' }}>Proxy (optional)</span><div style={{ flex: 1, border: '1px solid #23272f', borderRadius: 7, padding: '6px 10px', fontSize: 11, color: autoScrape.proxy ? '#aab0bb' : '#5b616f', fontFamily: 'var(--font-mono)', background: '#0c0d11' }}>{autoScrape.proxy || 'http://user:pass@host:port'}</div></div>
             </div>
           </Card>
 
           <Card label="BACKGROUND">
             <div style={{ display: 'flex', flexDirection: 'column', gap: 9, fontSize: 12.5 }}>
-              {rowToggle('Run in background (system tray)', true)}
-              {rowToggle('Start on Windows sign-in', true)}
-              {rowToggle('Desktop notifications (goals & reminders)', true)}
-              {rowToggle('Webhook (Pushover / calendar)', false, <span style={{ fontSize: 11, color: '#6a7180' }}>not set</span>)}
+              {rowToggle('Run in background (system tray)', background.tray, undefined, () => updateSettings({ background: { tray: !background.tray } }))}
+              {rowToggle('Start on Windows sign-in', background.startOnSignIn, undefined, () => updateSettings({ background: { startOnSignIn: !background.startOnSignIn } }))}
+              {rowToggle('Desktop notifications (goals & reminders)', background.notifications, undefined, () => updateSettings({ background: { notifications: !background.notifications } }))}
+              {rowToggle('Webhook (Pushover / calendar)', !!background.webhook, <span style={{ fontSize: 11, color: '#6a7180' }}>{background.webhook ? 'set' : 'not set'}</span>)}
             </div>
           </Card>
         </div>

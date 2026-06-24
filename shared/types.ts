@@ -121,7 +121,14 @@ export interface ThumbnailTemplate {
   layers: ThumbnailLayer[]
 }
 
-// ---- Settings (persisted later via electron-store) ----
+export interface ActivityRow {
+  t: string
+  icon: string
+  color: string
+  text: string
+}
+
+// ---- Settings (persisted via electron-store) ----
 export interface AppSettings {
   accent: AccentName
   ambientGlow: boolean
@@ -134,15 +141,44 @@ export interface AppSettings {
   background: { tray: boolean; startOnSignIn: boolean; notifications: boolean; webhook: string }
 }
 
-// ---- Native bridge surface (implemented in later milestones) ----
+/** Canonical defaults — shared by the main-process store and the renderer's initial state. */
+export const DEFAULT_SETTINGS: AppSettings = {
+  accent: 'Amber',
+  ambientGlow: true,
+  showActivityRail: true,
+  defaultScreen: 'library',
+  namingTemplate: '{channel} - {title}',
+  concurrency: 2,
+  quality: '1080p',
+  autoScrape: { enabled: true, frequency: 'Every 6 hours', delaySec: 1.5, retries: 3, proxy: '' },
+  background: { tray: true, startOnSignIn: true, notifications: true, webhook: '' }
+}
+
+/** Recursive partial — used for settings patches that touch only nested keys. */
+export type DeepPartial<T> = {
+  [K in keyof T]?: T[K] extends object ? DeepPartial<T[K]> : T[K]
+}
+
+// ---- Native bridge surface ----
 export interface NativeApi {
   platform: NodeJS.Platform | 'web'
   minimize(): void
   maximize(): void
   close(): void
-  // backend stubs filled in M2+
-  getSettings?(): Promise<AppSettings>
-  setSettings?(patch: Partial<AppSettings>): Promise<void>
+  settings: {
+    get(): Promise<AppSettings>
+    set(patch: DeepPartial<AppSettings>): Promise<AppSettings>
+  }
+  db: {
+    myChannels(): Promise<MyChannel[]>
+    sourceChannels(): Promise<SourceChannel[]>
+    downloads(): Promise<DownloadedVideo[]>
+    profiles(): Promise<Profile[]>
+    templates(): Promise<ThumbnailTemplate[]>
+    activity(): Promise<ActivityRow[]>
+    upsertProfile(profile: Profile): Promise<Profile[]>
+    saveTemplate(template: ThumbnailTemplate): Promise<ThumbnailTemplate[]>
+  }
 }
 
 declare global {

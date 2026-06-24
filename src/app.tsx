@@ -25,6 +25,12 @@ const SCREENS: Record<ScreenKey, () => JSX.Element> = {
 
 export function App(): JSX.Element {
   const { active, accent, ambientGlow } = useStore()
+  const hydrate = useStore((s) => s.hydrate)
+
+  // load persisted settings (electron-store) once on boot
+  useEffect(() => {
+    hydrate()
+  }, [hydrate])
 
   // accent drives the CSS variable palette on :root
   useEffect(() => {

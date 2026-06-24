@@ -1,5 +1,12 @@
 import { create } from 'zustand'
-import type { AccentName, ScreenKey, ThumbnailLayer } from '@shared/types'
+import {
+  DEFAULT_SETTINGS,
+  type AccentName,
+  type AppSettings,
+  type DeepPartial,
+  type ScreenKey,
+  type ThumbnailLayer
+} from '@shared/types'
 import { initialLayers } from '@/data/mock'
 
 type ComposeTab = 'media' | 'captions'
@@ -10,7 +17,13 @@ interface AppState {
   active: ScreenKey
   setActive: (s: ScreenKey) => void
 
-  // appearance "tweaks" (were DC props)
+  // persisted settings (electron-store via window.api.settings)
+  settings: AppSettings
+  hydrated: boolean
+  hydrate: () => Promise<void>
+  updateSettings: (patch: DeepPartial<AppSettings>) => void
+
+  // appearance "tweaks" — mirrored from settings so screens read them directly
   accent: AccentName
   setAccent: (a: AccentName) => void
   ambientGlow: boolean
@@ -39,16 +52,66 @@ interface AppState {
 
 let layerSeq = 100
 
-export const useStore = create<AppState>((set) => ({
+/** Fire-and-forget persist through the native bridge (absent in plain-web contexts). */
+function pushPatch(patch: DeepPartial<AppSettings>): void {
+  window.api?.settings?.set(patch).catch(() => {})
+}
+
+/** Deep-merge a patch onto settings so nested patches (e.g. background.tray) keep siblings. */
+function mergeSettings(base: AppSettings, patch: DeepPartial<AppSettings>): AppSettings {
+  const out: Record<string, unknown> = { ...base }
+  for (const [k, v] of Object.entries(patch)) {
+    const cur = out[k]
+    out[k] = v && typeof v === 'object' && !Array.isArray(v) && cur && typeof cur === 'object'
+      ? { ...(cur as object), ...(v as object) }
+      : v
+  }
+  return out as unknown as AppSettings
+}
+
+/** Derive the mirrored top-level appearance fields from the settings object. */
+function mirror(settings: AppSettings) {
+  return {
+    settings,
+    accent: settings.accent,
+    ambientGlow: settings.ambientGlow,
+    showActivityRail: settings.showActivityRail
+  }
+}
+
+export const useStore = create<AppState>((set, get) => ({
   active: 'library',
   setActive: (s) => set({ active: s }),
 
-  accent: 'Amber',
-  setAccent: (a) => set({ accent: a }),
-  ambientGlow: true,
-  toggleAmbientGlow: () => set((s) => ({ ambientGlow: !s.ambientGlow })),
-  showActivityRail: true,
-  toggleActivityRail: () => set((s) => ({ showActivityRail: !s.showActivityRail })),
+  settings: DEFAULT_SETTINGS,
+  hydrated: false,
+  hydrate: async () => {
+    const persisted = await window.api?.settings?.get?.()
+    if (persisted) set({ ...mirror(persisted), active: persisted.defaultScreen, hydrated: true })
+    else set({ hydrated: true })
+  },
+  updateSettings: (patch) => {
+    pushPatch(patch)
+    set(mirror(mergeSettings(get().settings, patch)))
+  },
+
+  accent: DEFAULT_SETTINGS.accent,
+  setAccent: (a) => {
+    pushPatch({ accent: a })
+    set(mirror({ ...get().settings, accent: a }))
+  },
+  ambientGlow: DEFAULT_SETTINGS.ambientGlow,
+  toggleAmbientGlow: () => {
+    const v = !get().settings.ambientGlow
+    pushPatch({ ambientGlow: v })
+    set(mirror({ ...get().settings, ambientGlow: v }))
+  },
+  showActivityRail: DEFAULT_SETTINGS.showActivityRail,
+  toggleActivityRail: () => {
+    const v = !get().settings.showActivityRail
+    pushPatch({ showActivityRail: v })
+    set(mirror({ ...get().settings, showActivityRail: v }))
+  },
 
   profile: 'Mental Empire',
   setProfile: (p) => set({ profile: p }),

@@ -1,0 +1,869 @@
+<!DOCTYPE html>
+<html>
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<script src="./support.js"></script>
+</head>
+<body>
+<x-dc>
+<helmet>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Space+Grotesk:wght@400;500;600;700&family=Hanken+Grotesk:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500;600&family=Anton&display=swap" rel="stylesheet">
+<style>
+  *{box-sizing:border-box}
+  body{margin:0;background:#070809}
+  ::-webkit-scrollbar{width:10px;height:10px}
+  ::-webkit-scrollbar-thumb{background:#2b303b;border-radius:8px;border:3px solid transparent;background-clip:padding-box}
+  ::-webkit-scrollbar-thumb:hover{background:#3a4150;background-clip:padding-box}
+  ::-webkit-scrollbar-track{background:transparent}
+  @keyframes meRise{from{transform:translateY(10px)}to{transform:translateY(0)}}
+  @keyframes meShimmer{0%{background-position:-200% 0}100%{background-position:200% 0}}
+  @keyframes mePulse{0%,100%{opacity:.55}50%{opacity:1}}
+  @keyframes meSpin{to{transform:rotate(360deg)}}
+  .me-screen{opacity:1;animation:meRise .42s cubic-bezier(.2,.7,.2,1)}
+  .me-nav:hover{background:rgba(255,255,255,.04)!important}
+  .me-card{transition:transform .25s cubic-bezier(.2,.7,.2,1),box-shadow .25s,border-color .25s}
+  .me-card:hover{transform:translateY(-3px)}
+  .me-btn{transition:transform .15s,filter .2s,background .2s,border-color .2s}
+  .me-btn:hover{filter:brightness(1.08)}
+  .me-btn:active{transform:scale(.97)}
+  .me-row:hover{background:rgba(255,255,255,.025)!important}
+  .me-vid:hover .me-vidsel{border-color:var(--accent)!important}
+</style>
+</helmet>
+
+<div style="--accent:{{ accentHex }};--accent-deep:{{ accentDeep }};--accent-soft:{{ accentSoft }};--accent-glow:{{ accentGlow }};--accent-ink:{{ accentInk }};min-height:100vh;width:100%;display:grid;place-items:center;padding:34px;background:{{ backdrop }};font-family:'Hanken Grotesk',system-ui,sans-serif;color:#e9ebef">
+  <div style="width:1352px;height:868px;background:#0d0f14;border-radius:16px;overflow:hidden;box-shadow:0 50px 120px -30px rgba(0,0,0,.85),0 0 0 1px rgba(255,255,255,.05);display:flex;flex-direction:column;position:relative">
+
+    <!-- ===== TITLE BAR ===== -->
+    <div style="height:48px;flex:none;background:linear-gradient(180deg,#14161d,#101218);display:flex;align-items:center;padding:0 18px;gap:14px;border-bottom:1px solid #1d2129;position:relative;z-index:5">
+      <div style="display:flex;gap:8px">
+        <span style="width:12px;height:12px;border-radius:50%;background:#ff5f57"></span>
+        <span style="width:12px;height:12px;border-radius:50%;background:#febc2e"></span>
+        <span style="width:12px;height:12px;border-radius:50%;background:#28c840"></span>
+      </div>
+      <div style="width:1px;height:20px;background:#23272f"></div>
+      <div style="font-family:'JetBrains Mono',monospace;font-size:11px;letter-spacing:.5px;color:#6a7180">studio / {{ activeLabel }}</div>
+      <div style="flex:1"></div>
+      <div style="display:flex;align-items:center;gap:7px;background:#15171e;border:1px solid #23272f;border-radius:9px;padding:7px 12px;width:230px">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="#5b616f" stroke-width="2"><circle cx="11" cy="11" r="7"/><path d="M21 21l-4-4"/></svg>
+        <span style="font-size:12.5px;color:#5b616f">Search channels, jobs…</span>
+        <span style="margin-left:auto;font-family:'JetBrains Mono',monospace;font-size:10px;color:#444b57;border:1px solid #262b34;border-radius:4px;padding:1px 5px">⌘K</span>
+      </div>
+      <div class="me-btn" style="display:flex;align-items:center;gap:8px;background:linear-gradient(180deg,var(--accent),var(--accent-deep));color:var(--accent-ink);font-weight:600;font-size:12.5px;padding:8px 15px;border-radius:9px;cursor:pointer;box-shadow:0 4px 16px -4px var(--accent-glow)">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M5 4l14 8-14 8z"/></svg>Render all
+      </div>
+      <div style="width:30px;height:30px;border-radius:9px;background:linear-gradient(135deg,#3a3f4d,#23262f);border:1px solid #2c303b;display:grid;place-items:center;font-size:12px;font-weight:700;color:#aab1bf">A</div>
+    </div>
+
+    <!-- ===== BODY ===== -->
+    <div style="flex:1;display:flex;min-height:0">
+
+      <!-- ===== SIDEBAR ===== -->
+      <div style="width:236px;flex:none;background:#0a0c10;border-right:1px solid #1a1e26;display:flex;flex-direction:column;padding:16px 12px">
+        <div style="display:flex;align-items:center;gap:11px;padding:6px 8px 16px">
+          <div style="width:34px;height:34px;border-radius:10px;background:linear-gradient(135deg,var(--accent),var(--accent-deep));display:grid;place-items:center;font-family:'Space Grotesk';font-weight:700;color:var(--accent-ink);font-size:14px;box-shadow:0 4px 14px -4px var(--accent-glow)">ME</div>
+          <div style="line-height:1.2">
+            <div style="font-family:'Space Grotesk';font-weight:600;font-size:14px;color:#f2f4f7">Mental Empire</div>
+            <div style="font-size:10.5px;color:#5b616f;font-family:'JetBrains Mono',monospace;letter-spacing:.3px">studio v2.4.1</div>
+          </div>
+        </div>
+
+        <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:1.4px;color:#454b57;padding:8px 10px 8px">PRODUCE</div>
+        <div onClick="{{ nav.library.go }}" class="me-nav" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:10px;cursor:pointer;font-size:13px;font-weight:{{ nav.library.weight }};background:{{ nav.library.bg }};color:{{ nav.library.color }};position:relative;margin-bottom:2px"><span style="position:absolute;left:-12px;top:8px;bottom:8px;width:3px;border-radius:0 4px 4px 0;background:{{ nav.library.bar }};box-shadow:{{ nav.library.glow }}"></span><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="3" width="7" height="7" rx="2"/><rect x="14" y="3" width="7" height="7" rx="2"/><rect x="3" y="14" width="7" height="7" rx="2"/><rect x="14" y="14" width="7" height="7" rx="2"/></svg>Library</div>
+        <div onClick="{{ nav.channels.go }}" class="me-nav" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:10px;cursor:pointer;font-size:13px;font-weight:{{ nav.channels.weight }};background:{{ nav.channels.bg }};color:{{ nav.channels.color }};position:relative;margin-bottom:2px"><span style="position:absolute;left:-12px;top:8px;bottom:8px;width:3px;border-radius:0 4px 4px 0;background:{{ nav.channels.bar }};box-shadow:{{ nav.channels.glow }}"></span><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M4 11a9 9 0 019-9"/><path d="M4 4a16 16 0 0116 16"/><circle cx="5" cy="19" r="1.6"/></svg>My Channels</div>
+        <div onClick="{{ nav.download.go }}" class="me-nav" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:10px;cursor:pointer;font-size:13px;font-weight:{{ nav.download.weight }};background:{{ nav.download.bg }};color:{{ nav.download.color }};position:relative;margin-bottom:2px"><span style="position:absolute;left:-12px;top:8px;bottom:8px;width:3px;border-radius:0 4px 4px 0;background:{{ nav.download.bar }};box-shadow:{{ nav.download.glow }}"></span><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3v13"/><path d="M7 11l5 5 5-5"/><path d="M5 21h14"/></svg>Download</div>
+        <div onClick="{{ nav.compose.go }}" class="me-nav" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:10px;cursor:pointer;font-size:13px;font-weight:{{ nav.compose.weight }};background:{{ nav.compose.bg }};color:{{ nav.compose.color }};position:relative;margin-bottom:2px"><span style="position:absolute;left:-12px;top:8px;bottom:8px;width:3px;border-radius:0 4px 4px 0;background:{{ nav.compose.bar }};box-shadow:{{ nav.compose.glow }}"></span><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3l8 4-8 4-8-4z"/><path d="M4 12l8 4 8-4"/><path d="M4 17l8 4 8-4"/></svg>Compose</div>
+        <div onClick="{{ nav.thumb.go }}" class="me-nav" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:10px;cursor:pointer;font-size:13px;font-weight:{{ nav.thumb.weight }};background:{{ nav.thumb.bg }};color:{{ nav.thumb.color }};position:relative;margin-bottom:2px"><span style="position:absolute;left:-12px;top:8px;bottom:8px;width:3px;border-radius:0 4px 4px 0;background:{{ nav.thumb.bar }};box-shadow:{{ nav.thumb.glow }}"></span><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M8 11h8"/><path d="M8 15h5"/></svg>Thumbnails</div>
+
+        <div style="font-family:'JetBrains Mono',monospace;font-size:9.5px;font-weight:600;letter-spacing:1.4px;color:#454b57;padding:16px 10px 8px">AUTOMATE</div>
+        <div onClick="{{ nav.render.go }}" class="me-nav" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:10px;cursor:pointer;font-size:13px;font-weight:{{ nav.render.weight }};background:{{ nav.render.bg }};color:{{ nav.render.color }};position:relative;margin-bottom:2px"><span style="position:absolute;left:-12px;top:8px;bottom:8px;width:3px;border-radius:0 4px 4px 0;background:{{ nav.render.bar }};box-shadow:{{ nav.render.glow }}"></span><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M5 5l13 7-13 7z"/></svg>Render Queue<span style="margin-left:auto;background:var(--accent);color:var(--accent-ink);font-size:10px;font-weight:700;font-family:'JetBrains Mono';padding:1px 7px;border-radius:8px">4</span></div>
+        <div onClick="{{ nav.profiles.go }}" class="me-nav" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:10px;cursor:pointer;font-size:13px;font-weight:{{ nav.profiles.weight }};background:{{ nav.profiles.bg }};color:{{ nav.profiles.color }};position:relative;margin-bottom:2px"><span style="position:absolute;left:-12px;top:8px;bottom:8px;width:3px;border-radius:0 4px 4px 0;background:{{ nav.profiles.bar }};box-shadow:{{ nav.profiles.glow }}"></span><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><path d="M12 3l8 4v5c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V7z"/></svg>Profiles</div>
+        <div onClick="{{ nav.settings.go }}" class="me-nav" style="display:flex;align-items:center;gap:11px;padding:9px 11px;border-radius:10px;cursor:pointer;font-size:13px;font-weight:{{ nav.settings.weight }};background:{{ nav.settings.bg }};color:{{ nav.settings.color }};position:relative;margin-bottom:2px"><span style="position:absolute;left:-12px;top:8px;bottom:8px;width:3px;border-radius:0 4px 4px 0;background:{{ nav.settings.bar }};box-shadow:{{ nav.settings.glow }}"></span><svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7"><circle cx="12" cy="12" r="3.2"/><path d="M19.4 13.5a7.8 7.8 0 000-3l1.7-1.3-1.8-3.1-2 .8a7.6 7.6 0 00-2.6-1.5l-.3-2.1H8l-.3 2.1a7.6 7.6 0 00-2.6 1.5l-2-.8L1.3 9.2 3 10.5a7.8 7.8 0 000 3l-1.7 1.3 1.8 3.1 2-.8a7.6 7.6 0 002.6 1.5l.3 2.1h4l.3-2.1a7.6 7.6 0 002.6-1.5l2 .8 1.8-3.1z"/></svg>Settings</div>
+
+        <div style="flex:1"></div>
+        <!-- auto-watch status -->
+        <div style="border:1px solid #1d2129;border-radius:12px;padding:12px;background:linear-gradient(180deg,#10141a,#0c0f13)">
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:9px">
+            <span style="width:7px;height:7px;border-radius:50%;background:#36c98e;box-shadow:0 0 8px #36c98e;animation:mePulse 2s infinite"></span>
+            <span style="font-size:11px;font-weight:600;color:#cdd2da">Auto-watch active</span>
+          </div>
+          <div style="font-size:10.5px;color:#6a7180;line-height:1.5">3 channels · checks every 6h · last run 09:30</div>
+          <div style="margin-top:10px;height:5px;border-radius:3px;background:#1a1e26;overflow:hidden"><div style="width:62%;height:100%;background:linear-gradient(90deg,var(--accent),var(--accent-deep))"></div></div>
+          <div style="display:flex;justify-content:space-between;margin-top:7px;font-family:'JetBrains Mono';font-size:9.5px;color:#5b616f"><span>14.2 GB used</span><span>23 GB</span></div>
+        </div>
+      </div>
+
+      <!-- ===== MAIN ===== -->
+      <div style="flex:1;min-width:0;background:{{ mainBg }};position:relative;overflow-y:auto;overflow-x:hidden">
+
+        <!-- ============ LIBRARY ============ -->
+        <sc-if value="{{ isLibrary }}" hint-placeholder-val="{{ true }}">
+        <div class="me-screen" style="padding:30px 34px 40px">
+          <div style="display:flex;align-items:flex-end;gap:16px;margin-bottom:26px">
+            <div>
+              <div style="font-family:'JetBrains Mono';font-size:11px;letter-spacing:1px;color:var(--accent);margin-bottom:7px">{{ greetDate }}</div>
+              <div style="font-family:'Space Grotesk';font-weight:600;font-size:27px;letter-spacing:-.5px;color:#f4f6f9;line-height:1">Good evening — 3 channels running</div>
+            </div>
+            <div style="flex:1"></div>
+            <div class="me-btn" style="display:flex;align-items:center;gap:8px;border:1px solid #262b34;background:#15181f;border-radius:10px;padding:9px 14px;font-size:12.5px;color:#c4cad3;cursor:pointer"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-3-6.7M21 4v5h-5"/></svg>Re-scrape</div>
+          </div>
+
+          <!-- KPI row -->
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:14px;margin-bottom:24px">
+            <div class="me-card" style="border:1px solid #1d2129;border-radius:15px;padding:18px;background:linear-gradient(165deg,#14171e,#0f1217)">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px"><span style="font-family:'JetBrains Mono';font-size:10px;letter-spacing:.8px;color:#6a7180">TOTAL VIEWS</span><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z"/><circle cx="12" cy="12" r="2.6"/></svg></div>
+              <div style="font-family:'Space Grotesk';font-weight:700;font-size:30px;color:#f4f6f9;letter-spacing:-1px">107K</div>
+              <div style="display:flex;align-items:center;gap:5px;margin-top:6px;font-size:11.5px;color:#36c98e"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 17l6-6 4 4 6-7"/></svg>+18% this week</div>
+            </div>
+            <div class="me-card" style="border:1px solid #1d2129;border-radius:15px;padding:18px;background:linear-gradient(165deg,#14171e,#0f1217)">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px"><span style="font-family:'JetBrains Mono';font-size:10px;letter-spacing:.8px;color:#6a7180">SUBSCRIBERS</span><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><circle cx="9" cy="8" r="3.2"/><path d="M3 20c0-3.3 2.7-5 6-5s6 1.7 6 5"/><path d="M16 6a3 3 0 010 6M21 20c0-2.5-1.4-4-3.5-4.6"/></svg></div>
+              <div style="font-family:'Space Grotesk';font-weight:700;font-size:30px;color:#f4f6f9;letter-spacing:-1px">3,195</div>
+              <div style="display:flex;align-items:center;gap:5px;margin-top:6px;font-size:11.5px;color:#36c98e"><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M4 17l6-6 4 4 6-7"/></svg>+214 (7d)</div>
+            </div>
+            <div class="me-card" style="border:1px solid #1d2129;border-radius:15px;padding:18px;background:linear-gradient(165deg,#14171e,#0f1217)">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px"><span style="font-family:'JetBrains Mono';font-size:10px;letter-spacing:.8px;color:#6a7180">UPLOADED</span><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><path d="M12 3v13"/><path d="M7 11l5 5 5-5"/><path d="M5 21h14"/></svg></div>
+              <div style="font-family:'Space Grotesk';font-weight:700;font-size:30px;color:#f4f6f9;letter-spacing:-1px">67</div>
+              <div style="margin-top:6px;font-size:11.5px;color:#6a7180">across 3 channels</div>
+            </div>
+            <div class="me-card" style="border:1px solid var(--accent);border-radius:15px;padding:18px;background:linear-gradient(165deg,var(--accent-soft),#0f1217)">
+              <div style="display:flex;align-items:center;justify-content:space-between;margin-bottom:14px"><span style="font-family:'JetBrains Mono';font-size:10px;letter-spacing:.8px;color:#cdd2da">IN QUEUE</span><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" stroke-width="2"><path d="M5 5l13 7-13 7z"/></svg></div>
+              <div style="font-family:'Space Grotesk';font-weight:700;font-size:30px;color:#f4f6f9;letter-spacing:-1px">4</div>
+              <div style="margin-top:6px;font-size:11.5px;color:#cdd2da">1 rendering · 60%</div>
+            </div>
+          </div>
+
+          <div style="display:flex;gap:22px;align-items:flex-start">
+            <!-- left main -->
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:14px"><span style="font-family:'Space Grotesk';font-weight:600;font-size:15px;color:#e9ebef">Your channels</span><span style="font-family:'JetBrains Mono';font-size:10px;color:#5b616f;border:1px solid #23272f;border-radius:5px;padding:2px 7px">scraped · no API</span></div>
+              <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:13px;margin-bottom:26px">
+                <sc-for list="{{ channels }}" as="ch" hint-placeholder-count="3">
+                  <div class="me-card" style="border:1px solid #1d2129;border-radius:14px;padding:15px;background:#12151b">
+                    <div style="display:flex;align-items:center;gap:10px;margin-bottom:13px">
+                      <div style="width:38px;height:38px;border-radius:10px;background:{{ ch.avatar }};display:grid;place-items:center;font-family:'Space Grotesk';font-weight:700;font-size:13px;color:#0c0d11">{{ ch.mono }}</div>
+                      <div style="min-width:0"><div style="font-weight:600;font-size:13px;color:#eef0f3;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ ch.name }}</div><div style="font-size:10.5px;color:#6a7180;font-family:'JetBrains Mono';white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ ch.handle }}</div></div>
+                    </div>
+                    <div style="display:flex;align-items:flex-end;gap:3px;height:40px;margin-bottom:12px">
+                      <sc-for list="{{ ch.bars }}" as="b" hint-placeholder-count="8">
+                        <div style="flex:1;border-radius:3px 3px 0 0;background:linear-gradient(180deg,var(--accent),var(--accent-deep));opacity:.85;height:{{ b.h }}%"></div>
+                      </sc-for>
+                    </div>
+                    <div style="display:flex;justify-content:space-between;border-top:1px solid #1d2129;padding-top:11px">
+                      <div><div style="font-family:'Space Grotesk';font-weight:600;font-size:15px;color:#eef0f3">{{ ch.views }}</div><div style="font-size:9.5px;color:#5b616f;font-family:'JetBrains Mono'">VIEWS</div></div>
+                      <div><div style="font-family:'Space Grotesk';font-weight:600;font-size:15px;color:#eef0f3">{{ ch.subs }}</div><div style="font-size:9.5px;color:#5b616f;font-family:'JetBrains Mono'">SUBS</div></div>
+                      <div><div style="font-family:'Space Grotesk';font-weight:600;font-size:15px;color:var(--accent)">{{ ch.uploaded }}</div><div style="font-size:9.5px;color:#5b616f;font-family:'JetBrains Mono'">DONE</div></div>
+                    </div>
+                  </div>
+                </sc-for>
+              </div>
+
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:13px"><span style="font-family:'Space Grotesk';font-weight:600;font-size:15px;color:#e9ebef">Recent uploads</span><div style="flex:1"></div><span style="font-size:11.5px;color:var(--accent);cursor:pointer">View all →</span></div>
+              <div style="border:1px solid #1d2129;border-radius:14px;overflow:hidden;background:#12151b">
+                <div style="display:flex;padding:11px 16px;border-bottom:1px solid #1d2129;font-family:'JetBrains Mono';font-size:9.5px;letter-spacing:.6px;color:#5b616f"><div style="flex:2.4">VIDEO</div><div style="width:120px">CHANNEL</div><div style="width:108px;text-align:center">STATUS</div><div style="width:64px;text-align:right">VIEWS</div><div style="width:62px;text-align:right">AGE</div></div>
+                <sc-for list="{{ uploads }}" as="u" hint-placeholder-count="6">
+                  <div class="me-row" style="display:flex;align-items:center;padding:11px 16px;border-bottom:1px solid #14171d">
+                    <div style="flex:2.4;display:flex;align-items:center;gap:11px;min-width:0"><div style="width:46px;height:26px;border-radius:5px;background:{{ u.thumb }};flex:none"></div><span style="font-size:12.5px;color:#dde0e5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ u.title }}</span></div>
+                    <div style="width:120px;font-size:11.5px;color:#8a909c">{{ u.channel }}</div>
+                    <div style="width:108px;text-align:center"><span style="display:inline-flex;align-items:center;gap:5px;font-size:10.5px;font-weight:600;border-radius:20px;padding:3px 10px;background:{{ u.statusBg }};color:{{ u.statusColor }}"><span style="width:6px;height:6px;border-radius:50%;background:{{ u.statusDot }}"></span>{{ u.status }}</span></div>
+                    <div style="width:64px;text-align:right;font-family:'Space Grotesk';font-weight:600;font-size:12.5px;color:#dde0e5">{{ u.views }}</div>
+                    <div style="width:62px;text-align:right;font-size:11px;color:#6a7180;font-family:'JetBrains Mono'">{{ u.when }}</div>
+                  </div>
+                </sc-for>
+              </div>
+            </div>
+
+            <!-- right rail -->
+            <sc-if value="{{ showRail }}" hint-placeholder-val="{{ true }}">
+            <div style="width:268px;flex:none;display:flex;flex-direction:column;gap:16px">
+              <div style="border:1px solid #1d2129;border-radius:14px;padding:16px;background:#12151b">
+                <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px"><span style="width:7px;height:7px;border-radius:50%;background:#36c98e;box-shadow:0 0 8px #36c98e"></span><span style="font-family:'Space Grotesk';font-weight:600;font-size:13px;color:#e9ebef">Activity</span><span style="margin-left:auto;font-family:'JetBrains Mono';font-size:9.5px;color:#5b616f">live</span></div>
+                <div style="display:flex;flex-direction:column;gap:13px">
+                  <sc-for list="{{ activity }}" as="a" hint-placeholder-count="5">
+                    <div style="display:flex;gap:10px"><span style="font-family:'JetBrains Mono';font-size:10px;color:#4f5662;flex:none;width:32px;padding-top:1px">{{ a.t }}</span><span style="color:{{ a.color }};flex:none">{{ a.icon }}</span><span style="font-size:11.5px;color:#aab0bb;line-height:1.4">{{ a.text }}</span></div>
+                  </sc-for>
+                </div>
+              </div>
+              <div style="border:1px solid var(--accent);border-radius:14px;padding:16px;background:linear-gradient(165deg,var(--accent-soft),#0f1217)">
+                <div style="font-family:'Space Grotesk';font-weight:600;font-size:13px;color:#f2f4f7;margin-bottom:6px">Next auto-run</div>
+                <div style="font-size:11.5px;color:#aab0bb;line-height:1.5;margin-bottom:13px">Mental Empire · checks for new uploads in <b style="color:var(--accent)">3h 42m</b></div>
+                <div class="me-btn" style="text-align:center;border:1px solid #2a2f39;background:#15181f;border-radius:9px;padding:8px;font-size:12px;font-weight:600;color:#dde0e5;cursor:pointer">Run now</div>
+              </div>
+            </div>
+            </sc-if>
+          </div>
+        </div>
+        </sc-if>
+
+        <!-- ============ MY CHANNELS ============ -->
+        <sc-if value="{{ isChannels }}" hint-placeholder-val="{{ false }}">
+        <div class="me-screen" style="padding:30px 34px 40px">
+          <div style="display:flex;align-items:flex-end;margin-bottom:8px"><div><div style="font-family:'JetBrains Mono';font-size:11px;letter-spacing:1px;color:var(--accent);margin-bottom:7px">YOUR CHANNELS</div><div style="font-family:'Space Grotesk';font-weight:600;font-size:25px;letter-spacing:-.5px;color:#f4f6f9">Channels you publish to</div></div><div style="flex:1"></div>
+            <div class="me-btn" style="display:flex;align-items:center;gap:8px;background:linear-gradient(180deg,var(--accent),var(--accent-deep));color:var(--accent-ink);font-weight:600;font-size:12.5px;padding:10px 16px;border-radius:10px;cursor:pointer;box-shadow:0 4px 16px -4px var(--accent-glow)"><svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M12 5v14M5 12h14"/></svg>Add channel</div>
+          </div>
+          <div style="font-size:12.5px;color:#8a909c;margin-bottom:22px;max-width:720px">Paste a channel URL and Studio scrapes its stats (views, subs, upload count) — no API. <b style="color:#cdd2da">Link the source channel</b> you pull videos from and Studio maps which downloaded videos you've already uploaded (the ↔ chip). Set a weekly/monthly goal per channel and a reminder date; you'll get a desktop notification when you're behind.</div>
+
+          <!-- add channel input -->
+          <div style="display:flex;gap:11px;margin-bottom:24px">
+            <div style="flex:1;display:flex;align-items:center;gap:10px;background:#12151b;border:1px dashed #2c303b;border-radius:11px;padding:12px 15px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5b616f" stroke-width="2"><path d="M10 13a5 5 0 007 0l2-2a5 5 0 00-7-7l-1 1"/><path d="M14 11a5 5 0 00-7 0l-2 2a5 5 0 007 7l1-1"/></svg><span style="font-size:13px;color:#5b616f;font-family:'JetBrains Mono'">youtube.com/@your-channel</span></div>
+            <div class="me-btn" style="border:1px solid #262b34;background:#15181f;border-radius:11px;padding:0 20px;display:flex;align-items:center;font-size:12.5px;color:#c4cad3;cursor:pointer">Connect &amp; scrape</div>
+          </div>
+
+          <div style="display:flex;flex-direction:column;gap:14px">
+            <sc-for list="{{ myChannels }}" as="c" hint-placeholder-count="3">
+              <div class="me-card" style="border:1px solid #1d2129;border-radius:15px;padding:18px 20px;background:linear-gradient(165deg,#14171e,#0f1217);display:flex;gap:24px;align-items:center">
+                <!-- identity -->
+                <div style="display:flex;align-items:center;gap:13px;width:256px;flex:none">
+                  <div style="width:46px;height:46px;border-radius:12px;background:{{ c.avatar }};display:grid;place-items:center;font-family:'Space Grotesk';font-weight:700;font-size:15px;color:#0c0d11">{{ c.mono }}</div>
+                  <div style="min-width:0"><div style="font-weight:600;font-size:15px;color:#eef0f3">{{ c.name }}</div><div style="font-size:11px;color:#6a7180;font-family:'JetBrains Mono'">{{ c.handle }}</div><div style="font-size:10.5px;color:#5b616f;margin-top:3px">{{ c.views }} views · {{ c.subs }} subs · {{ c.total }} uploaded</div>
+                    <div style="display:inline-flex;align-items:center;gap:6px;margin-top:6px;border:1px solid #23272f;border-radius:7px;padding:3px 8px;background:#0e1116"><svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#6a7180" stroke-width="2"><path d="M7 7h10l-3-3M17 17H7l3 3"/></svg><span style="font-size:10px;color:#8a909c;font-family:'JetBrains Mono'">{{ c.source }}</span><span style="font-size:10px;color:{{ c.mapColor }};font-weight:600">{{ c.mapLabel }}</span></div>
+                  </div>
+                </div>
+                <!-- weekly goal -->
+                <div style="flex:1;min-width:0">
+                  <div style="display:flex;align-items:center;gap:7px;margin-bottom:7px"><span style="font-family:'JetBrains Mono';font-size:9.5px;letter-spacing:.5px;color:#6a7180">WEEKLY GOAL</span><span style="font-family:'Space Grotesk';font-weight:600;font-size:12.5px;color:#eef0f3">{{ c.weekLabel }}</span><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="#5b616f" stroke-width="2" style="cursor:pointer"><path d="M4 20h4l10-10-4-4L4 16z"/></svg></div>
+                  <div style="height:7px;border-radius:4px;background:#1a1e26;overflow:hidden"><div style="width:{{ c.weekPct }};height:100%;background:linear-gradient(90deg,var(--accent),var(--accent-deep))"></div></div>
+                </div>
+                <!-- monthly goal -->
+                <div style="flex:1;min-width:0">
+                  <div style="display:flex;align-items:center;gap:7px;margin-bottom:7px"><span style="font-family:'JetBrains Mono';font-size:9.5px;letter-spacing:.5px;color:#6a7180">MONTHLY GOAL</span><span style="font-family:'Space Grotesk';font-weight:600;font-size:12.5px;color:#eef0f3">{{ c.monthLabel }}</span></div>
+                  <div style="height:7px;border-radius:4px;background:#1a1e26;overflow:hidden"><div style="width:{{ c.monthPct }};height:100%;background:#3a4150"></div></div>
+                </div>
+                <!-- reminder -->
+                <div style="width:200px;flex:none;border-left:1px solid #1d2129;padding-left:20px">
+                  <div style="display:flex;align-items:center;gap:7px;margin-bottom:5px"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="{{ c.reminderColor }}" stroke-width="2"><rect x="3" y="4" width="18" height="17" rx="2.5"/><path d="M3 9h18M8 2v4M16 2v4"/></svg><span style="font-size:12px;font-weight:600;color:{{ c.reminderColor }}">{{ c.reminder }}</span></div>
+                  <div style="font-size:10.5px;color:#8a909c;line-height:1.4">{{ c.reminderNote }}</div>
+                  <div class="me-btn" style="margin-top:9px;border:1px solid #262b34;background:#15181f;border-radius:8px;padding:6px 10px;font-size:10.5px;color:#c4cad3;cursor:pointer;display:inline-flex;align-items:center;gap:5px">Edit goal &amp; reminder</div>
+                </div>
+              </div>
+            </sc-for>
+          </div>
+        </div>
+        </sc-if>
+
+        <!-- ============ DOWNLOAD ============ -->
+        <sc-if value="{{ isDownload }}" hint-placeholder-val="{{ false }}">
+        <div class="me-screen" style="padding:30px 34px 40px">
+          <div style="margin-bottom:22px"><div style="font-family:'JetBrains Mono';font-size:11px;letter-spacing:1px;color:var(--accent);margin-bottom:7px">STEP 01 — SOURCE</div><div style="font-family:'Space Grotesk';font-weight:600;font-size:25px;letter-spacing:-.5px;color:#f4f6f9">Download audio from a channel</div></div>
+
+          <div style="display:flex;gap:11px;margin-bottom:18px">
+            <div style="flex:1;display:flex;align-items:center;gap:10px;background:#12151b;border:1px solid #23272f;border-radius:11px;padding:12px 15px"><svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5b616f" stroke-width="2"><path d="M10 13a5 5 0 007 0l2-2a5 5 0 00-7-7l-1 1"/><path d="M14 11a5 5 0 00-7 0l-2 2a5 5 0 007 7l1-1"/></svg><span style="font-size:13px;color:#dde0e5;font-family:'JetBrains Mono'">youtube.com/@PowerWithinOfficial-q7d</span></div>
+            <div class="me-btn" style="display:flex;align-items:center;gap:8px;background:linear-gradient(180deg,var(--accent),var(--accent-deep));color:var(--accent-ink);font-weight:600;font-size:13px;padding:0 20px;border-radius:11px;cursor:pointer;box-shadow:0 4px 16px -4px var(--accent-glow)">Fetch</div>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:13px;border:1px solid #1d2129;border-radius:13px;padding:13px 16px;margin-bottom:18px;background:#12151b">
+            <div style="width:44px;height:44px;border-radius:11px;background:linear-gradient(135deg,#2d3340,#1a1e26);display:grid;place-items:center;font-family:'Space Grotesk';font-weight:700;color:#aab1bf">ME</div>
+            <div><div style="font-weight:600;font-size:14px;color:#eef0f3">Mental Empire</div><div style="font-size:11px;color:#6a7180;font-family:'JetBrains Mono'">455 subscribers · 25 videos</div></div>
+            <div style="flex:1"></div>
+            <div style="display:flex;gap:9px;align-items:center">
+              <div style="display:flex;background:#0e1116;border:1px solid #23272f;border-radius:9px;overflow:hidden;font-size:12px">
+                <div style="padding:8px 14px;background:var(--accent);color:var(--accent-ink);font-weight:600">Popular</div>
+                <div style="padding:8px 14px;color:#8a909c">Latest</div>
+                <div style="padding:8px 14px;color:#8a909c">Oldest</div>
+              </div>
+              <div style="display:flex;align-items:center;gap:7px;border:1px solid #23272f;border-radius:9px;padding:7px 12px;background:#0e1116"><span style="font-size:11px;color:#6a7180;font-family:'JetBrains Mono'">QTY</span><span style="font-family:'Space Grotesk';font-weight:600;color:#eef0f3">10</span></div>
+              <div style="display:flex;align-items:center;gap:7px;border:1px solid #23272f;border-radius:9px;padding:7px 12px;background:#0e1116;font-size:11.5px;color:#8a909c">mp3 · 192k ▾</div>
+            </div>
+          </div>
+
+          <div style="display:grid;grid-template-columns:repeat(4,1fr);gap:13px;margin-bottom:20px">
+            <sc-for list="{{ videos }}" as="v" hint-placeholder-count="8">
+              <div class="me-vid me-card" style="border:1px solid {{ v.cardBorder }};border-radius:12px;overflow:hidden;background:#12151b;cursor:pointer">
+                <div style="position:relative;height:92px;background:{{ v.thumb }}">
+                  <div class="me-vidsel" style="position:absolute;top:8px;left:8px;width:22px;height:22px;border-radius:6px;border:1.5px solid {{ v.selBorder }};background:{{ v.selBg }};display:grid;place-items:center;color:var(--accent-ink)">{{ v.check }}</div>
+                  <div style="position:absolute;bottom:7px;right:7px;font-family:'JetBrains Mono';font-size:10px;background:rgba(0,0,0,.7);color:#dde0e5;padding:2px 6px;border-radius:5px">{{ v.dur }}</div>
+                </div>
+                <div style="padding:11px 12px"><div style="font-size:12px;color:#dde0e5;line-height:1.35;height:33px;overflow:hidden">{{ v.title }}</div><div style="font-size:10.5px;color:#5b616f;font-family:'JetBrains Mono';margin-top:6px">{{ v.views }} views</div></div>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="display:flex;align-items:center;gap:14px;border-top:1px solid #1d2129;padding-top:18px">
+            <div style="font-size:13px;color:#8a909c"><b style="color:#eef0f3;font-family:'Space Grotesk'">2</b> videos selected · ~39 MB</div>
+            <div style="flex:1"></div>
+            <div class="me-btn" style="border:1px solid #262b34;background:#15181f;border-radius:10px;padding:11px 18px;font-size:12.5px;color:#c4cad3;cursor:pointer">Download mp3 only</div>
+            <div class="me-btn" style="display:flex;align-items:center;gap:8px;background:linear-gradient(180deg,var(--accent),var(--accent-deep));color:var(--accent-ink);font-weight:600;font-size:12.5px;padding:11px 20px;border-radius:10px;cursor:pointer;box-shadow:0 4px 16px -4px var(--accent-glow)">Add to queue<svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
+          </div>
+
+          <!-- history / unfinished -->
+          <div style="margin-top:30px">
+            <div style="display:flex;align-items:center;gap:10px;margin-bottom:13px">
+              <span style="font-family:'Space Grotesk';font-weight:600;font-size:15px;color:#e9ebef">Already downloaded</span>
+              <span style="font-size:11px;color:#6a7180">— resume unfinished, don't re-fetch</span>
+              <div style="flex:1"></div>
+              <div style="display:flex;background:#0e1116;border:1px solid #23272f;border-radius:8px;overflow:hidden;font-size:11px"><span style="padding:6px 11px;background:var(--accent-soft);color:#dde0e5;font-weight:600">Unfinished</span><span style="padding:6px 11px;color:#8a909c">All</span></div>
+            </div>
+            <div style="border:1px solid #1d2129;border-radius:14px;overflow:hidden;background:#12151b">
+              <div style="display:flex;padding:11px 16px;border-bottom:1px solid #1d2129;font-family:'JetBrains Mono';font-size:9.5px;letter-spacing:.6px;color:#5b616f"><div style="flex:2.4">CLIP</div><div style="width:120px">SOURCE</div><div style="width:130px">STAGE</div><div style="width:140px">PROGRESS</div><div style="width:80px;text-align:right">ACTION</div></div>
+              <sc-for list="{{ dlHistory }}" as="d" hint-placeholder-count="4">
+                <div class="me-row" style="display:flex;align-items:center;padding:12px 16px;border-bottom:1px solid #14171d">
+                  <div style="flex:2.4;display:flex;align-items:center;gap:12px;min-width:0"><div style="width:48px;height:27px;border-radius:6px;background:{{ d.thumb }};flex:none"></div><div style="min-width:0"><div style="font-size:12.5px;color:#dde0e5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ d.title }}</div><div style="font-size:10px;color:#5b616f;font-family:'JetBrains Mono'">{{ d.size }} · {{ d.when }}</div></div></div>
+                  <div style="width:120px;font-size:11px;color:#8a909c;font-family:'JetBrains Mono'">{{ d.channel }}</div>
+                  <div style="width:130px;font-size:11.5px;color:{{ d.stageColor }}">{{ d.stage }}</div>
+                  <div style="width:140px"><div style="height:6px;border-radius:4px;background:#1a1e26;overflow:hidden"><div style="width:{{ d.pct }};height:100%;background:{{ d.barColor }}"></div></div></div>
+                  <div style="width:80px;text-align:right"><span class="me-btn" style="display:inline-block;border:1px solid #262b34;background:#15181f;border-radius:7px;padding:6px 12px;font-size:11px;color:#dde0e5;cursor:pointer">{{ d.action }}</span></div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+        </sc-if>
+
+        <!-- ============ COMPOSE (audio + image + captions) ============ -->
+        <sc-if value="{{ isCompose }}" hint-placeholder-val="{{ false }}">
+        <div class="me-screen" style="padding:30px 34px 40px">
+          <div style="display:flex;align-items:flex-end;margin-bottom:18px"><div><div style="font-family:'JetBrains Mono';font-size:11px;letter-spacing:1px;color:var(--accent);margin-bottom:7px">STEP 02 — COMPOSE</div><div style="font-family:'Space Grotesk';font-weight:600;font-size:25px;letter-spacing:-.5px;color:#f4f6f9">Build the video</div></div><div style="flex:1"></div><div style="font-size:12px;color:#6a7180">Gaslighting Explained · 20:05</div></div>
+          <!-- compose tabs -->
+          <div style="display:flex;gap:9px;margin-bottom:22px">
+            <div onClick="{{ composeTabs.media.go }}" class="me-btn" style="display:flex;align-items:center;gap:8px;border:{{ composeTabs.media.border }};background:{{ composeTabs.media.bg }};color:{{ composeTabs.media.color }};border-radius:10px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2.5"/><circle cx="8.5" cy="10" r="1.7"/><path d="M4 17l5-4 4 3 2-2 5 4"/></svg>Audio + Image</div>
+            <div onClick="{{ composeTabs.captions.go }}" class="me-btn" style="display:flex;align-items:center;gap:8px;border:{{ composeTabs.captions.border }};background:{{ composeTabs.captions.bg }};color:{{ composeTabs.captions.color }};border-radius:10px;padding:9px 16px;font-size:13px;font-weight:600;cursor:pointer"><svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8"><rect x="3" y="5" width="18" height="14" rx="2.5"/><path d="M7 14h4"/><path d="M14 14h3"/></svg>Captions</div>
+            <div style="flex:1"></div>
+            <div class="me-btn" style="display:flex;align-items:center;gap:7px;border:1px solid #262b34;background:#15181f;border-radius:10px;padding:9px 16px;font-size:12.5px;color:#c4cad3;cursor:pointer">Save &amp; send to render<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><path d="M5 12h14M13 6l6 6-6 6"/></svg></div>
+          </div>
+
+          <!-- TAB: MEDIA -->
+          <sc-if value="{{ composeMedia }}" hint-placeholder-val="{{ true }}">
+            <div style="display:flex;justify-content:flex-end;margin-bottom:16px">
+              <div style="display:flex;background:#0e1116;border:1px solid #23272f;border-radius:10px;overflow:hidden;font-size:12.5px">
+                <div style="padding:9px 16px;background:var(--accent);color:var(--accent-ink);font-weight:600">Sequence</div>
+                <div style="padding:9px 16px;color:#8a909c">Random pool</div>
+              </div>
+            </div>
+            <div style="display:flex;gap:20px;margin-bottom:20px">
+            <div style="flex:none;width:520px">
+              <div style="border:1px solid #1d2129;border-radius:14px;aspect-ratio:16/9;background:linear-gradient(135deg,#23262e,#15171d);position:relative;overflow:hidden;display:grid;place-items:center">
+                <div style="position:absolute;left:9%;bottom:0;width:36%;height:88%;background:linear-gradient(180deg,#3a4150,#23262e);border-radius:80px 80px 0 0"></div>
+                <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.45))"></div>
+                <div style="position:absolute;top:14px;left:14px;border:1px dashed rgba(255,255,255,.3);border-radius:7px;padding:5px 9px;font-size:10px;color:#cdd2da;font-family:'JetBrains Mono'">⤢ Ken Burns</div>
+                <div style="position:absolute;bottom:12px;left:14px;right:14px;height:6px;border-radius:4px;background:rgba(255,255,255,.18);overflow:hidden"><div style="width:35%;height:100%;background:var(--accent)"></div></div>
+              </div>
+              <div style="display:flex;gap:8px;margin-top:12px">
+                <div class="me-btn" style="display:flex;align-items:center;gap:7px;border:1px solid #262b34;background:#15181f;border-radius:9px;padding:8px 13px;font-size:11.5px;color:#c4cad3;cursor:pointer"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M21 12a9 9 0 11-3-6.7M21 4v5h-5"/></svg>Re-roll</div>
+                <div style="border:1px solid #262b34;background:#15181f;border-radius:9px;padding:8px 13px;font-size:11.5px;color:#8a909c">Crossfade ▾</div>
+                <div style="border:1px solid #262b34;background:#15181f;border-radius:9px;padding:8px 13px;font-size:11.5px;color:#8a909c;font-family:'JetBrains Mono'">seed 4821</div>
+              </div>
+            </div>
+            <div style="flex:1">
+              <div style="font-family:'JetBrains Mono';font-size:10px;letter-spacing:.6px;color:#6a7180;margin-bottom:10px">IMAGES · EVEN AUTO-SPLIT</div>
+              <div style="display:flex;flex-direction:column;gap:9px">
+                <sc-for list="{{ imageList }}" as="im" hint-placeholder-count="3">
+                  <div class="me-row" style="display:flex;align-items:center;gap:12px;border:1px solid #1d2129;border-radius:11px;padding:10px;background:#12151b">
+                    <span style="color:#444b57;cursor:grab">⠿</span>
+                    <div style="width:58px;height:33px;border-radius:6px;background:{{ im.thumb }};flex:none"></div>
+                    <div style="flex:1;font-size:12.5px;color:#dde0e5;font-family:'JetBrains Mono'">{{ im.name }}</div>
+                    <div style="font-size:11px;color:#6a7180;font-family:'JetBrains Mono'">{{ im.range }}</div>
+                    <span style="color:#5b616f;cursor:pointer">✕</span>
+                  </div>
+                </sc-for>
+                <div style="border:1.5px dashed #262b34;border-radius:11px;padding:16px;text-align:center;font-size:12px;color:#6a7180;background:#0e1116">＋ Drop images here</div>
+              </div>
+            </div>
+          </div>
+
+          <div style="border:1px solid #1d2129;border-radius:13px;padding:15px 17px;background:#12151b">
+            <div style="display:flex;align-items:center;gap:12px;margin-bottom:10px"><span style="font-family:'JetBrains Mono';font-size:10px;color:#6a7180;width:48px">AUDIO</span><div style="flex:1;height:30px;border-radius:7px;background:repeating-linear-gradient(90deg,#2b303b,#2b303b 2px,#1a1e26 2px,#1a1e26 5px)"></div><span style="font-family:'JetBrains Mono';font-size:10px;color:#6a7180">20:05</span></div>
+            <div style="display:flex;align-items:center;gap:12px"><span style="font-family:'JetBrains Mono';font-size:10px;color:#6a7180;width:48px">IMAGE</span><div style="flex:1;display:flex;gap:4px;height:24px"><div style="flex:1;border-radius:6px;background:var(--accent);opacity:.85;display:grid;place-items:center;font-size:10px;color:var(--accent-ink);font-weight:600">img 1</div><div style="flex:1;border-radius:6px;background:#2b303b;display:grid;place-items:center;font-size:10px;color:#aab0bb">img 2</div><div style="flex:1;border-radius:6px;background:#2b303b;display:grid;place-items:center;font-size:10px;color:#aab0bb">img 3</div></div></div>
+          </div>
+          </sc-if>
+
+          <!-- TAB: CAPTIONS -->
+          <sc-if value="{{ composeCaptions }}" hint-placeholder-val="{{ false }}">
+          <div style="display:flex;gap:18px">
+            <div style="flex:none;width:284px;display:flex;flex-direction:column;gap:16px">
+              <div style="border:1px solid #1d2129;border-radius:14px;padding:15px;background:#12151b">
+                <div style="font-family:'JetBrains Mono';font-size:9.5px;letter-spacing:.6px;color:#5b616f;margin-bottom:11px">PRESET</div>
+                <div style="display:grid;grid-template-columns:1fr 1fr 1fr;gap:8px">
+                  <sc-for list="{{ capPresets }}" as="cp" hint-placeholder-count="6">
+                    <div class="me-card" style="border:{{ cp.border }};background:{{ cp.bg }};border-radius:9px;padding:11px 5px;text-align:center;cursor:pointer"><div style="font-family:'Space Grotesk';font-weight:600;font-size:12px;color:{{ cp.text }}">{{ cp.name }}</div></div>
+                  </sc-for>
+                </div>
+              </div>
+              <div style="border:1px solid #1d2129;border-radius:14px;padding:15px;background:#12151b;display:flex;flex-direction:column;gap:14px">
+                <div><div style="font-size:10.5px;color:#6a7180;margin-bottom:6px">Font</div><div style="border:1px solid #23272f;border-radius:8px;padding:9px;font-size:13px;color:#dde0e5;background:#0e1116;text-align:center;font-weight:600">Montserrat ▾</div></div>
+                <div><div style="font-size:10.5px;color:#6a7180;margin-bottom:7px">Animation</div><div style="display:flex;flex-wrap:wrap;gap:6px;font-size:10.5px"><span style="border:1px solid var(--accent);color:var(--accent);border-radius:7px;padding:5px 9px;background:var(--accent-soft)">Pop-in</span><span style="border:1px solid #23272f;color:#8a909c;border-radius:7px;padding:5px 9px">Bounce</span><span style="border:1px solid #23272f;color:#8a909c;border-radius:7px;padding:5px 9px">Slide</span><span style="border:1px solid #23272f;color:#8a909c;border-radius:7px;padding:5px 9px">Type</span></div></div>
+                <div style="display:flex;gap:9px">
+                  <div style="flex:1;border:1px solid #1d2129;border-radius:9px;padding:9px;background:#0e1116"><div style="display:flex;align-items:center;gap:5px"><span style="font-size:11px;font-weight:600;color:#dde0e5">Keywords</span><span style="margin-left:auto;font-size:8.5px;font-weight:700;background:#1f9c6b;color:#fff;border-radius:9px;padding:1px 6px">ON</span></div><div style="font-size:9px;color:#6a7180;margin-top:4px">Auto-highlight</div></div>
+                  <div style="flex:1;border:1px solid #1d2129;border-radius:9px;padding:9px;background:#0e1116"><div style="display:flex;align-items:center;gap:5px"><span style="font-size:11px;font-weight:600;color:#dde0e5">Punch</span><span style="margin-left:auto;font-size:8.5px;font-weight:700;background:#1f9c6b;color:#fff;border-radius:9px;padding:1px 6px">ON</span></div><div style="font-size:9px;color:#6a7180;margin-top:4px">Zoom on hit</div></div>
+                </div>
+              </div>
+            </div>
+            <div style="flex:none;width:210px">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:10px"><span style="font-family:'JetBrains Mono';font-size:10px;color:#6a7180">PREVIEW</span><span style="font-family:'JetBrains Mono';font-size:9.5px;background:var(--accent-soft);color:var(--accent);border:1px solid var(--accent);border-radius:10px;padding:2px 8px">16:9</span></div>
+              <div style="width:210px;border:1px solid #1d2129;border-radius:12px;aspect-ratio:16/9;background:linear-gradient(135deg,#23262e,#15171d);position:relative;display:flex;align-items:flex-end;justify-content:center;padding-bottom:18px;overflow:hidden">
+                <div style="position:absolute;left:14%;bottom:0;width:34%;height:80%;background:linear-gradient(180deg,#3a4150,#23262e);border-radius:50px 50px 0 0"></div>
+                <div style="position:relative;text-align:center;font-family:'Anton';font-size:19px;line-height:1.05;color:#fff;text-shadow:2px 2px 0 #000">YOU ARE <span style="color:#1f9c6b">NOT</span> CRAZY</div>
+              </div>
+              <div style="font-size:10px;color:#6a7180;text-align:center;margin-top:9px;line-height:1.4">Keyword pops green + scale (Hormozi)</div>
+            </div>
+            <div style="flex:1;min-width:0">
+              <div style="display:flex;align-items:center;gap:10px;margin-bottom:10px"><span style="font-family:'JetBrains Mono';font-size:10px;color:#6a7180">TRANSCRIPT · WORD-LEVEL</span><div style="flex:1"></div><div class="me-btn" style="border:1px solid #262b34;background:#15181f;border-radius:8px;padding:6px 11px;font-size:11px;color:#c4cad3;cursor:pointer">Re-transcribe ↻</div></div>
+              <div style="border:1px solid #1d2129;border-radius:12px;padding:16px;background:#12151b;font-size:14px;line-height:2.1;color:#cdd2da;height:178px;overflow:hidden">
+                <span style="font-family:'JetBrains Mono';font-size:10px;color:#4f5662">0:02</span> You are <span style="background:#1f9c6b;color:#fff;border-radius:4px;padding:0 5px;font-weight:600">not</span> crazy.<br>
+                <span style="font-family:'JetBrains Mono';font-size:10px;color:#4f5662">0:04</span> What you're <span style="border-bottom:2px solid var(--accent)">feeling</span> is real.<br>
+                <span style="font-family:'JetBrains Mono';font-size:10px;color:#4f5662">0:07</span> Gaslighting makes you doubt…<br>
+                <span style="color:#4f5662;font-size:12px">— click to fix · drag to retime · ★ to emphasize —</span>
+              </div>
+              <div style="border:1px solid #1d2129;border-radius:12px;padding:14px;background:#12151b;margin-top:14px">
+                <div style="font-family:'JetBrains Mono';font-size:9.5px;color:#5b616f;margin-bottom:10px">WORD TIMELINE</div>
+                <div style="display:flex;gap:5px;flex-wrap:wrap;align-items:center">
+                  <span style="border:1px solid #2c303b;border-radius:6px;padding:5px 9px;font-size:11.5px;color:#aab0bb;background:#0e1116">You</span>
+                  <span style="border:1px solid #2c303b;border-radius:6px;padding:5px 9px;font-size:11.5px;color:#aab0bb;background:#0e1116">are</span>
+                  <span style="border:1px solid var(--accent);border-radius:6px;padding:5px 9px;font-size:11.5px;color:var(--accent-ink);background:var(--accent);font-weight:600">not ★</span>
+                  <span style="border:1px solid #2c303b;border-radius:6px;padding:5px 9px;font-size:11.5px;color:#aab0bb;background:#0e1116">crazy</span>
+                  <span style="width:1px;height:18px;background:#23272f;margin:0 3px"></span>
+                  <span style="border:1px solid #2c303b;border-radius:6px;padding:5px 9px;font-size:11.5px;color:#aab0bb;background:#0e1116">what</span>
+                  <span style="border:1px solid #2c303b;border-radius:6px;padding:5px 9px;font-size:11.5px;color:#aab0bb;background:#0e1116">you're</span>
+                  <span style="border:1px solid #1f9c6b;border-radius:6px;padding:5px 9px;font-size:11.5px;color:#fff;background:#1f9c6b;font-weight:600">feeling ★</span>
+                  <span style="border:1px solid #2c303b;border-radius:6px;padding:5px 9px;font-size:11.5px;color:#aab0bb;background:#0e1116">is</span>
+                  <span style="border:1px solid #2c303b;border-radius:6px;padding:5px 9px;font-size:11.5px;color:#aab0bb;background:#0e1116">real</span>
+                </div>
+              </div>
+            </div>
+          </div>
+          </sc-if>
+        </div>
+        </sc-if>
+
+        <!-- ============ THUMBNAILS ============ -->
+        <sc-if value="{{ isThumb }}" hint-placeholder-val="{{ false }}">
+        <div class="me-screen" style="padding:30px 34px 40px">
+          <div style="display:flex;align-items:flex-end;margin-bottom:22px"><div><div style="font-family:'JetBrains Mono';font-size:11px;letter-spacing:1px;color:var(--accent);margin-bottom:7px">STEP 03 — THUMBNAIL</div><div style="font-family:'Space Grotesk';font-weight:600;font-size:25px;letter-spacing:-.5px;color:#f4f6f9">Thumbnail studio</div></div><div style="flex:1"></div><div style="font-size:12px;color:#6a7180">Template <b style="color:#dde0e5">Full Bleed</b> · subject &amp; style locked</div></div>
+
+          <!-- studio toolbar -->
+          <div style="display:flex;align-items:center;gap:8px;margin-bottom:16px;flex-wrap:wrap">
+            <div style="display:flex;background:#0e1116;border:1px solid #23272f;border-radius:9px;overflow:hidden;font-size:11.5px">
+              <div style="padding:8px 13px;background:var(--accent);color:var(--accent-ink);font-weight:600">Cutout subject</div>
+              <div style="padding:8px 13px;color:#8a909c">Image w/ subject</div>
+            </div>
+            <div style="width:1px;height:22px;background:#23272f;margin:0 3px"></div>
+            <div class="me-btn" style="display:flex;align-items:center;gap:6px;border:1px solid #262b34;background:#15181f;border-radius:9px;padding:8px 12px;font-size:11.5px;color:#dde0e5;cursor:pointer"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M4 7V5h16v2M9 20h6M12 5v15"/></svg>Add text</div>
+            <div class="me-btn" style="display:flex;align-items:center;gap:6px;border:1px solid #262b34;background:#15181f;border-radius:9px;padding:8px 12px;font-size:11.5px;color:#dde0e5;cursor:pointer"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><rect x="4" y="4" width="16" height="16" rx="2"/></svg>Add shape</div>
+            <div class="me-btn" style="display:flex;align-items:center;gap:6px;border:1px solid var(--accent);background:var(--accent-soft);border-radius:9px;padding:8px 13px;font-size:11.5px;color:var(--accent);font-weight:600;cursor:pointer"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2z"/></svg>Auto-arrange type</div>
+            <div style="flex:1"></div>
+            <div class="me-btn" style="display:flex;align-items:center;gap:6px;border:1px solid #262b34;background:#15181f;border-radius:9px;padding:8px 13px;font-size:11.5px;color:#c4cad3;cursor:pointer"><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M5 3h11l3 3v15H5z"/><path d="M8 3v6h7"/></svg>Save as profile template</div>
+          </div>
+
+          <div style="display:flex;gap:18px;margin-bottom:22px">
+            <!-- template rail -->
+            <div style="flex:none;width:120px;display:flex;flex-direction:column;gap:10px">
+              <div style="font-family:'JetBrains Mono';font-size:9.5px;letter-spacing:.6px;color:#5b616f;margin-bottom:1px">PROFILE TEMPLATES</div>
+              <sc-for list="{{ thumbTemplates }}" as="t" hint-placeholder-count="4">
+                <div class="me-card" style="border:{{ t.border }};background:#12151b;border-radius:9px;padding:6px;cursor:pointer">
+                  <div style="aspect-ratio:16/9;border-radius:5px;background:{{ t.preview }};display:flex;align-items:center;justify-content:center"><span style="width:50%;height:4px;border-radius:2px;background:var(--accent)"></span></div>
+                  <div style="font-size:9.5px;text-align:center;margin-top:5px;color:{{ t.labelColor }};font-weight:600">{{ t.name }}</div>
+                </div>
+              </sc-for>
+              <div class="me-btn" style="border:1.5px dashed #262b34;border-radius:9px;padding:10px 6px;text-align:center;font-size:9.5px;color:#6a7180;background:#0e1116;cursor:pointer">＋ Save<br>current</div>
+            </div>
+
+            <!-- canvas -->
+            <div style="flex:1">
+              <div style="border:1px solid #1d2129;border-radius:14px;aspect-ratio:16/9;background:#0c0d11;position:relative;overflow:hidden">
+                <div style="position:absolute;inset:0;background:linear-gradient(135deg,#2a2540,#46243a)"></div>
+                <div style="position:absolute;left:8%;bottom:0;width:38%;height:90%;background:linear-gradient(180deg,#3a4150,#23262e);border:2px solid #fff;border-bottom:none;border-radius:70px 70px 0 0;box-shadow:0 0 30px rgba(0,0,0,.6)"></div>
+                <div style="position:absolute;inset:0;background:linear-gradient(180deg,rgba(0,0,0,.05),rgba(0,0,0,.6))"></div>
+                <div style="position:absolute;inset:0;display:flex;flex-direction:column;justify-content:flex-end;padding:32px 38px">
+                  <div style="font-family:'Anton';font-size:52px;line-height:.95;color:#fff;text-shadow:3px 3px 0 rgba(0,0,0,.55);letter-spacing:.5px">EVERYTHING<br>WAS <span style="background:#fff;color:#1a1a1a;padding:0 10px">FAKE</span></div>
+                </div>
+                <div style="position:absolute;top:18px;right:20px;width:70px;height:70px;border:6px solid #e8403a;border-radius:50%;transform:rotate(-8deg)"></div>
+                <div style="position:absolute;inset:6%;border:1px dashed rgba(255,255,255,.18);border-radius:8px;pointer-events:none"></div>
+              </div>
+              <div style="font-size:11.5px;color:#6a7180;margin-top:11px;line-height:1.5">Drag any layer on the canvas. <span style="color:var(--accent)">Auto-arrange type</span> lays out multi-line headlines in the most eye-catching way. Subject, background &amp; style save into the profile template so every future video reuses them. Dashed = title-safe.</div>
+            </div>
+
+            <!-- inspector -->
+            <div style="flex:none;width:300px;border:1px solid #1d2129;border-radius:14px;background:#12151b;overflow:hidden;display:flex;flex-direction:column">
+              <!-- layers -->
+              <div style="padding:14px 14px 12px;border-bottom:1px solid #1d2129">
+                <div style="display:flex;align-items:center;margin-bottom:10px"><span style="font-family:'JetBrains Mono';font-size:9.5px;letter-spacing:.6px;color:#6a7180">LAYERS</span><div style="flex:1"></div><span class="me-btn" style="border:1px solid #262b34;border-radius:6px;width:22px;height:22px;display:grid;place-items:center;font-size:13px;color:#c4cad3;cursor:pointer;background:#15181f">+</span></div>
+                <div style="display:flex;flex-direction:column;gap:5px">
+                  <div style="display:flex;align-items:center;gap:8px;padding:7px 9px;border:1px solid var(--accent);border-radius:8px;background:var(--accent-soft);font-size:11.5px;color:#eef0f3"><span style="font-weight:700">T</span>Headline<span style="flex:1"></span><span style="color:#8a909c;cursor:pointer">⧉</span><span style="color:#8a909c;cursor:pointer">👁</span></div>
+                  <div style="display:flex;align-items:center;gap:8px;padding:7px 9px;border:1px solid #1d2129;border-radius:8px;font-size:11.5px;color:#aab0bb"><span style="font-weight:700">T</span>Subline<span style="flex:1"></span><span style="color:#5b616f;cursor:pointer">⧉</span><span style="color:#5b616f;cursor:pointer">👁</span></div>
+                  <div style="display:flex;align-items:center;gap:8px;padding:7px 9px;border:1px solid #1d2129;border-radius:8px;font-size:11.5px;color:#aab0bb"><span>◯</span>Badge (shape)<span style="flex:1"></span><span style="color:#5b616f;cursor:pointer">⧉</span><span style="color:#5b616f;cursor:pointer">👁</span></div>
+                  <div style="display:flex;align-items:center;gap:8px;padding:7px 9px;border:1px solid #1d2129;border-radius:8px;font-size:11.5px;color:#aab0bb"><span>▦</span>Subject<span style="flex:1"></span><span style="color:#5b616f;cursor:pointer">⧉</span><span style="cursor:pointer">🔒</span></div>
+                  <div style="display:flex;align-items:center;gap:8px;padding:7px 9px;border:1px solid #1d2129;border-radius:8px;font-size:11.5px;color:#aab0bb"><span>▒</span>Background<span style="flex:1"></span><span style="cursor:pointer">🔒</span></div>
+                </div>
+              </div>
+
+              <!-- selected text layer editor -->
+              <div style="padding:14px;display:flex;flex-direction:column;gap:14px;overflow-y:auto">
+                <div style="font-family:'JetBrains Mono';font-size:9.5px;letter-spacing:.6px;color:var(--accent)">SELECTED · HEADLINE</div>
+                <div><div style="font-size:10.5px;color:#6a7180;margin-bottom:6px">Text</div><div style="border:1px solid #23272f;border-radius:8px;padding:9px;font-size:12px;color:#dde0e5;line-height:1.4;background:#0e1116">EVERYTHING WAS FAKE</div></div>
+
+                <!-- per-line size -->
+                <div>
+                  <div style="font-size:10.5px;color:#6a7180;margin-bottom:8px">Per-line size</div>
+                  <div style="display:flex;align-items:center;gap:9px;margin-bottom:8px"><span style="font-size:10.5px;color:#8a909c;width:42px">Line 1</span><div style="flex:1;height:5px;border-radius:3px;background:#1a1e26;position:relative"><div style="position:absolute;left:0;width:55%;height:100%;background:var(--accent);border-radius:3px"></div><div style="position:absolute;left:55%;top:-5px;width:14px;height:14px;border-radius:50%;background:#fff"></div></div><span style="font-family:'JetBrains Mono';font-size:10px;color:#8a909c;width:30px">52</span></div>
+                  <div style="display:flex;align-items:center;gap:9px"><span style="font-size:10.5px;color:#8a909c;width:42px">Line 2</span><div style="flex:1;height:5px;border-radius:3px;background:#1a1e26;position:relative"><div style="position:absolute;left:0;width:78%;height:100%;background:var(--accent);border-radius:3px"></div><div style="position:absolute;left:78%;top:-5px;width:14px;height:14px;border-radius:50%;background:#fff"></div></div><span style="font-family:'JetBrains Mono';font-size:10px;color:#8a909c;width:30px">72</span></div>
+                </div>
+
+                <!-- highlight -->
+                <div>
+                  <div style="font-size:10.5px;color:#6a7180;margin-bottom:7px">Highlighted word</div>
+                  <div style="display:flex;flex-wrap:wrap;gap:6px;font-size:11px;margin-bottom:10px"><span style="background:#fff;color:#1a1a1a;border-radius:13px;padding:3px 10px;font-weight:600">FAKE ✕</span><span style="border:1px dashed #2c303b;color:#6a7180;border-radius:13px;padding:3px 10px">+ add</span></div>
+                  <div style="display:flex;align-items:center;gap:8px;margin-bottom:9px"><span style="font-size:10.5px;color:#8a909c;flex:1">Square background</span><div style="width:34px;height:19px;border-radius:11px;background:var(--accent);position:relative;cursor:pointer"><span style="position:absolute;top:2px;right:2px;width:15px;height:15px;border-radius:50%;background:#fff"></span></div></div>
+                  <div style="display:flex;align-items:center;gap:7px"><span style="font-size:10.5px;color:#8a909c">Color</span><span style="width:22px;height:22px;border-radius:6px;background:#fff;border:2px solid var(--accent)"></span><span style="width:22px;height:22px;border-radius:6px;background:#f2c200;border:1px solid #2c303b"></span><span style="width:22px;height:22px;border-radius:6px;background:#e8403a;border:1px solid #2c303b"></span><span style="width:22px;height:22px;border-radius:6px;background:#19c3d6;border:1px solid #2c303b"></span></div>
+                </div>
+
+                <div><div style="font-size:10.5px;color:#6a7180;margin-bottom:7px">Text effects</div><div style="display:flex;flex-wrap:wrap;gap:6px;font-size:11px"><span style="border:1px solid var(--accent);color:var(--accent);border-radius:7px;padding:5px 10px;background:var(--accent-soft)">Shadow</span><span style="border:1px solid #23272f;color:#8a909c;border-radius:7px;padding:5px 10px">Stroke</span><span style="border:1px solid #23272f;color:#8a909c;border-radius:7px;padding:5px 10px">Glow</span><span style="border:1px solid var(--accent);color:var(--accent);border-radius:7px;padding:5px 10px;background:var(--accent-soft)">Caps</span></div></div>
+
+                <!-- subject -->
+                <div style="border-top:1px solid #1d2129;padding-top:13px">
+                  <div style="font-size:10.5px;color:#6a7180;margin-bottom:8px">Subject layer</div>
+                  <div style="display:flex;flex-wrap:wrap;gap:6px;font-size:11px;margin-bottom:9px"><span style="border:1px solid var(--accent);color:var(--accent);border-radius:7px;padding:5px 10px;background:var(--accent-soft)">Cutout</span><span style="border:1px solid var(--accent);color:var(--accent);border-radius:7px;padding:5px 10px;background:var(--accent-soft)">Outline</span><span style="border:1px solid var(--accent);color:var(--accent);border-radius:7px;padding:5px 10px;background:var(--accent-soft)">Shadow</span><span style="border:1px solid #23272f;color:#8a909c;border-radius:7px;padding:5px 10px">Glow</span></div>
+                  <div class="me-btn" style="border:1px solid #262b34;border-radius:8px;padding:8px;text-align:center;font-size:11px;color:#c4cad3;background:#0e1116;cursor:pointer">⇪ Replace subject · .PSD / PNG</div>
+                </div>
+
+                <!-- background -->
+                <div style="border-top:1px solid #1d2129;padding-top:13px">
+                  <div style="font-size:10.5px;color:#6a7180;margin-bottom:8px">Background</div>
+                  <div style="display:flex;align-items:center;gap:7px;margin-bottom:9px"><span style="width:22px;height:22px;border-radius:6px;background:linear-gradient(135deg,#2a2540,#46243a);border:2px solid var(--accent)"></span><span style="width:22px;height:22px;border-radius:6px;background:#1a1a1a;border:1px solid #2c303b"></span><span style="width:22px;height:22px;border-radius:6px;background:#0f3a32;border:1px solid #2c303b"></span><span style="width:22px;height:22px;border-radius:6px;background:#23304a;border:1px solid #2c303b"></span></div>
+                  <div class="me-btn" style="border:1px solid #262b34;border-radius:8px;padding:8px;text-align:center;font-size:11px;color:#c4cad3;background:#0e1116;cursor:pointer">⇪ Use image background</div>
+                </div>
+              </div>
+            </div>
+          </div>
+
+          <!-- batch strip -->
+          <div style="border:1px solid #1d2129;border-radius:14px;padding:18px;background:#12151b">
+            <div style="display:flex;align-items:center;margin-bottom:14px"><span style="font-family:'Space Grotesk';font-weight:600;font-size:15px;color:#e9ebef">Batch generate</span><span style="font-size:12px;color:#6a7180;margin-left:10px">same template · 6 titles</span><div style="flex:1"></div><div class="me-btn" style="border:1px solid #262b34;background:#15181f;border-radius:9px;padding:8px 13px;font-size:11.5px;color:#c4cad3;margin-right:9px;cursor:pointer">⇪ Paste titles</div><div class="me-btn" style="background:linear-gradient(180deg,var(--accent),var(--accent-deep));color:var(--accent-ink);font-weight:600;font-size:11.5px;padding:8px 16px;border-radius:9px;cursor:pointer">Generate all →</div></div>
+            <div style="display:grid;grid-template-columns:repeat(6,1fr);gap:10px">
+              <sc-for list="{{ batchTitles }}" as="bt" hint-placeholder-count="6">
+                <div class="me-card" style="border-radius:9px;overflow:hidden;aspect-ratio:16/9;background:linear-gradient(135deg,#2a2540,#46243a);position:relative;cursor:pointer">
+                  <div style="position:absolute;inset:0;display:flex;flex-direction:column;justify-content:flex-end;padding:9px"><div style="font-family:'Anton';font-size:13px;line-height:.9;color:#fff;text-shadow:1px 1px 0 #000">{{ bt.a }} <span style="background:#fff;color:#1a1a1a;padding:0 3px">{{ bt.b }}</span></div></div>
+                </div>
+              </sc-for>
+            </div>
+          </div>
+        </div>
+        </sc-if>
+
+        <!-- ============ RENDER QUEUE ============ -->
+        <sc-if value="{{ isRender }}" hint-placeholder-val="{{ false }}">
+        <div class="me-screen" style="padding:30px 34px 40px">
+          <div style="display:flex;align-items:flex-end;margin-bottom:22px"><div><div style="font-family:'JetBrains Mono';font-size:11px;letter-spacing:1px;color:var(--accent);margin-bottom:7px">STEP 05 — RENDER</div><div style="font-family:'Space Grotesk';font-weight:600;font-size:25px;letter-spacing:-.5px;color:#f4f6f9">Render queue</div></div><div style="flex:1"></div><div style="display:flex;align-items:center;gap:8px;font-size:12px;color:#8a909c"><span style="width:7px;height:7px;border-radius:50%;background:var(--accent);animation:mePulse 1.6s infinite"></span>2 of 4 processing · 2 parallel</div></div>
+
+          <div style="border:1px solid #1d2129;border-radius:14px;overflow:hidden;background:#12151b;margin-bottom:20px">
+            <div style="display:flex;padding:12px 18px;border-bottom:1px solid #1d2129;font-family:'JetBrains Mono';font-size:9.5px;letter-spacing:.6px;color:#5b616f"><div style="flex:2.2">VIDEO</div><div style="width:70px;text-align:center">MP3</div><div style="width:74px;text-align:center">IMAGES</div><div style="width:70px;text-align:center">THUMB</div><div style="width:80px;text-align:center">CAPTIONS</div><div style="width:170px">STATUS</div></div>
+            <sc-for list="{{ queue }}" as="q" hint-placeholder-count="4">
+              <div class="me-row" style="display:flex;align-items:center;padding:14px 18px;border-bottom:1px solid #14171d">
+                <div style="flex:2.2;display:flex;align-items:center;gap:12px;min-width:0"><div style="width:50px;height:28px;border-radius:6px;background:{{ q.thumb }};flex:none"></div><div style="min-width:0"><div style="font-size:13px;color:#dde0e5;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">{{ q.title }}</div><div style="font-size:10.5px;color:#5b616f;font-family:'JetBrains Mono'">{{ q.channel }}</div></div></div>
+                <div style="width:70px;text-align:center;color:{{ q.mp3c }}">{{ q.mp3 }}</div>
+                <div style="width:74px;text-align:center;font-size:12px;color:#aab0bb;font-family:'JetBrains Mono'">{{ q.images }}</div>
+                <div style="width:70px;text-align:center;color:{{ q.thumbc }}">{{ q.thumbi }}</div>
+                <div style="width:80px;text-align:center;color:{{ q.capc }}">{{ q.cap }}</div>
+                <div style="width:170px"><div style="display:flex;align-items:center;gap:9px"><div style="flex:1;height:6px;border-radius:4px;background:#1a1e26;overflow:hidden"><div style="width:{{ q.pct }};height:100%;background:{{ q.barColor }}"></div></div><span style="font-size:10.5px;color:{{ q.statusColor }};font-family:'JetBrains Mono';width:54px">{{ q.statusText }}</span></div></div>
+              </div>
+            </sc-for>
+          </div>
+
+          <div style="display:flex;align-items:flex-end;gap:16px;border-top:1px solid #1d2129;padding-top:20px">
+            <div style="flex:1;max-width:430px"><div style="font-family:'JetBrains Mono';font-size:9.5px;letter-spacing:.6px;color:#5b616f;margin-bottom:7px">OUTPUT FOLDER</div><div style="display:flex;gap:8px"><div style="flex:1;border:1px solid #23272f;border-radius:9px;padding:10px 13px;font-size:12px;color:#aab0bb;font-family:'JetBrains Mono';background:#0e1116;white-space:nowrap;overflow:hidden;text-overflow:ellipsis">/Desktop/MentalEmpire_out</div><div class="me-btn" style="border:1px solid #262b34;background:#15181f;border-radius:9px;padding:10px 14px;font-size:12px;color:#c4cad3;cursor:pointer">Browse</div></div></div>
+            <div><div style="font-family:'JetBrains Mono';font-size:9.5px;letter-spacing:.6px;color:#5b616f;margin-bottom:7px">FORMAT</div><div style="border:1px solid #23272f;border-radius:9px;padding:10px 14px;font-size:12px;color:#dde0e5;background:#0e1116">mp4 · 1080p ▾</div></div>
+            <div style="flex:1"></div>
+            <div class="me-btn" style="display:flex;align-items:center;gap:9px;background:linear-gradient(180deg,var(--accent),var(--accent-deep));color:var(--accent-ink);font-weight:600;font-size:13.5px;padding:13px 26px;border-radius:11px;cursor:pointer;box-shadow:0 6px 20px -5px var(--accent-glow)"><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M5 4l14 8-14 8z"/></svg>Render all (4)</div>
+          </div>
+        </div>
+        </sc-if>
+
+        <!-- ============ PROFILES ============ -->
+        <sc-if value="{{ isProfiles }}" hint-placeholder-val="{{ false }}">
+        <div class="me-screen" style="padding:30px 34px 40px">
+          <div style="margin-bottom:22px"><div style="font-family:'JetBrains Mono';font-size:11px;letter-spacing:1px;color:var(--accent);margin-bottom:7px">AUTOMATION</div><div style="font-family:'Space Grotesk';font-weight:600;font-size:25px;letter-spacing:-.5px;color:#f4f6f9">Channel profiles</div><div style="font-size:13px;color:#8a909c;margin-top:8px">One profile bundles the whole pipeline. <b style="color:#cdd2da">Run → quick-edit 1–2 videos &amp; thumbnails → push to render queue</b>, then do the next profile. Auto-watch runs it hands-free when a source posts.</div></div>
+
+          <div style="display:grid;grid-template-columns:repeat(3,1fr);gap:15px">
+            <sc-for list="{{ profiles }}" as="p" hint-placeholder-count="3">
+              <div class="me-card" style="border:{{ p.border }};border-radius:15px;padding:18px;background:{{ p.bg }}">
+                <div style="display:flex;align-items:center;gap:11px;margin-bottom:15px"><div style="width:38px;height:38px;border-radius:10px;background:{{ p.avatar }};display:grid;place-items:center;font-family:'Space Grotesk';font-weight:700;font-size:12px;color:#0c0d11">{{ p.mono }}</div><div style="font-weight:600;font-size:14px;color:#eef0f3">{{ p.name }}</div><span style="margin-left:auto;font-size:9px;font-weight:700;font-family:'JetBrains Mono';color:#4fd6a0;background:rgba(54,201,142,.14);border-radius:8px;padding:2px 8px">WATCHING</span></div>
+                <div style="display:flex;flex-direction:column;gap:9px;font-size:11.5px;margin-bottom:16px">
+                  <div style="display:flex;gap:9px"><span style="font-family:'JetBrains Mono';font-size:9.5px;color:#5b616f;width:62px;flex:none;padding-top:1px">SOURCE</span><span style="color:#cdd2da">{{ p.rule }}</span></div>
+                  <div style="display:flex;gap:9px"><span style="font-family:'JetBrains Mono';font-size:9.5px;color:#5b616f;width:62px;flex:none;padding-top:1px">IMAGES</span><span style="color:#cdd2da">{{ p.images }}</span></div>
+                  <div style="display:flex;gap:9px"><span style="font-family:'JetBrains Mono';font-size:9.5px;color:#5b616f;width:62px;flex:none;padding-top:1px">THUMB</span><span style="color:#cdd2da">{{ p.thumb }}</span></div>
+                  <div style="display:flex;gap:9px"><span style="font-family:'JetBrains Mono';font-size:9.5px;color:#5b616f;width:62px;flex:none;padding-top:1px">CAPTIONS</span><span style="color:#cdd2da">{{ p.cap }}</span></div>
+                  <div style="display:flex;gap:9px"><span style="font-family:'JetBrains Mono';font-size:9.5px;color:#5b616f;width:62px;flex:none;padding-top:1px">OUTPUT</span><span style="color:#8a909c;font-family:'JetBrains Mono';font-size:10.5px">{{ p.out }}</span></div>
+                </div>
+                <div style="display:flex;gap:9px"><div class="me-btn" style="flex:1;text-align:center;background:{{ p.runBg }};color:{{ p.runColor }};border:{{ p.runBorder }};border-radius:9px;padding:9px;font-size:12px;font-weight:600;cursor:pointer">▶ Run</div><div class="me-btn" style="border:1px solid #262b34;background:#15181f;border-radius:9px;padding:9px 14px;font-size:12px;color:#c4cad3;cursor:pointer">Edit</div></div>
+              </div>
+            </sc-for>
+          </div>
+          <div class="me-btn" style="margin-top:15px;border:1.5px dashed #262b34;border-radius:13px;padding:14px;text-align:center;font-size:12.5px;color:#6a7180;background:#0e1116;cursor:pointer">＋ New profile</div>
+        </div>
+        </sc-if>
+
+        <!-- ============ SETTINGS ============ -->
+        <sc-if value="{{ isSettings }}" hint-placeholder-val="{{ false }}">
+        <div class="me-screen" style="padding:30px 34px 40px">
+          <div style="margin-bottom:22px"><div style="font-family:'JetBrains Mono';font-size:11px;letter-spacing:1px;color:var(--accent);margin-bottom:7px">CONFIGURE</div><div style="font-family:'Space Grotesk';font-weight:600;font-size:25px;letter-spacing:-.5px;color:#f4f6f9">Settings</div></div>
+          <div style="display:flex;gap:18px;align-items:flex-start">
+            <div style="flex:1;display:flex;flex-direction:column;gap:16px">
+              <div style="border:1px solid #1d2129;border-radius:14px;padding:18px;background:#12151b">
+                <div style="font-family:'JetBrains Mono';font-size:9.5px;letter-spacing:.6px;color:#5b616f;margin-bottom:13px">OUTPUT</div>
+                <div style="font-size:12px;color:#8a909c;margin-bottom:8px">File naming template</div>
+                <div style="display:flex;gap:8px;margin-bottom:9px"><span style="border:1px solid var(--accent);background:var(--accent-soft);color:var(--accent);border-radius:8px;padding:7px 12px;font-size:11.5px;font-family:'JetBrains Mono'">{channel} - {title}</span><span style="border:1px solid #23272f;color:#8a909c;border-radius:8px;padding:7px 12px;font-size:11.5px;font-family:'JetBrains Mono'">{date}_{title}</span></div>
+                <div style="font-size:11px;color:#6a7180">e.g. <span style="font-family:'JetBrains Mono';color:#aab0bb">Mental Empire - Gaslighting Explained.mp4</span></div>
+              </div>
+              <div style="border:1px solid #1d2129;border-radius:14px;padding:18px;background:#12151b">
+                <div style="font-family:'JetBrains Mono';font-size:9.5px;letter-spacing:.6px;color:#5b616f;margin-bottom:13px">RENDER</div>
+                <div style="display:flex;gap:26px;flex-wrap:wrap">
+                  <div><div style="font-size:12px;color:#8a909c;margin-bottom:7px">Parallel renders</div><div style="display:flex;align-items:center;gap:10px"><div style="border:1px solid #23272f;border-radius:8px;padding:8px 17px;font-family:'Space Grotesk';font-weight:600;font-size:15px;color:#eef0f3;background:#0e1116">2</div><span style="font-size:11px;color:#6a7180">at a time</span></div></div>
+                  <div><div style="font-size:12px;color:#8a909c;margin-bottom:7px">Quality</div><div style="display:flex;border:1px solid #23272f;border-radius:8px;overflow:hidden;font-size:11.5px"><div style="padding:8px 12px;color:#8a909c">720p</div><div style="padding:8px 12px;background:var(--accent);color:var(--accent-ink);font-weight:600">1080p</div><div style="padding:8px 12px;color:#8a909c">1440p</div></div></div>
+                  <div><div style="font-size:12px;color:#8a909c;margin-bottom:7px">Encoder</div><div style="border:1px solid #23272f;border-radius:8px;padding:8px 13px;font-size:11.5px;color:#dde0e5;background:#0e1116">H.264 · GPU ▾</div></div>
+                </div>
+              </div>
+              <div style="border:1px solid #1d2129;border-radius:14px;padding:18px;background:#12151b">
+                <div style="font-family:'JetBrains Mono';font-size:9.5px;letter-spacing:.6px;color:#5b616f;margin-bottom:13px">AUTO-SCRAPE · NO API</div>
+                <div style="display:flex;align-items:center;gap:12px;margin-bottom:13px">
+                  <div style="display:flex;align-items:center;gap:9px;flex:1"><div style="width:34px;height:19px;border-radius:11px;background:var(--accent);position:relative"><span style="position:absolute;top:2px;right:2px;width:15px;height:15px;border-radius:50%;background:#fff"></span></div><span style="font-size:12.5px;color:#cdd2da">Auto-scrape enabled</span></div>
+                  <span style="font-size:11px;color:#6a7180">last run 09:30</span>
+                </div>
+                <div style="display:flex;gap:11px;flex-wrap:wrap;margin-bottom:11px">
+                  <div><div style="font-size:11px;color:#8a909c;margin-bottom:6px">Frequency</div><div style="border:1px solid #23272f;border-radius:8px;padding:8px 13px;font-size:11.5px;color:#dde0e5;background:#0e1116">Every 6 hours ▾</div></div>
+                  <div><div style="font-size:11px;color:#8a909c;margin-bottom:6px">Request delay</div><div style="border:1px solid #23272f;border-radius:8px;padding:8px 13px;font-size:11.5px;color:#dde0e5;background:#0e1116;font-family:'JetBrains Mono'">1.5s</div></div>
+                  <div><div style="font-size:11px;color:#8a909c;margin-bottom:6px">Retries on fail</div><div style="border:1px solid #23272f;border-radius:8px;padding:8px 13px;font-size:11.5px;color:#dde0e5;background:#0e1116;font-family:'JetBrains Mono'">3×</div></div>
+                </div>
+                <div style="display:flex;flex-direction:column;gap:9px;font-size:12.5px">
+                  <div style="display:flex;align-items:center;border:1px solid #1d2129;border-radius:9px;padding:11px 13px;background:#0e1116"><span style="flex:1;color:#cdd2da">Sign-in cookies (age-gated)</span><span style="font-size:11px;color:#36c98e;font-weight:600">✓ imported</span></div>
+                  <div style="display:flex;align-items:center;gap:10px;border:1px solid #1d2129;border-radius:9px;padding:9px 13px;background:#0e1116"><span style="color:#cdd2da;flex:none">Proxy (optional)</span><div style="flex:1;border:1px solid #23272f;border-radius:7px;padding:6px 10px;font-size:11px;color:#5b616f;font-family:'JetBrains Mono';background:#0c0d11">http://user:pass@host:port</div></div>
+                </div>
+              </div>
+              <div style="border:1px solid #1d2129;border-radius:14px;padding:18px;background:#12151b">
+                <div style="font-family:'JetBrains Mono';font-size:9.5px;letter-spacing:.6px;color:#5b616f;margin-bottom:13px">BACKGROUND</div>
+                <div style="display:flex;flex-direction:column;gap:9px;font-size:12.5px">
+                  <div style="display:flex;align-items:center;border:1px solid #1d2129;border-radius:9px;padding:11px 13px;background:#0e1116"><span style="flex:1;color:#cdd2da">Run in background (system tray)</span><div style="width:34px;height:19px;border-radius:11px;background:var(--accent);position:relative"><span style="position:absolute;top:2px;right:2px;width:15px;height:15px;border-radius:50%;background:#fff"></span></div></div>
+                  <div style="display:flex;align-items:center;border:1px solid #1d2129;border-radius:9px;padding:11px 13px;background:#0e1116"><span style="flex:1;color:#cdd2da">Start on Windows sign-in</span><div style="width:34px;height:19px;border-radius:11px;background:var(--accent);position:relative"><span style="position:absolute;top:2px;right:2px;width:15px;height:15px;border-radius:50%;background:#fff"></span></div></div>
+                  <div style="display:flex;align-items:center;border:1px solid #1d2129;border-radius:9px;padding:11px 13px;background:#0e1116"><span style="flex:1;color:#cdd2da">Desktop notifications (goals &amp; reminders)</span><div style="width:34px;height:19px;border-radius:11px;background:var(--accent);position:relative"><span style="position:absolute;top:2px;right:2px;width:15px;height:15px;border-radius:50%;background:#fff"></span></div></div>
+                  <div style="display:flex;align-items:center;border:1px solid #1d2129;border-radius:9px;padding:11px 13px;background:#0e1116;color:#6a7180"><span style="flex:1">Webhook (Pushover / calendar)</span><span style="font-size:11px">not set</span></div>
+                </div>
+              </div>
+            </div>
+            <div style="width:300px;flex:none;border:1px solid #1d2129;border-radius:14px;padding:18px;background:#12151b">
+              <div style="display:flex;align-items:center;gap:8px;margin-bottom:14px"><span style="width:7px;height:7px;border-radius:50%;background:#36c98e;box-shadow:0 0 8px #36c98e"></span><span style="font-family:'Space Grotesk';font-weight:600;font-size:13px;color:#e9ebef">Activity log</span></div>
+              <div style="display:flex;flex-direction:column;gap:13px">
+                <sc-for list="{{ activity }}" as="a" hint-placeholder-count="5">
+                  <div style="display:flex;gap:10px"><span style="font-family:'JetBrains Mono';font-size:10px;color:#4f5662;flex:none;width:32px;padding-top:1px">{{ a.t }}</span><span style="color:{{ a.color }};flex:none">{{ a.icon }}</span><span style="font-size:11.5px;color:#aab0bb;line-height:1.4">{{ a.text }}</span></div>
+                </sc-for>
+              </div>
+              <div style="margin-top:16px;border-top:1px solid #1d2129;padding-top:14px;font-size:11px;color:#6a7180;display:flex;flex-direction:column;gap:7px">
+                <div style="display:flex;justify-content:space-between"><span>Storage used</span><span style="color:#cdd2da;font-family:'JetBrains Mono'">14.2 GB</span></div>
+                <div style="display:flex;justify-content:space-between"><span>Jobs this week</span><span style="color:#cdd2da;font-family:'JetBrains Mono'">23</span></div>
+                <div style="display:flex;justify-content:space-between"><span>Version</span><span style="color:#cdd2da;font-family:'JetBrains Mono'">2.4.1</span></div>
+              </div>
+            </div>
+          </div>
+        </div>
+        </sc-if>
+
+      </div>
+    </div>
+  </div>
+</div>
+</x-dc>
+<script type="text/x-dc" data-dc-script data-props="{
+  &quot;accent&quot;: {&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Amber&quot;,&quot;Violet&quot;,&quot;Emerald&quot;,&quot;Crimson&quot;],&quot;default&quot;:&quot;Amber&quot;,&quot;tsType&quot;:&quot;string&quot;},
+  &quot;ambientGlow&quot;: {&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;},
+  &quot;showActivityRail&quot;: {&quot;editor&quot;:&quot;boolean&quot;,&quot;default&quot;:true,&quot;tsType&quot;:&quot;boolean&quot;},
+  &quot;defaultScreen&quot;: {&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;library&quot;,&quot;channels&quot;,&quot;download&quot;,&quot;compose&quot;,&quot;thumb&quot;,&quot;render&quot;,&quot;profiles&quot;,&quot;settings&quot;],&quot;default&quot;:&quot;library&quot;,&quot;tsType&quot;:&quot;string&quot;},
+  &quot;profile&quot;: {&quot;editor&quot;:&quot;enum&quot;,&quot;options&quot;:[&quot;Mental Empire&quot;,&quot;Stoic Hour&quot;,&quot;Sleep Deep&quot;],&quot;default&quot;:&quot;Mental Empire&quot;,&quot;tsType&quot;:&quot;string&quot;}
+}">
+class Component extends DCLogic {
+  state = { active: this.props.defaultScreen || "library", composeTab: "media" };
+
+  renderVals() {
+    const palettes = {
+      Amber:   { hex:"#f5b323", deep:"#b9780a", soft:"rgba(245,179,35,.13)", glow:"rgba(245,179,35,.45)", ink:"#15120a" },
+      Violet:  { hex:"#8b7cff", deep:"#5b4fd6", soft:"rgba(139,124,255,.16)", glow:"rgba(139,124,255,.5)", ink:"#ffffff" },
+      Emerald: { hex:"#36c98e", deep:"#1f9c6b", soft:"rgba(54,201,142,.15)", glow:"rgba(54,201,142,.5)", ink:"#06140e" },
+      Crimson: { hex:"#ff5a6e", deep:"#d23146", soft:"rgba(255,90,110,.16)", glow:"rgba(255,90,110,.5)", ink:"#ffffff" },
+    };
+    const p = palettes[this.props.accent] || palettes.Amber;
+    const ambient = this.props.ambientGlow ?? true;
+    const glowCss = ambient
+      ? "radial-gradient(70% 55% at 18% 0%, " + p.soft + " 0%, rgba(0,0,0,0) 60%), radial-gradient(60% 50% at 100% 100%, rgba(80,90,120,.10) 0%, rgba(0,0,0,0) 55%), #070809"
+      : "#070809";
+    const mainGlow = ambient
+      ? "radial-gradient(90% 60% at 100% 0%, " + p.soft + " 0%, rgba(0,0,0,0) 55%), #0d0f14"
+      : "#0d0f14";
+
+    const active = this.state.active;
+    const keys = ["library","channels","download","compose","thumb","render","profiles","settings"];
+    const nav = {};
+    keys.forEach(k => {
+      const on = active === k;
+      nav[k] = {
+        go: () => this.setState({ active: k }),
+        weight: on ? 600 : 500,
+        color: on ? "#f2f4f7" : "#8a909c",
+        bg: on ? "var(--accent-soft)" : "transparent",
+        bar: on ? "var(--accent)" : "transparent",
+        glow: on ? "0 0 10px var(--accent-glow)" : "none",
+      };
+    });
+    const labels = { library:"Library", channels:"My Channels", download:"Download", compose:"Compose", thumb:"Thumbnails", render:"Render Queue", profiles:"Profiles", settings:"Settings" };
+
+    // compose sub-tabs (audio+image / captions live together)
+    const cTab = this.state.composeTab;
+    const composeTabs = ["media","captions"].reduce((o,t)=>{ o[t]={ go:()=>this.setState({composeTab:t}), on:cTab===t,
+      color: cTab===t ? "#f2f4f7" : "#8a909c", bg: cTab===t ? "var(--accent-soft)" : "transparent",
+      border: cTab===t ? "1px solid var(--accent)" : "1px solid #1d2129" }; return o; }, {});
+
+    // ===== MY OWN CHANNELS (scraped, with goals + reminders) =====
+    const myChannels = [
+      { name:"Mental Empire", handle:"@powerwithin", mono:"ME", avatar:"linear-gradient(135deg,#f5b323,#b9780a)",
+        total:25, views:"12.4K", subs:"455", weekDone:3, weekGoal:5, monthDone:11, monthGoal:20,
+        source:"@PowerWithinOfficial", mapDone:12, mapTotal:18,
+        reminder:"Fri Jun 27", reminderNote:"2 left to hit weekly goal" },
+      { name:"Stoic Hour", handle:"@stoichour", mono:"SH", avatar:"linear-gradient(135deg,#8b7cff,#5b4fd6)",
+        total:40, views:"88.7K", subs:"2.1K", weekDone:5, weekGoal:5, monthDone:18, monthGoal:18,
+        source:"@DailyStoicTalks", mapDone:18, mapTotal:18,
+        reminder:"On track", reminderNote:"Goal met — nice" },
+      { name:"Sleep Deep", handle:"@sleepdeep", mono:"SD", avatar:"linear-gradient(135deg,#36c98e,#1f9c6b)",
+        total:12, views:"5.9K", subs:"640", weekDone:1, weekGoal:3, monthDone:4, monthGoal:12,
+        source:"@RainSounds24", mapDone:6, mapTotal:9,
+        reminder:"Tue Jun 24", reminderNote:"Behind pace — 2 due this week" },
+    ].map(c => ({ ...c,
+      mapLabel: c.mapDone + " / " + c.mapTotal + " uploaded",
+      mapPending: c.mapTotal - c.mapDone,
+      mapColor: c.mapDone >= c.mapTotal ? "#4fd6a0" : "#f5b323",
+      weekPct: Math.round(c.weekDone/c.weekGoal*100) + "%",
+      monthPct: Math.round(c.monthDone/c.monthGoal*100) + "%",
+      weekLabel: c.weekDone + " / " + c.weekGoal,
+      monthLabel: c.monthDone + " / " + c.monthGoal,
+      weekMet: c.weekDone >= c.weekGoal,
+      reminderColor: c.weekDone >= c.weekGoal ? "#4fd6a0" : "#f5b323",
+    }));
+
+    // ===== DOWNLOAD HISTORY / UNFINISHED PROJECTS =====
+    const dlHistory = [
+      { title:"Gaslighting Explained", channel:"@powerwithin", size:"9.1 MB", when:"19h ago", stage:"Captioned", pct:"75%", action:"Resume", thumb:"linear-gradient(135deg,#1a2e3a,#0f3a32)" },
+      { title:"Everything Was Fake", channel:"@powerwithin", size:"5.4 MB", when:"1d ago", stage:"Needs thumbnail", pct:"50%", action:"Resume", thumb:"linear-gradient(135deg,#3a2440,#2a1530)" },
+      { title:"The Moment I Realized", channel:"@powerwithin", size:"6.7 MB", when:"2d ago", stage:"Downloaded only", pct:"15%", action:"Resume", thumb:"linear-gradient(135deg,#23304a,#1a2438)" },
+      { title:"Marcus Aurelius on Anger", channel:"@stoichour", size:"8.0 MB", when:"3d ago", stage:"Uploaded ✓", pct:"100%", action:"Open", thumb:"linear-gradient(135deg,#16323a,#0f2630)" },
+    ].map(d => ({ ...d,
+      barColor: d.pct==="100%" ? "#36c98e" : "var(--accent)",
+      stageColor: d.pct==="100%" ? "#4fd6a0" : "#cdd2da",
+    }));
+
+    const channels = [
+      { name:"Mental Empire", handle:"@powerwithin", mono:"ME", avatar:"linear-gradient(135deg,#f5b323,#b9780a)", views:"12.4K", subs:"455", uploaded:"18/25", bars:[40,62,48,80,66,95,78,100] },
+      { name:"Stoic Hour", handle:"@stoichour", mono:"SH", avatar:"linear-gradient(135deg,#8b7cff,#5b4fd6)", views:"88.7K", subs:"2.1K", uploaded:"40/40", bars:[55,68,60,82,90,76,96,100] },
+      { name:"Sleep Deep", handle:"@sleepdeep", mono:"SD", avatar:"linear-gradient(135deg,#36c98e,#1f9c6b)", views:"5.9K", subs:"640", uploaded:"9/12", bars:[38,46,58,52,70,64,84,92] },
+    ].map(c => ({ ...c, bars: c.bars.map(h => ({ h })) }));
+
+    const stClr = {
+      Uploaded:  { bg:"rgba(54,201,142,.14)", color:"#4fd6a0", dot:"#36c98e" },
+      Scheduled: { bg:"rgba(245,179,35,.14)", color:"#f5b323", dot:"#f5b323" },
+      Draft:     { bg:"rgba(255,255,255,.06)", color:"#8a909c", dot:"#5b616f" },
+    };
+    const uploads = [
+      { title:"Narcissism and Depression", channel:"Mental Empire", status:"Uploaded", views:"72", when:"8h", thumb:"linear-gradient(135deg,#2a2540,#46243a)" },
+      { title:"Gaslighting Explained", channel:"Mental Empire", status:"Uploaded", views:"97", when:"19h", thumb:"linear-gradient(135deg,#1a2e3a,#0f3a32)" },
+      { title:"Everything Was Fake", channel:"Mental Empire", status:"Scheduled", views:"—", when:"2h", thumb:"linear-gradient(135deg,#3a2440,#2a1530)" },
+      { title:"Marcus Aurelius on Anger", channel:"Stoic Hour", status:"Uploaded", views:"1.2K", when:"2d", thumb:"linear-gradient(135deg,#23304a,#1a2438)" },
+      { title:"Rain for Deep Sleep 8h", channel:"Sleep Deep", status:"Uploaded", views:"3.4K", when:"4d", thumb:"linear-gradient(135deg,#16323a,#0f2630)" },
+    ].map(u => { const s = stClr[u.status]; return { ...u, statusBg:s.bg, statusColor:s.color, statusDot:s.dot }; });
+
+    const activity = [
+      { t:"09:42", icon:"✓", color:"#36c98e", text:"Rendered Gaslighting Explained → ME_out" },
+      { t:"09:38", icon:"↻", color:"#8b7cff", text:"Captions burned (Hormozi)" },
+      { t:"09:31", icon:"✓", color:"#36c98e", text:"Downloaded 5 mp3 from @stoichour" },
+      { t:"09:30", icon:"◉", color:"#f5b323", text:"Auto-watch found 5 new uploads" },
+      { t:"08:55", icon:"!", color:"#ff5a6e", text:"Skipped 1 video — members only" },
+    ];
+
+    const vt = [
+      { title:"Narcissism and Depression: The Hidden Link", dur:"19:25", views:"72", sel:true },
+      { title:"Gaslighting Explained in 20 Minutes", dur:"20:05", views:"97", sel:true },
+      { title:"Everything Was Fake — A Story", dur:"11:29", views:"118", sel:false },
+      { title:"The Moment I Realized the Truth", dur:"14:02", views:"60", sel:false },
+      { title:"Why Narcissists Never Apologize", dur:"16:40", views:"203", sel:false },
+      { title:"How to Spot a Covert Manipulator", dur:"18:12", views:"154", sel:false },
+      { title:"You Were Manipulated — Here's How", dur:"12:55", views:"89", sel:false },
+      { title:"Stop Explaining Yourself to Them", dur:"15:30", views:"47", sel:false },
+    ];
+    const vThumbs = ["linear-gradient(135deg,#2a2540,#46243a)","linear-gradient(135deg,#1a2e3a,#0f3a32)","linear-gradient(135deg,#3a2440,#2a1530)","linear-gradient(135deg,#23304a,#1a2438)","linear-gradient(135deg,#16323a,#0f2630)","linear-gradient(135deg,#2e2440,#3a1f2e)","linear-gradient(135deg,#1f3340,#102a3a)","linear-gradient(135deg,#332a40,#241a30)"];
+    const videos = vt.map((v,i) => ({
+      title:v.title, dur:v.dur, views:v.views, thumb:vThumbs[i],
+      check: v.sel ? "✓" : "",
+      selBg: v.sel ? "var(--accent)" : "rgba(0,0,0,.45)",
+      selBorder: v.sel ? "var(--accent)" : "rgba(255,255,255,.5)",
+      cardBorder: v.sel ? "var(--accent)" : "#1d2129",
+    }));
+
+    const imageList = [
+      { name:"image_01.jpg", range:"0:00–6:40", thumb:"linear-gradient(135deg,#2a2540,#46243a)" },
+      { name:"image_02.jpg", range:"6:40–13:20", thumb:"linear-gradient(135deg,#1a2e3a,#0f3a32)" },
+      { name:"image_03.jpg", range:"13:20–20:05", thumb:"linear-gradient(135deg,#23304a,#1a2438)" },
+    ];
+
+    const tplActive = "Full Bleed";
+    const thumbTemplates = ["Subject Left","Subject Right","Centered","Full Bleed"].map(name => ({
+      name,
+      border: name===tplActive ? "2px solid var(--accent)" : "1px solid #1d2129",
+      labelColor: name===tplActive ? "#eef0f3" : "#6a7180",
+      preview: name===tplActive ? "linear-gradient(135deg,#2a2540,#46243a)" : "#1a1e26",
+    }));
+
+    const batchTitles = [
+      { a:"YOU'RE NOT", b:"CRAZY" },
+      { a:"IT ALL", b:"BROKE" },
+      { a:"NEVER", b:"APOLOGIZE" },
+      { a:"STOP", b:"EXPLAINING" },
+      { a:"IT WAS", b:"A LIE" },
+      { a:"COVERT", b:"NARCISSIST" },
+    ];
+
+    const cpActive = "Hormozi";
+    const capPresets = ["Pop","Bold","Hormozi","Word","Neon","Min"].map(name => ({
+      name,
+      active: name===cpActive,
+      border: name===cpActive ? "1px solid var(--accent)" : "1px solid #1d2129",
+      bg: name===cpActive ? "var(--accent-soft)" : "#0e1116",
+      text: name===cpActive ? "#f2f4f7" : "#8a909c",
+    }));
+
+    const queue = [
+      { title:"Narcissism and Depression", channel:"Mental Empire", mp3:"✓", mp3c:"#36c98e", images:"3", thumbi:"✓", thumbc:"#36c98e", cap:"✓", capc:"#36c98e", pct:"100%", barColor:"#36c98e", statusText:"done", statusColor:"#4fd6a0", thumb:"linear-gradient(135deg,#2a2540,#46243a)" },
+      { title:"Gaslighting Explained", channel:"Mental Empire", mp3:"✓", mp3c:"#36c98e", images:"2", thumbi:"✓", thumbc:"#36c98e", cap:"✓", capc:"#36c98e", pct:"60%", barColor:"var(--accent)", statusText:"60%", statusColor:"#f5b323", thumb:"linear-gradient(135deg,#1a2e3a,#0f3a32)" },
+      { title:"Everything Was Fake", channel:"Mental Empire", mp3:"✓", mp3c:"#36c98e", images:"1", thumbi:"!", thumbc:"#ff5a6e", cap:"—", capc:"#5b616f", pct:"0%", barColor:"#5b616f", statusText:"needs thumb", statusColor:"#ff8a96", thumb:"linear-gradient(135deg,#3a2440,#2a1530)" },
+      { title:"Marcus Aurelius on Anger", channel:"Stoic Hour", mp3:"✓", mp3c:"#36c98e", images:"5", thumbi:"✓", thumbc:"#36c98e", cap:"✓", capc:"#36c98e", pct:"0%", barColor:"#5b616f", statusText:"queued", statusColor:"#8a909c", thumb:"linear-gradient(135deg,#23304a,#1a2438)" },
+    ];
+
+    const pfActive = this.props.profile || "Mental Empire";
+    const profileDefs = [
+      { name:"Mental Empire", mono:"ME", avatar:"linear-gradient(135deg,#f5b323,#b9780a)", rule:"Latest · 5 videos", images:"Pool of 10 · shuffle", thumb:"Full Bleed · White", cap:"Hormozi · 16:9", out:"/Desktop/ME_out" },
+      { name:"Stoic Hour", mono:"SH", avatar:"linear-gradient(135deg,#8b7cff,#5b4fd6)", rule:"Popular · 10 videos", images:"Single image", thumb:"Subject Left · Amber", cap:"Pop · 16:9", out:"/Desktop/Stoic_out" },
+      { name:"Sleep Deep", mono:"SD", avatar:"linear-gradient(135deg,#36c98e,#1f9c6b)", rule:"Latest · 3 videos", images:"Pool of 20 · shuffle", thumb:"Centered · Cyan", cap:"Minimal · 16:9", out:"/Desktop/Sleep_out" },
+    ];
+    const profiles = profileDefs.map(pf => {
+      const on = pf.name === pfActive;
+      return {
+        ...pf,
+        border: on ? "1.5px solid var(--accent)" : "1px solid #1d2129",
+        bg: on ? "linear-gradient(165deg,var(--accent-soft),#0f1217)" : "#12151b",
+        runBg: on ? "linear-gradient(180deg,var(--accent),var(--accent-deep))" : "#15181f",
+        runColor: on ? "var(--accent-ink)" : "#c4cad3",
+        runBorder: on ? "none" : "1px solid #262b34",
+      };
+    });
+
+    const dt = new Date();
+    const greetDate = dt.toLocaleDateString("en-US",{ weekday:"long", month:"short", day:"numeric" }).toUpperCase();
+
+    return {
+      accentHex:p.hex, accentDeep:p.deep, accentSoft:p.soft, accentGlow:p.glow, accentInk:p.ink,
+      backdrop: glowCss, mainBg: mainGlow,
+      nav, activeLabel: labels[active], greetDate, composeTabs, cTab,
+      composeMedia: cTab==="media", composeCaptions: cTab==="captions",
+      isLibrary: active==="library", isChannels: active==="channels", isDownload: active==="download",
+      isCompose: active==="compose", isThumb: active==="thumb", isRender: active==="render",
+      isProfiles: active==="profiles", isSettings: active==="settings",
+      showRail: this.props.showActivityRail ?? true,
+      channels, myChannels, dlHistory, uploads, activity, videos, imageList, thumbTemplates, batchTitles, capPresets, queue, profiles,
+    };
+  }
+}
+</script>
+</body>
+</html>
