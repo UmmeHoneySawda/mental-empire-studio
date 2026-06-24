@@ -12,6 +12,7 @@
     "build:renderer": "electron-vite build --rendererOnly",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
+    "fetch:bin": "node scripts/fetch-binaries.mjs",
     "start": "electron-vite preview"
   },
   "dependencies": {

@@ -4,6 +4,9 @@ import { dirname, join } from 'node:path'
 import { initSettings, setSettings, getSettings } from './store/settings'
 import { initDatabase, getRepos, closeDatabase } from './db'
 import { registerIpc } from './ipc/register'
+import { refreshChannel, sourceVideos, checkReminders } from './ipc/scrape'
+import { firedNotifications } from './services/notify'
+import { channelUrl } from './services/scraper'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -98,10 +101,58 @@ function runSmokeTest(): void {
   app.exit(ok ? 0 : 1)
 }
 
+/**
+ * Headless M3 self-check (ME_SMOKE=m3, with ME_YTDLP_FIXTURE pointing at recorded
+ * yt-dlp JSON): drives the real scrape→DB→mapping→notify pipeline against fixtures
+ * and asserts the results. Real scraping can't run in the sandbox (YouTube blocked),
+ * so fixtures stand in; the code path is identical to production.
+ */
+async function runSmokeM3(): Promise<void> {
+  const repos = getRepos()
+  try {
+    const me = await refreshChannel('me') // handle @powerwithin, linked source src-pw
+    const uploads = repos.getUploads('me')
+    const downloads = repos.getDownloadsBySource('src-pw')
+    const matchedDownloads = downloads.filter((d) => d.matchedUploadId).length
+
+    const url = 'https://www.youtube.com/@PowerWithinOfficial'
+    const vids = await sourceVideos(url, 'Popular', 3)
+    const src = repos.sourceChannelByUrl(channelUrl(url))
+    const cached = src ? repos.getSourceVideos(src.id).length : 0
+    const sortedDesc = vids.length === 3 && vids[0].views >= vids[1].views && vids[1].views >= vids[2].views
+
+    const hits = checkReminders()
+    const meHit = hits.some((h) => h.channelId === 'me')
+    const meNotified = firedNotifications.some((h) => h.channelId === 'me')
+
+    console.log(`SMOKE_M3_STATS name=${me.name} subs=${me.subs} views=${me.views} total=${me.total} uploads=${uploads.length}`)
+    console.log(`SMOKE_M3_MAP mapDone=${me.mapDone} mapTotal=${me.mapTotal} matchedDownloads=${matchedDownloads}`)
+    console.log(`SMOKE_M3_SOURCE fetched=${vids.length} cached=${cached} top='${vids[0]?.title}' sortedDesc=${sortedDesc}`)
+    console.log(`SMOKE_M3_REMIND meHit=${meHit} meNotified=${meNotified} hits=${hits.length}`)
+
+    const ok =
+      me.subs === '455' && me.total === 4 && uploads.length === 4 &&
+      me.mapTotal === 3 && me.mapDone === 2 && matchedDownloads === 2 &&
+      vids.length === 3 && cached === 3 && sortedDesc &&
+      meHit && meNotified
+    console.log(ok ? 'SMOKE_M3_OK' : 'SMOKE_M3_FAIL')
+    closeDatabase()
+    app.exit(ok ? 0 : 1)
+  } catch (e) {
+    console.log('SMOKE_M3_FAIL ' + (e as Error).message)
+    closeDatabase()
+    app.exit(1)
+  }
+}
+
 app.whenReady().then(() => {
   initPersistence()
   registerIpc()
 
+  if (process.env['ME_SMOKE'] === 'm3') {
+    void runSmokeM3()
+    return
+  }
   if (process.env['ME_SMOKE']) {
     runSmokeTest()
     return

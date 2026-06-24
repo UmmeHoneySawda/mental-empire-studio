@@ -1,0 +1,12 @@
+{
+  "id": "UC_stoichour",
+  "channel": "Stoic Hour",
+  "uploader": "Stoic Hour",
+  "uploader_id": "@stoichour",
+  "channel_id": "UC_stoichour",
+  "channel_follower_count": 2100,
+  "entries": [
+    { "id": "v_anger", "title": "Marcus Aurelius on Anger", "duration": 1500, "view_count": 1200, "upload_date": "20250520" },
+    { "id": "v_fear", "title": "Seneca on Fear", "duration": 1320, "view_count": 880, "upload_date": "20250524" }
+  ]
+}

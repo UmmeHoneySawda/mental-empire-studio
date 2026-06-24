@@ -1,0 +1,14 @@
+{
+  "id": "UC_powerwithin",
+  "channel": "Mental Empire",
+  "uploader": "Mental Empire",
+  "uploader_id": "@powerwithin",
+  "channel_id": "UC_powerwithin",
+  "channel_follower_count": 455,
+  "entries": [
+    { "id": "v_gas", "title": "Gaslighting Explained", "duration": 1205, "view_count": 97, "upload_date": "20250601", "thumbnails": [{ "url": "https://i.ytimg.com/vi/v_gas/hq.jpg" }] },
+    { "id": "v_fake", "title": "Everything Was Fake", "duration": 689, "view_count": 118, "upload_date": "20250605" },
+    { "id": "v_narc", "title": "Narcissism and Depression", "duration": 1165, "view_count": 72, "upload_date": "20250608" },
+    { "id": "v_apol", "title": "Why Narcissists Never Apologize", "duration": 1000, "view_count": 203, "upload_date": "20250610" }
+  ]
+}

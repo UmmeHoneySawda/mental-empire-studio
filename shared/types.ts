@@ -36,6 +36,8 @@ export interface MyChannel {
   monthGoal: number
   reminder: string
   reminderNote: string
+  /** ISO timestamp of the last successful scrape (M3) */
+  lastScrapedAt?: string
 }
 
 export interface SourceChannel {
@@ -57,6 +59,68 @@ export interface DownloadedVideo {
   pct: string
   action: 'Resume' | 'Open'
   thumb: string
+  /** id of the Upload this download was fuzzy-matched to (M3 mapping) */
+  matchedUploadId?: string
+}
+
+/** A video published on one of my own channels (scraped from its uploads tab). */
+export interface Upload {
+  id: string
+  myChannelId: string
+  title: string
+  youtubeVideoId: string
+  publishedAt: string
+  views: string
+  /** id of the DownloadedVideo this upload was fuzzy-matched to, if any */
+  matchedDownloadId?: string
+}
+
+// ---- Scraping (M3) ----
+export type ScrapeOrder = 'Popular' | 'Latest' | 'Oldest'
+
+/** One video parsed from a yt-dlp flat-playlist entry. */
+export interface ScrapedVideo {
+  id: string
+  title: string
+  durationSec: number
+  views: number
+  uploadDate: string
+  thumb: string
+}
+
+/** Channel-level stats + video list returned by a scrape. */
+export interface ScrapedChannel {
+  handle: string
+  name: string
+  channelId: string
+  subs: number
+  /** lifetime views — best-effort (about page) with a labeled fallback to summed video views */
+  totalViews: number
+  totalViewsExact: boolean
+  videos: ScrapedVideo[]
+}
+
+/** Streamed progress for a long scrape (one channel at a time). */
+export interface ScrapeProgress {
+  channelId: string
+  channelName: string
+  phase: 'start' | 'stats' | 'uploads' | 'mapping' | 'done' | 'error'
+  message: string
+}
+
+/** Result of fuzzy-matching downloaded source videos against my uploads. */
+export interface MappingResult {
+  mapDone: number
+  mapTotal: number
+  matches: { downloadId: string; uploadId: string }[]
+}
+
+/** A channel flagged as behind pace by the reminder check. */
+export interface ReminderHit {
+  channelId: string
+  channelName: string
+  pending: number
+  message: string
 }
 
 export interface Profile {
@@ -137,7 +201,7 @@ export interface AppSettings {
   namingTemplate: string
   concurrency: number
   quality: '720p' | '1080p' | '1440p'
-  autoScrape: { enabled: boolean; frequency: string; delaySec: number; retries: number; proxy: string }
+  autoScrape: { enabled: boolean; frequency: string; delaySec: number; retries: number; proxy: string; cookiesPath: string }
   background: { tray: boolean; startOnSignIn: boolean; notifications: boolean; webhook: string }
 }
 
@@ -150,7 +214,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   namingTemplate: '{channel} - {title}',
   concurrency: 2,
   quality: '1080p',
-  autoScrape: { enabled: true, frequency: 'Every 6 hours', delaySec: 1.5, retries: 3, proxy: '' },
+  autoScrape: { enabled: true, frequency: 'Every 6 hours', delaySec: 1.5, retries: 3, proxy: '', cookiesPath: '' },
   background: { tray: true, startOnSignIn: true, notifications: true, webhook: '' }
 }
 
@@ -179,6 +243,26 @@ export interface NativeApi {
     upsertProfile(profile: Profile): Promise<Profile[]>
     saveTemplate(template: ThumbnailTemplate): Promise<ThumbnailTemplate[]>
   }
+  scrape: {
+    /** preview a channel's stats without persisting */
+    channel(url: string): Promise<ScrapedChannel>
+    /** scrape + persist a new owned channel, optionally linking a source */
+    addMyChannel(url: string, linkedSourceId?: string): Promise<MyChannel>
+    /** re-scrape one owned channel: stats, uploads, mapping */
+    refreshChannel(id: string): Promise<MyChannel>
+    /** re-scrape every owned channel */
+    all(): Promise<MyChannel[]>
+    /** fetch a source channel's videos for the Download picker (cached to DB) */
+    sourceVideos(url: string, order: ScrapeOrder, count: number): Promise<ScrapedVideo[]>
+  }
+  reminders: {
+    /** evaluate behind-pace channels, firing desktop notifications */
+    check(): Promise<ReminderHit[]>
+  }
+  /** subscribe to live scrape progress; returns an unsubscribe fn */
+  onScrapeProgress(cb: (p: ScrapeProgress) => void): () => void
+  /** subscribe to new activity-log entries; returns an unsubscribe fn */
+  onActivity(cb: (row: ActivityRow) => void): () => void
 }
 
 declare global {

@@ -1,0 +1,11 @@
+{
+  "id": "UC_sleepdeep",
+  "channel": "Sleep Deep",
+  "uploader": "Sleep Deep",
+  "uploader_id": "@sleepdeep",
+  "channel_id": "UC_sleepdeep",
+  "channel_follower_count": 640,
+  "entries": [
+    { "id": "v_rain", "title": "Rain for Deep Sleep 8h", "duration": 28800, "view_count": 3400, "upload_date": "20250515" }
+  ]
+}

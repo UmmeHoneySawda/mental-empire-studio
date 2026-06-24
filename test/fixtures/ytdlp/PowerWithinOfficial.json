@@ -1,0 +1,15 @@
+{
+  "id": "UC_pwo",
+  "channel": "Power Within",
+  "uploader": "Power Within",
+  "uploader_id": "@PowerWithinOfficial",
+  "channel_id": "UC_pwo",
+  "channel_follower_count": 120000,
+  "entries": [
+    { "id": "s1", "title": "Narcissism and Depression: The Hidden Link", "duration": 1165, "view_count": 72000, "upload_date": "20250410" },
+    { "id": "s2", "title": "Gaslighting Explained in 20 Minutes", "duration": 1205, "view_count": 97000, "upload_date": "20250415" },
+    { "id": "s3", "title": "Everything Was Fake — A Story", "duration": 689, "view_count": 118000, "upload_date": "20250420" },
+    { "id": "s4", "title": "The Moment I Realized the Truth", "duration": 842, "view_count": 60000, "upload_date": "20250425" },
+    { "id": "s5", "title": "Why Narcissists Never Apologize", "duration": 1000, "view_count": 203000, "upload_date": "20250501" }
+  ]
+}
