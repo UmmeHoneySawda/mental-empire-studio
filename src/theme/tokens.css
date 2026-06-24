@@ -1,0 +1,80 @@
+/* Design tokens extracted verbatim from the Mental Empire Studio prototype.
+   Accent is switched by setting data-accent on :root (see store). */
+
+:root {
+  /* surfaces */
+  --bg-page: #070809;
+  --bg-window: #0d0f14;
+  --bg-sidebar: #0a0c10;
+  --bg-card: #12151b;
+  --bg-card-2: #14171e;
+  --bg-card-3: #0f1217;
+  --bg-inset: #0e1116;
+  --bg-inset-2: #0c0d11;
+  --bg-card-grad: linear-gradient(165deg, #14171e, #0f1217);
+
+  /* borders */
+  --border: #1d2129;
+  --border-2: #23272f;
+  --border-3: #262b34;
+  --border-soft: #14171d;
+
+  /* text */
+  --text: #e9ebef;
+  --text-strong: #f4f6f9;
+  --text-bright: #eef0f3;
+  --text-muted: #8a909c;
+  --text-dim: #6a7180;
+  --text-faint: #5b616f;
+  --text-fainter: #4f5662;
+  --text-label: #454b57;
+
+  /* status */
+  --ok: #36c98e;
+  --ok-2: #4fd6a0;
+  --warn: #f5b323;
+  --err: #ff5a6e;
+  --err-2: #ff8a96;
+
+  /* default accent = Amber */
+  --accent: #f5b323;
+  --accent-deep: #b9780a;
+  --accent-soft: rgba(245, 179, 35, 0.13);
+  --accent-glow: rgba(245, 179, 35, 0.45);
+  --accent-ink: #15120a;
+
+  /* type */
+  --font-display: 'Space Grotesk', system-ui, sans-serif;
+  --font-body: 'Hanken Grotesk', system-ui, sans-serif;
+  --font-mono: 'JetBrains Mono', ui-monospace, monospace;
+  --font-poster: 'Anton', 'Space Grotesk', sans-serif;
+}
+
+:root[data-accent='Amber'] {
+  --accent: #f5b323;
+  --accent-deep: #b9780a;
+  --accent-soft: rgba(245, 179, 35, 0.13);
+  --accent-glow: rgba(245, 179, 35, 0.45);
+  --accent-ink: #15120a;
+}
+:root[data-accent='Violet'] {
+  --accent: #8b7cff;
+  --accent-deep: #5b4fd6;
+  --accent-soft: rgba(139, 124, 255, 0.16);
+  --accent-glow: rgba(139, 124, 255, 0.5);
+  --accent-ink: #ffffff;
+}
+:root[data-accent='Emerald'] {
+  --accent: #36c98e;
+  --accent-deep: #1f9c6b;
+  --accent-soft: rgba(54, 201, 142, 0.15);
+  --accent-glow: rgba(54, 201, 142, 0.5);
+  --accent-ink: #06140e;
+}
+:root[data-accent='Crimson'] {
+  --accent: #ff5a6e;
+  --accent-deep: #d23146;
+  --accent-soft: rgba(255, 90, 110, 0.16);
+  --accent-glow: rgba(255, 90, 110, 0.5);
+  --accent-ink: #ffffff;
+}
