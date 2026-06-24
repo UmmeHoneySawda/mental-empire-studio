@@ -1,0 +1,122 @@
+/* Global reset, animations, and shared micro-interactions ported from the prototype. */
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+  margin: 0;
+}
+
+body {
+  background: var(--bg-page);
+  font-family: var(--font-body);
+  color: var(--text);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+  user-select: none;
+}
+
+/* scrollbars */
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: #2b303b;
+  border-radius: 8px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #3a4150;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* keyframes from the prototype */
+@keyframes meRise {
+  from {
+    transform: translateY(10px);
+  }
+  to {
+    transform: translateY(0);
+  }
+}
+@keyframes meShimmer {
+  0% {
+    background-position: -200% 0;
+  }
+  100% {
+    background-position: 200% 0;
+  }
+}
+@keyframes mePulse {
+  0%,
+  100% {
+    opacity: 0.55;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+@keyframes meSpin {
+  to {
+    transform: rotate(360deg);
+  }
+}
+
+.me-screen {
+  opacity: 1;
+  animation: meRise 0.42s cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+/* interactive helpers */
+.me-nav {
+  transition: background 0.18s;
+}
+.me-nav:hover {
+  background: rgba(255, 255, 255, 0.04) !important;
+}
+.me-card {
+  transition: transform 0.25s cubic-bezier(0.2, 0.7, 0.2, 1), box-shadow 0.25s,
+    border-color 0.25s;
+}
+.me-card:hover {
+  transform: translateY(-3px);
+}
+.me-btn {
+  transition: transform 0.15s, filter 0.2s, background 0.2s, border-color 0.2s;
+}
+.me-btn:hover {
+  filter: brightness(1.08);
+}
+.me-btn:active {
+  transform: scale(0.97);
+}
+.me-row {
+  transition: background 0.15s;
+}
+.me-row:hover {
+  background: rgba(255, 255, 255, 0.025) !important;
+}
+.me-vid:hover .me-vidsel {
+  border-color: var(--accent) !important;
+}
+
+/* draggable title bar region for the frameless window */
+.drag-region {
+  -webkit-app-region: drag;
+}
+.no-drag {
+  -webkit-app-region: no-drag;
+}
+
+button {
+  font-family: inherit;
+}
