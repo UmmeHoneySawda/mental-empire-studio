@@ -19,6 +19,7 @@ import { autoArrangeText } from '../shared/thumbnail'
 import { THUMB_W, THUMB_H, DEFAULT_BETA_OPTS, type TextLayer, type ThumbnailTemplate, type TranscriptWord } from '../shared/types'
 import { buildAss } from './services/captions'
 import { buildRenderArgs } from './services/render'
+import { extractThemes, rankCandidates, planCoverage, buildBrollBed, type BrollCandidate } from './services/broll'
 import { resolveBinDir } from './services/ytdlp'
 import { runAll, lastMaxActive } from './services/queue'
 import { runProfile, newVideos } from './ipc/automation'
@@ -410,25 +411,46 @@ async function runSmokeM6(): Promise<void> {
       !offArgs.includes('drawbox') && !offArgs.includes('zoompan')
     console.log(`SMOKE_M6_BETA hook=${assHook.ass.includes('Style: Hook')} overlay=${betaArgs.includes('drawbox')} startZoom=${betaArgs.includes('zoompan')} offClean=${!offArgs.includes('drawbox')}`)
 
-    // dry-run queue with two jobs at concurrency 2
+    // ---- Beta auto-B-roll: themes / ranking / coverage (pure) + bed assembly (fixture) ----
+    const themes = extractThemes(words.concat([
+      { id: 'k', projectId: 'p', ord: 9, word: 'discipline', start: 2, end: 2.4, emphasis: true },
+      { id: 'k2', projectId: 'p', ord: 10, word: 'discipline', start: 3, end: 3.4, emphasis: false }
+    ]))
+    const cands: BrollCandidate[] = [
+      { provider: 'pixabay', id: 'a', url: 'u', width: 720, height: 1280, durationSec: 2, tags: ['x'] },
+      { provider: 'pexels', id: 'b', url: 'u', width: 1920, height: 1080, durationSec: 8, tags: ['discipline'] }
+    ]
+    const ranked = rankCandidates(cands, 'discipline', { w: 1920, h: 1080 })
+    // 12s covered by a 3s + an 8s clip → segments tile the whole duration, long clip trimmed.
+    const cov = planCoverage(12, [{ path: 'c1', durationSec: 3 }, { path: 'c2', durationSec: 8 }], { density: 'sparse' })
+    const covEnd = cov.length ? cov[cov.length - 1].end : 0
+    const longTrimmed = cov.every((s) => s.end - s.start <= 9.001)
+    process.env['ME_BROLL_FIXTURE'] = join(process.cwd(), 'test', 'fixtures', 'broll')
+    const bed = await buildBrollBed({ settings: { ...getSettings(), beta: { enabled: true, pexelsKey: 'k', pixabayKey: '', coverrKey: '' } }, words, durationSec: 12, density: 'sparse', poolSize: 4, dims: { w: 1920, h: 1080 }, fps: 30 })
+    delete process.env['ME_BROLL_FIXTURE']
+    const brollOk = themes.includes('discipline') && ranked[0].id === 'b' && Math.abs(covEnd - 12) < 0.1 && longTrimmed && !!bed && existsSync(bed!)
+    console.log(`SMOKE_M6_BROLL themes=${themes.slice(0, 3).join(',')} topRank=${ranked[0].id} covEnd=${covEnd.toFixed(1)} trimmed=${longTrimmed} bed=${!!bed}`)
+
+    // dry-run queue with two jobs at concurrency 2 (unique ids → smoke is re-runnable)
     setSettings({ outputFolder: join(app.getPath('temp'), 'me-m6-out'), concurrency: 2 })
     process.env['ME_RENDER_FIXTURE'] = '1'
+    const ns = Date.now()
     for (const k of [1, 2]) {
-      const id = `proj-m6-${k}`
+      const id = `proj-m6-${ns}-${k}`
       repos.createProject(proj(id, `M6 Test ${k}`))
       repos.replaceProjectImages(id, [{ id: `${id}-i0`, projectId: id, ord: 0, path: '/x/a.png', thumb: '', rangeStart: 0, rangeEnd: 12, manual: false }])
       repos.replaceTranscript(id, words.map((w, i) => ({ ...w, id: `${id}-w${i}`, projectId: id })))
       repos.createRenderJob({ id: `job-${id}`, title: `M6 Test ${k}`, channel: 'Mental Empire', projectId: id })
     }
     await runAll()
-    const j1 = repos.renderJob('job-proj-m6-1')
+    const j1 = repos.renderJob(`job-proj-m6-${ns}-1`)
     const queueOk = j1?.status === 'done' && !!j1.outputPath && existsSync(j1.outputPath) && j1.pct === 100 && lastMaxActive() === 2
     const assFileOk = existsSync(join(app.getPath('temp'), 'me-m6-out', 'Mental Empire - M6 Test 1.ass'))
 
     console.log(`SMOKE_M6_ASS ok=${assOk} zoomHits=${ass169.zoomHits.length}`)
     console.log(`SMOKE_M6_ARGS ok=${argsOk}`)
     console.log(`SMOKE_M6_QUEUE status=${j1?.status} pct=${j1?.pct} maxActive=${lastMaxActive()} out=${!!j1?.outputPath} ass=${assFileOk}`)
-    const ok = assOk && argsOk && queueOk && assFileOk && betaOk
+    const ok = assOk && argsOk && queueOk && assFileOk && betaOk && brollOk
     console.log(ok ? 'SMOKE_M6_OK' : 'SMOKE_M6_FAIL')
     closeDatabase()
     app.exit(ok ? 0 : 1)

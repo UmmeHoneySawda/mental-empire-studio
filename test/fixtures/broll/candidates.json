@@ -1,0 +1,6 @@
+[
+  { "provider": "pexels",  "id": "101", "url": "https://example/101.mp4", "width": 1920, "height": 1080, "durationSec": 8,  "tags": ["money", "success", "wealth"] },
+  { "provider": "pixabay", "id": "202", "url": "https://example/202.mp4", "width": 1280, "height": 720,  "durationSec": 3,  "tags": ["focus", "mindset"] },
+  { "provider": "pexels",  "id": "303", "url": "https://example/303.mp4", "width": 3840, "height": 2160, "durationSec": 12, "tags": ["discipline"] },
+  { "provider": "coverr",  "id": "404", "url": "https://example/404.mp4", "width": 1920, "height": 1080, "durationSec": 6,  "tags": ["cinematic", "city"] }
+]

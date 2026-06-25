@@ -61,6 +61,8 @@ export interface RenderInputs {
   assPath: string
   outPath: string
   settings: AppSettings
+  /** beta auto-B-roll: a pre-assembled full-length video bed used instead of stills */
+  videoBedPath?: string
 }
 
 /** Build the full ffmpeg argument list for a render (pure — unit-asserted). */
@@ -74,6 +76,25 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
     images.length > 0
       ? images
       : [{ id: 'x', projectId: project.id, ord: 0, path: '', thumb: '', rangeStart: 0, rangeEnd: project.durationSec, manual: false }]
+
+  // Beta auto-B-roll: a single full-length video bed replaces the still-image track.
+  if (inp.videoBedPath) {
+    const grad = beta ? overlayGradient(beta.overlay, w, h) : ''
+    const punchOn = project.punchZoom || !!beta?.autoZoom.atKeyPhrases
+    const punch = punchOn ? `,zoompan=z='min(zoom+0.0015,1.08)':d=1:s=${w}x${h}:fps=${FPS}` : ''
+    const crfBed = settings.quality === '1440p' ? '20' : settings.quality === '720p' ? '23' : '21'
+    return [
+      '-y',
+      '-i', inp.videoBedPath,
+      '-i', project.mp3Path,
+      '-filter_complex', `[0:v]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1,fps=${FPS},${grad}subtitles='${assForFilter(assPath)}'${punch}[v]`,
+      '-map', '[v]', '-map', '1:a',
+      '-c:v', 'libx264', '-preset', 'medium', '-crf', crfBed, '-pix_fmt', 'yuv420p', '-r', String(FPS),
+      '-c:a', 'aac', '-b:a', '192k',
+      '-t', project.durationSec > 0 ? project.durationSec.toFixed(2) : '1',
+      '-shortest', outPath
+    ]
+  }
 
   const inputs: string[] = []
   imgs.forEach((im) => {

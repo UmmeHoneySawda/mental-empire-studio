@@ -7,7 +7,8 @@ import { getRepos } from '../db'
 import { getSettings } from '../store/settings'
 import { formatOutputName } from './audio'
 import { buildAss } from './captions'
-import { runRender } from './render'
+import { runRender, dimensions } from './render'
+import { buildBrollBed } from './broll'
 import { emit, hhmm, pushActivity } from '../ipc/events'
 
 // Concurrency-limited render runner. Pulls queued render_jobs, renders up to
@@ -61,8 +62,20 @@ export async function runJob(job: RenderJob): Promise<void> {
   })
   writeFileSync(assPath, ass)
 
+  // Beta auto-B-roll: assemble a themed stock-footage bed; fall back to stills on failure.
+  let videoBedPath: string | undefined
+  if (beta?.broll.enabled) {
+    try {
+      const dims = dimensions(settings.quality, project.captionAspect)
+      const bed = await buildBrollBed({ settings, words, durationSec: project.durationSec, density: beta.broll.density, poolSize: beta.broll.poolSize, dims, fps: 30 })
+      videoBedPath = bed ?? undefined
+    } catch {
+      /* b-roll unavailable (no keys / network) → render with the existing image track */
+    }
+  }
+
   try {
-    await runRender({ project, images, assPath, outPath, settings }, (pct) => {
+    await runRender({ project, images, assPath, outPath, settings, videoBedPath }, (pct) => {
       repos.setRenderStatus(job.id, { status: 'rendering', pct })
       emitR({ jobId: job.id, pct, stage: 'rendering', done: false })
     })
