@@ -20,7 +20,7 @@ import { THUMB_W, THUMB_H, DEFAULT_BETA_OPTS, type TextLayer, type ThumbnailTemp
 import { buildAss } from './services/captions'
 import { buildRenderArgs, runRender, ffmpegPath } from './services/render'
 import { extractThemes, rankCandidates, planCoverage, buildBrollBed, assembleBed, type BrollCandidate } from './services/broll'
-import { validateEffectPlan, deriveStylePlan, styleCaptionLead, type EffectPlan } from '../shared/effectPlan'
+import { validateEffectPlan, deriveStylePlan, styleCaptionLead, textPresetTag, type EffectPlan } from '../shared/effectPlan'
 import { buildSfxTrack } from './services/sfx'
 import { readFileSync as readFileSyncSfx } from 'node:fs'
 import { resolveBinDir } from './services/ytdlp'
@@ -460,8 +460,11 @@ async function runSmokeM6(): Promise<void> {
       ],
       assPath: '/tmp/x.ass', outPath: '/tmp/o.mp4', settings: betaSettings, transition: 'fadeblack'
     }).join(' ')
-    const styleOk = validatorOk && ruleOk && assStyled.ass.includes(lead) && lead.length > 0 && styleArgs.includes('xfade=transition=fadeblack')
-    console.log(`SMOKE_M6_STYLE validator=${validatorOk} rule=${ruleOk} lead=${assStyled.ass.includes(lead)} transition=${styleArgs.includes('xfade=transition=fadeblack')}`)
+    // Per-word + hook text-effect presets land as ASS override tags.
+    const assWordFx = buildAss(words, { preset: 'Hormozi', aspect: '16:9', keywords: false, hook: { text: 'hi', untilSec: 2 }, textEffects: [{ word: 'crazy', preset: 'intense-zoom' }, { scope: 'hook', preset: 'cinematic-pop' }] })
+    const wordFxOk = assWordFx.ass.includes(textPresetTag('intense-zoom')) && assWordFx.ass.includes(textPresetTag('cinematic-pop'))
+    const styleOk = validatorOk && ruleOk && assStyled.ass.includes(lead) && lead.length > 0 && styleArgs.includes('xfade=transition=fadeblack') && wordFxOk
+    console.log(`SMOKE_M6_STYLE validator=${validatorOk} rule=${ruleOk} lead=${assStyled.ass.includes(lead)} transition=${styleArgs.includes('xfade=transition=fadeblack')} wordFx=${wordFxOk}`)
 
     // ---- Beta transition SFX + per-boundary placement ----
     const fxPlan: EffectPlan = { transitions: [{ atSec: 6, type: 'circleopen', durationSec: 0.5, sfx: 'whoosh_soft' }], textEffects: [] }
@@ -686,7 +689,7 @@ async function runSmokeE2E(): Promise<void> {
         overlay: { bottom: true, top: true, left: true, right: true },
         autoZoom: { atStart: true, atKeyPhrases: true },
         style: 'Cinematic',
-        effectPlanJson: JSON.stringify({ transitions: [{ atSec: 6, type: 'circleopen', durationSec: 0.5, sfx: 'whoosh_soft' }], textEffects: [] })
+        effectPlanJson: JSON.stringify({ transitions: [{ atSec: 6, type: 'circleopen', durationSec: 0.5, sfx: 'whoosh_soft' }], textEffects: [{ scope: 'hook', preset: 'intense-zoom' }] })
       }
     })
     sendToRender(pBeta.id)
@@ -724,15 +727,17 @@ async function runSmokeE2E(): Promise<void> {
       check(assTxt.includes('Style: Hook'), 'J6a hook style burned')
       check(assTxt.includes('\\{FOR\\}'), 'J6a hook text ASS-escaped (no raw braces)')
       check(assTxt.includes(styleCaptionLead('Cinematic')), 'J6a Cinematic caption lead applied')
+      check(assTxt.includes(textPresetTag('intense-zoom')), 'J6a per-word/hook text preset applied')
     }
 
     // J6b: REAL b-roll bed assembly + bed-mode render + SFX mix (amix normalize=0).
     const clip = join(app.getPath('temp'), 'me-e2e-clip.mp4')
     execFileSync(ffmpegPath(), ['-y', '-f', 'lavfi', '-i', 'testsrc=d=6:s=640x360:r=30', '-pix_fmt', 'yuv420p', clip])
-    const segs = planCoverage(12, [{ path: clip, durationSec: 6 }], { density: 'sparse' })
-    const bedReal = await assembleBed(segs, { w: 1920, h: 1080 }, 30)
+    // Crossfade bed: tailReserve gives the xfade overlap material; total must still be 12s.
+    const segs = planCoverage(12, [{ path: clip, durationSec: 6 }], { density: 'sparse', tailReserve: 0.3 })
+    const bedReal = await assembleBed(segs, { w: 1920, h: 1080 }, 30, 'fade')
     const bedProbe = ffprobe(bedReal)
-    check(!!bedProbe && bedProbe.video && Math.abs(bedProbe.duration - 12) < 0.8, `J6b real bed covers 12s (got ${bedProbe?.duration?.toFixed(2)})`)
+    check(!!bedProbe && bedProbe.video && Math.abs(bedProbe.duration - 12) < 0.8, `J6b real crossfade bed covers 12s (got ${bedProbe?.duration?.toFixed(2)})`)
     const sfxTrack = buildSfxTrack([{ atSec: 4, type: 'fade', durationSec: 0.5, sfx: 'whoosh_soft' }, { atSec: 8, type: 'fade', durationSec: 0.5, sfx: 'impact_soft' }], 12)
     const bedOut = join(app.getPath('temp'), 'me-e2e-out', 'beta-bed.mp4')
     const bedAss = join(app.getPath('temp'), 'me-e2e-out', 'beta-bed.ass')

@@ -1,4 +1,5 @@
 import type { TranscriptWord } from '../../shared/types'
+import { textPresetTag, type PlanTextEffect } from '../../shared/effectPlan'
 
 // Pure ASS (Advanced SubStation Alpha) generation for CapCut-style burned captions.
 // Word-level karaoke (\kf sweep), per-preset styling, keyword emphasis (scale + color),
@@ -17,6 +18,8 @@ export interface CaptionOptions {
   hook?: { text: string; untilSec: number }
   /** beta: a leading ASS override tag applied to every caption line (the style "feel") */
   styleLead?: string
+  /** beta: per-word / hook text-effect presets from the validated effect plan */
+  textEffects?: PlanTextEffect[]
 }
 
 export interface AssResult {
@@ -109,6 +112,12 @@ export function buildAss(words: TranscriptWord[], opts: CaptionOptions): AssResu
   const perGroup = opts.preset === 'Word' ? 1 : Math.max(1, opts.perGroup ?? 3)
   const groups = groupWords(words, perGroup)
   const zoomHits: number[] = []
+  // Per-word text-effect presets from the plan → ASS tag, keyed by normalized word.
+  const wordFx = new Map<string, string>()
+  for (const e of opts.textEffects ?? []) {
+    if (e.word) wordFx.set(e.word.toLowerCase().replace(/[^a-z0-9]/g, ''), textPresetTag(e.preset))
+  }
+  const hookFx = (opts.textEffects ?? []).find((e) => e.scope === 'hook')
 
   const header = [
     '[Script Info]',
@@ -135,10 +144,12 @@ export function buildAss(words: TranscriptWord[], opts: CaptionOptions): AssResu
         const key = isKeyword(word, opts.keywords)
         if (key) zoomHits.push(word.start)
         const body = escapeAss(word.word)
+        // A plan text-effect preset for this exact word is prepended as its own block.
+        const fx = wordFx.get(word.word.toLowerCase().replace(/[^a-z0-9]/g, '')) ?? ''
         // \kf sweeps the karaoke fill; emphasized keyword pops scale + recolours.
         return key
-          ? `{\\kf${durCs}\\fscx118\\fscy118\\1c${preset.emphasis}}${body}{\\fscx100\\fscy100\\1c${preset.primary}}`
-          : `{\\kf${durCs}}${body}`
+          ? `${fx}{\\kf${durCs}\\fscx118\\fscy118\\1c${preset.emphasis}}${body}{\\fscx100\\fscy100\\1c${preset.primary}}`
+          : `${fx}{\\kf${durCs}}${body}`
       })
       .join(' ')
     return `Dialogue: 0,${secToAss(g.start)},${secToAss(g.end)},Default,,0,0,0,,${opts.styleLead ?? ''}${text}`
@@ -147,7 +158,8 @@ export function buildAss(words: TranscriptWord[], opts: CaptionOptions): AssResu
   // Beta hook: a centered intro card on its own style, fading in/out, on top (layer 1).
   if (opts.hook && opts.hook.text.trim() && opts.hook.untilSec > 0) {
     const body = escapeAss(opts.hook.text.trim().toUpperCase())
-    dialogues.unshift(`Dialogue: 1,${secToAss(0)},${secToAss(opts.hook.untilSec)},Hook,,0,0,0,,{\\fad(250,250)}${body}`)
+    const hookTag = hookFx ? textPresetTag(hookFx.preset) : ''
+    dialogues.unshift(`Dialogue: 1,${secToAss(0)},${secToAss(opts.hook.untilSec)},Hook,,0,0,0,,${hookTag}{\\fad(250,250)}${body}`)
   }
 
   return { ass: `${header}\n${dialogues.join('\n')}\n`, zoomHits: [...new Set(zoomHits)].sort((a, b) => a - b) }

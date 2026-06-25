@@ -74,11 +74,14 @@ function slotLenFor(density: BrollDensity): number {
 export function planCoverage(
   durationSec: number,
   clips: Array<{ path: string; durationSec: number }>,
-  opts: { density: BrollDensity; maxSegments?: number }
+  opts: { density: BrollDensity; maxSegments?: number; tailReserve?: number }
 ): BrollSegment[] {
   if (clips.length === 0 || durationSec <= 0) return []
   const maxSeg = opts.maxSegments ?? 60
   const slot = Math.max(durationSec / maxSeg, slotLenFor(opts.density))
+  // When the bed will crossfade, reserve a little tail of each clip so there is
+  // overlap material for the xfade (else the cut has nothing to fade into).
+  const reserve = opts.tailReserve ?? 0
   const segments: BrollSegment[] = []
   let t = 0
   let i = 0
@@ -86,9 +89,9 @@ export function planCoverage(
     const clip = clips[i % clips.length]
     const remaining = durationSec - t
     const want = Math.min(slot, remaining)
-    // A clip can fill at most its own length; if shorter than the slot it makes a
-    // shorter segment and the next clip continues from where it left off.
-    const segLen = Math.min(want, Math.max(0.5, clip.durationSec))
+    // A clip can fill at most its own length (minus the reserved crossfade tail); if
+    // shorter than the slot it makes a shorter segment and the next clip continues.
+    const segLen = Math.min(want, Math.max(0.5, clip.durationSec - reserve))
     // Rotate the in-point so re-used clips don't always show the same opening frames.
     const srcStart = clip.durationSec > segLen ? (i * 1.7) % (clip.durationSec - segLen) : 0
     segments.push({ path: clip.path, start: t, end: t + segLen, srcStart })
@@ -222,27 +225,51 @@ export async function downloadPool(cands: BrollCandidate[], poolSize: number): P
   return out
 }
 
-/** Assemble the planned segments into one bed.mp4 (scaled to WxH), via the concat
- *  filter. Dry-run seam (ME_RENDER_FIXTURE / no ffmpeg) writes a stub so callers work. */
-export async function assembleBed(segments: BrollSegment[], dims: { w: number; h: number }, fps: number): Promise<string> {
+const BED_CF = 0.3 // bed crossfade duration (also the planCoverage tail reserve)
+
+/** Assemble the planned segments into one bed.mp4 (scaled to WxH). With a transition,
+ *  consecutive clips crossfade; otherwise they hard-cut (concat). Dry-run seam
+ *  (ME_RENDER_FIXTURE / fixture mode) writes a stub so callers work offline. */
+export async function assembleBed(segments: BrollSegment[], dims: { w: number; h: number }, fps: number, transition?: string): Promise<string> {
   const dir = brollDir()
   const bed = join(dir, `bed-${Date.now()}.mp4`)
-  // Dry-run seam: no real ffmpeg in the sandbox (or fixture mode) → write a stub bed
-  // so the themes/pool/coverage path is exercised without decoding real clips.
   if (process.env['ME_RENDER_FIXTURE'] || process.env['ME_BROLL_FIXTURE'] || segments.length === 0) {
     writeFileSync(bed, Buffer.from('\x00\x00\x00\x18ftypmp42stub-broll-bed'))
     return bed
   }
   const { w, h } = dims
+  const total = segments[segments.length - 1].end
   const inputs: string[] = []
   const parts: string[] = []
-  segments.forEach((s, i) => {
-    inputs.push('-ss', s.srcStart.toFixed(2), '-t', (s.end - s.start).toFixed(2), '-i', s.path)
-    parts.push(`[${i}:v]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1,fps=${fps}[v${i}]`)
-  })
-  const concatIn = segments.map((_, i) => `[v${i}]`).join('')
-  parts.push(`${concatIn}concat=n=${segments.length}:v=1:a=0[v]`)
-  const args = ['-y', ...inputs, '-filter_complex', parts.join(';'), '-map', '[v]', '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p', '-r', String(fps), bed]
+  let mapLabel: string
+
+  if (transition && segments.length > 1) {
+    // Crossfade consecutive clips. Each input carries BED_CF of extra tail (reserved by
+    // planCoverage's tailReserve) so the xfade has overlap material; offsets accumulate
+    // by visible segment length so the total still equals the audio duration.
+    segments.forEach((s, i) => {
+      inputs.push('-ss', s.srcStart.toFixed(2), '-t', (s.end - s.start + BED_CF).toFixed(2), '-i', s.path)
+      parts.push(`[${i}:v]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1,fps=${fps}[v${i}]`)
+    })
+    let last = 'v0'
+    let offset = segments[0].end - segments[0].start
+    for (let i = 1; i < segments.length; i++) {
+      const out = `x${i}`
+      parts.push(`[${last}][v${i}]xfade=transition=${transition}:duration=${BED_CF}:offset=${offset.toFixed(2)}[${out}]`)
+      offset += segments[i].end - segments[i].start
+      last = out
+    }
+    mapLabel = `[${last}]`
+  } else {
+    segments.forEach((s, i) => {
+      inputs.push('-ss', s.srcStart.toFixed(2), '-t', (s.end - s.start).toFixed(2), '-i', s.path)
+      parts.push(`[${i}:v]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1,fps=${fps}[v${i}]`)
+    })
+    const concatIn = segments.map((_, i) => `[v${i}]`).join('')
+    parts.push(`${concatIn}concat=n=${segments.length}:v=1:a=0[v]`)
+    mapLabel = '[v]'
+  }
+  const args = ['-y', ...inputs, '-filter_complex', parts.join(';'), '-map', mapLabel, '-t', total.toFixed(2), '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p', '-r', String(fps), bed]
   await new Promise<void>((resolve, reject) => {
     const child = spawn(ffmpegPath(), args, { windowsHide: true })
     let err = ''
@@ -263,11 +290,13 @@ export async function buildBrollBed(opts: {
   poolSize: number
   dims: { w: number; h: number }
   fps: number
+  /** crossfade clips with this transition (e.g. the style's); undefined = hard cuts */
+  transition?: string
 }): Promise<string | null> {
   const themes = extractThemes(opts.words)
   const cands = await fetchPool(opts.settings, themes, opts.dims, opts.poolSize)
   const clips = await downloadPool(cands, opts.poolSize)
   if (clips.length === 0) return null
-  const segments = planCoverage(opts.durationSec, clips, { density: opts.density })
-  return assembleBed(segments, opts.dims, opts.fps)
+  const segments = planCoverage(opts.durationSec, clips, { density: opts.density, tailReserve: opts.transition ? BED_CF : 0 })
+  return assembleBed(segments, opts.dims, opts.fps, opts.transition)
 }

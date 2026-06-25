@@ -73,7 +73,8 @@ export async function runJob(job: RenderJob): Promise<void> {
     aspect: project.captionAspect,
     keywords: project.keywords || !!beta?.autoHighlight,
     hook: hookText ? { text: hookText, untilSec: 2.6 } : undefined,
-    styleLead
+    styleLead,
+    textEffects: beta ? plan.textEffects : undefined
   })
   writeFileSync(assPath, ass)
 
@@ -82,7 +83,7 @@ export async function runJob(job: RenderJob): Promise<void> {
   if (beta?.broll.enabled) {
     try {
       const dims = dimensions(settings.quality, project.captionAspect)
-      const bed = await buildBrollBed({ settings, words, durationSec: project.durationSec, density: beta.broll.density, poolSize: beta.broll.poolSize, dims, fps: 30 })
+      const bed = await buildBrollBed({ settings, words, durationSec: project.durationSec, density: beta.broll.density, poolSize: beta.broll.poolSize, dims, fps: 30, transition })
       videoBedPath = bed ?? undefined
     } catch {
       /* b-roll unavailable (no keys / network) → render with the existing image track */
