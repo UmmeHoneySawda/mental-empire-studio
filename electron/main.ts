@@ -20,6 +20,7 @@ import { THUMB_W, THUMB_H, DEFAULT_BETA_OPTS, type TextLayer, type ThumbnailTemp
 import { buildAss } from './services/captions'
 import { buildRenderArgs } from './services/render'
 import { extractThemes, rankCandidates, planCoverage, buildBrollBed, type BrollCandidate } from './services/broll'
+import { validateEffectPlan, deriveStylePlan, styleCaptionLead } from '../shared/effectPlan'
 import { resolveBinDir } from './services/ytdlp'
 import { runAll, lastMaxActive } from './services/queue'
 import { runProfile, newVideos } from './ipc/automation'
@@ -431,6 +432,35 @@ async function runSmokeM6(): Promise<void> {
     const brollOk = themes.includes('discipline') && ranked[0].id === 'b' && Math.abs(covEnd - 12) < 0.1 && longTrimmed && !!bed && existsSync(bed!)
     console.log(`SMOKE_M6_BROLL themes=${themes.slice(0, 3).join(',')} topRank=${ranked[0].id} covEnd=${covEnd.toFixed(1)} trimmed=${longTrimmed} bed=${!!bed}`)
 
+    // ---- Beta style + effect plan: validator guardrails, rule engine, render wiring ----
+    const vp = validateEffectPlan({
+      transitions: [
+        { atSec: 1, type: 'fadeblack', durationSec: 2 },     // duration clamped to 0.8
+        { atSec: 1.5, type: 'fadeblack', durationSec: 0.5 }, // too close → dropped
+        { atSec: 8, type: 'nonsense', durationSec: 0.5 },    // unknown → dropped
+        { atSec: 9, type: 'zoomin', durationSec: 0.5 }
+      ],
+      textEffects: [{ scope: 'hook', preset: 'cinematic-pop' }, { word: 'x', preset: 'bogus' }]
+    }, 60)
+    // length 2 ⇒ the unknown type + the too-close transition were both dropped.
+    const validatorOk =
+      vp.plan.transitions.length === 2 && vp.plan.transitions[0].durationSec <= 0.8 &&
+      vp.plan.textEffects.length === 1
+    const rulePlan = deriveStylePlan(words, 'Cinematic', 12)
+    const ruleOk = rulePlan.transitions.length >= 0 && rulePlan.textEffects.some((e) => e.scope === 'hook')
+    const lead = styleCaptionLead('Cinematic')
+    const assStyled = buildAss(words, { preset: 'Hormozi', aspect: '16:9', keywords: false, styleLead: lead })
+    const styleArgs = buildRenderArgs({
+      project: { ...proj('p-sty', 'Sty'), kenBurns: false },
+      images: [
+        { id: 'i0', projectId: 'p-sty', ord: 0, path: '/x/a.png', thumb: '', rangeStart: 0, rangeEnd: 6, manual: false },
+        { id: 'i1', projectId: 'p-sty', ord: 1, path: '/x/b.png', thumb: '', rangeStart: 6, rangeEnd: 12, manual: false }
+      ],
+      assPath: '/tmp/x.ass', outPath: '/tmp/o.mp4', settings: betaSettings, transition: 'fadeblack'
+    }).join(' ')
+    const styleOk = validatorOk && ruleOk && assStyled.ass.includes(lead) && lead.length > 0 && styleArgs.includes('xfade=transition=fadeblack')
+    console.log(`SMOKE_M6_STYLE validator=${validatorOk} rule=${ruleOk} lead=${assStyled.ass.includes(lead)} transition=${styleArgs.includes('xfade=transition=fadeblack')}`)
+
     // dry-run queue with two jobs at concurrency 2 (unique ids → smoke is re-runnable)
     setSettings({ outputFolder: join(app.getPath('temp'), 'me-m6-out'), concurrency: 2 })
     process.env['ME_RENDER_FIXTURE'] = '1'
@@ -450,7 +480,7 @@ async function runSmokeM6(): Promise<void> {
     console.log(`SMOKE_M6_ASS ok=${assOk} zoomHits=${ass169.zoomHits.length}`)
     console.log(`SMOKE_M6_ARGS ok=${argsOk}`)
     console.log(`SMOKE_M6_QUEUE status=${j1?.status} pct=${j1?.pct} maxActive=${lastMaxActive()} out=${!!j1?.outputPath} ass=${assFileOk}`)
-    const ok = assOk && argsOk && queueOk && assFileOk && betaOk && brollOk
+    const ok = assOk && argsOk && queueOk && assFileOk && betaOk && brollOk && styleOk
     console.log(ok ? 'SMOKE_M6_OK' : 'SMOKE_M6_FAIL')
     closeDatabase()
     app.exit(ok ? 0 : 1)

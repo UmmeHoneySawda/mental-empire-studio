@@ -15,6 +15,8 @@ export interface CaptionOptions {
   perGroup?: number
   /** beta: intro "hook" text card shown centered for the first untilSec seconds */
   hook?: { text: string; untilSec: number }
+  /** beta: a leading ASS override tag applied to every caption line (the style "feel") */
+  styleLead?: string
 }
 
 export interface AssResult {
@@ -139,7 +141,7 @@ export function buildAss(words: TranscriptWord[], opts: CaptionOptions): AssResu
           : `{\\kf${durCs}}${body}`
       })
       .join(' ')
-    return `Dialogue: 0,${secToAss(g.start)},${secToAss(g.end)},Default,,0,0,0,,${text}`
+    return `Dialogue: 0,${secToAss(g.start)},${secToAss(g.end)},Default,,0,0,0,,${opts.styleLead ?? ''}${text}`
   })
 
   // Beta hook: a centered intro card on its own style, fading in/out, on top (layer 1).

@@ -63,6 +63,8 @@ export interface RenderInputs {
   settings: AppSettings
   /** beta auto-B-roll: a pre-assembled full-length video bed used instead of stills */
   videoBedPath?: string
+  /** beta style: xfade transition type between image segments (default 'fade') */
+  transition?: string
 }
 
 /** Build the full ffmpeg argument list for a render (pure — unit-asserted). */
@@ -123,12 +125,14 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
     parts.push(`${base}${motion}[v${i}]`)
   })
 
+  // Beta style picks the crossfade transition between segments (validated upstream).
+  const xfadeType = (beta && inp.transition) ? inp.transition : 'fade'
   let last = 'v0'
   if (imgs.length > 1) {
     let offset = Math.max(0.5, imgs[0].rangeEnd - imgs[0].rangeStart)
     for (let i = 1; i < imgs.length; i++) {
       const out = `x${i}`
-      parts.push(`[${last}][v${i}]xfade=transition=fade:duration=${cf || 0.4}:offset=${offset.toFixed(2)}[${out}]`)
+      parts.push(`[${last}][v${i}]xfade=transition=${xfadeType}:duration=${cf || 0.4}:offset=${offset.toFixed(2)}[${out}]`)
       offset += Math.max(0.5, imgs[i].rangeEnd - imgs[i].rangeStart)
       last = out
     }

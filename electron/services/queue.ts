@@ -3,6 +3,7 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { RenderJob, RenderProgress } from '../../shared/types'
 import { asBetaOpts } from '../../shared/types'
+import { styleCaptionLead, styleTransition } from '../../shared/effectPlan'
 import { getRepos } from '../db'
 import { getSettings } from '../store/settings'
 import { formatOutputName } from './audio'
@@ -54,11 +55,18 @@ export async function runJob(job: RenderJob): Promise<void> {
   const hookText = beta?.hook.enabled
     ? (beta.hook.text.trim() || words.slice(0, 8).map((w) => w.word).join(' '))
     : ''
+  // Beta style → transitions + caption "feel". A pasted/LLM effect plan overrides the
+  // built-in rule engine; both pass through validateEffectPlan's guardrails.
+  const style = beta?.style ?? 'None'
+  const styleLead = beta ? styleCaptionLead(style) : undefined
+  const transition = beta && style !== 'None' ? styleTransition(style) : undefined
+
   const { ass } = buildAss(words, {
     preset: project.captionPreset,
     aspect: project.captionAspect,
     keywords: project.keywords || !!beta?.autoHighlight,
-    hook: hookText ? { text: hookText, untilSec: 2.6 } : undefined
+    hook: hookText ? { text: hookText, untilSec: 2.6 } : undefined,
+    styleLead
   })
   writeFileSync(assPath, ass)
 
@@ -75,7 +83,7 @@ export async function runJob(job: RenderJob): Promise<void> {
   }
 
   try {
-    await runRender({ project, images, assPath, outPath, settings, videoBedPath }, (pct) => {
+    await runRender({ project, images, assPath, outPath, settings, videoBedPath, transition }, (pct) => {
       repos.setRenderStatus(job.id, { status: 'rendering', pct })
       emitR({ jobId: job.id, pct, stage: 'rendering', done: false })
     })

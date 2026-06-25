@@ -63,5 +63,15 @@ export function registerIpc(): void {
   // ---- automation: profiles + scheduler (M7) ----
   registerAutomationIpc()
   ipcMain.handle('automation:tick', () => tick())
+
+  // ---- beta: effect-plan generation via Groq (reuses the transcription key) ----
+  ipcMain.handle('effects:generate', async (_e, projectId: string, style: import('../../shared/types').VideoStyle) => {
+    const project = getRepos().getProject(projectId)
+    if (!project) throw new Error('project missing')
+    const words = getRepos().getTranscript(projectId)
+    const { generatePlanViaGroq } = await import('../services/effects')
+    const { json } = await generatePlanViaGroq(getSettings().transcription.apiKey, words, style, project.durationSec)
+    return json
+  })
 }
 

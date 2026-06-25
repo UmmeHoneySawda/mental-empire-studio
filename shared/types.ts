@@ -492,6 +492,10 @@ export interface NativeApi {
     /** factory reset: settings → defaults and wipe all projects/profiles/channels/jobs */
     reset(): Promise<AppSettings>
   }
+  effects: {
+    /** beta: generate a validated effect-plan JSON for a project via Groq */
+    generate(projectId: string, style: VideoStyle): Promise<string>
+  }
   db: {
     myChannels(): Promise<MyChannel[]>
     sourceChannels(): Promise<SourceChannel[]>

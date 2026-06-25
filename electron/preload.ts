@@ -40,6 +40,10 @@ const api: NativeApi = {
     reset: () => ipcRenderer.invoke('app:reset')
   },
 
+  effects: {
+    generate: (projectId: string, style: string) => ipcRenderer.invoke('effects:generate', projectId, style)
+  },
+
   db: {
     myChannels: () => ipcRenderer.invoke('db:myChannels'),
     sourceChannels: () => ipcRenderer.invoke('db:sourceChannels'),
