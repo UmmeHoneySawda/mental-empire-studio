@@ -17,6 +17,7 @@ import type {
   ScrapeOrder,
   ImageMode
 } from '../../shared/types'
+import { asBetaOpts, DEFAULT_BETA_OPTS } from '../../shared/types'
 import { seedIfEmpty } from './seed'
 
 // Embedded, synchronous SQLite (better-sqlite3) holds all domain data: channels,
@@ -124,6 +125,25 @@ function migrate(d: Database.Database): void {
   ensureColumn(d, 'profiles', 'outputFolder', 'TEXT')
   ensureColumn(d, 'profiles', 'lastSeenVideoId', 'TEXT')
   ensureColumn(d, 'profiles', 'lastRunAt', 'TEXT')
+  // Beta features — one JSON column each, so future fields need no migration.
+  ensureColumn(d, 'projects', 'betaOpts', 'TEXT')
+  ensureColumn(d, 'profiles', 'betaOpts', 'TEXT')
+}
+
+/** Parse the betaOpts JSON column (null/garbage → defaults), deriving from legacy
+ *  project flags when the column was never written. */
+function parseBetaOpts(r: Record<string, unknown>): import('../../shared/types').BetaVideoOpts {
+  if (r.betaOpts != null) {
+    try {
+      return asBetaOpts(JSON.parse(r.betaOpts as string))
+    } catch {
+      /* fall through to defaults */
+    }
+  }
+  return asBetaOpts({
+    autoHighlight: !!r.keywords,
+    autoZoom: { atStart: !!r.kenBurns, atKeyPhrases: !!r.punchZoom }
+  })
 }
 
 export interface ChannelStatsPatch {
@@ -394,8 +414,8 @@ function buildRepositories(d: Database.Database): Repositories {
 
     createProject: (p) => {
       d.prepare(
-        `INSERT INTO projects (id,downloadId,title,channel,mp3Path,durationSec,imageMode,poolSize,kenBurns,seed,crossfade,captionPreset,captionFont,captionAnim,captionAspect,emphasis,keywords,punchZoom,stage,createdAt)
-         VALUES (@id,@downloadId,@title,@channel,@mp3Path,@durationSec,@imageMode,@poolSize,@kenBurns,@seed,@crossfade,@captionPreset,@captionFont,@captionAnim,@captionAspect,@emphasis,@keywords,@punchZoom,@stage,@createdAt)`
+        `INSERT INTO projects (id,downloadId,title,channel,mp3Path,durationSec,imageMode,poolSize,kenBurns,seed,crossfade,captionPreset,captionFont,captionAnim,captionAspect,emphasis,keywords,punchZoom,stage,createdAt,betaOpts)
+         VALUES (@id,@downloadId,@title,@channel,@mp3Path,@durationSec,@imageMode,@poolSize,@kenBurns,@seed,@crossfade,@captionPreset,@captionFont,@captionAnim,@captionAspect,@emphasis,@keywords,@punchZoom,@stage,@createdAt,@betaOpts)`
       ).run(projectToRow(p))
     },
     getProject: (id) => {
@@ -488,18 +508,19 @@ function buildRepositories(d: Database.Database): Repositories {
 const PROJECT_BOOL_KEYS = new Set(['kenBurns', 'crossfade', 'emphasis', 'keywords', 'punchZoom'])
 
 function projectToRow(p: Project): Record<string, unknown> {
-  return { ...p, kenBurns: p.kenBurns ? 1 : 0, crossfade: p.crossfade ? 1 : 0, emphasis: p.emphasis ? 1 : 0, keywords: p.keywords ? 1 : 0, punchZoom: p.punchZoom ? 1 : 0 }
+  return { ...p, kenBurns: p.kenBurns ? 1 : 0, crossfade: p.crossfade ? 1 : 0, emphasis: p.emphasis ? 1 : 0, keywords: p.keywords ? 1 : 0, punchZoom: p.punchZoom ? 1 : 0, betaOpts: JSON.stringify(p.betaOpts ?? DEFAULT_BETA_OPTS) }
 }
 function projectPatchToRow(patch: Partial<Project>): Record<string, unknown> {
   const out: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(patch)) {
     if (v === undefined || k === 'id') continue
-    out[k] = PROJECT_BOOL_KEYS.has(k) ? (v ? 1 : 0) : v
+    if (k === 'betaOpts') out[k] = JSON.stringify(v)
+    else out[k] = PROJECT_BOOL_KEYS.has(k) ? (v ? 1 : 0) : v
   }
   return out
 }
 function rowToProject(r: Record<string, unknown>): Project {
-  return { ...(r as unknown as Project), kenBurns: !!r.kenBurns, crossfade: !!r.crossfade, emphasis: !!r.emphasis, keywords: !!r.keywords, punchZoom: !!r.punchZoom }
+  return { ...(r as unknown as Project), kenBurns: !!r.kenBurns, crossfade: !!r.crossfade, emphasis: !!r.emphasis, keywords: !!r.keywords, punchZoom: !!r.punchZoom, betaOpts: parseBetaOpts(r) }
 }
 function rowToImage(r: Record<string, unknown>): ProjectImage {
   return { ...(r as unknown as ProjectImage), manual: !!r.manual }
@@ -511,7 +532,7 @@ function rowToWord(r: Record<string, unknown>): TranscriptWord {
 const PROFILE_COLS = [
   'id', 'name', 'mono', 'avatar', 'rule', 'images', 'thumb', 'cap', 'out', 'autoWatch', 'thumbnailTemplateId',
   'linkedSourceId', 'sourceUrl', 'sourceOrder', 'sourceCount', 'imageMode', 'poolSize', 'kenBurns',
-  'captionPreset', 'captionAspect', 'outputFolder', 'lastSeenVideoId', 'lastRunAt'
+  'captionPreset', 'captionAspect', 'outputFolder', 'lastSeenVideoId', 'lastRunAt', 'betaOpts'
 ]
 
 function profileToRow(p: Profile): Record<string, unknown> {
@@ -523,7 +544,8 @@ function profileToRow(p: Profile): Record<string, unknown> {
     linkedSourceId: p.linkedSourceId ?? null,
     outputFolder: p.outputFolder ?? null,
     lastSeenVideoId: p.lastSeenVideoId ?? null,
-    lastRunAt: p.lastRunAt ?? null
+    lastRunAt: p.lastRunAt ?? null,
+    betaOpts: JSON.stringify(p.betaOpts ?? DEFAULT_BETA_OPTS)
   }
 }
 
@@ -539,6 +561,7 @@ function rowToProfile(r: Record<string, unknown>): Profile {
     imageMode: (r.imageMode as ImageMode) ?? 'sequence',
     poolSize: (r.poolSize as number) ?? 10,
     captionPreset: (r.captionPreset as string) ?? 'Hormozi',
-    captionAspect: (r.captionAspect as Profile['captionAspect']) ?? '16:9'
+    captionAspect: (r.captionAspect as Profile['captionAspect']) ?? '16:9',
+    betaOpts: parseBetaOpts(r)
   }
 }

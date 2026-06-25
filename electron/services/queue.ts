@@ -2,6 +2,7 @@ import { app } from 'electron'
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { RenderJob, RenderProgress } from '../../shared/types'
+import { asBetaOpts } from '../../shared/types'
 import { getRepos } from '../db'
 import { getSettings } from '../store/settings'
 import { formatOutputName } from './audio'
@@ -47,7 +48,17 @@ export async function runJob(job: RenderJob): Promise<void> {
   const base = formatOutputName(settings.namingTemplate, { channel: project.channel, title: project.title })
   const assPath = join(dir, `${base}.ass`)
   const outPath = join(dir, `${base}.mp4`)
-  const { ass } = buildAss(words, { preset: project.captionPreset, aspect: project.captionAspect, keywords: project.keywords })
+  // Beta: fold hook + auto-highlight into the caption options when beta mode is on.
+  const beta = settings.beta?.enabled ? asBetaOpts(project.betaOpts) : null
+  const hookText = beta?.hook.enabled
+    ? (beta.hook.text.trim() || words.slice(0, 8).map((w) => w.word).join(' '))
+    : ''
+  const { ass } = buildAss(words, {
+    preset: project.captionPreset,
+    aspect: project.captionAspect,
+    keywords: project.keywords || !!beta?.autoHighlight,
+    hook: hookText ? { text: hookText, untilSec: 2.6 } : undefined
+  })
   writeFileSync(assPath, ass)
 
   try {

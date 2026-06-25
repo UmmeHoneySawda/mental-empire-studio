@@ -53,7 +53,9 @@ export async function runProfile(profileId: string, headless = false): Promise<s
         poolSize: profile.poolSize,
         kenBurns: profile.kenBurns,
         captionPreset: profile.captionPreset,
-        captionAspect: profile.captionAspect
+        captionAspect: profile.captionAspect,
+        // Inherit the profile's beta-feature defaults (hook/highlight/overlay/zoom/b-roll/style).
+        ...(profile.betaOpts ? { betaOpts: profile.betaOpts } : {})
       })
       projectIds.push(proj.id)
       if (headless) sendToRender(proj.id)

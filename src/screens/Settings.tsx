@@ -136,6 +136,28 @@ export function Settings(): JSX.Element {
             </div>
           </Card>
 
+          <Card label="BETA FEATURES">
+            <div onClick={() => updateSettings({ beta: { enabled: !settings.beta.enabled } })} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', marginBottom: settings.beta.enabled ? 13 : 0 }}>
+              <Toggle on={settings.beta.enabled} />
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 12.5, color: settings.beta.enabled ? '#cdd2da' : '#8a909c' }}>Enable beta features</div>
+                <div style={{ fontSize: 10.5, color: '#6a7180', marginTop: 2 }}>Hook · auto-highlight · background overlay · auto-zoom · auto B-roll · transition &amp; text-effect styles</div>
+              </div>
+            </div>
+            {settings.beta.enabled && (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 9, fontSize: 12.5 }}>
+                <div style={{ fontSize: 10.5, color: '#6a7180' }}>Stock-footage API keys (for auto B-roll) — optional, used in priority order</div>
+                {([['pexelsKey', 'Pexels'], ['pixabayKey', 'Pixabay'], ['coverrKey', 'Coverr']] as const).map(([k, label]) => (
+                  <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 10, border: '1px solid #1d2129', borderRadius: 9, padding: '9px 13px', background: '#0e1116' }}>
+                    <span style={{ color: '#cdd2da', flex: 'none', width: 66 }}>{label}</span>
+                    <input type="password" value={settings.beta[k]} onChange={(e) => updateSettings({ beta: { [k]: e.target.value } })} placeholder={`${label} API key`} style={{ flex: 1, border: '1px solid #23272f', borderRadius: 7, padding: '6px 10px', fontSize: 11, color: '#aab0bb', fontFamily: 'var(--font-mono)', background: '#0c0d11', outline: 'none' }} />
+                  </div>
+                ))}
+                <div style={{ fontSize: 10, color: '#6a7180' }}>Footage from Pexels / Pixabay / Coverr. Get free keys at their developer pages.</div>
+              </div>
+            )}
+          </Card>
+
           <Card label="DANGER ZONE">
             <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
               <div style={{ flex: 1 }}>

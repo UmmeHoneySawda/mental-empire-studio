@@ -170,6 +170,8 @@ export interface Profile {
   /** newest source video id already processed — the auto-watch cursor */
   lastSeenVideoId?: string
   lastRunAt?: string
+  /** beta-feature defaults applied to videos this profile produces */
+  betaOpts?: BetaVideoOpts
 }
 
 /** Live status streamed while a profile runs (interactive or hands-free). */
@@ -308,6 +310,53 @@ export interface TranscriptWord {
   emphasis: boolean
 }
 
+// ---- Beta features (gated behind settings.beta.enabled) ----
+// Stored as one JSON column (betaOpts) on projects + profiles, so adding fields
+// across phases needs no DB migration. Phase 1 = hook/highlight/overlay/zoom;
+// phase 2 = b-roll pool; phase 3 = style + effect plan.
+export type VideoStyle = 'None' | 'Cinematic' | 'Intense' | 'Heartfelt' | 'Clean'
+export type BrollDensity = 'full' | 'sparse' | 'keywords'
+
+export interface BetaVideoOpts {
+  /** intro text card shown for the first few seconds ('' text → auto from transcript) */
+  hook: { enabled: boolean; text: string }
+  /** auto-emphasize detected keywords in captions (maps to project.keywords) */
+  autoHighlight: boolean
+  /** simple darkening gradient on the chosen edges, for caption/subject legibility */
+  overlay: { bottom: boolean; top: boolean; left: boolean; right: boolean }
+  /** automatic zoom — at the start, and/or punch-zoom on emphasized words */
+  autoZoom: { atStart: boolean; atKeyPhrases: boolean }
+  // ---- phase 2: themed b-roll pool ----
+  broll: { enabled: boolean; density: BrollDensity; poolSize: number; mode: 'full' | 'overlay' }
+  // ---- phase 3: style + transition/text-effect plan ----
+  style: VideoStyle
+  /** optional manual/LLM-generated effect plan JSON (overrides the style's rule engine) */
+  effectPlanJson: string
+}
+
+export const DEFAULT_BETA_OPTS: BetaVideoOpts = {
+  hook: { enabled: false, text: '' },
+  autoHighlight: false,
+  overlay: { bottom: false, top: false, left: false, right: false },
+  autoZoom: { atStart: false, atKeyPhrases: false },
+  broll: { enabled: false, density: 'sparse', poolSize: 18, mode: 'full' },
+  style: 'None',
+  effectPlanJson: ''
+}
+
+/** Merge a possibly-partial/legacy betaOpts onto the defaults (deep, for nested groups). */
+export function asBetaOpts(v: unknown): BetaVideoOpts {
+  const o = (v && typeof v === 'object' ? v : {}) as Partial<BetaVideoOpts>
+  return {
+    ...DEFAULT_BETA_OPTS,
+    ...o,
+    hook: { ...DEFAULT_BETA_OPTS.hook, ...(o.hook ?? {}) },
+    overlay: { ...DEFAULT_BETA_OPTS.overlay, ...(o.overlay ?? {}) },
+    autoZoom: { ...DEFAULT_BETA_OPTS.autoZoom, ...(o.autoZoom ?? {}) },
+    broll: { ...DEFAULT_BETA_OPTS.broll, ...(o.broll ?? {}) }
+  }
+}
+
 /** One compose project = a downloaded mp3 + its image/caption recipe, headed for render. */
 export interface Project {
   id: string
@@ -330,6 +379,9 @@ export interface Project {
   punchZoom: boolean
   stage: string
   createdAt: string
+  /** beta-feature options (hook/highlight/overlay/zoom/b-roll/style). Always present
+   *  from the DB; optional on the type so construction-site literals stay terse. */
+  betaOpts?: BetaVideoOpts
 }
 
 export interface DownloadProgress {
@@ -401,6 +453,8 @@ export interface AppSettings {
   autoScrape: { enabled: boolean; frequency: string; delaySec: number; retries: number; proxy: string; cookiesPath: string }
   background: { tray: boolean; startOnSignIn: boolean; notifications: boolean; webhook: string }
   transcription: { apiKey: string; model: string }
+  /** experimental features + stock-footage API keys (gated; default off) */
+  beta: { enabled: boolean; pexelsKey: string; pixabayKey: string; coverrKey: string }
 }
 
 /** Canonical defaults — shared by the main-process store and the renderer's initial state. */
@@ -415,7 +469,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   quality: '1080p',
   autoScrape: { enabled: true, frequency: 'Every 6 hours', delaySec: 1.5, retries: 3, proxy: '', cookiesPath: '' },
   background: { tray: true, startOnSignIn: true, notifications: true, webhook: '' },
-  transcription: { apiKey: '', model: 'whisper-large-v3-turbo' }
+  transcription: { apiKey: '', model: 'whisper-large-v3-turbo' },
+  beta: { enabled: false, pexelsKey: '', pixabayKey: '', coverrKey: '' }
 }
 
 /** Recursive partial — used for settings patches that touch only nested keys. */

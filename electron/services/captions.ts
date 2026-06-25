@@ -13,6 +13,8 @@ export interface CaptionOptions {
   keywords: boolean
   /** words per on-screen caption group (Word preset forces 1) */
   perGroup?: number
+  /** beta: intro "hook" text card shown centered for the first untilSec seconds */
+  hook?: { text: string; untilSec: number }
 }
 
 export interface AssResult {
@@ -117,6 +119,8 @@ export function buildAss(words: TranscriptWord[], opts: CaptionOptions): AssResu
     '[V4+ Styles]',
     'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
     styleLine(preset),
+    // Hook style: big, centered on screen, heavy outline (alignment 5 = middle-centre).
+    `Style: Hook,Anton,${Math.round(h * 0.12)},&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,1,0,0,0,100,100,0,0,1,8,0,5,80,80,80,1`,
     '',
     '[Events]',
     'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text'
@@ -137,6 +141,12 @@ export function buildAss(words: TranscriptWord[], opts: CaptionOptions): AssResu
       .join(' ')
     return `Dialogue: 0,${secToAss(g.start)},${secToAss(g.end)},Default,,0,0,0,,${text}`
   })
+
+  // Beta hook: a centered intro card on its own style, fading in/out, on top (layer 1).
+  if (opts.hook && opts.hook.text.trim() && opts.hook.untilSec > 0) {
+    const body = escapeAss(opts.hook.text.trim().toUpperCase())
+    dialogues.unshift(`Dialogue: 1,${secToAss(0)},${secToAss(opts.hook.untilSec)},Hook,,0,0,0,,{\\fad(250,250)}${body}`)
+  }
 
   return { ass: `${header}\n${dialogues.join('\n')}\n`, zoomHits: [...new Set(zoomHits)].sort((a, b) => a - b) }
 }

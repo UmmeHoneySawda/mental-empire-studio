@@ -16,7 +16,7 @@ import { firedNotifications } from './services/notify'
 import { channelUrl } from './services/scraper'
 import { splitRanges } from './services/audio'
 import { autoArrangeText } from '../shared/thumbnail'
-import { THUMB_W, THUMB_H, type TextLayer, type ThumbnailTemplate, type TranscriptWord } from '../shared/types'
+import { THUMB_W, THUMB_H, DEFAULT_BETA_OPTS, type TextLayer, type ThumbnailTemplate, type TranscriptWord } from '../shared/types'
 import { buildAss } from './services/captions'
 import { buildRenderArgs } from './services/render'
 import { resolveBinDir } from './services/ytdlp'
@@ -393,6 +393,23 @@ async function runSmokeM6(): Promise<void> {
     const g = args.join(' ')
     const argsOk = g.includes('zoompan') && g.includes('xfade') && g.includes('subtitles=') && g.includes('libx264') && g.includes('scale=1920:1080')
 
+    // ---- Beta features (hook / overlay gradient / auto-zoom at start) ----
+    const assHook = buildAss(words, { preset: 'Hormozi', aspect: '16:9', keywords: false, hook: { text: 'wait for it', untilSec: 2.5 } })
+    const betaProj = {
+      ...proj('p-beta', 'Beta'), kenBurns: false, punchZoom: false,
+      betaOpts: { ...DEFAULT_BETA_OPTS, overlay: { bottom: true, top: false, left: false, right: false }, autoZoom: { atStart: true, atKeyPhrases: false } }
+    }
+    const betaImgs = [{ id: 'i0', projectId: 'p-beta', ord: 0, path: '/x/a.png', thumb: '', rangeStart: 0, rangeEnd: 12, manual: false }]
+    const betaSettings = { ...getSettings(), beta: { enabled: true, pexelsKey: '', pixabayKey: '', coverrKey: '' } }
+    const betaArgs = buildRenderArgs({ project: betaProj, images: betaImgs, assPath: '/tmp/x.ass', outPath: '/tmp/o.mp4', settings: betaSettings }).join(' ')
+    // Beta OFF (default settings) → no overlay/zoom injected (regression guard).
+    const offArgs = buildRenderArgs({ project: betaProj, images: betaImgs, assPath: '/tmp/x.ass', outPath: '/tmp/o.mp4', settings: { ...getSettings(), beta: { enabled: false, pexelsKey: '', pixabayKey: '', coverrKey: '' } } }).join(' ')
+    const betaOk =
+      assHook.ass.includes('Style: Hook') && assHook.ass.includes('Dialogue: 1,') &&
+      betaArgs.includes('drawbox') && betaArgs.includes('zoompan') &&
+      !offArgs.includes('drawbox') && !offArgs.includes('zoompan')
+    console.log(`SMOKE_M6_BETA hook=${assHook.ass.includes('Style: Hook')} overlay=${betaArgs.includes('drawbox')} startZoom=${betaArgs.includes('zoompan')} offClean=${!offArgs.includes('drawbox')}`)
+
     // dry-run queue with two jobs at concurrency 2
     setSettings({ outputFolder: join(app.getPath('temp'), 'me-m6-out'), concurrency: 2 })
     process.env['ME_RENDER_FIXTURE'] = '1'
@@ -411,7 +428,7 @@ async function runSmokeM6(): Promise<void> {
     console.log(`SMOKE_M6_ASS ok=${assOk} zoomHits=${ass169.zoomHits.length}`)
     console.log(`SMOKE_M6_ARGS ok=${argsOk}`)
     console.log(`SMOKE_M6_QUEUE status=${j1?.status} pct=${j1?.pct} maxActive=${lastMaxActive()} out=${!!j1?.outputPath} ass=${assFileOk}`)
-    const ok = assOk && argsOk && queueOk && assFileOk
+    const ok = assOk && argsOk && queueOk && assFileOk && betaOk
     console.log(ok ? 'SMOKE_M6_OK' : 'SMOKE_M6_FAIL')
     closeDatabase()
     app.exit(ok ? 0 : 1)

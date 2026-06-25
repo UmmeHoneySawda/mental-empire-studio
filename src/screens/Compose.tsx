@@ -3,7 +3,8 @@ import { useStore } from '../store/useStore'
 import { useData } from '../store/useData'
 import { ScreenPad, Eyebrow, Title } from '../components/primitives'
 import { capPresets } from '../data/mock'
-import type { ProjectImage, TranscriptWord } from '@shared/types'
+import type { BetaVideoOpts, ProjectImage, TranscriptWord, VideoStyle } from '@shared/types'
+import { asBetaOpts } from '@shared/types'
 
 function Tab({ id, label, icon }: { id: 'media' | 'captions'; label: string; icon: JSX.Element }): JSX.Element {
   const composeTab = useStore((s) => s.composeTab)
@@ -100,6 +101,77 @@ function chip(text: string, on: boolean, onClick?: () => void) {
   return <span onClick={onClick} style={{ border: on ? '1px solid var(--accent)' : '1px solid #23272f', color: on ? 'var(--accent)' : '#8a909c', borderRadius: 7, padding: '5px 9px', background: on ? 'var(--accent-soft)' : 'transparent', cursor: onClick ? 'pointer' : undefined }}>{text}</span>
 }
 
+function MiniToggle({ on, onClick }: { on: boolean; onClick: () => void }): JSX.Element {
+  return <div onClick={onClick} style={{ width: 32, height: 18, borderRadius: 11, background: on ? 'var(--accent)' : '#2b303b', position: 'relative', cursor: 'pointer', flex: 'none' }}><span style={{ position: 'absolute', top: 2, right: on ? 2 : 16, width: 14, height: 14, borderRadius: '50%', background: '#fff' }} /></div>
+}
+
+/** Compose "Customize (beta)" panel — greyed out unless Settings → beta is enabled. */
+function BetaPanel(): JSX.Element {
+  const betaOn = useStore((s) => s.settings.beta.enabled)
+  const project = useData((s) => s.activeProject)
+  const setCaptions = useData((s) => s.setCaptions)
+  const o = asBetaOpts(project?.betaOpts)
+  const patch = (p: Partial<BetaVideoOpts>): void => void setCaptions({ betaOpts: { ...o, ...p } })
+
+  const styles: VideoStyle[] = ['None', 'Cinematic', 'Intense', 'Heartfelt', 'Clean']
+  const Row = ({ label, on, set, hint }: { label: string; on: boolean; set: () => void; hint?: string }): JSX.Element => (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={{ flex: 1 }}><div style={{ fontSize: 11.5, color: '#cdd2da' }}>{label}</div>{hint && <div style={{ fontSize: 9.5, color: '#6a7180' }}>{hint}</div>}</div>
+      <MiniToggle on={on} onClick={set} />
+    </div>
+  )
+
+  return (
+    <div style={{ position: 'relative', border: '1px solid #1d2129', borderRadius: 14, padding: 15, background: '#12151b', display: 'flex', flexDirection: 'column', gap: 13, opacity: betaOn ? 1 : 0.45, pointerEvents: betaOn ? 'auto' : 'none' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '.6px', color: '#5b616f' }}>CUSTOMIZE</span>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 8, fontWeight: 700, background: 'var(--accent-soft)', color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: 9, padding: '1px 6px' }}>BETA</span>
+        {!betaOn && <span style={{ marginLeft: 'auto', fontSize: 9.5, color: '#6a7180' }}>Enable in Settings → Beta</span>}
+      </div>
+
+      <div>
+        <Row label="Hook (intro card)" on={o.hook.enabled} set={() => patch({ hook: { ...o.hook, enabled: !o.hook.enabled } })} hint="Big line for the first ~2.5s" />
+        {o.hook.enabled && <input value={o.hook.text} onChange={(e) => patch({ hook: { ...o.hook, text: e.target.value } })} placeholder="Auto from transcript — or type a hook" style={{ width: '100%', boxSizing: 'border-box', marginTop: 7, border: '1px solid #23272f', borderRadius: 7, padding: '6px 9px', fontSize: 11, color: '#dde0e5', background: '#0e1116' }} />}
+      </div>
+      <Row label="Auto-highlight keywords" on={o.autoHighlight} set={() => patch({ autoHighlight: !o.autoHighlight })} hint="Emphasize key words in captions" />
+
+      <div>
+        <div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 7 }}>Background overlay (gradient)</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {(['bottom', 'top', 'left', 'right'] as const).map((e) => {
+            const on = o.overlay[e]
+            return <span key={e} onClick={() => patch({ overlay: { ...o.overlay, [e]: !on } })} style={{ border: on ? '1px solid var(--accent)' : '1px solid #23272f', color: on ? 'var(--accent)' : '#8a909c', background: on ? 'var(--accent-soft)' : 'transparent', borderRadius: 7, padding: '4px 11px', fontSize: 11, cursor: 'pointer', textTransform: 'capitalize' }}>{e}</span>
+          })}
+        </div>
+      </div>
+
+      <div>
+        <div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 7 }}>Automatically zoom in</div>
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <Row label="At start" on={o.autoZoom.atStart} set={() => patch({ autoZoom: { ...o.autoZoom, atStart: !o.autoZoom.atStart } })} />
+          <Row label="At key phrases" on={o.autoZoom.atKeyPhrases} set={() => patch({ autoZoom: { ...o.autoZoom, atKeyPhrases: !o.autoZoom.atKeyPhrases } })} />
+        </div>
+      </div>
+
+      <div style={{ borderTop: '1px solid #1d2129', paddingTop: 12 }}>
+        <Row label="Auto B-roll (stock footage)" on={o.broll.enabled} set={() => patch({ broll: { ...o.broll, enabled: !o.broll.enabled } })} hint="Themed clip pool from the transcript" />
+        {o.broll.enabled && (
+          <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+            {(['full', 'sparse', 'keywords'] as const).map((d) => <span key={d} onClick={() => patch({ broll: { ...o.broll, density: d } })} style={{ border: o.broll.density === d ? '1px solid var(--accent)' : '1px solid #23272f', color: o.broll.density === d ? 'var(--accent)' : '#8a909c', background: o.broll.density === d ? 'var(--accent-soft)' : 'transparent', borderRadius: 7, padding: '4px 10px', fontSize: 10.5, cursor: 'pointer', textTransform: 'capitalize' }}>{d}</span>)}
+          </div>
+        )}
+      </div>
+
+      <div>
+        <div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 7 }}>Style (transitions &amp; text effects)</div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+          {styles.map((s) => <span key={s} onClick={() => patch({ style: s })} style={{ border: o.style === s ? '1px solid var(--accent)' : '1px solid #23272f', color: o.style === s ? 'var(--accent)' : '#8a909c', background: o.style === s ? 'var(--accent-soft)' : 'transparent', borderRadius: 7, padding: '4px 10px', fontSize: 10.5, cursor: 'pointer' }}>{s}</span>)}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 function CaptionsTab(): JSX.Element {
   const project = useData((s) => s.activeProject)
   const transcript = useData((s) => s.transcript)
@@ -129,6 +201,7 @@ function CaptionsTab(): JSX.Element {
             <div onClick={() => void setCaptions({ punchZoom: !project?.punchZoom })} style={{ flex: 1, border: '1px solid #1d2129', borderRadius: 9, padding: 9, background: '#0e1116', cursor: 'pointer' }}><div style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ fontSize: 11, fontWeight: 600, color: '#dde0e5' }}>Punch</span><span style={{ marginLeft: 'auto', fontSize: 8.5, fontWeight: 700, background: project?.punchZoom ? '#1f9c6b' : '#2b303b', color: '#fff', borderRadius: 9, padding: '1px 6px' }}>{project?.punchZoom ? 'ON' : 'OFF'}</span></div><div style={{ fontSize: 9, color: '#6a7180', marginTop: 4 }}>Zoom on hit</div></div>
           </div>
         </div>
+        <BetaPanel />
       </div>
 
       <div style={{ flex: 'none', width: 210 }}>

@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { AppSettings, Project, ProjectImage } from '../../shared/types'
+import { asBetaOpts } from '../../shared/types'
 import { resolveBinDir } from './ytdlp'
 import { resolutionFor, type CaptionAspect } from './captions'
 
@@ -32,6 +33,28 @@ function assForFilter(p: string): string {
   return p.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'")
 }
 
+/** Beta "background overlay": a simple darkening gradient on the chosen edges,
+ *  approximated by 3 stacked drawboxes (smooth enough, pure-filter, no extra inputs).
+ *  Returns a filter fragment ending in a comma, or '' when no edge is enabled. */
+function overlayGradient(o: { bottom: boolean; top: boolean; left: boolean; right: boolean }, w: number, h: number): string {
+  const steps = [
+    { frac: 0.34, a: 0.22 },
+    { frac: 0.22, a: 0.34 },
+    { frac: 0.11, a: 0.5 }
+  ]
+  const boxes: string[] = []
+  for (const s of steps) {
+    const bh = Math.round(h * s.frac)
+    const bw = Math.round(w * s.frac)
+    const c = `black@${s.a}`
+    if (o.bottom) boxes.push(`drawbox=x=0:y=${h - bh}:w=${w}:h=${bh}:color=${c}:t=fill`)
+    if (o.top) boxes.push(`drawbox=x=0:y=0:w=${w}:h=${bh}:color=${c}:t=fill`)
+    if (o.left) boxes.push(`drawbox=x=0:y=0:w=${bw}:h=${h}:color=${c}:t=fill`)
+    if (o.right) boxes.push(`drawbox=x=${w - bw}:y=0:w=${bw}:h=${h}:color=${c}:t=fill`)
+  }
+  return boxes.length ? `${boxes.join(',')},` : ''
+}
+
 export interface RenderInputs {
   project: Project
   images: ProjectImage[]
@@ -45,6 +68,8 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
   const { project, images, assPath, outPath, settings } = inp
   const { w, h } = dimensions(settings.quality, project.captionAspect)
   const cf = project.crossfade ? 0.6 : 0
+  // Beta options only apply when beta mode is on; otherwise the graph is unchanged.
+  const beta = settings.beta?.enabled ? asBetaOpts(project.betaOpts) : null
   const imgs: ProjectImage[] =
     images.length > 0
       ? images
@@ -68,7 +93,10 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
   imgs.forEach((im, i) => {
     const frames = Math.round((Math.max(0.5, im.rangeEnd - im.rangeStart) + cf) * FPS)
     const base = `[${i}:v]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1`
-    const motion = project.kenBurns
+    // Ken Burns zooms every segment; beta "auto-zoom at start" adds the same ramp to
+    // just the first segment when Ken Burns is off.
+    const zoom = project.kenBurns || (beta?.autoZoom.atStart && i === 0)
+    const motion = zoom
       ? `,zoompan=z='min(zoom+0.0009,1.15)':d=${frames}:s=${w}x${h}:fps=${FPS}`
       : `,fps=${FPS}`
     parts.push(`${base}${motion}[v${i}]`)
@@ -85,9 +113,12 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
     }
   }
 
-  // Burn captions; punch-zoom adds a subtle pulse when enabled.
-  const punch = project.punchZoom ? `,zoompan=z='min(zoom+0.0015,1.08)':d=1:s=${w}x${h}:fps=${FPS}` : ''
-  parts.push(`[${last}]subtitles='${assForFilter(assPath)}'${punch}[v]`)
+  // Beta darkening gradient goes under the captions (applied before the subtitles burn).
+  const grad = beta ? overlayGradient(beta.overlay, w, h) : ''
+  // Burn captions; punch-zoom adds a subtle pulse when enabled (project flag or beta key-phrases).
+  const punchOn = project.punchZoom || !!beta?.autoZoom.atKeyPhrases
+  const punch = punchOn ? `,zoompan=z='min(zoom+0.0015,1.08)':d=1:s=${w}x${h}:fps=${FPS}` : ''
+  parts.push(`[${last}]${grad}subtitles='${assForFilter(assPath)}'${punch}[v]`)
 
   const crf = settings.quality === '1440p' ? '20' : settings.quality === '720p' ? '23' : '21'
   return [
