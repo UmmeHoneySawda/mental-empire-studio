@@ -18,6 +18,8 @@ jobs:
       - run: npx @electron/rebuild -f -w better-sqlite3
       - run: npm run typecheck
       - run: npm run build
+      # Real ffmpeg (libass) for the e2e render test.
+      - run: npm run setup:ffmpeg
       # Headless milestone smokes (M2-M7) under a virtual display.
       - name: Smoke harnesses
         run: |
@@ -29,6 +31,6 @@ jobs:
               ME_WHISPER_FIXTURE=$F/whisper/sample-words.json \
               xvfb-run -a node_modules/electron/dist/electron --no-sandbox out/main/main.js \
               | tee /tmp/out.txt
-            grep -Eq "SMOKE(_M[0-9])?_OK" /tmp/out.txt
+            grep -Eq "(SMOKE(_M[0-9])?|E2E)_OK" /tmp/out.txt
           }
-          for m in 1 m3 m4 m5 m6 m7; do echo "== smoke $m =="; run "$m"; done
+          for m in 1 m3 m4 m5 m6 m7 e2e; do echo "== smoke $m =="; run "$m"; done

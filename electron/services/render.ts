@@ -103,6 +103,10 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
     '-r', String(FPS),
     '-c:a', 'aac',
     '-b:a', '192k',
+    // Clamp the output to the audio length: Ken Burns zoompan + xfade overlaps make
+    // the filtered video slightly longer than the mp3, and -shortest doesn't reliably
+    // trim it, so pin the duration to the audio explicitly.
+    '-t', project.durationSec > 0 ? project.durationSec.toFixed(2) : '1',
     '-shortest',
     outPath
   ]

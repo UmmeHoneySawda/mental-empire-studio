@@ -2,6 +2,7 @@ import { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage } from 'ele
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { existsSync, statSync, writeFileSync, readFileSync } from 'node:fs'
+import { execFileSync } from 'node:child_process'
 import { applyLoginItem, trayIconPath } from './services/background'
 import * as scheduler from './services/scheduler'
 import { initAutoUpdate, checkForUpdates } from './services/updater'
@@ -18,6 +19,7 @@ import { autoArrangeText } from '../shared/thumbnail'
 import { THUMB_W, THUMB_H, type TextLayer, type ThumbnailTemplate, type TranscriptWord } from '../shared/types'
 import { buildAss } from './services/captions'
 import { buildRenderArgs } from './services/render'
+import { resolveBinDir } from './services/ytdlp'
 import { runAll, lastMaxActive } from './services/queue'
 import { runProfile, newVideos } from './ipc/automation'
 import { postWebhook } from './services/webhook'
@@ -501,10 +503,150 @@ async function runSmokeM7(): Promise<void> {
   }
 }
 
+interface Probe {
+  video: boolean
+  audio: boolean
+  width: number
+  height: number
+  duration: number
+  vcodec: string
+  acodec: string
+}
+
+function ffprobe(file: string): Probe | null {
+  try {
+    const exe = process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe'
+    const out = execFileSync(join(resolveBinDir(), exe), [
+      '-v', 'quiet', '-print_format', 'json', '-show_format', '-show_streams', file
+    ]).toString()
+    const j = JSON.parse(out) as { streams: Array<Record<string, unknown>>; format: { duration?: string } }
+    const v = j.streams.find((s) => s.codec_type === 'video')
+    const a = j.streams.find((s) => s.codec_type === 'audio')
+    return {
+      video: !!v, audio: !!a,
+      width: (v?.width as number) ?? 0, height: (v?.height as number) ?? 0,
+      duration: parseFloat(j.format.duration ?? '0'),
+      vcodec: (v?.codec_name as string) ?? '', acodec: (a?.codec_name as string) ?? ''
+    }
+  } catch {
+    return null
+  }
+}
+
+/**
+ * Full end-to-end journey (ME_SMOKE=e2e) on one continuous DB: fixture scrape +
+ * download + transcript, REAL images, and a REAL ffmpeg render — probed with
+ * ffprobe. Exercises the three render branches (multi-image+xfade, single image,
+ * no-image lavfi fallback) plus J1 mapping and J4 webhook/login/scheduler.
+ * Logs problems; prints E2E_OK only if all pass.
+ */
+async function runSmokeE2E(): Promise<void> {
+  const repos = getRepos()
+  const problems: string[] = []
+  const check = (ok: boolean, label: string): void => {
+    console.log(`  ${ok ? '✓' : '✗'} ${label}`)
+    if (!ok) problems.push(label)
+  }
+  const F = (p: string): string => join(process.cwd(), 'test', 'fixtures', p)
+  const imgs = ['images/img1.png', 'images/img2.png', 'images/img3.png'].map(F)
+  delete process.env['ME_RENDER_FIXTURE'] // real ffmpeg this run
+
+  try {
+    setSettings({ outputFolder: join(app.getPath('temp'), 'me-e2e-out'), concurrency: 2 })
+
+    // ---- J1: source ↔ my-channel mapping ----
+    console.log('J1 — source↔channel mapping')
+    const me = await refreshChannel('me')
+    check(me.subs === '455' && repos.getUploads('me').length === 4, 'J1 stats + uploads parsed')
+    check(me.mapTotal === 3 && me.mapDone === 2, `J1 ↔ chip mapDone/mapTotal (got ${me.mapDone}/${me.mapTotal})`)
+    repos.updateChannelGoals('me', { weekGoal: 5, reminder: 'Fri Jun 27' })
+    const ch = repos.myChannel('me')
+    check(ch?.weekGoal === 5 && ch?.reminder === 'Fri Jun 27', 'J1 goal + reminder persist')
+    check(checkReminders().some((h) => h.channelId === 'me'), 'J1 behind-pace reminder fires')
+
+    // ---- J3/J5: pipeline → REAL render (3 branches) ----
+    console.log('J3/J5 — pipeline + real render')
+    const vids = await sourceVideos('https://www.youtube.com/@PowerWithinOfficial', 'Latest', 3)
+    const dls = await startDownloads(vids, { bitrate: 192, sourceUrl: 'https://www.youtube.com/@PowerWithinOfficial' })
+    check(dls.length === 3 && !!dls[0].filePath && existsSync(dls[0].filePath!), 'J5 downloaded 3 mp3s')
+
+    // (a) multi-image + xfade + transcript
+    const pA = createProject(dls[0].id)
+    const imagesA = setImages(pA.id, imgs)
+    check(imagesA.length === 3 && imagesA[2].rangeEnd === dls[0].durationSec, 'J5 even-split image ranges')
+    const words = await runTranscribe(pA.id)
+    check(words.length === 9, 'J5 transcript words')
+    sendToRender(pA.id)
+    // (b) single image
+    const pB = createProject(dls[1].id)
+    setImages(pB.id, [imgs[0]])
+    sendToRender(pB.id)
+    // (c) no images → lavfi fallback
+    const pC = createProject(dls[2].id)
+    sendToRender(pC.id)
+
+    await runAll() // REAL ffmpeg, concurrency 2
+
+    const probeJob = (id: string, label: string): void => {
+      const job = repos.renderJob(`job-${id}`)
+      const ok = job?.status === 'done' && !!job.outputPath && existsSync(job.outputPath)
+      check(ok, `${label}: job done + mp4 on disk`)
+      if (!ok) {
+        console.log(`     job=${JSON.stringify({ status: job?.status, err: job?.error })}`)
+        return
+      }
+      const p = ffprobe(job!.outputPath!)
+      check(!!p && p.video && p.audio, `${label}: has video+audio stream`)
+      check(!!p && p.width === 1920 && p.height === 1080, `${label}: 1920×1080 (got ${p?.width}×${p?.height})`)
+      check(!!p && Math.abs(p.duration - 12) < 0.6, `${label}: matches audio ~12s (got ${p?.duration?.toFixed(1)})`)
+      check(!!p && p.vcodec === 'h264' && p.acodec === 'aac', `${label}: h264/aac (got ${p?.vcodec}/${p?.acodec})`)
+      check(existsSync(job!.outputPath!.replace(/\.mp4$/, '.ass')), `${label}: .ass written`)
+    }
+    probeJob(pA.id, 'J5a multi-image+xfade')
+    probeJob(pB.id, 'J5b single-image')
+    probeJob(pC.id, 'J5c no-image fallback')
+
+    // ---- J4: webhook + login + scheduler ----
+    console.log('J4 — auto-scrape/background plumbing')
+    const received: Array<Record<string, unknown>> = []
+    const { createServer } = await import('node:http')
+    const server = createServer((req, res) => {
+      let b = ''
+      req.on('data', (d) => (b += d))
+      req.on('end', () => { try { received.push(JSON.parse(b)) } catch { /* */ } res.end('ok') })
+    })
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()))
+    const port = (server.address() as { port: number }).port
+    setSettings({ background: { webhook: `http://127.0.0.1:${port}` } })
+    await postWebhook('e2e', { ok: true })
+    for (let i = 0; i < 30 && received.length === 0; i++) await new Promise((r) => setTimeout(r, 50))
+    check(received.some((r) => r.event === 'e2e'), 'J4 webhook POST delivered')
+    server.close()
+    setSettings({ background: { webhook: '' } })
+    let loginOk = true
+    try { applyLoginItem({ ...getSettings(), background: { ...getSettings().background, startOnSignIn: true } }) } catch { loginOk = false }
+    check(loginOk, 'J4 setLoginItemSettings no-throw')
+    check(scheduler.frequencyToMs('Daily') === 86_400_000, 'J4 frequency map')
+
+    console.log(problems.length ? `E2E_PROBLEMS ${JSON.stringify(problems)}` : 'E2E_OK')
+    closeDatabase()
+    app.exit(problems.length ? 1 : 0)
+  } catch (e) {
+    console.log(`E2E_FAIL ${(e as Error).message}`)
+    console.log((e as Error).stack)
+    closeDatabase()
+    app.exit(1)
+  }
+}
+
 app.whenReady().then(() => {
   initPersistence()
   registerIpc()
 
+  if (process.env['ME_SMOKE'] === 'e2e') {
+    void runSmokeE2E()
+    return
+  }
   if (process.env['ME_SMOKE'] === 'm7') {
     void runSmokeM7()
     return
@@ -564,6 +706,19 @@ app.whenReady().then(() => {
           })
           console.log(`SHOOT_BATCH pngs=${pngs.length} valid=${valid.length} dir=${dir}`)
           console.log(valid.length >= 4 ? 'SHOOT_BATCH_OK' : 'SHOOT_BATCH_FAIL')
+        }
+
+        // ME_RUNPROFILE=1: click a profile's "Run" in the real UI → window.api →
+        // automation.runProfile → projects in the DB. Proves the Profiles screen wiring.
+        if (process.env['ME_RUNPROFILE']) {
+          const before = getRepos().listProjects().length
+          const clicked = await wc.executeJavaScript(
+            `(() => { const b=[...document.querySelectorAll('div')].find(e=>e.textContent.trim()==='▶ Run'); if(b){b.click();return true;} return false; })()`
+          )
+          await new Promise((r) => setTimeout(r, 4000)) // scrape + download (fixtures) + project create
+          const after = getRepos().listProjects().length
+          console.log(`SHOOT_RUNPROFILE clicked=${clicked} projectsBefore=${before} projectsAfter=${after}`)
+          console.log(clicked && after > before ? 'SHOOT_RUNPROFILE_OK' : 'SHOOT_RUNPROFILE_FAIL')
         }
         app.exit(0)
       }, 1100)
