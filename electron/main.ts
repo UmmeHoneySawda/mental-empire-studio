@@ -18,8 +18,8 @@ import { splitRanges } from './services/audio'
 import { autoArrangeText } from '../shared/thumbnail'
 import { THUMB_W, THUMB_H, DEFAULT_BETA_OPTS, type TextLayer, type ThumbnailTemplate, type TranscriptWord } from '../shared/types'
 import { buildAss } from './services/captions'
-import { buildRenderArgs } from './services/render'
-import { extractThemes, rankCandidates, planCoverage, buildBrollBed, type BrollCandidate } from './services/broll'
+import { buildRenderArgs, runRender, ffmpegPath } from './services/render'
+import { extractThemes, rankCandidates, planCoverage, buildBrollBed, assembleBed, type BrollCandidate } from './services/broll'
 import { validateEffectPlan, deriveStylePlan, styleCaptionLead, type EffectPlan } from '../shared/effectPlan'
 import { buildSfxTrack } from './services/sfx'
 import { readFileSync as readFileSyncSfx } from 'node:fs'
@@ -672,6 +672,25 @@ async function runSmokeE2E(): Promise<void> {
     const pC = createProject(dls[2].id)
     sendToRender(pC.id)
 
+    // (d) BETA image-mode: hook (with ASS-escaping chars) + overlay (all edges) + auto-zoom
+    //     + Cinematic style + a pasted plan with a per-boundary transition & SFX. Beta ON.
+    setSettings({ beta: { enabled: true } })
+    const pBeta = createProject(dls[0].id)
+    setImages(pBeta.id, imgs)
+    repos.replaceTranscript(pBeta.id, words.map((w, i) => ({ ...w, id: `beta-w${i}`, projectId: pBeta.id })))
+    repos.updateProject(pBeta.id, {
+      kenBurns: false, punchZoom: false,
+      betaOpts: {
+        ...DEFAULT_BETA_OPTS,
+        hook: { enabled: true, text: 'wait {for} it' }, // braces test ASS escaping
+        overlay: { bottom: true, top: true, left: true, right: true },
+        autoZoom: { atStart: true, atKeyPhrases: true },
+        style: 'Cinematic',
+        effectPlanJson: JSON.stringify({ transitions: [{ atSec: 6, type: 'circleopen', durationSec: 0.5, sfx: 'whoosh_soft' }], textEffects: [] })
+      }
+    })
+    sendToRender(pBeta.id)
+
     await runAll() // REAL ffmpeg, concurrency 2
 
     const probeJob = (id: string, label: string): void => {
@@ -692,6 +711,50 @@ async function runSmokeE2E(): Promise<void> {
     probeJob(pA.id, 'J5a multi-image+xfade')
     probeJob(pB.id, 'J5b single-image')
     probeJob(pC.id, 'J5c no-image fallback')
+
+    // ---- J6: BETA features on REAL ffmpeg (duration drift is the key regression) ----
+    console.log('J6 — beta features real render')
+    probeJob(pBeta.id, 'J6a beta image (hook+overlay+zoom+transition+sfx)')
+    const betaJob = repos.renderJob(`job-${pBeta.id}`)
+    if (betaJob?.outputPath) {
+      const bp = ffprobe(betaJob.outputPath)
+      // The big bug class: beta filters/SFX must NOT push the output past the audio length.
+      check(!!bp && Math.abs(bp.duration - 12) < 0.6, `J6a duration clamped to audio (got ${bp?.duration?.toFixed(2)})`)
+      const assTxt = readFileSyncSfx(betaJob.outputPath.replace(/\.mp4$/, '.ass')).toString()
+      check(assTxt.includes('Style: Hook'), 'J6a hook style burned')
+      check(assTxt.includes('\\{FOR\\}'), 'J6a hook text ASS-escaped (no raw braces)')
+      check(assTxt.includes(styleCaptionLead('Cinematic')), 'J6a Cinematic caption lead applied')
+    }
+
+    // J6b: REAL b-roll bed assembly + bed-mode render + SFX mix (amix normalize=0).
+    const clip = join(app.getPath('temp'), 'me-e2e-clip.mp4')
+    execFileSync(ffmpegPath(), ['-y', '-f', 'lavfi', '-i', 'testsrc=d=6:s=640x360:r=30', '-pix_fmt', 'yuv420p', clip])
+    const segs = planCoverage(12, [{ path: clip, durationSec: 6 }], { density: 'sparse' })
+    const bedReal = await assembleBed(segs, { w: 1920, h: 1080 }, 30)
+    const bedProbe = ffprobe(bedReal)
+    check(!!bedProbe && bedProbe.video && Math.abs(bedProbe.duration - 12) < 0.8, `J6b real bed covers 12s (got ${bedProbe?.duration?.toFixed(2)})`)
+    const sfxTrack = buildSfxTrack([{ atSec: 4, type: 'fade', durationSec: 0.5, sfx: 'whoosh_soft' }, { atSec: 8, type: 'fade', durationSec: 0.5, sfx: 'impact_soft' }], 12)
+    const bedOut = join(app.getPath('temp'), 'me-e2e-out', 'beta-bed.mp4')
+    const bedAss = join(app.getPath('temp'), 'me-e2e-out', 'beta-bed.ass')
+    writeFileSync(bedAss, buildAss(words, { preset: 'Hormozi', aspect: '16:9', keywords: false }).ass)
+    await runRender({ project: repos.getProject(pBeta.id)!, images: [], assPath: bedAss, outPath: bedOut, settings: getSettings(), videoBedPath: bedReal, sfxPath: sfxTrack ?? undefined })
+    const bo = ffprobe(bedOut)
+    check(!!bo && bo.video && bo.audio && Math.abs(bo.duration - 12) < 0.6, `J6b bed-mode render: a/v + 12s (got ${bo?.duration?.toFixed(2)})`)
+    check(!!bo && bo.vcodec === 'h264' && bo.acodec === 'aac', 'J6b bed-mode h264/aac')
+
+    // J6c: validator robustness (garbage / extremes) + ASS-escaping never throws.
+    let validatorSafe = true
+    try {
+      validateEffectPlan('not json{{{', 12)
+      validateEffectPlan({ transitions: [{ atSec: -5, type: 'x', durationSec: 99 }], textEffects: 'nope' }, 12)
+      buildAss(words, { preset: 'Hormozi', aspect: '16:9', keywords: false, hook: { text: 'a {b} \\ c: "d"', untilSec: 2 } })
+    } catch { validatorSafe = false }
+    check(validatorSafe, 'J6c validator + ASS escaping never throw on bad input')
+
+    // J6d: beta-OFF parity — disabling beta yields the pre-beta arg string (no drawbox/amix/Hook).
+    const offArgs = buildRenderArgs({ project: { ...repos.getProject(pBeta.id)!, betaOpts: undefined }, images: setImages(createProject(dls[1].id).id, imgs), assPath: bedAss, outPath: bedOut, settings: { ...getSettings(), beta: { ...getSettings().beta, enabled: false } } }).join(' ')
+    check(!offArgs.includes('drawbox') && !offArgs.includes('amix'), 'J6d beta-off render args clean (no overlay/sfx)')
+    setSettings({ beta: { enabled: false } })
 
     // ---- J4: webhook + login + scheduler ----
     console.log('J4 — auto-scrape/background plumbing')
