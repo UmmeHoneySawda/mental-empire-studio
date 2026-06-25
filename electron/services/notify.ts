@@ -1,5 +1,6 @@
 import { Notification } from 'electron'
 import type { AppSettings, MyChannel, ReminderHit } from '../../shared/types'
+import { getSettings } from '../store/settings'
 
 // Behind-pace detection + desktop notifications (req #1 / #3). A channel is "behind
 // pace" when it hasn't met its weekly upload goal. The hands-free scheduler that
@@ -7,6 +8,21 @@ import type { AppSettings, MyChannel, ReminderHit } from '../../shared/types'
 
 /** Records every fired reminder so the headless smoke harness can assert on them. */
 export const firedNotifications: ReminderHit[] = []
+
+/** Captured generic notifications (title/body) for the headless harness. */
+export const firedMessages: Array<{ title: string; body: string }> = []
+
+/** Generic desktop notification for run/render events, gated by the user setting. */
+export function notifyMessage(title: string, body: string): void {
+  if (!getSettings().background.notifications) return
+  firedMessages.push({ title, body })
+  if (process.env['ME_SMOKE']) return // headless: capture only
+  try {
+    if (Notification.isSupported()) new Notification({ title, body }).show()
+  } catch {
+    /* notifications unavailable — non-fatal */
+  }
+}
 
 export function pendingUploads(c: MyChannel): number {
   return Math.max(0, c.mapTotal - c.mapDone)

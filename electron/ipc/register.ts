@@ -7,13 +7,22 @@ import { registerDownloadIpc } from './download'
 import { registerComposeIpc } from './compose'
 import { registerThumbnailsIpc } from './thumbnails'
 import { registerRenderIpc } from './render'
+import { registerAutomationIpc } from './automation'
+import { tick, start as schedulerStart } from '../services/scheduler'
+import { applyLoginItem } from '../services/background'
 
 // All native capability the renderer can reach is registered here as invoke
 // handlers and exposed through the typed preload bridge (window.api.*).
 export function registerIpc(): void {
   // ---- settings (electron-store) ----
   ipcMain.handle('settings:get', () => getSettings())
-  ipcMain.handle('settings:set', (_e, patch: DeepPartial<AppSettings>) => setSettings(patch))
+  ipcMain.handle('settings:set', (_e, patch: DeepPartial<AppSettings>) => {
+    const next = setSettings(patch)
+    // React to background/auto-scrape changes: re-register login item + scheduler.
+    if (patch.background?.startOnSignIn !== undefined) applyLoginItem(next)
+    if (patch.autoScrape !== undefined) schedulerStart()
+    return next
+  })
 
   // ---- domain data (sqlite) ----
   ipcMain.handle('db:myChannels', () => getRepos().myChannels())
@@ -42,5 +51,9 @@ export function registerIpc(): void {
 
   // ---- render pipeline (M6) ----
   registerRenderIpc()
+
+  // ---- automation: profiles + scheduler (M7) ----
+  registerAutomationIpc()
+  ipcMain.handle('automation:tick', () => tick())
 }
 

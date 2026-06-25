@@ -153,9 +153,9 @@ export const queue: QueueRow[] = [
 ]
 
 export const profiles: Profile[] = [
-  { id: 'me', name: 'Mental Empire', mono: 'ME', avatar: 'linear-gradient(135deg,#f5b323,#b9780a)', rule: 'Latest · 5 videos', images: 'Pool of 10 · shuffle', thumb: 'Full Bleed · White', cap: 'Hormozi · 16:9', out: '/Desktop/ME_out', autoWatch: true },
-  { id: 'sh', name: 'Stoic Hour', mono: 'SH', avatar: 'linear-gradient(135deg,#8b7cff,#5b4fd6)', rule: 'Popular · 10 videos', images: 'Single image', thumb: 'Subject Left · Amber', cap: 'Pop · 16:9', out: '/Desktop/Stoic_out', autoWatch: true },
-  { id: 'sd', name: 'Sleep Deep', mono: 'SD', avatar: 'linear-gradient(135deg,#36c98e,#1f9c6b)', rule: 'Latest · 3 videos', images: 'Pool of 20 · shuffle', thumb: 'Centered · Cyan', cap: 'Minimal · 16:9', out: '/Desktop/Sleep_out', autoWatch: true }
+  { id: 'me', name: 'Mental Empire', mono: 'ME', avatar: 'linear-gradient(135deg,#f5b323,#b9780a)', rule: 'Latest · 5 videos', images: 'Pool of 10 · shuffle', thumb: 'Full Bleed · White', cap: 'Hormozi · 16:9', out: '/Desktop/ME_out', autoWatch: true, sourceUrl: 'https://youtube.com/@PowerWithinOfficial', sourceOrder: 'Latest', sourceCount: 5, imageMode: 'pool', poolSize: 10, kenBurns: true, captionPreset: 'Hormozi', captionAspect: '16:9' },
+  { id: 'sh', name: 'Stoic Hour', mono: 'SH', avatar: 'linear-gradient(135deg,#8b7cff,#5b4fd6)', rule: 'Popular · 10 videos', images: 'Single image', thumb: 'Subject Left · Amber', cap: 'Pop · 16:9', out: '/Desktop/Stoic_out', autoWatch: true, sourceUrl: 'https://youtube.com/@DailyStoicTalks', sourceOrder: 'Popular', sourceCount: 10, imageMode: 'sequence', poolSize: 1, kenBurns: true, captionPreset: 'Pop', captionAspect: '16:9' },
+  { id: 'sd', name: 'Sleep Deep', mono: 'SD', avatar: 'linear-gradient(135deg,#36c98e,#1f9c6b)', rule: 'Latest · 3 videos', images: 'Pool of 20 · shuffle', thumb: 'Centered · Cyan', cap: 'Minimal · 16:9', out: '/Desktop/Sleep_out', autoWatch: true, sourceUrl: 'https://youtube.com/@RainSounds24', sourceOrder: 'Latest', sourceCount: 3, imageMode: 'pool', poolSize: 20, kenBurns: true, captionPreset: 'Minimal', captionAspect: '16:9' }
 ]
 
 // Initial thumbnail editor layer stack (req #4). Geometry is logical px on the 1280×720 stage.

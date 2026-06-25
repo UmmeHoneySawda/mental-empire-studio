@@ -14,7 +14,8 @@ import type {
   ScrapedVideo,
   ThumbnailTemplate,
   TranscribeProgress,
-  RenderProgress
+  RenderProgress,
+  AutomationEvent
 } from '../shared/types'
 
 /** Subscribe to a main→renderer event; returns an unsubscribe fn. */
@@ -104,13 +105,21 @@ const api: NativeApi = {
     cancel: (jobId: string) => ipcRenderer.invoke('render:cancel', jobId)
   },
 
+  automation: {
+    runProfile: (profileId: string, headless?: boolean) => ipcRenderer.invoke('automation:runProfile', profileId, headless),
+    upsertProfile: (profile: Profile) => ipcRenderer.invoke('automation:upsertProfile', profile),
+    deleteProfile: (profileId: string) => ipcRenderer.invoke('automation:deleteProfile', profileId),
+    tick: () => ipcRenderer.invoke('automation:tick')
+  },
+
   chooseFolder: () => ipcRenderer.invoke('fs:chooseFolder'),
 
   onScrapeProgress: (cb: (p: ScrapeProgress) => void) => subscribe('scrape:progress', cb),
   onActivity: (cb: (row: ActivityRow) => void) => subscribe('activity:new', cb),
   onDownloadProgress: (cb: (p: DownloadProgress) => void) => subscribe('download:progress', cb),
   onTranscribeProgress: (cb: (p: TranscribeProgress) => void) => subscribe('transcribe:progress', cb),
-  onRenderProgress: (cb: (p: RenderProgress) => void) => subscribe('render:progress', cb)
+  onRenderProgress: (cb: (p: RenderProgress) => void) => subscribe('render:progress', cb),
+  onAutomation: (cb: (e: AutomationEvent) => void) => subscribe('automation:event', cb)
 }
 
 contextBridge.exposeInMainWorld('api', api)

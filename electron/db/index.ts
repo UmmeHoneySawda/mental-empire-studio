@@ -13,7 +13,9 @@ import type {
   TranscriptWord,
   RecentUpload,
   RenderJob,
-  RenderStatus
+  RenderStatus,
+  ScrapeOrder,
+  ImageMode
 } from '../../shared/types'
 import { seedIfEmpty } from './seed'
 
@@ -98,6 +100,19 @@ function migrate(d: Database.Database): void {
   ensureColumn(d, 'render_jobs', 'outputPath', 'TEXT')
   ensureColumn(d, 'render_jobs', 'error', 'TEXT')
   ensureColumn(d, 'render_jobs', 'updatedAt', 'TEXT')
+  // M7: profile run config + auto-watch cursor
+  ensureColumn(d, 'profiles', 'linkedSourceId', 'TEXT')
+  ensureColumn(d, 'profiles', 'sourceUrl', 'TEXT')
+  ensureColumn(d, 'profiles', 'sourceOrder', 'TEXT')
+  ensureColumn(d, 'profiles', 'sourceCount', 'INTEGER')
+  ensureColumn(d, 'profiles', 'imageMode', 'TEXT')
+  ensureColumn(d, 'profiles', 'poolSize', 'INTEGER')
+  ensureColumn(d, 'profiles', 'kenBurns', 'INTEGER')
+  ensureColumn(d, 'profiles', 'captionPreset', 'TEXT')
+  ensureColumn(d, 'profiles', 'captionAspect', 'TEXT')
+  ensureColumn(d, 'profiles', 'outputFolder', 'TEXT')
+  ensureColumn(d, 'profiles', 'lastSeenVideoId', 'TEXT')
+  ensureColumn(d, 'profiles', 'lastRunAt', 'TEXT')
 }
 
 export interface ChannelStatsPatch {
@@ -128,6 +143,9 @@ export interface Repositories {
   activity(): ActivityRow[]
   addActivity(row: ActivityRow): void
   upsertProfile(p: Profile): Profile[]
+  deleteProfile(id: string): Profile[]
+  getProfile(id: string): Profile | undefined
+  setProfileCursor(id: string, patch: { lastSeenVideoId?: string; lastRunAt?: string }): void
   saveTemplate(t: ThumbnailTemplate): ThumbnailTemplate[]
   getTemplate(id: string): ThumbnailTemplate | undefined
   assignTemplateToProfile(profileId: string, templateId: string): Profile[]
@@ -232,14 +250,26 @@ function buildRepositories(d: Database.Database): Repositories {
       void d.prepare('INSERT INTO activity_log (t,icon,color,text) VALUES (@t,@icon,@color,@text)').run(row),
 
     upsertProfile: (p) => {
-      d.prepare(
-        `INSERT INTO profiles (id,name,mono,avatar,rule,images,thumb,cap,out,autoWatch,thumbnailTemplateId)
-         VALUES (@id,@name,@mono,@avatar,@rule,@images,@thumb,@cap,@out,@autoWatch,@thumbnailTemplateId)
-         ON CONFLICT(id) DO UPDATE SET
-           name=@name, mono=@mono, avatar=@avatar, rule=@rule, images=@images,
-           thumb=@thumb, cap=@cap, out=@out, autoWatch=@autoWatch, thumbnailTemplateId=@thumbnailTemplateId`
-      ).run({ ...p, autoWatch: p.autoWatch ? 1 : 0, thumbnailTemplateId: p.thumbnailTemplateId ?? null })
+      const cols = PROFILE_COLS.join(',')
+      const vals = PROFILE_COLS.map((c) => `@${c}`).join(',')
+      const sets = PROFILE_COLS.filter((c) => c !== 'id').map((c) => `${c}=@${c}`).join(', ')
+      d.prepare(`INSERT INTO profiles (${cols}) VALUES (${vals}) ON CONFLICT(id) DO UPDATE SET ${sets}`).run(profileToRow(p))
       return allProfiles()
+    },
+    deleteProfile: (id) => {
+      d.prepare('DELETE FROM profiles WHERE id=?').run(id)
+      return allProfiles()
+    },
+    getProfile: (id) => {
+      const r = d.prepare('SELECT * FROM profiles WHERE id=?').get(id) as Record<string, unknown> | undefined
+      return r ? rowToProfile(r) : undefined
+    },
+    setProfileCursor: (id, patch) => {
+      d.prepare('UPDATE profiles SET lastSeenVideoId=@lastSeenVideoId, lastRunAt=@lastRunAt WHERE id=@id').run({
+        id,
+        lastSeenVideoId: patch.lastSeenVideoId ?? null,
+        lastRunAt: patch.lastRunAt ?? null
+      })
     },
 
     saveTemplate: (t) => {
@@ -454,6 +484,37 @@ function rowToWord(r: Record<string, unknown>): TranscriptWord {
   return { ...(r as unknown as TranscriptWord), emphasis: !!r.emphasis }
 }
 
+const PROFILE_COLS = [
+  'id', 'name', 'mono', 'avatar', 'rule', 'images', 'thumb', 'cap', 'out', 'autoWatch', 'thumbnailTemplateId',
+  'linkedSourceId', 'sourceUrl', 'sourceOrder', 'sourceCount', 'imageMode', 'poolSize', 'kenBurns',
+  'captionPreset', 'captionAspect', 'outputFolder', 'lastSeenVideoId', 'lastRunAt'
+]
+
+function profileToRow(p: Profile): Record<string, unknown> {
+  return {
+    ...p,
+    autoWatch: p.autoWatch ? 1 : 0,
+    kenBurns: p.kenBurns ? 1 : 0,
+    thumbnailTemplateId: p.thumbnailTemplateId ?? null,
+    linkedSourceId: p.linkedSourceId ?? null,
+    outputFolder: p.outputFolder ?? null,
+    lastSeenVideoId: p.lastSeenVideoId ?? null,
+    lastRunAt: p.lastRunAt ?? null
+  }
+}
+
+/** Map a profiles row → Profile, coercing bools and defaulting run config for legacy rows. */
 function rowToProfile(r: Record<string, unknown>): Profile {
-  return { ...(r as unknown as Profile), autoWatch: !!r.autoWatch }
+  return {
+    ...(r as unknown as Profile),
+    autoWatch: !!r.autoWatch,
+    kenBurns: r.kenBurns == null ? true : !!r.kenBurns,
+    sourceUrl: (r.sourceUrl as string) ?? '',
+    sourceOrder: (r.sourceOrder as ScrapeOrder) ?? 'Latest',
+    sourceCount: (r.sourceCount as number) ?? 5,
+    imageMode: (r.imageMode as ImageMode) ?? 'sequence',
+    poolSize: (r.poolSize as number) ?? 10,
+    captionPreset: (r.captionPreset as string) ?? 'Hormozi',
+    captionAspect: (r.captionAspect as Profile['captionAspect']) ?? '16:9'
+  }
 }

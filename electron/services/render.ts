@@ -53,7 +53,13 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
   const inputs: string[] = []
   imgs.forEach((im) => {
     const dur = Math.max(0.5, im.rangeEnd - im.rangeStart) + cf
-    inputs.push('-loop', '1', '-t', dur.toFixed(2), '-i', im.path)
+    if (im.path) {
+      inputs.push('-loop', '1', '-t', dur.toFixed(2), '-i', im.path)
+    } else {
+      // No image (hands-free auto-watch staged a render before images were added):
+      // fall back to a solid background so the render still produces valid video.
+      inputs.push('-f', 'lavfi', '-t', dur.toFixed(2), '-i', `color=c=0x111316:s=${w}x${h}:r=${FPS}`)
+    }
   })
   inputs.push('-i', project.mp3Path)
   const audioIdx = imgs.length

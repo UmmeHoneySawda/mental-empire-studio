@@ -31,9 +31,9 @@ const downloads: DownloadedVideo[] = [
 ]
 
 const profiles: Profile[] = [
-  { id: 'me', name: 'Mental Empire', mono: 'ME', avatar: 'linear-gradient(135deg,#f5b323,#b9780a)', rule: 'Latest · 5 videos', images: 'Pool of 10 · shuffle', thumb: 'Full Bleed · White', cap: 'Hormozi · 16:9', out: '/Desktop/ME_out', autoWatch: true },
-  { id: 'sh', name: 'Stoic Hour', mono: 'SH', avatar: 'linear-gradient(135deg,#8b7cff,#5b4fd6)', rule: 'Popular · 10 videos', images: 'Single image', thumb: 'Subject Left · Amber', cap: 'Pop · 16:9', out: '/Desktop/Stoic_out', autoWatch: true },
-  { id: 'sd', name: 'Sleep Deep', mono: 'SD', avatar: 'linear-gradient(135deg,#36c98e,#1f9c6b)', rule: 'Latest · 3 videos', images: 'Pool of 20 · shuffle', thumb: 'Centered · Cyan', cap: 'Minimal · 16:9', out: '/Desktop/Sleep_out', autoWatch: true }
+  { id: 'me', name: 'Mental Empire', mono: 'ME', avatar: 'linear-gradient(135deg,#f5b323,#b9780a)', rule: 'Latest · 5 videos', images: 'Pool of 10 · shuffle', thumb: 'Full Bleed · White', cap: 'Hormozi · 16:9', out: '/Desktop/ME_out', autoWatch: true, linkedSourceId: 'src-pw', sourceUrl: 'https://youtube.com/@PowerWithinOfficial', sourceOrder: 'Latest', sourceCount: 5, imageMode: 'pool', poolSize: 10, kenBurns: true, captionPreset: 'Hormozi', captionAspect: '16:9', thumbnailTemplateId: 'tpl-full-bleed' },
+  { id: 'sh', name: 'Stoic Hour', mono: 'SH', avatar: 'linear-gradient(135deg,#8b7cff,#5b4fd6)', rule: 'Popular · 10 videos', images: 'Single image', thumb: 'Subject Left · Amber', cap: 'Pop · 16:9', out: '/Desktop/Stoic_out', autoWatch: true, linkedSourceId: 'src-ds', sourceUrl: 'https://youtube.com/@DailyStoicTalks', sourceOrder: 'Popular', sourceCount: 10, imageMode: 'sequence', poolSize: 1, kenBurns: true, captionPreset: 'Pop', captionAspect: '16:9' },
+  { id: 'sd', name: 'Sleep Deep', mono: 'SD', avatar: 'linear-gradient(135deg,#36c98e,#1f9c6b)', rule: 'Latest · 3 videos', images: 'Pool of 20 · shuffle', thumb: 'Centered · Cyan', cap: 'Minimal · 16:9', out: '/Desktop/Sleep_out', autoWatch: true, linkedSourceId: 'src-rs', sourceUrl: 'https://youtube.com/@RainSounds24', sourceOrder: 'Latest', sourceCount: 3, imageMode: 'pool', poolSize: 20, kenBurns: true, captionPreset: 'Minimal', captionAspect: '16:9' }
 ]
 
 const activity: ActivityRow[] = [
@@ -75,10 +75,10 @@ export function seedIfEmpty(d: Database.Database): void {
     downloads.forEach((v) => dv.run(v))
 
     const pf = d.prepare(
-      `INSERT INTO profiles (id,name,mono,avatar,rule,images,thumb,cap,out,autoWatch)
-       VALUES (@id,@name,@mono,@avatar,@rule,@images,@thumb,@cap,@out,@autoWatch)`
+      `INSERT INTO profiles (id,name,mono,avatar,rule,images,thumb,cap,out,autoWatch,thumbnailTemplateId,linkedSourceId,sourceUrl,sourceOrder,sourceCount,imageMode,poolSize,kenBurns,captionPreset,captionAspect)
+       VALUES (@id,@name,@mono,@avatar,@rule,@images,@thumb,@cap,@out,@autoWatch,@thumbnailTemplateId,@linkedSourceId,@sourceUrl,@sourceOrder,@sourceCount,@imageMode,@poolSize,@kenBurns,@captionPreset,@captionAspect)`
     )
-    profiles.forEach((p) => pf.run({ ...p, autoWatch: p.autoWatch ? 1 : 0 }))
+    profiles.forEach((p) => pf.run({ thumbnailTemplateId: null, ...p, autoWatch: p.autoWatch ? 1 : 0, kenBurns: p.kenBurns ? 1 : 0 }))
 
     d.prepare('INSERT INTO thumbnail_templates (id,name,layers) VALUES (@id,@name,@layers)').run({
       id: defaultTemplate.id, name: defaultTemplate.name, layers: JSON.stringify(defaultTemplate.layers)

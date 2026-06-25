@@ -147,6 +147,7 @@ export interface Profile {
   name: string
   mono: string
   avatar: string
+  // display labels (shown on the profile card)
   rule: string
   images: string
   thumb: string
@@ -155,6 +156,30 @@ export interface Profile {
   autoWatch: boolean
   /** id of the ThumbnailTemplate locked to this profile (M5) */
   thumbnailTemplateId?: string
+  // ---- structured run config (M7) ----
+  linkedSourceId?: string
+  sourceUrl: string
+  sourceOrder: ScrapeOrder
+  sourceCount: number
+  imageMode: ImageMode
+  poolSize: number
+  kenBurns: boolean
+  captionPreset: string
+  captionAspect: '16:9' | '1:1' | '9:16'
+  outputFolder?: string
+  /** newest source video id already processed — the auto-watch cursor */
+  lastSeenVideoId?: string
+  lastRunAt?: string
+}
+
+/** Live status streamed while a profile runs (interactive or hands-free). */
+export interface AutomationEvent {
+  profileId: string
+  profileName: string
+  phase: 'start' | 'scraping' | 'downloading' | 'composing' | 'queued' | 'done' | 'error'
+  message: string
+  /** project ids created this run (for the interactive quick-edit) */
+  projectIds?: string[]
 }
 
 // ---- Thumbnail editor model (req #4) ----
@@ -455,6 +480,16 @@ export interface NativeApi {
     /** cancel a queued/rendering job */
     cancel(jobId: string): Promise<void>
   }
+  automation: {
+    /** run a profile's pipeline; interactive returns new project ids for quick-edit */
+    runProfile(profileId: string, headless?: boolean): Promise<string[]>
+    /** create/update a profile */
+    upsertProfile(profile: Profile): Promise<Profile[]>
+    /** delete a profile */
+    deleteProfile(profileId: string): Promise<Profile[]>
+    /** trigger one scheduler tick now (Library "Run now") */
+    tick(): Promise<void>
+  }
   /** pick an output folder via the OS dialog; returns the chosen path or '' */
   chooseFolder(): Promise<string>
   /** subscribe to live scrape progress; returns an unsubscribe fn */
@@ -467,6 +502,8 @@ export interface NativeApi {
   onTranscribeProgress(cb: (p: TranscribeProgress) => void): () => void
   /** subscribe to render progress; returns an unsubscribe fn */
   onRenderProgress(cb: (p: RenderProgress) => void): () => void
+  /** subscribe to profile-run events; returns an unsubscribe fn */
+  onAutomation(cb: (e: AutomationEvent) => void): () => void
 }
 
 declare global {

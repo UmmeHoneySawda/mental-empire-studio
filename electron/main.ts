@@ -1,7 +1,9 @@
-import { app, BrowserWindow, ipcMain, shell } from 'electron'
+import { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage } from 'electron'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { existsSync, statSync, writeFileSync, readFileSync } from 'node:fs'
+import { applyLoginItem, trayIconPath } from './services/background'
+import * as scheduler from './services/scheduler'
 import { initSettings, setSettings, getSettings } from './store/settings'
 import { initDatabase, getRepos, closeDatabase } from './db'
 import { registerIpc } from './ipc/register'
@@ -16,6 +18,9 @@ import { THUMB_W, THUMB_H, type TextLayer, type ThumbnailTemplate, type Transcri
 import { buildAss } from './services/captions'
 import { buildRenderArgs } from './services/render'
 import { runAll, lastMaxActive } from './services/queue'
+import { runProfile, newVideos } from './ipc/automation'
+import { postWebhook } from './services/webhook'
+import { createServer } from 'node:http'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -23,11 +28,64 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 // rather than the generic "Electron" dir shared with other dev apps.
 app.setName('Mental Empire Studio')
 
+// Single-instance: a second launch focuses the existing window instead of starting
+// a duplicate (important once the app lives in the tray). Skipped in headless smokes.
+if (!process.env['ME_SMOKE'] && !process.env['ME_SHOOT'] && !app.requestSingleInstanceLock()) {
+  app.quit()
+}
+app.on('second-instance', () => showWindow())
+
 // Design window size from the prototype: 1352×868 content, frameless studio chrome.
 const WIN_WIDTH = 1352
 const WIN_HEIGHT = 868
 
 let mainWindow: BrowserWindow | null = null
+let tray: Tray | null = null
+let isQuitting = false
+
+function showWindow(): void {
+  if (!mainWindow || mainWindow.isDestroyed()) createWindow()
+  else {
+    mainWindow.show()
+    mainWindow.focus()
+  }
+}
+
+function buildTray(): void {
+  if (tray) return
+  const icon = nativeImage.createFromPath(trayIconPath())
+  tray = new Tray(icon.isEmpty() ? nativeImage.createEmpty() : icon)
+  tray.setToolTip('Mental Empire Studio')
+  tray.on('click', () => showWindow())
+  refreshTrayMenu()
+}
+
+function refreshTrayMenu(): void {
+  if (!tray) return
+  const running = scheduler.isRunning()
+  tray.setContextMenu(
+    Menu.buildFromTemplate([
+      { label: 'Open Studio', click: () => showWindow() },
+      { type: 'separator' },
+      { label: running ? 'Auto-scrape: running' : 'Auto-scrape: paused', enabled: false },
+      {
+        label: running ? 'Pause auto-scrape' : 'Resume auto-scrape',
+        click: () => {
+          scheduler.setPaused(running)
+          refreshTrayMenu()
+        }
+      },
+      { type: 'separator' },
+      {
+        label: 'Quit',
+        click: () => {
+          isQuitting = true
+          app.quit()
+        }
+      }
+    ])
+  )
+}
 
 function createWindow(): void {
   mainWindow = new BrowserWindow({
@@ -48,6 +106,15 @@ function createWindow(): void {
   })
 
   mainWindow.on('ready-to-show', () => mainWindow?.show())
+
+  // Close-to-tray: when the tray is enabled, closing the window hides it (the app
+  // keeps running in the background for auto-watch) — real quit is via the tray menu.
+  mainWindow.on('close', (e) => {
+    if (!isQuitting && getSettings().background.tray) {
+      e.preventDefault()
+      mainWindow?.hide()
+    }
+  })
 
   // Open external links in the OS browser, never in-app.
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
@@ -345,10 +412,95 @@ async function runSmokeM6(): Promise<void> {
   }
 }
 
+/**
+ * Headless M7 self-check (ME_SMOKE=m7, with ME_YTDLP_FIXTURE + ME_DOWNLOAD_FIXTURE):
+ * frequency map + new-upload cursor (pure), profile config round-trip, a fixture-backed
+ * headless profile run (projects + queued jobs + cursor advance), and a webhook POST to
+ * a local server. Tray / login / notifications are OS-session features → tested on the box.
+ */
+async function runSmokeM7(): Promise<void> {
+  const repos = getRepos()
+  const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+  try {
+    // pure: frequency map + cursor
+    const freqOk =
+      scheduler.frequencyToMs('Every 6 hours') === 6 * 3_600_000 &&
+      scheduler.frequencyToMs('Every 30 minutes') === 30 * 60_000 &&
+      scheduler.frequencyToMs('Daily') === 24 * 3_600_000
+    const vids = (ids: string[]): { id: string }[] => ids.map((id) => ({ id }))
+    const cursorOk =
+      newVideos(vids(['a', 'b', 'c', 'd']) as never) .length === 4 &&
+      newVideos(vids(['a', 'b', 'c', 'd']) as never, 'b').length === 1 &&
+      newVideos(vids(['a', 'b', 'c', 'd']) as never, 'b')[0].id === 'a' &&
+      newVideos(vids(['a', 'b']) as never, 'zzz').length === 2
+
+    // profile config round-trip
+    const me = repos.getProfile('me')
+    const cfgOk = !!me && me.sourceUrl.includes('@PowerWithinOfficial') && me.sourceCount === 5 && me.kenBurns === true && me.captionPreset === 'Hormozi'
+
+    // webhook POST to a local server
+    const received: Array<Record<string, unknown>> = []
+    const server = createServer((req, res) => {
+      let b = ''
+      req.on('data', (d) => (b += d))
+      req.on('end', () => {
+        try { received.push(JSON.parse(b)) } catch { /* ignore */ }
+        res.end('ok')
+      })
+    })
+    await new Promise<void>((r) => server.listen(0, '127.0.0.1', () => r()))
+    const port = (server.address() as { port: number }).port
+    setSettings({ background: { webhook: `http://127.0.0.1:${port}` } })
+    await postWebhook('profile_run', { profile: 'WHTest' })
+    for (let i = 0; i < 30 && received.length === 0; i++) await sleep(50)
+    const webhookOk = received.some((r) => r.event === 'profile_run' && r.profile === 'WHTest')
+    server.close()
+    setSettings({ background: { webhook: '' } })
+
+    // login item: must not throw
+    let loginOk = true
+    try {
+      applyLoginItem({ ...getSettings(), background: { ...getSettings().background, startOnSignIn: true } })
+    } catch {
+      loginOk = false
+    }
+
+    // headless profile run (fixtures): scrape → download → projects → queued jobs
+    setSettings({ outputFolder: join(app.getPath('temp'), 'me-m7-out') })
+    const projectIds = await runProfile('me', true)
+    const firstProj = repos.getProject(projectIds[0])
+    const cursor = repos.getProfile('me')?.lastSeenVideoId
+    const runOk =
+      projectIds.length === 5 &&
+      repos.queuedJobs().length >= 5 &&
+      cursor === 's1' &&
+      firstProj?.captionPreset === 'Hormozi'
+    // second run: nothing new
+    const second = await runProfile('me', true)
+    const noopOk = second.length === 0
+
+    console.log(`SMOKE_M7_PURE freq=${freqOk} cursor=${cursorOk} config=${cfgOk}`)
+    console.log(`SMOKE_M7_WEBHOOK ok=${webhookOk} login=${loginOk}`)
+    console.log(`SMOKE_M7_RUN projects=${projectIds.length} queued=${repos.queuedJobs().length} cursor=${cursor} noop=${noopOk}`)
+    const ok = freqOk && cursorOk && cfgOk && webhookOk && loginOk && runOk && noopOk
+    console.log(ok ? 'SMOKE_M7_OK' : 'SMOKE_M7_FAIL')
+    closeDatabase()
+    app.exit(ok ? 0 : 1)
+  } catch (e) {
+    console.log('SMOKE_M7_FAIL ' + (e as Error).message)
+    closeDatabase()
+    app.exit(1)
+  }
+}
+
 app.whenReady().then(() => {
   initPersistence()
   registerIpc()
 
+  if (process.env['ME_SMOKE'] === 'm7') {
+    void runSmokeM7()
+    return
+  }
   if (process.env['ME_SMOKE'] === 'm6') {
     void runSmokeM6()
     return
@@ -410,14 +562,26 @@ app.whenReady().then(() => {
     })
   }
 
+  // M7 background automation: tray, start-on-sign-in, and the auto-watch scheduler.
+  buildTray()
+  applyLoginItem(getSettings())
+  scheduler.start()
+
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()
+    else showWindow()
   })
 })
 
+app.on('before-quit', () => {
+  isQuitting = true
+  scheduler.stop()
+})
+
 app.on('window-all-closed', () => {
-  // Tray / background behaviour (req #3) is added in M7; for now exit normally
-  // except on macOS where apps conventionally stay alive.
+  // With the tray enabled the app stays resident for auto-watch; otherwise quit
+  // (except macOS, which conventionally keeps apps alive).
+  if (getSettings().background.tray) return
   if (process.platform !== 'darwin') {
     closeDatabase()
     app.quit()

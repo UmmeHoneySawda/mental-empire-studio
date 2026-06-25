@@ -11,7 +11,8 @@ import type {
   RecentUpload,
   TranscriptWord,
   RenderQueueRow,
-  RenderProgress
+  RenderProgress,
+  Profile
 } from '@shared/types'
 
 // Live data layer — everything sourced from the SQLite DB / scrape / download /
@@ -36,6 +37,8 @@ interface DataState {
   renderJobs: RenderQueueRow[]
   renderProgress: Record<string, RenderProgress>
   rendering: boolean
+  profiles: Profile[]
+  runningProfileId: string | null
   ready: boolean
 
   init: () => Promise<void>
@@ -49,6 +52,7 @@ interface DataState {
   startDownload: (videos: ScrapedVideo[], sourceUrl: string, bitrate: number) => Promise<void>
   resumeDownload: (id: string) => Promise<void>
   openProject: (downloadId: string) => Promise<void>
+  openProjectById: (projectId: string) => Promise<void>
   setProjectImages: (paths: string[]) => Promise<void>
   setMedia: (patch: Partial<Project>) => Promise<void>
   setCaptions: (patch: Partial<Project>) => Promise<void>
@@ -58,6 +62,11 @@ interface DataState {
   loadRenderJobs: () => Promise<void>
   renderAll: () => Promise<void>
   cancelJob: (id: string) => Promise<void>
+  loadProfiles: () => Promise<void>
+  runProfile: (id: string) => Promise<string[]>
+  saveProfile: (p: Profile) => Promise<void>
+  deleteProfile: (id: string) => Promise<void>
+  runNow: () => Promise<void>
 }
 
 let subscribed = false
@@ -78,6 +87,8 @@ export const useData = create<DataState>((set, get) => ({
   renderJobs: [],
   renderProgress: {},
   rendering: false,
+  profiles: [],
+  runningProfileId: null,
   ready: false,
 
   init: async () => {
@@ -86,7 +97,7 @@ export const useData = create<DataState>((set, get) => ({
       set({ ready: true })
       return
     }
-    await Promise.all([get().loadChannels(), get().loadDownloads(), get().loadActivity()])
+    await Promise.all([get().loadChannels(), get().loadDownloads(), get().loadActivity(), get().loadProfiles()])
     set({ ready: true })
     a.reminders.check().catch(() => {})
 
@@ -179,6 +190,14 @@ export const useData = create<DataState>((set, get) => ({
     const [projectImages, transcript] = await Promise.all([a.compose.images(project.id), a.transcribe.get(project.id)])
     set({ activeProject: project, projectImages, transcript })
   },
+  openProjectById: async (projectId) => {
+    const a = api()
+    if (!a) return
+    const project = await a.compose.get(projectId)
+    if (!project) return
+    const [projectImages, transcript] = await Promise.all([a.compose.images(projectId), a.transcribe.get(projectId)])
+    set({ activeProject: project, projectImages, transcript })
+  },
   setProjectImages: async (paths) => {
     const a = api()
     const p = get().activeProject
@@ -247,5 +266,42 @@ export const useData = create<DataState>((set, get) => ({
     if (!a) return
     await a.render.cancel(id)
     await get().loadRenderJobs()
+  },
+
+  loadProfiles: async () => {
+    const a = api()
+    if (a) set({ profiles: await a.db.profiles() })
+  },
+  runProfile: async (id) => {
+    const a = api()
+    if (!a) return []
+    set({ runningProfileId: id })
+    try {
+      const projectIds = await a.automation.runProfile(id, false)
+      // open the first new project for quick-edit, then refresh
+      if (projectIds[0]) await get().openProjectById(projectIds[0])
+      await Promise.all([get().loadDownloads(), get().loadProfiles(), get().loadActivity()])
+      return projectIds
+    } finally {
+      set({ runningProfileId: null })
+    }
+  },
+  saveProfile: async (p) => {
+    const a = api()
+    if (!a) return
+    const profiles = await a.automation.upsertProfile(p)
+    set({ profiles })
+  },
+  deleteProfile: async (id) => {
+    const a = api()
+    if (!a) return
+    const profiles = await a.automation.deleteProfile(id)
+    set({ profiles })
+  },
+  runNow: async () => {
+    const a = api()
+    if (!a) return
+    await a.automation.tick()
+    await Promise.all([get().loadActivity(), get().loadRenderJobs(), get().loadProfiles()])
   }
 }))
