@@ -304,6 +304,39 @@ export interface DownloadOptions {
   sourceUrl: string
 }
 
+// ---- Render pipeline (M6) ----
+export type RenderStatus = 'queued' | 'rendering' | 'done' | 'error'
+
+export interface RenderJob {
+  id: string
+  title: string
+  channel: string
+  status: RenderStatus
+  pct: number
+  projectId: string
+  outputPath?: string
+  error?: string
+  createdAt: string
+}
+
+export interface RenderProgress {
+  jobId: string
+  pct: number
+  stage: string
+  done: boolean
+  error?: string
+  outputPath?: string
+}
+
+/** A render_jobs row joined with its project for the Render Queue checklist. */
+export interface RenderQueueRow {
+  job: RenderJob
+  images: number
+  hasMp3: boolean
+  hasThumb: boolean
+  hasCaptions: boolean
+}
+
 
 // ---- Settings (persisted via electron-store) ----
 export interface AppSettings {
@@ -414,6 +447,16 @@ export interface NativeApi {
     /** write a rasterized PNG (data URL) to the output folder; returns the file path */
     writePng(name: string, dataUrl: string): Promise<string>
   }
+  render: {
+    /** the queue as joined rows (job + project checklist) */
+    jobs(): Promise<RenderQueueRow[]>
+    /** render every queued job, honoring the concurrency setting */
+    all(): Promise<void>
+    /** cancel a queued/rendering job */
+    cancel(jobId: string): Promise<void>
+  }
+  /** pick an output folder via the OS dialog; returns the chosen path or '' */
+  chooseFolder(): Promise<string>
   /** subscribe to live scrape progress; returns an unsubscribe fn */
   onScrapeProgress(cb: (p: ScrapeProgress) => void): () => void
   /** subscribe to new activity-log entries; returns an unsubscribe fn */
@@ -422,6 +465,8 @@ export interface NativeApi {
   onDownloadProgress(cb: (p: DownloadProgress) => void): () => void
   /** subscribe to transcription progress; returns an unsubscribe fn */
   onTranscribeProgress(cb: (p: TranscribeProgress) => void): () => void
+  /** subscribe to render progress; returns an unsubscribe fn */
+  onRenderProgress(cb: (p: RenderProgress) => void): () => void
 }
 
 declare global {

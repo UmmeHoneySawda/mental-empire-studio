@@ -11,7 +11,9 @@ import type {
   Project,
   ProjectImage,
   TranscriptWord,
-  RecentUpload
+  RecentUpload,
+  RenderJob,
+  RenderStatus
 } from '../../shared/types'
 import { seedIfEmpty } from './seed'
 
@@ -92,6 +94,10 @@ function migrate(d: Database.Database): void {
   ensureColumn(d, 'render_jobs', 'projectId', 'TEXT')
   // M5: template locked to a profile
   ensureColumn(d, 'profiles', 'thumbnailTemplateId', 'TEXT')
+  // M6: render output bookkeeping
+  ensureColumn(d, 'render_jobs', 'outputPath', 'TEXT')
+  ensureColumn(d, 'render_jobs', 'error', 'TEXT')
+  ensureColumn(d, 'render_jobs', 'updatedAt', 'TEXT')
 }
 
 export interface ChannelStatsPatch {
@@ -151,6 +157,10 @@ export interface Repositories {
   updateWord(wordId: string, text: string): void
   toggleEmphasis(wordId: string): void
   createRenderJob(job: { id: string; title: string; channel: string; projectId: string }): void
+  renderJobs(): RenderJob[]
+  renderJob(id: string): RenderJob | undefined
+  queuedJobs(): RenderJob[]
+  setRenderStatus(id: string, patch: { status?: RenderStatus; pct?: number; outputPath?: string; error?: string }): void
 }
 
 let db: Database.Database | null = null
@@ -398,8 +408,25 @@ function buildRepositories(d: Database.Database): Repositories {
       d.prepare(
         `INSERT INTO render_jobs (id,title,channel,status,pct,createdAt,projectId)
          VALUES (@id,@title,@channel,'queued',0,@createdAt,@projectId)
-         ON CONFLICT(id) DO UPDATE SET title=@title, channel=@channel, projectId=@projectId`
+         ON CONFLICT(id) DO UPDATE SET title=@title, channel=@channel, projectId=@projectId, status='queued', pct=0, error=NULL`
       ).run({ ...job, createdAt: new Date().toISOString() })
+    },
+    renderJobs: () =>
+      d.prepare('SELECT id,title,channel,status,pct,projectId,outputPath,error,createdAt FROM render_jobs ORDER BY createdAt').all() as RenderJob[],
+    renderJob: (id) =>
+      d.prepare('SELECT id,title,channel,status,pct,projectId,outputPath,error,createdAt FROM render_jobs WHERE id=?').get(id) as RenderJob | undefined,
+    queuedJobs: () =>
+      d.prepare("SELECT id,title,channel,status,pct,projectId,outputPath,error,createdAt FROM render_jobs WHERE status='queued' ORDER BY createdAt").all() as RenderJob[],
+    setRenderStatus: (id, patch) => {
+      const sets: string[] = ['updatedAt=@updatedAt']
+      const params: Record<string, unknown> = { id, updatedAt: new Date().toISOString() }
+      for (const k of ['status', 'pct', 'outputPath', 'error'] as const) {
+        if (patch[k] !== undefined) {
+          sets.push(`${k}=@${k}`)
+          params[k] = patch[k]
+        }
+      }
+      d.prepare(`UPDATE render_jobs SET ${sets.join(', ')} WHERE id=@id`).run(params)
     }
   }
 }

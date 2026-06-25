@@ -6,6 +6,7 @@ import { registerScrapeIpc } from './scrape'
 import { registerDownloadIpc } from './download'
 import { registerComposeIpc } from './compose'
 import { registerThumbnailsIpc } from './thumbnails'
+import { registerRenderIpc } from './render'
 
 // All native capability the renderer can reach is registered here as invoke
 // handlers and exposed through the typed preload bridge (window.api.*).
@@ -38,5 +39,8 @@ export function registerIpc(): void {
 
   // ---- thumbnail engine (M5) ----
   registerThumbnailsIpc()
+
+  // ---- render pipeline (M6) ----
+  registerRenderIpc()
 }
 

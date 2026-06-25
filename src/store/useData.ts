@@ -9,7 +9,9 @@ import type {
   ScrapeOrder,
   ScrapedVideo,
   RecentUpload,
-  TranscriptWord
+  TranscriptWord,
+  RenderQueueRow,
+  RenderProgress
 } from '@shared/types'
 
 // Live data layer — everything sourced from the SQLite DB / scrape / download /
@@ -31,6 +33,9 @@ interface DataState {
   projectImages: ProjectImage[]
   transcript: TranscriptWord[]
   transcribing: boolean
+  renderJobs: RenderQueueRow[]
+  renderProgress: Record<string, RenderProgress>
+  rendering: boolean
   ready: boolean
 
   init: () => Promise<void>
@@ -50,6 +55,9 @@ interface DataState {
   runTranscribe: () => Promise<void>
   toggleWordEmphasis: (wordId: string) => Promise<void>
   sendActiveToRender: () => Promise<void>
+  loadRenderJobs: () => Promise<void>
+  renderAll: () => Promise<void>
+  cancelJob: (id: string) => Promise<void>
 }
 
 let subscribed = false
@@ -67,6 +75,9 @@ export const useData = create<DataState>((set, get) => ({
   projectImages: [],
   transcript: [],
   transcribing: false,
+  renderJobs: [],
+  renderProgress: {},
+  rendering: false,
   ready: false,
 
   init: async () => {
@@ -87,6 +98,10 @@ export const useData = create<DataState>((set, get) => ({
       if (p.done) get().loadDownloads()
     })
     a.onTranscribeProgress((p) => set({ transcribing: p.phase !== 'done' && p.phase !== 'error' }))
+    a.onRenderProgress((p) => {
+      set((s) => ({ renderProgress: { ...s.renderProgress, [p.jobId]: p } }))
+      if (p.done) get().loadRenderJobs()
+    })
   },
 
   loadChannels: async () => {
@@ -209,6 +224,28 @@ export const useData = create<DataState>((set, get) => ({
     const p = get().activeProject
     if (!a || !p) return
     await a.compose.sendToRender(p.id)
-    await get().loadActivity()
+    await Promise.all([get().loadActivity(), get().loadRenderJobs()])
+  },
+
+  loadRenderJobs: async () => {
+    const a = api()
+    if (a) set({ renderJobs: await a.render.jobs() })
+  },
+  renderAll: async () => {
+    const a = api()
+    if (!a) return
+    set({ rendering: true })
+    try {
+      await a.render.all()
+      await Promise.all([get().loadRenderJobs(), get().loadActivity()])
+    } finally {
+      set({ rendering: false })
+    }
+  },
+  cancelJob: async (id) => {
+    const a = api()
+    if (!a) return
+    await a.render.cancel(id)
+    await get().loadRenderJobs()
   }
 }))

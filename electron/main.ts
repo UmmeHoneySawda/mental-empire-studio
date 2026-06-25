@@ -12,7 +12,10 @@ import { firedNotifications } from './services/notify'
 import { channelUrl } from './services/scraper'
 import { splitRanges } from './services/audio'
 import { autoArrangeText } from '../shared/thumbnail'
-import { THUMB_W, THUMB_H, type TextLayer, type ThumbnailTemplate } from '../shared/types'
+import { THUMB_W, THUMB_H, type TextLayer, type ThumbnailTemplate, type TranscriptWord } from '../shared/types'
+import { buildAss } from './services/captions'
+import { buildRenderArgs } from './services/render'
+import { runAll, lastMaxActive } from './services/queue'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -273,10 +276,83 @@ async function runSmokeM5(): Promise<void> {
   }
 }
 
+/**
+ * Headless M6 self-check (ME_SMOKE=m6): asserts ASS caption generation + the ffmpeg
+ * arg-builder (pure), then drives the queue runner under ME_RENDER_FIXTURE (stub mp4)
+ * to verify status/output/concurrency without ffmpeg. Real encode runs on the user's box.
+ */
+async function runSmokeM6(): Promise<void> {
+  const repos = getRepos()
+  try {
+    const words: TranscriptWord[] = [
+      { id: 'w0', projectId: 'p', ord: 0, word: 'You', start: 0, end: 0.3, emphasis: false },
+      { id: 'w1', projectId: 'p', ord: 1, word: 'are', start: 0.3, end: 0.5, emphasis: false },
+      { id: 'w2', projectId: 'p', ord: 2, word: 'NOT', start: 0.5, end: 0.9, emphasis: true },
+      { id: 'w3', projectId: 'p', ord: 3, word: 'crazy', start: 0.9, end: 1.4, emphasis: false }
+    ]
+    const ass169 = buildAss(words, { preset: 'Hormozi', aspect: '16:9', keywords: false })
+    const ass916 = buildAss(words, { preset: 'Hormozi', aspect: '9:16', keywords: false })
+    const assPop = buildAss(words, { preset: 'Pop', aspect: '16:9', keywords: false })
+    const assOk =
+      ass169.ass.includes('PlayResX: 1920') && ass916.ass.includes('PlayResX: 1080') &&
+      ass169.ass.includes('\\kf') && ass169.ass.includes('\\fscx118') &&
+      ass169.zoomHits.length === 1 &&
+      ass169.ass.includes('Anton') && assPop.ass.includes('Montserrat')
+
+    const proj = (id: string, title: string): Parameters<typeof repos.createProject>[0] => ({
+      id, downloadId: id, title, channel: 'Mental Empire', mp3Path: join(process.cwd(), 'test', 'fixtures', 'audio', 'sample.mp3'),
+      durationSec: 12, imageMode: 'sequence', poolSize: 10, kenBurns: true, seed: 4821, crossfade: true,
+      captionPreset: 'Hormozi', captionFont: 'Anton', captionAnim: 'Pop-in', captionAspect: '16:9',
+      emphasis: true, keywords: true, punchZoom: true, stage: 'queued', createdAt: new Date().toISOString()
+    })
+    const args = buildRenderArgs({
+      project: proj('p-args', 'Args'),
+      images: [
+        { id: 'i0', projectId: 'p-args', ord: 0, path: '/x/a.png', thumb: '', rangeStart: 0, rangeEnd: 6, manual: false },
+        { id: 'i1', projectId: 'p-args', ord: 1, path: '/x/b.png', thumb: '', rangeStart: 6, rangeEnd: 12, manual: false }
+      ],
+      assPath: '/tmp/x.ass', outPath: '/tmp/o.mp4', settings: getSettings()
+    })
+    const g = args.join(' ')
+    const argsOk = g.includes('zoompan') && g.includes('xfade') && g.includes('subtitles=') && g.includes('libx264') && g.includes('scale=1920:1080')
+
+    // dry-run queue with two jobs at concurrency 2
+    setSettings({ outputFolder: join(app.getPath('temp'), 'me-m6-out'), concurrency: 2 })
+    process.env['ME_RENDER_FIXTURE'] = '1'
+    for (const k of [1, 2]) {
+      const id = `proj-m6-${k}`
+      repos.createProject(proj(id, `M6 Test ${k}`))
+      repos.replaceProjectImages(id, [{ id: `${id}-i0`, projectId: id, ord: 0, path: '/x/a.png', thumb: '', rangeStart: 0, rangeEnd: 12, manual: false }])
+      repos.replaceTranscript(id, words.map((w, i) => ({ ...w, id: `${id}-w${i}`, projectId: id })))
+      repos.createRenderJob({ id: `job-${id}`, title: `M6 Test ${k}`, channel: 'Mental Empire', projectId: id })
+    }
+    await runAll()
+    const j1 = repos.renderJob('job-proj-m6-1')
+    const queueOk = j1?.status === 'done' && !!j1.outputPath && existsSync(j1.outputPath) && j1.pct === 100 && lastMaxActive() === 2
+    const assFileOk = existsSync(join(app.getPath('temp'), 'me-m6-out', 'Mental Empire - M6 Test 1.ass'))
+
+    console.log(`SMOKE_M6_ASS ok=${assOk} zoomHits=${ass169.zoomHits.length}`)
+    console.log(`SMOKE_M6_ARGS ok=${argsOk}`)
+    console.log(`SMOKE_M6_QUEUE status=${j1?.status} pct=${j1?.pct} maxActive=${lastMaxActive()} out=${!!j1?.outputPath} ass=${assFileOk}`)
+    const ok = assOk && argsOk && queueOk && assFileOk
+    console.log(ok ? 'SMOKE_M6_OK' : 'SMOKE_M6_FAIL')
+    closeDatabase()
+    app.exit(ok ? 0 : 1)
+  } catch (e) {
+    console.log('SMOKE_M6_FAIL ' + (e as Error).message)
+    closeDatabase()
+    app.exit(1)
+  }
+}
+
 app.whenReady().then(() => {
   initPersistence()
   registerIpc()
 
+  if (process.env['ME_SMOKE'] === 'm6') {
+    void runSmokeM6()
+    return
+  }
   if (process.env['ME_SMOKE'] === 'm5') {
     void runSmokeM5()
     return

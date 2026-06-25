@@ -13,7 +13,8 @@ import type {
   ScrapeProgress,
   ScrapedVideo,
   ThumbnailTemplate,
-  TranscribeProgress
+  TranscribeProgress,
+  RenderProgress
 } from '../shared/types'
 
 /** Subscribe to a main→renderer event; returns an unsubscribe fn. */
@@ -97,10 +98,19 @@ const api: NativeApi = {
     writePng: (name: string, dataUrl: string) => ipcRenderer.invoke('thumbnails:writePng', name, dataUrl)
   },
 
+  render: {
+    jobs: () => ipcRenderer.invoke('render:jobs'),
+    all: () => ipcRenderer.invoke('render:all'),
+    cancel: (jobId: string) => ipcRenderer.invoke('render:cancel', jobId)
+  },
+
+  chooseFolder: () => ipcRenderer.invoke('fs:chooseFolder'),
+
   onScrapeProgress: (cb: (p: ScrapeProgress) => void) => subscribe('scrape:progress', cb),
   onActivity: (cb: (row: ActivityRow) => void) => subscribe('activity:new', cb),
   onDownloadProgress: (cb: (p: DownloadProgress) => void) => subscribe('download:progress', cb),
-  onTranscribeProgress: (cb: (p: TranscribeProgress) => void) => subscribe('transcribe:progress', cb)
+  onTranscribeProgress: (cb: (p: TranscribeProgress) => void) => subscribe('transcribe:progress', cb),
+  onRenderProgress: (cb: (p: RenderProgress) => void) => subscribe('render:progress', cb)
 }
 
 contextBridge.exposeInMainWorld('api', api)
