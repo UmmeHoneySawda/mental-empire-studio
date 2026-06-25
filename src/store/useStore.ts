@@ -1,12 +1,21 @@
 import { create } from 'zustand'
 import {
   DEFAULT_SETTINGS,
+  THUMB_W,
+  THUMB_H,
   type AccentName,
   type AppSettings,
+  type BackgroundLayer,
   type DeepPartial,
+  type LayerFrame,
   type ScreenKey,
-  type ThumbnailLayer
+  type ShapeLayer,
+  type SubjectLayer,
+  type TextLayer,
+  type ThumbnailLayer,
+  type ThumbnailTemplate
 } from '@shared/types'
+import { autoArrangeText } from '@shared/thumbnail'
 import { initialLayers } from '@/data/mock'
 
 type ComposeTab = 'media' | 'captions'
@@ -44,11 +53,24 @@ interface AppState {
   // thumbnail editor
   layers: ThumbnailLayer[]
   selectedLayerId: string
+  templates: ThumbnailTemplate[]
   selectLayer: (id: string) => void
   toggleLayerVisible: (id: string) => void
   duplicateLayer: (id: string) => void
+  deleteLayer: (id: string) => void
   addTextLayer: () => void
+  addShapeLayer: (shape: ShapeLayer['shape']) => void
+  updateLayer: (id: string, patch: Partial<ThumbnailLayer>) => void
+  updateGeometry: (id: string, frame: Partial<LayerFrame>) => void
+  setSubjectImage: (src: string) => void
+  setBackground: (patch: Partial<BackgroundLayer>) => void
+  runAutoArrange: () => void
+  loadTemplates: () => Promise<void>
+  saveCurrentTemplate: (name: string) => Promise<void>
+  applyTemplate: (t: ThumbnailTemplate) => void
 }
+
+const FULL_FRAME: LayerFrame = { x: 0, y: 0, width: THUMB_W, height: THUMB_H, rotation: 0 }
 
 let layerSeq = 100
 
@@ -123,6 +145,7 @@ export const useStore = create<AppState>((set, get) => ({
 
   layers: initialLayers,
   selectedLayerId: 'headline',
+  templates: [],
   selectLayer: (id) => set({ selectedLayerId: id }),
   toggleLayerVisible: (id) =>
     set((s) => ({
@@ -132,27 +155,98 @@ export const useStore = create<AppState>((set, get) => ({
     set((s) => {
       const src = s.layers.find((l) => l.id === id)
       if (!src) return s
-      const copy = { ...src, id: `${src.kind}-${layerSeq++}`, name: `${src.name} copy` }
+      const copy = {
+        ...src,
+        id: `${src.kind}-${layerSeq++}`,
+        name: `${src.name} copy`,
+        frame: { ...src.frame, x: src.frame.x + 24, y: src.frame.y + 24 }
+      }
       const idx = s.layers.findIndex((l) => l.id === id)
       const next = [...s.layers]
       next.splice(idx, 0, copy)
       return { layers: next, selectedLayerId: copy.id }
     }),
+  deleteLayer: (id) =>
+    set((s) => {
+      const layer = s.layers.find((l) => l.id === id)
+      if (!layer || layer.locked) return s
+      const next = s.layers.filter((l) => l.id !== id)
+      return { layers: next, selectedLayerId: next[0]?.id ?? '' }
+    }),
   addTextLayer: () =>
     set((s) => {
       const id = `text-${layerSeq++}`
-      const layer: ThumbnailLayer = {
+      const layer: TextLayer = {
         id,
         kind: 'text',
         name: 'New text',
         visible: true,
         locked: false,
+        frame: { x: 120, y: 120, width: 600, height: 90, rotation: 0 },
         text: 'NEW TEXT',
-        lines: [{ text: 'NEW TEXT', size: 48 }],
+        lines: [{ text: 'NEW TEXT', size: 72 }],
         highlightColor: '#ffffff',
         highlightSquare: false,
+        color: '#ffffff',
+        fontFamily: 'Anton',
+        align: 'left',
         effects: { shadow: true, stroke: false, glow: false, caps: true }
       }
       return { layers: [layer, ...s.layers], selectedLayerId: id }
-    })
+    }),
+  addShapeLayer: (shape) =>
+    set((s) => {
+      const id = `shape-${layerSeq++}`
+      const layer: ShapeLayer = {
+        id,
+        kind: 'shape',
+        name: `${shape[0].toUpperCase()}${shape.slice(1)} (shape)`,
+        visible: true,
+        locked: false,
+        frame: { x: 520, y: 280, width: 180, height: 180, rotation: 0 },
+        shape,
+        color: '#e8403a'
+      }
+      return { layers: [layer, ...s.layers], selectedLayerId: id }
+    }),
+  updateLayer: (id, patch) =>
+    set((s) => ({
+      layers: s.layers.map((l) => (l.id === id ? ({ ...l, ...patch } as ThumbnailLayer) : l))
+    })),
+  updateGeometry: (id, frame) =>
+    set((s) => ({
+      layers: s.layers.map((l) => (l.id === id ? { ...l, frame: { ...l.frame, ...frame } } : l))
+    })),
+  setSubjectImage: (src) =>
+    set((s) => ({
+      layers: s.layers.map((l) => (l.kind === 'subject' ? ({ ...(l as SubjectLayer), src } as ThumbnailLayer) : l))
+    })),
+  setBackground: (patch) =>
+    set((s) => ({
+      layers: s.layers.map((l) => (l.kind === 'background' ? ({ ...(l as BackgroundLayer), ...patch } as ThumbnailLayer) : l))
+    })),
+  runAutoArrange: () =>
+    set((s) => {
+      const sel = s.layers.find((l) => l.id === s.selectedLayerId && l.kind === 'text') as TextLayer | undefined
+      const target = sel ?? (s.layers.find((l) => l.kind === 'text') as TextLayer | undefined)
+      if (!target) return s
+      const subject = s.layers.find((l) => l.kind === 'subject')
+      const { frame, lines } = autoArrangeText(target, { w: THUMB_W, h: THUMB_H }, subject?.frame ?? null)
+      return {
+        layers: s.layers.map((l) => (l.id === target.id ? { ...(l as TextLayer), frame, lines } : l)),
+        selectedLayerId: target.id
+      }
+    }),
+  loadTemplates: async () => {
+    const templates = (await window.api?.thumbnails?.templates?.()) ?? []
+    set({ templates })
+  },
+  saveCurrentTemplate: async (name) => {
+    const id = `tpl-${Date.now()}`
+    const template: ThumbnailTemplate = { id, name, layers: get().layers }
+    const templates = (await window.api?.thumbnails?.saveTemplate?.(template)) ?? get().templates
+    set({ templates })
+  },
+  applyTemplate: (t) =>
+    set({ layers: t.layers.map((l) => ({ ...l })), selectedLayerId: t.layers[0]?.id ?? '' })
 }))

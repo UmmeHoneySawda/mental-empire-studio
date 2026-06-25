@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, shell } from 'electron'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { existsSync, statSync } from 'node:fs'
+import { existsSync, statSync, writeFileSync, readFileSync } from 'node:fs'
 import { initSettings, setSettings, getSettings } from './store/settings'
 import { initDatabase, getRepos, closeDatabase } from './db'
 import { registerIpc } from './ipc/register'
@@ -11,6 +11,8 @@ import { createProject, setImages, runTranscribe, sendToRender } from './ipc/com
 import { firedNotifications } from './services/notify'
 import { channelUrl } from './services/scraper'
 import { splitRanges } from './services/audio'
+import { autoArrangeText } from '../shared/thumbnail'
+import { THUMB_W, THUMB_H, type TextLayer, type ThumbnailTemplate } from '../shared/types'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -213,10 +215,72 @@ async function runSmokeM4(): Promise<void> {
   }
 }
 
+/**
+ * Headless M5 self-check (ME_SMOKE=m5): exercises the thumbnail data layer —
+ * auto-arrange layout math, template save/load round-trip (geometry preserved),
+ * per-profile template lock, and PNG writing. Konva canvas + batch raster are
+ * verified separately via the renderer screenshot harness.
+ */
+async function runSmokeM5(): Promise<void> {
+  const repos = getRepos()
+  try {
+    // 1) template load (geometry preserved)
+    const tpl = repos.getTemplate('tpl-full-bleed')
+    const headline = tpl?.layers.find((l) => l.kind === 'text') as TextLayer | undefined
+    const subject = tpl?.layers.find((l) => l.kind === 'subject')
+    const tplOk = !!tpl && tpl.layers.length === 3 && !!headline && headline.frame.width === 780
+
+    // 2) auto-arrange: balanced lines, highlighted word largest, block opposite subject
+    const aa = autoArrangeText(headline as TextLayer, { w: THUMB_W, h: THUMB_H }, subject?.frame ?? null)
+    const hiLine = aa.lines.find((l) => /fake/i.test(l.text))
+    const otherLine = aa.lines.find((l) => !/fake/i.test(l.text))
+    const aaOk =
+      aa.lines.length === 2 &&
+      !!hiLine && !!otherLine && hiLine.size > otherLine.size &&
+      aa.frame.x + aa.frame.width / 2 > THUMB_W / 2 // subject is left → text parks right
+
+    // 3) save a new template + reload (round-trip)
+    const newTpl: ThumbnailTemplate = { id: 'tpl-test', name: 'Test', layers: (tpl as ThumbnailTemplate).layers }
+    repos.saveTemplate(newTpl)
+    const reload = repos.getTemplate('tpl-test')
+    const saveOk = !!reload && reload.layers.length === 3 && reload.layers[0].frame.width === 780
+
+    // 4) lock template to a profile
+    const profiles = repos.assignTemplateToProfile('me', 'tpl-test')
+    const assignOk = profiles.find((p) => p.id === 'me')?.thumbnailTemplateId === 'tpl-test'
+
+    // 5) writePng decodes a data URL to a valid PNG file
+    const onePx =
+      'data:image/png;base64,iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mNk+M8AAAMCAQGNN1bvAAAAAElFTkSuQmCC'
+    const b64 = onePx.replace(/^data:image\/\w+;base64,/, '')
+    const pngPath = join(app.getPath('temp'), 'me-m5.png')
+    writeFileSync(pngPath, Buffer.from(b64, 'base64'))
+    const head = readFileSync(pngPath).subarray(0, 8)
+    const pngOk = head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47
+
+    console.log(`SMOKE_M5_TEMPLATE tplOk=${tplOk} saveOk=${saveOk}`)
+    console.log(`SMOKE_M5_AUTOARRANGE lines=${aa.lines.length} hi=${hiLine?.size} other=${otherLine?.size} x=${aa.frame.x} ok=${aaOk}`)
+    console.log(`SMOKE_M5_ASSIGN ok=${assignOk}`)
+    console.log(`SMOKE_M5_PNG ok=${pngOk}`)
+    const ok = tplOk && aaOk && saveOk && assignOk && pngOk
+    console.log(ok ? 'SMOKE_M5_OK' : 'SMOKE_M5_FAIL')
+    closeDatabase()
+    app.exit(ok ? 0 : 1)
+  } catch (e) {
+    console.log('SMOKE_M5_FAIL ' + (e as Error).message)
+    closeDatabase()
+    app.exit(1)
+  }
+}
+
 app.whenReady().then(() => {
   initPersistence()
   registerIpc()
 
+  if (process.env['ME_SMOKE'] === 'm5') {
+    void runSmokeM5()
+    return
+  }
   if (process.env['ME_SMOKE'] === 'm4') {
     void runSmokeM4()
     return
@@ -233,20 +297,40 @@ app.whenReady().then(() => {
   createWindow()
 
   // Headless screenshot (ME_SHOOT=<png path>): wait for the renderer to settle,
-  // capture, then exit. Used for visual regression checks; never runs normally.
+  // capture, then exit. With ME_BATCH=1, also drive the Thumbnails "Generate all"
+  // button and report how many PNGs the renderer rasterized + wrote (M5 check).
   const shootPath = process.env['ME_SHOOT']
   if (shootPath && mainWindow) {
     mainWindow.webContents.once('did-finish-load', () => {
       setTimeout(async () => {
-        const accent = await mainWindow!.webContents.executeJavaScript(
-          'document.documentElement.getAttribute("data-accent")'
-        )
-        const img = await mainWindow!.webContents.capturePage()
+        const wc = mainWindow!.webContents
+        const accent = await wc.executeJavaScript('document.documentElement.getAttribute("data-accent")')
+        const img = await wc.capturePage()
         const fs = await import('node:fs')
         fs.writeFileSync(shootPath, img.toPNG())
         console.log(`SHOOT_OK accent=${accent} -> ${shootPath}`)
+
+        if (process.env['ME_BATCH']) {
+          await wc.executeJavaScript(
+            `(() => { const b=[...document.querySelectorAll('div')].find(e=>e.textContent.trim().startsWith('Generate all')); if(b){b.click();return true;} return false; })()`
+          )
+          await new Promise((r) => setTimeout(r, 3500)) // let 4 rasterizations + writes land
+          const dir = join(getSettings().outputFolder || app.getPath('temp'), 'thumbnails')
+          let pngs: string[] = []
+          try {
+            pngs = fs.readdirSync(dir).filter((f) => f.endsWith('.png'))
+          } catch {
+            /* no dir */
+          }
+          const valid = pngs.filter((f) => {
+            const head = fs.readFileSync(join(dir, f)).subarray(0, 4)
+            return head[0] === 0x89 && head[1] === 0x50 && head[2] === 0x4e && head[3] === 0x47
+          })
+          console.log(`SHOOT_BATCH pngs=${pngs.length} valid=${valid.length} dir=${dir}`)
+          console.log(valid.length >= 4 ? 'SHOOT_BATCH_OK' : 'SHOOT_BATCH_FAIL')
+        }
         app.exit(0)
-      }, 900)
+      }, 1100)
     })
   }
 

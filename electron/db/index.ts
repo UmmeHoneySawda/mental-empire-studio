@@ -90,6 +90,8 @@ function migrate(d: Database.Database): void {
   ensureColumn(d, 'downloaded_videos', 'filePath', 'TEXT')
   ensureColumn(d, 'downloaded_videos', 'durationSec', 'INTEGER')
   ensureColumn(d, 'render_jobs', 'projectId', 'TEXT')
+  // M5: template locked to a profile
+  ensureColumn(d, 'profiles', 'thumbnailTemplateId', 'TEXT')
 }
 
 export interface ChannelStatsPatch {
@@ -121,6 +123,8 @@ export interface Repositories {
   addActivity(row: ActivityRow): void
   upsertProfile(p: Profile): Profile[]
   saveTemplate(t: ThumbnailTemplate): ThumbnailTemplate[]
+  getTemplate(id: string): ThumbnailTemplate | undefined
+  assignTemplateToProfile(profileId: string, templateId: string): Profile[]
   // ---- M3 scraping writes ----
   replaceUploads(channelId: string, rows: Upload[]): void
   getUploads(channelId: string): Upload[]
@@ -219,12 +223,12 @@ function buildRepositories(d: Database.Database): Repositories {
 
     upsertProfile: (p) => {
       d.prepare(
-        `INSERT INTO profiles (id,name,mono,avatar,rule,images,thumb,cap,out,autoWatch)
-         VALUES (@id,@name,@mono,@avatar,@rule,@images,@thumb,@cap,@out,@autoWatch)
+        `INSERT INTO profiles (id,name,mono,avatar,rule,images,thumb,cap,out,autoWatch,thumbnailTemplateId)
+         VALUES (@id,@name,@mono,@avatar,@rule,@images,@thumb,@cap,@out,@autoWatch,@thumbnailTemplateId)
          ON CONFLICT(id) DO UPDATE SET
            name=@name, mono=@mono, avatar=@avatar, rule=@rule, images=@images,
-           thumb=@thumb, cap=@cap, out=@out, autoWatch=@autoWatch`
-      ).run({ ...p, autoWatch: p.autoWatch ? 1 : 0 })
+           thumb=@thumb, cap=@cap, out=@out, autoWatch=@autoWatch, thumbnailTemplateId=@thumbnailTemplateId`
+      ).run({ ...p, autoWatch: p.autoWatch ? 1 : 0, thumbnailTemplateId: p.thumbnailTemplateId ?? null })
       return allProfiles()
     },
 
@@ -234,6 +238,16 @@ function buildRepositories(d: Database.Database): Repositories {
          ON CONFLICT(id) DO UPDATE SET name=@name, layers=@layers`
       ).run({ id: t.id, name: t.name, layers: JSON.stringify(t.layers) })
       return allTemplates()
+    },
+    getTemplate: (id) => {
+      const r = d.prepare('SELECT * FROM thumbnail_templates WHERE id=?').get(id) as
+        | { id: string; name: string; layers: string }
+        | undefined
+      return r ? { id: r.id, name: r.name, layers: JSON.parse(r.layers) } : undefined
+    },
+    assignTemplateToProfile: (profileId, templateId) => {
+      d.prepare('UPDATE profiles SET thumbnailTemplateId=? WHERE id=?').run(templateId, profileId)
+      return allProfiles()
     },
 
     // ---- M3 scraping writes ----

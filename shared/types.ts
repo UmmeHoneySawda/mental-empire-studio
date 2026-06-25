@@ -153,10 +153,25 @@ export interface Profile {
   cap: string
   out: string
   autoWatch: boolean
+  /** id of the ThumbnailTemplate locked to this profile (M5) */
+  thumbnailTemplateId?: string
 }
 
 // ---- Thumbnail editor model (req #4) ----
 export type LayerKind = 'background' | 'subject' | 'text' | 'shape'
+
+/** Logical-pixel geometry on the 1280×720 thumbnail stage. */
+export interface LayerFrame {
+  x: number
+  y: number
+  width: number
+  height: number
+  rotation: number
+}
+
+/** Logical stage size — 16:9 at 1280×720. */
+export const THUMB_W = 1280
+export const THUMB_H = 720
 
 export interface BaseLayer {
   id: string
@@ -164,6 +179,7 @@ export interface BaseLayer {
   name: string
   visible: boolean
   locked: boolean
+  frame: LayerFrame
 }
 
 export interface TextLayer extends BaseLayer {
@@ -173,13 +189,19 @@ export interface TextLayer extends BaseLayer {
   highlightWord?: string
   highlightColor: string
   highlightSquare: boolean
+  color: string
+  fontFamily: string
+  align: 'left' | 'center' | 'right'
   effects: { shadow: boolean; stroke: boolean; glow: boolean; caps: boolean }
 }
 
 export interface SubjectLayer extends BaseLayer {
   kind: 'subject'
-  mode: 'cutout' | 'image'
+  /** path or data URL of the user-supplied PNG (no cutout — transparency as authored) */
+  src: string
   outline: boolean
+  outlineColor: string
+  outlineWidth: number
   shadow: boolean
   glow: boolean
 }
@@ -194,6 +216,8 @@ export interface BackgroundLayer extends BaseLayer {
   kind: 'background'
   fill: string
   mode: 'solid' | 'gradient' | 'image'
+  /** path or data URL when mode === 'image' */
+  src?: string
 }
 
 export type ThumbnailLayer = TextLayer | SubjectLayer | ShapeLayer | BackgroundLayer
@@ -379,6 +403,16 @@ export interface NativeApi {
     get(projectId: string): Promise<TranscriptWord[]>
     updateWord(wordId: string, text: string): Promise<void>
     toggleEmphasis(wordId: string): Promise<void>
+  }
+  thumbnails: {
+    /** persist a template (insert/update) and return the full library */
+    saveTemplate(template: ThumbnailTemplate): Promise<ThumbnailTemplate[]>
+    /** list saved templates */
+    templates(): Promise<ThumbnailTemplate[]>
+    /** lock a template to a profile (subject/background/style reused per video) */
+    assignToProfile(profileId: string, templateId: string): Promise<Profile[]>
+    /** write a rasterized PNG (data URL) to the output folder; returns the file path */
+    writePng(name: string, dataUrl: string): Promise<string>
   }
   /** subscribe to live scrape progress; returns an unsubscribe fn */
   onScrapeProgress(cb: (p: ScrapeProgress) => void): () => void

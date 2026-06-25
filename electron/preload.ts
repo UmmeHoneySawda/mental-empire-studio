@@ -89,6 +89,14 @@ const api: NativeApi = {
     toggleEmphasis: (wordId: string) => ipcRenderer.invoke('transcribe:toggleEmphasis', wordId)
   },
 
+  thumbnails: {
+    saveTemplate: (t: ThumbnailTemplate) => ipcRenderer.invoke('thumbnails:saveTemplate', t),
+    templates: () => ipcRenderer.invoke('thumbnails:templates'),
+    assignToProfile: (profileId: string, templateId: string) =>
+      ipcRenderer.invoke('thumbnails:assignToProfile', profileId, templateId),
+    writePng: (name: string, dataUrl: string) => ipcRenderer.invoke('thumbnails:writePng', name, dataUrl)
+  },
+
   onScrapeProgress: (cb: (p: ScrapeProgress) => void) => subscribe('scrape:progress', cb),
   onActivity: (cb: (row: ActivityRow) => void) => subscribe('activity:new', cb),
   onDownloadProgress: (cb: (p: DownloadProgress) => void) => subscribe('download:progress', cb),

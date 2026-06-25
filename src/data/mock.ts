@@ -158,17 +158,38 @@ export const profiles: Profile[] = [
   { id: 'sd', name: 'Sleep Deep', mono: 'SD', avatar: 'linear-gradient(135deg,#36c98e,#1f9c6b)', rule: 'Latest · 3 videos', images: 'Pool of 20 · shuffle', thumb: 'Centered · Cyan', cap: 'Minimal · 16:9', out: '/Desktop/Sleep_out', autoWatch: true }
 ]
 
-// Initial thumbnail editor layer stack (req #4)
+// Initial thumbnail editor layer stack (req #4). Geometry is logical px on the 1280×720 stage.
 export const initialLayers: ThumbnailLayer[] = [
   {
     id: 'headline', kind: 'text', name: 'Headline', visible: true, locked: false,
+    frame: { x: 80, y: 426, width: 780, height: 250, rotation: 0 },
     text: 'EVERYTHING WAS FAKE',
-    lines: [{ text: 'EVERYTHING', size: 52 }, { text: 'WAS FAKE', size: 72 }],
+    lines: [{ text: 'EVERYTHING', size: 92 }, { text: 'WAS FAKE', size: 128 }],
     highlightWord: 'FAKE', highlightColor: '#ffffff', highlightSquare: true,
+    color: '#ffffff', fontFamily: 'Anton', align: 'left',
     effects: { shadow: true, stroke: false, glow: false, caps: true }
   },
-  { id: 'subline', kind: 'text', name: 'Subline', visible: true, locked: false, text: '', lines: [{ text: '', size: 28 }], highlightColor: '#f2c200', highlightSquare: false, effects: { shadow: true, stroke: false, glow: false, caps: false } },
-  { id: 'badge', kind: 'shape', name: 'Badge (shape)', visible: true, locked: false, shape: 'circle', color: '#e8403a' },
-  { id: 'subject', kind: 'subject', name: 'Subject', visible: true, locked: true, mode: 'cutout', outline: true, shadow: true, glow: false },
-  { id: 'bg', kind: 'background', name: 'Background', visible: true, locked: true, fill: 'linear-gradient(135deg,#2a2540,#46243a)', mode: 'gradient' }
+  {
+    id: 'subline', kind: 'text', name: 'Subline', visible: true, locked: false,
+    frame: { x: 80, y: 372, width: 600, height: 48, rotation: 0 },
+    text: '', lines: [{ text: '', size: 40 }],
+    highlightColor: '#f2c200', highlightSquare: false,
+    color: '#ffffff', fontFamily: 'Anton', align: 'left',
+    effects: { shadow: true, stroke: false, glow: false, caps: false }
+  },
+  {
+    id: 'badge', kind: 'shape', name: 'Badge (shape)', visible: true, locked: false,
+    frame: { x: 1064, y: 48, width: 150, height: 150, rotation: -8 },
+    shape: 'circle', color: '#e8403a'
+  },
+  {
+    id: 'subject', kind: 'subject', name: 'Subject', visible: true, locked: false,
+    frame: { x: 96, y: 80, width: 470, height: 640, rotation: 0 },
+    src: '', outline: true, outlineColor: '#ffffff', outlineWidth: 6, shadow: true, glow: false
+  },
+  {
+    id: 'bg', kind: 'background', name: 'Background', visible: true, locked: true,
+    frame: { x: 0, y: 0, width: 1280, height: 720, rotation: 0 },
+    fill: 'linear-gradient(135deg,#2a2540,#46243a)', mode: 'gradient'
+  }
 ]
