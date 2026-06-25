@@ -8,6 +8,22 @@ Linear-tier software.
 > Electron + React + TypeScript. Fully local: no cloud account, no API keys except an optional free
 > Groq Whisper key for transcription.
 
+## Install on Windows
+
+**Option A — installer (.exe):** download the latest `Mental-Empire-Studio-Setup-*.exe` from the
+[Releases page](https://github.com/ayyfahim/mental-empire-studio/releases) and run it. yt-dlp + ffmpeg are
+bundled. (Unsigned for now, so Windows SmartScreen shows *More info → Run anyway* the first time.)
+
+**Option B — from source** (PowerShell, in the folder you want it in):
+
+```powershell
+irm https://raw.githubusercontent.com/ayyfahim/mental-empire-studio/build/mental-empire-studio/scripts/install-windows.ps1 | iex
+```
+
+That installs Node/Git/ffmpeg via winget if missing, clones the app, installs deps + sidecars, and adds a
+desktop shortcut. Then open **Settings → Transcription** and paste a free [Groq](https://console.groq.com)
+key to enable captions.
+
 ## What it does
 
 - **My Channels** — paste a channel URL → scraped stats (views/subs/uploads) via `yt-dlp`, **no API**.

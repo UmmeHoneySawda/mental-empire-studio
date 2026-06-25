@@ -5,6 +5,10 @@ on:
   push:
     tags: ['v*']
 
+# Let the default GITHUB_TOKEN create the Release + upload installers.
+permissions:
+  contents: write
+
 jobs:
   build:
     strategy:
