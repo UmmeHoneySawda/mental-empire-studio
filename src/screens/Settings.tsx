@@ -43,15 +43,6 @@ function Card({ label, children }: { label: string; children: React.ReactNode })
   )
 }
 
-function field(label: string, value: string, mono = false) {
-  return (
-    <div>
-      <div style={{ fontSize: 11, color: '#8a909c', marginBottom: 6 }}>{label}</div>
-      <div style={{ border: '1px solid #23272f', borderRadius: 8, padding: '8px 13px', fontSize: 11.5, color: '#dde0e5', background: '#0e1116', fontFamily: mono ? 'var(--font-mono)' : undefined }}>{value}</div>
-    </div>
-  )
-}
-
 function rowToggle(label: string, on: boolean, right?: React.ReactNode, onClick?: () => void) {
   return (
     <div onClick={onClick} style={{ display: 'flex', alignItems: 'center', border: '1px solid #1d2129', borderRadius: 9, padding: '11px 13px', background: '#0e1116', cursor: onClick ? 'pointer' : undefined }}>
@@ -88,7 +79,7 @@ export function Settings(): JSX.Element {
 
           <Card label="RENDER">
             <div style={{ display: 'flex', gap: 26, flexWrap: 'wrap' }}>
-              <div><div style={{ fontSize: 12, color: '#8a909c', marginBottom: 7 }}>Parallel renders</div><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><div style={{ border: '1px solid #23272f', borderRadius: 8, padding: '8px 17px', fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 15, color: '#eef0f3', background: '#0e1116' }}>2</div><span style={{ fontSize: 11, color: '#6a7180' }}>at a time</span></div></div>
+              <div><div style={{ fontSize: 12, color: '#8a909c', marginBottom: 7 }}>Parallel renders</div><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><input type="number" min={1} max={8} value={settings.concurrency} onChange={(e) => updateSettings({ concurrency: Math.max(1, Number(e.target.value)) })} style={{ width: 56, border: '1px solid #23272f', borderRadius: 8, padding: '8px 12px', fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 15, color: '#eef0f3', background: '#0e1116', outline: 'none' }} /><span style={{ fontSize: 11, color: '#6a7180' }}>at a time</span></div></div>
               <div><div style={{ fontSize: 12, color: '#8a909c', marginBottom: 7 }}>Quality</div><div style={{ display: 'flex', border: '1px solid #23272f', borderRadius: 8, overflow: 'hidden', fontSize: 11.5 }}>{qualities.map((q) => { const on = q === quality; return <div key={q} onClick={() => updateSettings({ quality: q })} style={{ padding: '8px 12px', cursor: 'pointer', background: on ? 'var(--accent)' : undefined, color: on ? 'var(--accent-ink)' : '#8a909c', fontWeight: on ? 600 : undefined }}>{q}</div> })}</div></div>
               <div><div style={{ fontSize: 12, color: '#8a909c', marginBottom: 7 }}>Encoder</div><div style={{ border: '1px solid #23272f', borderRadius: 8, padding: '8px 13px', fontSize: 11.5, color: '#dde0e5', background: '#0e1116' }}>H.264 · GPU ▾</div></div>
             </div>
@@ -100,13 +91,17 @@ export function Settings(): JSX.Element {
               <span style={{ fontSize: 11, color: '#6a7180' }}>last run 09:30</span>
             </div>
             <div style={{ display: 'flex', gap: 11, flexWrap: 'wrap', marginBottom: 11 }}>
-              {field('Frequency', `${autoScrape.frequency} ▾`)}
-              {field('Request delay', `${autoScrape.delaySec}s`, true)}
-              {field('Retries on fail', `${autoScrape.retries}×`, true)}
+              <div><div style={{ fontSize: 11, color: '#8a909c', marginBottom: 6 }}>Frequency</div>
+                <select value={autoScrape.frequency} onChange={(e) => updateSettings({ autoScrape: { frequency: e.target.value } })} style={{ border: '1px solid #23272f', borderRadius: 8, padding: '8px 11px', fontSize: 11.5, color: '#dde0e5', background: '#0e1116', outline: 'none' }}>
+                  {['Every 15 minutes', 'Every 30 minutes', 'Every hour', 'Every 6 hours', 'Every 12 hours', 'Daily'].map((f) => <option key={f}>{f}</option>)}
+                </select>
+              </div>
+              <div><div style={{ fontSize: 11, color: '#8a909c', marginBottom: 6 }}>Request delay (s)</div><input type="number" step={0.5} min={0} value={autoScrape.delaySec} onChange={(e) => updateSettings({ autoScrape: { delaySec: Math.max(0, Number(e.target.value)) } })} style={{ width: 70, border: '1px solid #23272f', borderRadius: 8, padding: '8px 11px', fontSize: 11.5, color: '#dde0e5', background: '#0e1116', fontFamily: 'var(--font-mono)', outline: 'none' }} /></div>
+              <div><div style={{ fontSize: 11, color: '#8a909c', marginBottom: 6 }}>Retries on fail</div><input type="number" min={0} max={9} value={autoScrape.retries} onChange={(e) => updateSettings({ autoScrape: { retries: Math.max(0, Number(e.target.value)) } })} style={{ width: 64, border: '1px solid #23272f', borderRadius: 8, padding: '8px 11px', fontSize: 11.5, color: '#dde0e5', background: '#0e1116', fontFamily: 'var(--font-mono)', outline: 'none' }} /></div>
             </div>
             <div style={{ display: 'flex', flexDirection: 'column', gap: 9, fontSize: 12.5 }}>
-              <div style={{ display: 'flex', alignItems: 'center', border: '1px solid #1d2129', borderRadius: 9, padding: '11px 13px', background: '#0e1116' }}><span style={{ flex: 1, color: '#cdd2da' }}>Sign-in cookies (age-gated)</span><span style={{ fontSize: 11, color: '#36c98e', fontWeight: 600 }}>✓ imported</span></div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, border: '1px solid #1d2129', borderRadius: 9, padding: '9px 13px', background: '#0e1116' }}><span style={{ color: '#cdd2da', flex: 'none' }}>Proxy (optional)</span><div style={{ flex: 1, border: '1px solid #23272f', borderRadius: 7, padding: '6px 10px', fontSize: 11, color: autoScrape.proxy ? '#aab0bb' : '#5b616f', fontFamily: 'var(--font-mono)', background: '#0c0d11' }}>{autoScrape.proxy || 'http://user:pass@host:port'}</div></div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, border: '1px solid #1d2129', borderRadius: 9, padding: '9px 13px', background: '#0e1116' }}><span style={{ color: '#cdd2da', flex: 'none' }}>Cookies file</span><input value={autoScrape.cookiesPath} onChange={(e) => updateSettings({ autoScrape: { cookiesPath: e.target.value } })} placeholder="/path/to/cookies.txt (age-gated)" style={{ flex: 1, border: '1px solid #23272f', borderRadius: 7, padding: '6px 10px', fontSize: 11, color: '#aab0bb', fontFamily: 'var(--font-mono)', background: '#0c0d11', outline: 'none' }} /></div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, border: '1px solid #1d2129', borderRadius: 9, padding: '9px 13px', background: '#0e1116' }}><span style={{ color: '#cdd2da', flex: 'none' }}>Proxy (optional)</span><input value={autoScrape.proxy} onChange={(e) => updateSettings({ autoScrape: { proxy: e.target.value } })} placeholder="http://user:pass@host:port" style={{ flex: 1, border: '1px solid #23272f', borderRadius: 7, padding: '6px 10px', fontSize: 11, color: '#aab0bb', fontFamily: 'var(--font-mono)', background: '#0c0d11', outline: 'none' }} /></div>
             </div>
           </Card>
 
@@ -129,7 +124,7 @@ export function Settings(): JSX.Element {
               {rowToggle('Run in background (system tray)', background.tray, undefined, () => updateSettings({ background: { tray: !background.tray } }))}
               {rowToggle('Start on Windows sign-in', background.startOnSignIn, undefined, () => updateSettings({ background: { startOnSignIn: !background.startOnSignIn } }))}
               {rowToggle('Desktop notifications (goals & reminders)', background.notifications, undefined, () => updateSettings({ background: { notifications: !background.notifications } }))}
-              {rowToggle('Webhook (Pushover / calendar)', !!background.webhook, <span style={{ fontSize: 11, color: '#6a7180' }}>{background.webhook ? 'set' : 'not set'}</span>)}
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10, border: '1px solid #1d2129', borderRadius: 9, padding: '9px 13px', background: '#0e1116' }}><span style={{ color: '#cdd2da', flex: 'none' }}>Webhook</span><input value={background.webhook} onChange={(e) => updateSettings({ background: { webhook: e.target.value } })} placeholder="https://… (Pushover / Zapier / calendar)" style={{ flex: 1, border: '1px solid #23272f', borderRadius: 7, padding: '6px 10px', fontSize: 11, color: '#aab0bb', fontFamily: 'var(--font-mono)', background: '#0c0d11', outline: 'none' }} /></div>
             </div>
           </Card>
         </div>
@@ -144,7 +139,7 @@ export function Settings(): JSX.Element {
           <div style={{ marginTop: 16, borderTop: '1px solid #1d2129', paddingTop: 14, fontSize: 11, color: '#6a7180', display: 'flex', flexDirection: 'column', gap: 7 }}>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Storage used</span><span style={{ color: '#cdd2da', fontFamily: 'var(--font-mono)' }}>14.2 GB</span></div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Jobs this week</span><span style={{ color: '#cdd2da', fontFamily: 'var(--font-mono)' }}>23</span></div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Version</span><span style={{ color: '#cdd2da', fontFamily: 'var(--font-mono)' }}>2.4.1</span></div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Version</span><span style={{ color: '#cdd2da', fontFamily: 'var(--font-mono)' }}>{window.api?.appVersion || '0.1.0'}</span></div>
           </div>
         </div>
       </div>

@@ -402,6 +402,8 @@ export type DeepPartial<T> = {
 // ---- Native bridge surface ----
 export interface NativeApi {
   platform: NodeJS.Platform | 'web'
+  /** the running app version (from package.json / app.getVersion()) */
+  appVersion: string
   minimize(): void
   maximize(): void
   close(): void

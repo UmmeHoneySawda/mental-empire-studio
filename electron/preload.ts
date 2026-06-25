@@ -29,6 +29,7 @@ function subscribe<T>(channel: string, cb: (payload: T) => void): () => void {
 // never touches Node directly (contextIsolation on, nodeIntegration off).
 const api: NativeApi = {
   platform: process.platform,
+  appVersion: (ipcRenderer.sendSync('app:version') as string) ?? '',
   minimize: () => ipcRenderer.send('window:minimize'),
   maximize: () => ipcRenderer.send('window:maximize'),
   close: () => ipcRenderer.send('window:close'),

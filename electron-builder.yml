@@ -1,0 +1,70 @@
+appId: com.mentalempire.studio
+productName: Mental Empire Studio
+copyright: Copyright © Mental Empire
+
+directories:
+  output: dist
+  buildResources: build
+
+# electron-vite emits to out/ ; ship that + package.json.
+files:
+  - out/**
+  - package.json
+
+# better-sqlite3 ships a native .node that cannot run from inside the asar.
+asarUnpack:
+  - "**/node_modules/better-sqlite3/**"
+
+# Bundled sidecars (yt-dlp, ffmpeg, ffprobe) + the tray icon, copied into
+# the app's resources/ dir so resolveBinDir()/trayIconPath() find them.
+extraResources:
+  - from: resources/bin
+    to: bin
+    filter: ["**/*"]
+  - from: resources/icons
+    to: icons
+    filter: ["**/*"]
+
+# Publish to GitHub Releases (consumed by electron-updater).
+publish:
+  provider: github
+  owner: ayyfahim
+  repo: mental-empire-studio
+
+win:
+  target:
+    - target: nsis
+      arch: [x64]
+    - target: portable
+      arch: [x64]
+  icon: build/icon.png
+  # signing is read from CSC_LINK / CSC_KEY_PASSWORD when present (CI secrets)
+
+nsis:
+  oneClick: false
+  perMachine: false
+  allowToChangeInstallationDirectory: true
+  createDesktopShortcut: true
+  createStartMenuShortcut: true
+
+mac:
+  category: public.app-category.video
+  target:
+    - target: dmg
+      arch: [x64, arm64]
+    - target: zip
+      arch: [x64, arm64]
+  icon: build/icon.png
+  hardenedRuntime: true
+  gatekeeperAssess: false
+  entitlements: build/entitlements.mac.plist
+  entitlementsInherit: build/entitlements.mac.plist
+  # notarization runs when APPLE_ID / APPLE_APP_SPECIFIC_PASSWORD / APPLE_TEAM_ID are set
+
+linux:
+  target:
+    - AppImage
+    - deb
+  icon: build/icon.png
+  category: AudioVideo
+  maintainer: Mental Empire <noreply@mentalempire.app>

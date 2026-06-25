@@ -1,25 +1,91 @@
-# CODING AGENTS: READ THIS FIRST
+# Mental Empire Studio
 
-This is a **handoff bundle** from Claude Design (claude.ai/design).
+A creator-grade desktop studio for **faceless-YouTube automation** — scrape your channels (no API),
+download source audio, compose image-over-audio videos with CapCut-style burned captions, design
+thumbnails, and batch-render across multiple channels. Built to look and feel like Descript / CapCut /
+Linear-tier software.
 
-A user mocked up designs in HTML/CSS/JS using an AI design tool, then exported this bundle so a coding agent can implement the designs for real.
+> Electron + React + TypeScript. Fully local: no cloud account, no API keys except an optional free
+> Groq Whisper key for transcription.
 
-## What you should do — IMPORTANT
+## What it does
 
-**Read the chat transcripts first.** There are 1 chat transcript(s) in `chats/`. The transcripts show the full back-and-forth between the user and the design assistant — they tell you **what the user actually wants** and **where they landed** after iterating. Don't skip them. The final HTML files are the output, but the chat is where the intent lives.
+- **My Channels** — paste a channel URL → scraped stats (views/subs/uploads) via `yt-dlp`, **no API**.
+  Link a source channel and the **↔ chip** maps which downloaded videos you've already published.
+  Weekly/monthly goals + reminder dates fire desktop notifications when you're behind pace.
+- **Download** — paste a source channel → Popular/Latest/Oldest + amount → mp3s with resume + history.
+- **Compose** — drop image(s) over the mp3 (single = full length, multiple = auto even-split with
+  Ken Burns + crossfade; random-pool mode shuffles per render). Auto-transcribe (Groq Whisper) →
+  editable word-level captions.
+- **Thumbnails** — a real Konva editor: multi-line text with per-line size + highlighted-word box,
+  shapes, a supplied PNG subject, one-click auto-arrange, per-profile templates, and batch-generate
+  (paste N titles → PNG grid).
+- **Render Queue** — ffmpeg assembles image + audio + burned ASS karaoke captions into mp4s, named by a
+  template, at your quality, N in parallel.
+- **Profiles** — bundle the whole pipeline. **Run → quick-edit → push to render**, or **auto-watch**
+  runs it hands-free from the system tray when a source posts.
+- **Settings** — accents/theme, output naming, render concurrency/quality, auto-scrape (delay, retries,
+  proxy, cookies), background (tray, start-on-sign-in, notifications, webhook), Groq key.
 
-**Read `project/Mental Empire Studio.dc.html` in full.** The user had this file open when they triggered the handoff, so it's almost certainly the primary design they want built. Read it top to bottom — don't skim. Then **follow its imports**: open every file it pulls in (shared components, CSS, scripts) so you understand how the pieces fit together before you start implementing.
+## Architecture
 
-**If anything is ambiguous, ask the user to confirm before you start implementing.** It's much cheaper to clarify scope up front than to build the wrong thing.
+```
+Electron main (Node)                         Renderer (React + Zustand)
+  ipc/        scrape · download · compose       screens/   Library · MyChannels · Download ·
+              · render · automation · thumbnails            Compose · Thumbnails · RenderQueue ·
+  services/   ytdlp · scraper · mapping ·                   Profiles · Settings
+              downloader · audio · transcribe ·   store/     useStore (UI) · useData (live data)
+              captions · render · queue ·         features/  thumbnail-editor (Konva)
+              scheduler · notify · webhook ·
+              updater · background               window.api (typed, contextIsolation on)
+  db/         better-sqlite3 (+ migrations)   ── IPC ──▶  electron-store (settings/secrets)
+```
 
-## About the design files
+The four must-have capabilities (source↔channel mapping, per-profile quick flow, auto-scrape + tray,
+thumbnail studio) are all implemented. Build history is in `PLAN.md` (milestones M0–M8).
 
-The design medium is **HTML/CSS/JS** — these are prototypes, not production code. Your job is to **recreate them pixel-perfectly** in whatever technology makes sense for the target codebase (React, Vue, native, whatever fits). Match the visual output; don't copy the prototype's internal structure unless it happens to fit.
+## Develop
 
-**Don't render these files in a browser or take screenshots unless the user asks you to.** Everything you need — dimensions, colors, layout rules — is spelled out in the source. Read the HTML and CSS directly; a screenshot won't tell you anything they don't.
+```bash
+npm install
+npm run fetch:bin      # vendor yt-dlp (+ ffmpeg from PATH) into resources/bin
+npm run dev            # launch the app
+```
 
-## Bundle contents
+Requires **ffmpeg built with libass** on PATH (or in `resources/bin`) for rendering, and a free
+**Groq API key** (Settings → Transcription) for captions.
 
-- `README.md` — this file
-- `chats/` — conversation transcripts (read these!)
-- `project/` — the `YouTube automation tool wireframe` project files (HTML prototypes, assets, components)
+```bash
+npm run typecheck      # tsc, both projects
+npm run build          # electron-vite production build
+```
+
+## Package
+
+```bash
+npm run dist           # build installers for the current OS (electron-builder)
+npm run dist:dir       # unpacked app (no installer) — quick local check
+```
+
+Installers for all three OSes are produced by CI on a version tag (`git tag v0.1.0 && git push --tags`);
+code-signing + notarization + auto-update turn on automatically when the signing secrets are present
+(see `.github/workflows/release.yml`). Auto-update pulls from GitHub Releases via `electron-updater`.
+
+## Testing model
+
+The build sandbox can't reach YouTube or run ffmpeg/whisper, so each milestone ships a **headless smoke
+harness** that drives the real code paths against recorded fixtures (`test/fixtures/`) and dry-run seams:
+
+```bash
+ME_SMOKE=m6 ME_YTDLP_FIXTURE=test/fixtures/ytdlp ME_DOWNLOAD_FIXTURE=test/fixtures/audio/sample.mp3 \
+  ME_WHISPER_FIXTURE=test/fixtures/whisper/sample-words.json \
+  xvfb-run -a node_modules/electron/dist/electron --no-sandbox out/main/main.js
+```
+
+`ME_SMOKE` = `1` (M2), `m3`…`m7`; `ME_SHOOT=<png>` captures a screenshot. CI runs all of them
+(`.github/workflows/ci.yml`). On a real machine, paste real channel URLs + a Groq key to exercise the
+live pipeline.
+
+## License
+
+UNLICENSED — © Mental Empire. Bundled fonts are OFL/Apache; `yt-dlp`/`ffmpeg` are fetched at build time.

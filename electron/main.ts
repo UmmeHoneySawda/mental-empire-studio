@@ -4,6 +4,7 @@ import { dirname, join } from 'node:path'
 import { existsSync, statSync, writeFileSync, readFileSync } from 'node:fs'
 import { applyLoginItem, trayIconPath } from './services/background'
 import * as scheduler from './services/scheduler'
+import { initAutoUpdate, checkForUpdates } from './services/updater'
 import { initSettings, setSettings, getSettings } from './store/settings'
 import { initDatabase, getRepos, closeDatabase } from './db'
 import { registerIpc } from './ipc/register'
@@ -34,6 +35,11 @@ if (!process.env['ME_SMOKE'] && !process.env['ME_SHOOT'] && !app.requestSingleIn
   app.quit()
 }
 app.on('second-instance', () => showWindow())
+
+// Synchronous version lookup for the preload (window.api.appVersion).
+ipcMain.on('app:version', (e) => {
+  e.returnValue = app.getVersion()
+})
 
 // Design window size from the prototype: 1352×868 content, frameless studio chrome.
 const WIN_WIDTH = 1352
@@ -76,6 +82,7 @@ function refreshTrayMenu(): void {
         }
       },
       { type: 'separator' },
+      { label: 'Check for updates…', click: () => void checkForUpdates() },
       {
         label: 'Quit',
         click: () => {
@@ -97,6 +104,7 @@ function createWindow(): void {
     frame: false,
     backgroundColor: '#070809',
     titleBarStyle: 'hidden',
+    icon: trayIconPath(),
     webPreferences: {
       preload: join(__dirname, '../preload/preload.cjs'),
       sandbox: false,
@@ -566,6 +574,8 @@ app.whenReady().then(() => {
   buildTray()
   applyLoginItem(getSettings())
   scheduler.start()
+  // M8 auto-update (packaged production builds only).
+  void initAutoUpdate()
 
   app.on('activate', () => {
     if (BrowserWindow.getAllWindows().length === 0) createWindow()

@@ -63,7 +63,7 @@ export function Sidebar(): JSX.Element {
         <div style={{ width: 34, height: 34, borderRadius: 10, background: 'linear-gradient(135deg,var(--accent),var(--accent-deep))', display: 'grid', placeItems: 'center', fontFamily: 'var(--font-display)', fontWeight: 700, color: 'var(--accent-ink)', fontSize: 14, boxShadow: '0 4px 14px -4px var(--accent-glow)' }}>ME</div>
         <div style={{ lineHeight: 1.2 }}>
           <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 14, color: '#f2f4f7' }}>Mental Empire</div>
-          <div style={{ fontSize: 10.5, color: '#5b616f', fontFamily: 'var(--font-mono)', letterSpacing: '.3px' }}>studio v2.4.1</div>
+          <div style={{ fontSize: 10.5, color: '#5b616f', fontFamily: 'var(--font-mono)', letterSpacing: '.3px' }}>studio v{window.api?.appVersion || '0.1.0'}</div>
         </div>
       </div>
 
