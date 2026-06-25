@@ -167,7 +167,12 @@ export const initialLayers: ThumbnailLayer[] = [
     lines: [{ text: 'EVERYTHING', size: 92 }, { text: 'WAS FAKE', size: 128 }],
     highlightWord: 'FAKE', highlightColor: '#ffffff', highlightSquare: true,
     color: '#ffffff', fontFamily: 'Anton', align: 'left',
-    effects: { shadow: true, stroke: false, glow: false, caps: true }
+    effects: {
+      shadow: { enabled: true, color: '#000000', size: 0, opacity: 0.55, distance: 5, angle: 45 },
+      stroke: { enabled: false, color: '#000000', size: 6, opacity: 1 },
+      glow: { enabled: false, color: '#ffffff', size: 26, opacity: 0.85 },
+      caps: true
+    }
   },
   {
     id: 'subline', kind: 'text', name: 'Subline', visible: true, locked: false,
@@ -175,7 +180,12 @@ export const initialLayers: ThumbnailLayer[] = [
     text: '', lines: [{ text: '', size: 40 }],
     highlightColor: '#f2c200', highlightSquare: false,
     color: '#ffffff', fontFamily: 'Anton', align: 'left',
-    effects: { shadow: true, stroke: false, glow: false, caps: false }
+    effects: {
+      shadow: { enabled: true, color: '#000000', size: 0, opacity: 0.55, distance: 5, angle: 45 },
+      stroke: { enabled: false, color: '#000000', size: 6, opacity: 1 },
+      glow: { enabled: false, color: '#ffffff', size: 26, opacity: 0.85 },
+      caps: false
+    }
   },
   {
     id: 'badge', kind: 'shape', name: 'Badge (shape)', visible: true, locked: false,
@@ -185,7 +195,10 @@ export const initialLayers: ThumbnailLayer[] = [
   {
     id: 'subject', kind: 'subject', name: 'Subject', visible: true, locked: false,
     frame: { x: 96, y: 80, width: 470, height: 640, rotation: 0 },
-    src: '', outline: true, outlineColor: '#ffffff', outlineWidth: 6, shadow: true, glow: false
+    src: '',
+    outline: { enabled: true, color: '#ffffff', size: 6, opacity: 1 },
+    shadow: { enabled: true, color: '#000000', size: 24, opacity: 0.6, distance: 10, angle: 90 },
+    glow: { enabled: false, color: '#19c3d6', size: 30, opacity: 0.85 }
   },
   {
     id: 'bg', kind: 'background', name: 'Background', visible: true, locked: true,

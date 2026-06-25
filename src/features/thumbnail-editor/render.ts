@@ -2,12 +2,57 @@ import Konva from 'konva'
 import {
   THUMB_W,
   THUMB_H,
+  asShadow,
+  asGlow,
+  asOutline,
+  type FxGlow,
+  type FxOutline,
+  type FxShadow,
   type BackgroundLayer,
   type ShapeLayer,
   type SubjectLayer,
   type TextLayer,
   type ThumbnailLayer
 } from '@shared/types'
+
+// ---- shared effect helpers (used by subject PNG + text) ----
+
+function hexToRgba(hex: string, alpha: number): string {
+  const h = hex.replace('#', '')
+  const n = h.length === 3 ? h.split('').map((c) => c + c).join('') : h
+  const r = parseInt(n.slice(0, 2), 16) || 0
+  const g = parseInt(n.slice(2, 4), 16) || 0
+  const b = parseInt(n.slice(4, 6), 16) || 0
+  return `rgba(${r},${g},${b},${Math.max(0, Math.min(1, alpha))})`
+}
+
+/** Solid-colour silhouette of a PNG with its alpha preserved — the basis for an
+ *  outline/glow that follows the subject's shape instead of its bounding box. */
+function makeSilhouette(imageEl: HTMLImageElement, color: string): HTMLCanvasElement {
+  const w = imageEl.naturalWidth || imageEl.width || 1
+  const h = imageEl.naturalHeight || imageEl.height || 1
+  const c = document.createElement('canvas')
+  c.width = w
+  c.height = h
+  const ctx = c.getContext('2d')!
+  ctx.drawImage(imageEl, 0, 0, w, h)
+  ctx.globalCompositeOperation = 'source-in'
+  ctx.fillStyle = color
+  ctx.fillRect(0, 0, w, h)
+  return c
+}
+
+/** Blur a canvas into a larger padded one (so the glow halo isn't clipped). */
+function blurCanvas(src: HTMLCanvasElement, blurPx: number): HTMLCanvasElement {
+  const pad = Math.ceil(blurPx * 2) + 2
+  const c = document.createElement('canvas')
+  c.width = src.width + pad * 2
+  c.height = src.height + pad * 2
+  const ctx = c.getContext('2d')!
+  ctx.filter = `blur(${blurPx}px)`
+  ctx.drawImage(src, pad, pad)
+  return c
+}
 
 // Shared Konva drawing used by both the on-screen editor and offscreen batch
 // rasterization. Each layer kind maps to Konva nodes appended to a group; the
@@ -39,29 +84,50 @@ function drawBackground(l: BackgroundLayer, imageEl?: HTMLImageElement): Konva.S
   return rect
 }
 
-function drawSubject(l: SubjectLayer, imageEl?: HTMLImageElement): Konva.Shape | null {
+function drawSubject(l: SubjectLayer, imageEl?: HTMLImageElement): Konva.Group | null {
   if (!imageEl) return null
-  const img = new Konva.Image({
-    image: imageEl,
-    x: l.frame.x,
-    y: l.frame.y,
-    width: l.frame.width,
-    height: l.frame.height,
-    rotation: l.frame.rotation
-  })
-  if (l.shadow) {
-    img.shadowColor('black')
-    img.shadowBlur(24)
-    img.shadowOpacity(0.6)
-    img.shadowOffset({ x: 0, y: 8 })
+  const { x, y, width: W, height: H, rotation } = l.frame
+  // Effects are coerced so legacy boolean templates still render.
+  const outline: FxOutline = asOutline(l.outline)
+  const glow: FxGlow = asGlow(l.glow)
+  const shadow: FxShadow = asShadow(l.shadow)
+
+  // Group wraps glow → outline → image so drag/transform maps cleanly to frame.x/y.
+  const g = new Konva.Group({ x, y, width: W, height: H, rotation })
+
+  // Glow: a blurred, tinted silhouette behind the subject (follows the alpha).
+  if (glow.enabled && glow.size > 0) {
+    const blurred = blurCanvas(makeSilhouette(imageEl, glow.color), glow.size)
+    const sil = makeSilhouette(imageEl, glow.color)
+    const sx = W / sil.width
+    const sy = H / sil.height
+    const padX = ((blurred.width - sil.width) / 2) * sx
+    const padY = ((blurred.height - sil.height) / 2) * sy
+    g.add(new Konva.Image({ image: blurred, x: -padX, y: -padY, width: blurred.width * sx, height: blurred.height * sy, opacity: glow.opacity }))
   }
-  if (l.glow) {
-    img.shadowColor(l.outlineColor)
-    img.shadowBlur(40)
-    img.shadowOpacity(0.9)
+
+  // Outline: copies of the silhouette offset in a ring → a border hugging the
+  // subject's shape (not a square box around the PNG).
+  if (outline.enabled && outline.size > 0) {
+    const sil = makeSilhouette(imageEl, outline.color)
+    const steps = 18
+    for (let i = 0; i < steps; i++) {
+      const a = (i / steps) * Math.PI * 2
+      g.add(new Konva.Image({ image: sil, x: Math.cos(a) * outline.size, y: Math.sin(a) * outline.size, width: W, height: H, opacity: outline.opacity }))
+    }
   }
-  if (l.outline) img.stroke(l.outlineColor), img.strokeWidth(l.outlineWidth)
-  return img
+
+  // The subject itself, with an optional drop shadow.
+  const img = new Konva.Image({ image: imageEl, x: 0, y: 0, width: W, height: H })
+  if (shadow.enabled) {
+    const a = (shadow.angle * Math.PI) / 180
+    img.shadowColor(shadow.color)
+    img.shadowBlur(shadow.size)
+    img.shadowOpacity(shadow.opacity)
+    img.shadowOffset({ x: Math.cos(a) * shadow.distance, y: Math.sin(a) * shadow.distance })
+  }
+  g.add(img)
+  return g
 }
 
 function drawShape(l: ShapeLayer): Konva.Group {
@@ -101,6 +167,10 @@ function drawText(l: TextLayer): Konva.Group {
   const group = new Konva.Group({ x: l.frame.x, y: l.frame.y, rotation: l.frame.rotation })
   const caps = l.effects.caps
   const hw = (l.highlightWord ?? '').toLowerCase()
+  // Coerce so legacy boolean templates still render.
+  const shadow: FxShadow = asShadow(l.effects.shadow)
+  const stroke: FxOutline = asOutline(l.effects.stroke, '#000000')
+  const glow: FxGlow = asGlow(l.effects.glow, l.highlightColor)
   let cy = 0
   for (const line of l.lines) {
     const text = caps ? line.text.toUpperCase() : line.text
@@ -111,34 +181,39 @@ function drawText(l: TextLayer): Konva.Group {
     for (let i = 0; i < words.length; i++) {
       const w = words[i]
       const isHi = hw.length > 0 && w.toLowerCase().replace(/[^a-z0-9]/g, '') === hw.replace(/[^a-z0-9]/g, '')
-      const node = new Konva.Text({
-        x: cx,
-        y: cy,
-        text: w,
-        fontFamily: POSTER_FONT,
-        fontSize,
-        fill: isHi && l.highlightSquare ? '#111111' : isHi ? l.highlightColor : l.color
-      })
-      const wWidth = node.width()
+      const fill = isHi && l.highlightSquare ? '#111111' : isHi ? l.highlightColor : l.color
+      const base = { x: cx, y: cy, text: w, fontFamily: POSTER_FONT, fontSize }
+      const measure = new Konva.Text({ ...base })
+      const wWidth = measure.width()
+
+      // Highlighted-word box sits behind the glyph.
       if (isHi && l.highlightSquare) {
-        group.add(
-          new Konva.Rect({ x: cx - 6, y: cy - 2, width: wWidth + 12, height: fontSize * 1.02, fill: l.highlightColor })
-        )
+        group.add(new Konva.Rect({ x: cx - 6, y: cy - 2, width: wWidth + 12, height: fontSize * 1.02, fill: l.highlightColor }))
       }
-      if (l.effects.shadow) {
-        node.shadowColor('black')
-        node.shadowBlur(0)
-        node.shadowOffset({ x: 3, y: 3 })
-        node.shadowOpacity(0.55)
+
+      // Glow: a blurred clone behind the word (so it coexists with the drop shadow,
+      // which owns the node's single shadow slot).
+      if (glow.enabled && glow.size > 0) {
+        const glowNode = new Konva.Text({ ...base, fill: glow.color })
+        glowNode.shadowColor(glow.color)
+        glowNode.shadowBlur(glow.size)
+        glowNode.shadowOpacity(glow.opacity)
+        glowNode.shadowOffset({ x: 0, y: 0 })
+        group.add(glowNode)
       }
-      if (l.effects.stroke) {
-        node.stroke('#000000')
-        node.strokeWidth(Math.max(2, fontSize * 0.04))
+
+      const node = new Konva.Text({ ...base, fill })
+      if (stroke.enabled && stroke.size > 0) {
+        node.stroke(hexToRgba(stroke.color, stroke.opacity))
+        node.strokeWidth(stroke.size)
+        node.fillAfterStrokeEnabled(true) // outline sits outside the glyph
       }
-      if (l.effects.glow) {
-        node.shadowColor(l.highlightColor)
-        node.shadowBlur(18)
-        node.shadowOpacity(0.9)
+      if (shadow.enabled) {
+        const a = (shadow.angle * Math.PI) / 180
+        node.shadowColor(shadow.color)
+        node.shadowBlur(shadow.size)
+        node.shadowOpacity(shadow.opacity)
+        node.shadowOffset({ x: Math.cos(a) * shadow.distance, y: Math.sin(a) * shadow.distance })
       }
       group.add(node)
       cx += wWidth + fontSize * 0.28

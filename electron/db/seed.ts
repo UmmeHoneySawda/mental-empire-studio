@@ -48,8 +48,8 @@ const defaultTemplate: { id: string; name: string; layers: ThumbnailLayer[] } = 
   id: 'tpl-full-bleed',
   name: 'Full Bleed',
   layers: [
-    { id: 'headline', kind: 'text', name: 'Headline', visible: true, locked: false, frame: { x: 80, y: 426, width: 780, height: 250, rotation: 0 }, text: 'EVERYTHING WAS FAKE', lines: [{ text: 'EVERYTHING', size: 92 }, { text: 'WAS FAKE', size: 128 }], highlightWord: 'FAKE', highlightColor: '#ffffff', highlightSquare: true, color: '#ffffff', fontFamily: 'Anton', align: 'left', effects: { shadow: true, stroke: false, glow: false, caps: true } },
-    { id: 'subject', kind: 'subject', name: 'Subject', visible: true, locked: true, frame: { x: 96, y: 80, width: 470, height: 640, rotation: 0 }, src: '', outline: true, outlineColor: '#ffffff', outlineWidth: 6, shadow: true, glow: false },
+    { id: 'headline', kind: 'text', name: 'Headline', visible: true, locked: false, frame: { x: 80, y: 426, width: 780, height: 250, rotation: 0 }, text: 'EVERYTHING WAS FAKE', lines: [{ text: 'EVERYTHING', size: 92 }, { text: 'WAS FAKE', size: 128 }], highlightWord: 'FAKE', highlightColor: '#ffffff', highlightSquare: true, color: '#ffffff', fontFamily: 'Anton', align: 'left', effects: { shadow: { enabled: true, color: '#000000', size: 0, opacity: 0.55, distance: 5, angle: 45 }, stroke: { enabled: false, color: '#000000', size: 6, opacity: 1 }, glow: { enabled: false, color: '#ffffff', size: 26, opacity: 0.85 }, caps: true } },
+    { id: 'subject', kind: 'subject', name: 'Subject', visible: true, locked: true, frame: { x: 96, y: 80, width: 470, height: 640, rotation: 0 }, src: '', outline: { enabled: true, color: '#ffffff', size: 6, opacity: 1 }, shadow: { enabled: true, color: '#000000', size: 24, opacity: 0.6, distance: 10, angle: 90 }, glow: { enabled: false, color: '#19c3d6', size: 30, opacity: 0.85 } },
     { id: 'bg', kind: 'background', name: 'Background', visible: true, locked: true, frame: { x: 0, y: 0, width: 1280, height: 720, rotation: 0 }, fill: 'linear-gradient(135deg,#2a2540,#46243a)', mode: 'gradient' }
   ]
 }

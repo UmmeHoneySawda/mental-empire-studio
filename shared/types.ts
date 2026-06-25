@@ -207,6 +207,32 @@ export interface BaseLayer {
   frame: LayerFrame
 }
 
+// ---- Customizable layer effects (shared by subject PNG + text) ----
+// Each effect is independently toggleable with size / opacity / colour, plus a
+// distance + angle for drop shadows. Replaces the old on/off booleans.
+export interface FxShadow { enabled: boolean; color: string; size: number; opacity: number; distance: number; angle: number }
+export interface FxGlow { enabled: boolean; color: string; size: number; opacity: number }
+export interface FxOutline { enabled: boolean; color: string; size: number; opacity: number }
+
+export const DEFAULT_SHADOW: FxShadow = { enabled: false, color: '#000000', size: 16, opacity: 0.6, distance: 10, angle: 45 }
+export const DEFAULT_GLOW: FxGlow = { enabled: false, color: '#ffffff', size: 26, opacity: 0.85 }
+export const DEFAULT_OUTLINE: FxOutline = { enabled: false, color: '#ffffff', size: 6, opacity: 1 }
+
+/** Coerce a legacy boolean (or partial object) into a full effect object, so old
+ *  saved templates keep rendering after the on/off → params upgrade. */
+export function asShadow(v: unknown, color = DEFAULT_SHADOW.color): FxShadow {
+  if (v && typeof v === 'object') return { ...DEFAULT_SHADOW, color, ...(v as Partial<FxShadow>) }
+  return { ...DEFAULT_SHADOW, color, enabled: !!v }
+}
+export function asGlow(v: unknown, color = DEFAULT_GLOW.color): FxGlow {
+  if (v && typeof v === 'object') return { ...DEFAULT_GLOW, color, ...(v as Partial<FxGlow>) }
+  return { ...DEFAULT_GLOW, color, enabled: !!v }
+}
+export function asOutline(v: unknown, color = DEFAULT_OUTLINE.color, size = DEFAULT_OUTLINE.size): FxOutline {
+  if (v && typeof v === 'object') return { ...DEFAULT_OUTLINE, color, size, ...(v as Partial<FxOutline>) }
+  return { ...DEFAULT_OUTLINE, color, size, enabled: !!v }
+}
+
 export interface TextLayer extends BaseLayer {
   kind: 'text'
   text: string
@@ -217,18 +243,16 @@ export interface TextLayer extends BaseLayer {
   color: string
   fontFamily: string
   align: 'left' | 'center' | 'right'
-  effects: { shadow: boolean; stroke: boolean; glow: boolean; caps: boolean }
+  effects: { shadow: FxShadow; stroke: FxOutline; glow: FxGlow; caps: boolean }
 }
 
 export interface SubjectLayer extends BaseLayer {
   kind: 'subject'
   /** path or data URL of the user-supplied PNG (no cutout — transparency as authored) */
   src: string
-  outline: boolean
-  outlineColor: string
-  outlineWidth: number
-  shadow: boolean
-  glow: boolean
+  outline: FxOutline
+  shadow: FxShadow
+  glow: FxGlow
 }
 
 export interface ShapeLayer extends BaseLayer {

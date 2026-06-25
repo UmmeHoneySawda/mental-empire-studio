@@ -1,7 +1,8 @@
 import { useEffect, useRef, useState } from 'react'
 import { useStore } from '../store/useStore'
 import { ScreenPad } from '../components/primitives'
-import type { BackgroundLayer, SubjectLayer, TextLayer, ThumbnailLayer } from '@shared/types'
+import type { BackgroundLayer, FxGlow, FxOutline, FxShadow, SubjectLayer, TextLayer, ThumbnailLayer } from '@shared/types'
+import { asGlow, asOutline, asShadow } from '@shared/types'
 import { ThumbCanvas } from '../features/thumbnail-editor/ThumbCanvas'
 import { rasterizeLayers, withHeadline } from '../features/thumbnail-editor/render'
 
@@ -75,6 +76,44 @@ function LayersPanel(): JSX.Element {
   )
 }
 
+const FX_SWATCHES = ['#ffffff', '#000000', '#f2c200', '#e8403a', '#19c3d6', '#8b7cff', '#36c98e']
+
+function FxSlider({ label, value, min, max, suffix, onChange }: { label: string; value: number; min: number; max: number; suffix?: string; onChange: (n: number) => void }): JSX.Element {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+      <span style={{ fontSize: 10.5, color: '#8a909c', width: 54 }}>{label}</span>
+      <input type="range" min={min} max={max} value={value} onChange={(e) => onChange(Number(e.target.value))} style={{ flex: 1, accentColor: 'var(--accent)' }} />
+      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#8a909c', width: 34, textAlign: 'right' }}>{value}{suffix ?? ''}</span>
+    </div>
+  )
+}
+
+/** A toggleable effect (shadow/glow/outline) with size + opacity (+ distance/angle) sliders and a colour. */
+function FxControl({ label, kind, value, onChange }: { label: string; kind: 'shadow' | 'glow' | 'outline'; value: FxShadow | FxGlow | FxOutline; onChange: (patch: Partial<FxShadow & FxGlow & FxOutline>) => void }): JSX.Element {
+  const v = value as FxShadow & Partial<FxShadow>
+  const enabled = v.enabled
+  return (
+    <div style={{ border: enabled ? '1px solid var(--accent)' : '1px solid #1d2129', borderRadius: 9, padding: '8px 10px', background: enabled ? 'var(--accent-soft)' : '#0e1116', marginBottom: 7 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontSize: 11.5, color: enabled ? '#eef0f3' : '#8a909c', flex: 1, fontWeight: enabled ? 600 : 400 }}>{label}</span>
+        <div onClick={() => onChange({ enabled: !enabled })} style={{ width: 34, height: 19, borderRadius: 11, background: enabled ? 'var(--accent)' : '#2b303b', position: 'relative', cursor: 'pointer', flex: 'none' }}><span style={{ position: 'absolute', top: 2, right: enabled ? 2 : 17, width: 15, height: 15, borderRadius: '50%', background: '#fff' }} /></div>
+      </div>
+      {enabled && (
+        <div style={{ marginTop: 9, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <FxSlider label="Size" value={v.size} min={0} max={kind === 'outline' ? 40 : 80} onChange={(n) => onChange({ size: n })} />
+          <FxSlider label="Opacity" value={Math.round(v.opacity * 100)} min={0} max={100} suffix="%" onChange={(n) => onChange({ opacity: n / 100 })} />
+          {kind === 'shadow' && <FxSlider label="Distance" value={v.distance} min={0} max={60} onChange={(n) => onChange({ distance: n })} />}
+          {kind === 'shadow' && <FxSlider label="Angle" value={v.angle} min={0} max={360} suffix="°" onChange={(n) => onChange({ angle: n })} />}
+          <div style={{ display: 'flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+            <span style={{ fontSize: 10.5, color: '#8a909c', width: 54 }}>Color</span>
+            {FX_SWATCHES.map((c) => <span key={c} onClick={() => onChange({ color: c })} style={{ width: 18, height: 18, borderRadius: 5, background: c, border: c === v.color ? '2px solid var(--accent)' : '1px solid #2c303b', cursor: 'pointer' }} />)}
+          </div>
+        </div>
+      )}
+    </div>
+  )
+}
+
 function TextLayerEditor({ layer }: { layer: TextLayer }): JSX.Element {
   const updateLayer = useStore((s) => s.updateLayer)
   const setSubjectImage = useStore((s) => s.setSubjectImage)
@@ -139,25 +178,21 @@ function TextLayerEditor({ layer }: { layer: TextLayer }): JSX.Element {
       </div>
 
       <div>
-        <div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 7 }}>Text effects</div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, fontSize: 11 }}>
-          {(['shadow', 'stroke', 'glow', 'caps'] as const).map((k) => {
-            const onx = layer.effects[k]
-            const label = k.charAt(0).toUpperCase() + k.slice(1)
-            return <span key={k} onClick={() => updateLayer(layer.id, { effects: { ...layer.effects, [k]: !onx } })} style={{ border: onx ? '1px solid var(--accent)' : '1px solid #23272f', color: onx ? 'var(--accent)' : '#8a909c', borderRadius: 7, padding: '5px 10px', background: onx ? 'var(--accent-soft)' : 'transparent', cursor: 'pointer' }}>{label}</span>
-          })}
+        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
+          <span style={{ fontSize: 10.5, color: '#6a7180', flex: 1 }}>Text effects</span>
+          <span onClick={() => updateLayer(layer.id, { effects: { ...layer.effects, caps: !layer.effects.caps } })} style={{ border: layer.effects.caps ? '1px solid var(--accent)' : '1px solid #23272f', color: layer.effects.caps ? 'var(--accent)' : '#8a909c', borderRadius: 7, padding: '4px 10px', fontSize: 11, background: layer.effects.caps ? 'var(--accent-soft)' : 'transparent', cursor: 'pointer' }}>CAPS</span>
         </div>
+        <FxControl label="Drop shadow" kind="shadow" value={asShadow(layer.effects.shadow)} onChange={(p) => updateLayer(layer.id, { effects: { ...layer.effects, shadow: { ...asShadow(layer.effects.shadow), ...p } } })} />
+        <FxControl label="Border (stroke)" kind="outline" value={asOutline(layer.effects.stroke, '#000000')} onChange={(p) => updateLayer(layer.id, { effects: { ...layer.effects, stroke: { ...asOutline(layer.effects.stroke, '#000000'), ...p } } })} />
+        <FxControl label="Glow" kind="glow" value={asGlow(layer.effects.glow, layer.highlightColor)} onChange={(p) => updateLayer(layer.id, { effects: { ...layer.effects, glow: { ...asGlow(layer.effects.glow, layer.highlightColor), ...p } } })} />
       </div>
 
       {subject && (
         <div style={{ borderTop: '1px solid #1d2129', paddingTop: 13 }}>
-          <div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 8 }}>Subject (PNG)</div>
-          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, fontSize: 11, marginBottom: 9 }}>
-            {(['outline', 'shadow', 'glow'] as const).map((k) => {
-              const onx = subject[k]
-              return <span key={k} onClick={() => updateLayer(subject.id, { [k]: !onx } as Partial<SubjectLayer>)} style={{ border: onx ? '1px solid var(--accent)' : '1px solid #23272f', color: onx ? 'var(--accent)' : '#8a909c', borderRadius: 7, padding: '5px 10px', background: onx ? 'var(--accent-soft)' : 'transparent', cursor: 'pointer' }}>{k[0].toUpperCase() + k.slice(1)}</span>
-            })}
-          </div>
+          <div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 8 }}>Subject (PNG) effects</div>
+          <FxControl label="Border (outline)" kind="outline" value={asOutline(subject.outline)} onChange={(p) => updateLayer(subject.id, { outline: { ...asOutline(subject.outline), ...p } } as Partial<SubjectLayer>)} />
+          <FxControl label="Drop shadow" kind="shadow" value={asShadow(subject.shadow)} onChange={(p) => updateLayer(subject.id, { shadow: { ...asShadow(subject.shadow), ...p } } as Partial<SubjectLayer>)} />
+          <FxControl label="Glow" kind="glow" value={asGlow(subject.glow, '#19c3d6')} onChange={(p) => updateLayer(subject.id, { glow: { ...asGlow(subject.glow, '#19c3d6'), ...p } } as Partial<SubjectLayer>)} />
           <input ref={subjectFile} type="file" accept="image/png,image/*" style={{ display: 'none' }} onChange={async (e) => { const f = e.target.files?.[0]; if (f) setSubjectImage(await readAsDataUrl(f)) }} />
           <div onClick={() => subjectFile.current?.click()} className="me-btn" style={{ border: '1px solid #262b34', borderRadius: 8, padding: 8, textAlign: 'center', fontSize: 11, color: '#c4cad3', background: '#0e1116', cursor: 'pointer' }}>⇪ Replace subject · PNG</div>
         </div>

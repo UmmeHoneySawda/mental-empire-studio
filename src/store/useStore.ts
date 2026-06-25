@@ -199,7 +199,12 @@ export const useStore = create<AppState>((set, get) => ({
         color: '#ffffff',
         fontFamily: 'Anton',
         align: 'left',
-        effects: { shadow: true, stroke: false, glow: false, caps: true }
+        effects: {
+          shadow: { enabled: true, color: '#000000', size: 0, opacity: 0.55, distance: 5, angle: 45 },
+          stroke: { enabled: false, color: '#000000', size: 6, opacity: 1 },
+          glow: { enabled: false, color: '#ffffff', size: 26, opacity: 0.85 },
+          caps: true
+        }
       }
       return { layers: [layer, ...s.layers], selectedLayerId: id }
     }),
