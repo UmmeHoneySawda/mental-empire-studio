@@ -3,7 +3,8 @@ import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { RenderJob, RenderProgress } from '../../shared/types'
 import { asBetaOpts } from '../../shared/types'
-import { styleCaptionLead, styleTransition } from '../../shared/effectPlan'
+import { styleCaptionLead, styleTransition, deriveStylePlan, validateEffectPlan, EMPTY_PLAN } from '../../shared/effectPlan'
+import { buildSfxTrack } from './sfx'
 import { getRepos } from '../db'
 import { getSettings } from '../store/settings'
 import { formatOutputName } from './audio'
@@ -60,6 +61,12 @@ export async function runJob(job: RenderJob): Promise<void> {
   const style = beta?.style ?? 'None'
   const styleLead = beta ? styleCaptionLead(style) : undefined
   const transition = beta && style !== 'None' ? styleTransition(style) : undefined
+  // The effect plan (pasted/LLM JSON overrides the rule engine) drives per-boundary
+  // transitions + the SFX track. Both go through validateEffectPlan's guardrails.
+  const plan = beta
+    ? (beta.effectPlanJson.trim() ? validateEffectPlan(beta.effectPlanJson, project.durationSec).plan : deriveStylePlan(words, style, project.durationSec))
+    : EMPTY_PLAN
+  const sfxPath = beta ? buildSfxTrack(plan.transitions, project.durationSec) ?? undefined : undefined
 
   const { ass } = buildAss(words, {
     preset: project.captionPreset,
@@ -83,7 +90,7 @@ export async function runJob(job: RenderJob): Promise<void> {
   }
 
   try {
-    await runRender({ project, images, assPath, outPath, settings, videoBedPath, transition }, (pct) => {
+    await runRender({ project, images, assPath, outPath, settings, videoBedPath, transition, plan, sfxPath }, (pct) => {
       repos.setRenderStatus(job.id, { status: 'rendering', pct })
       emitR({ jobId: job.id, pct, stage: 'rendering', done: false })
     })

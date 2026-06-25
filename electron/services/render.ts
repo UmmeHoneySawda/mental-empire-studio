@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { AppSettings, Project, ProjectImage } from '../../shared/types'
 import { asBetaOpts } from '../../shared/types'
+import type { EffectPlan } from '../../shared/effectPlan'
 import { resolveBinDir } from './ytdlp'
 import { resolutionFor, type CaptionAspect } from './captions'
 
@@ -63,8 +64,31 @@ export interface RenderInputs {
   settings: AppSettings
   /** beta auto-B-roll: a pre-assembled full-length video bed used instead of stills */
   videoBedPath?: string
-  /** beta style: xfade transition type between image segments (default 'fade') */
+  /** beta style: fallback xfade transition type between image segments (default 'fade') */
   transition?: string
+  /** beta: validated effect plan — places per-boundary transitions + drives SFX */
+  plan?: EffectPlan
+  /** beta: low-gain WAV of transition SFX to mix under the voice track */
+  sfxPath?: string
+}
+
+/** The transition type/duration to use at a segment boundary: the nearest planned
+ *  transition within tolerance, else the style/default fallback. */
+function transitionAt(plan: EffectPlan | undefined, timeSec: number, fallbackType: string, fallbackDur: number): { type: string; dur: number } {
+  let best: { type: string; dur: number } | null = null
+  let bestDist = 1.6 // seconds tolerance for snapping a plan transition to a cut
+  for (const t of plan?.transitions ?? []) {
+    const d = Math.abs(t.atSec - timeSec)
+    if (d < bestDist) { bestDist = d; best = { type: t.type, dur: t.durationSec } }
+  }
+  return best ?? { type: fallbackType, dur: fallbackDur }
+}
+
+/** Append an SFX-mix audio chain to a filtergraph; returns the [label] to map for audio. */
+function audioWithSfx(parts: string[], mp3Idx: number, sfxIdx: number | null): string {
+  if (sfxIdx == null) return `${mp3Idx}:a`
+  parts.push(`[${mp3Idx}:a][${sfxIdx}:a]amix=inputs=2:normalize=0:duration=first[aout]`)
+  return '[aout]'
 }
 
 /** Build the full ffmpeg argument list for a render (pure — unit-asserted). */
@@ -85,12 +109,16 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
     const punchOn = project.punchZoom || !!beta?.autoZoom.atKeyPhrases
     const punch = punchOn ? `,zoompan=z='min(zoom+0.0015,1.08)':d=1:s=${w}x${h}:fps=${FPS}` : ''
     const crfBed = settings.quality === '1440p' ? '20' : settings.quality === '720p' ? '23' : '21'
+    const bedParts = [`[0:v]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1,fps=${FPS},${grad}subtitles='${assForFilter(assPath)}'${punch}[v]`]
+    const sfxIdx = inp.sfxPath ? 2 : null
+    const aMap = audioWithSfx(bedParts, 1, sfxIdx)
     return [
       '-y',
       '-i', inp.videoBedPath,
       '-i', project.mp3Path,
-      '-filter_complex', `[0:v]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1,fps=${FPS},${grad}subtitles='${assForFilter(assPath)}'${punch}[v]`,
-      '-map', '[v]', '-map', '1:a',
+      ...(inp.sfxPath ? ['-i', inp.sfxPath] : []),
+      '-filter_complex', bedParts.join(';'),
+      '-map', '[v]', '-map', aMap,
       '-c:v', 'libx264', '-preset', 'medium', '-crf', crfBed, '-pix_fmt', 'yuv420p', '-r', String(FPS),
       '-c:a', 'aac', '-b:a', '192k',
       '-t', project.durationSec > 0 ? project.durationSec.toFixed(2) : '1',
@@ -111,6 +139,9 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
   })
   inputs.push('-i', project.mp3Path)
   const audioIdx = imgs.length
+  // Beta SFX track (if any) is the next input; mixed under the voice at low gain.
+  const sfxIdx = inp.sfxPath ? imgs.length + 1 : null
+  if (inp.sfxPath) inputs.push('-i', inp.sfxPath)
 
   const parts: string[] = []
   imgs.forEach((im, i) => {
@@ -125,14 +156,16 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
     parts.push(`${base}${motion}[v${i}]`)
   })
 
-  // Beta style picks the crossfade transition between segments (validated upstream).
-  const xfadeType = (beta && inp.transition) ? inp.transition : 'fade'
+  // Beta: each segment boundary uses the planned transition nearest that cut (per-
+  // boundary placement), falling back to the style transition, then 'fade'.
+  const fallbackType = (beta && inp.transition) ? inp.transition : 'fade'
   let last = 'v0'
   if (imgs.length > 1) {
     let offset = Math.max(0.5, imgs[0].rangeEnd - imgs[0].rangeStart)
     for (let i = 1; i < imgs.length; i++) {
       const out = `x${i}`
-      parts.push(`[${last}][v${i}]xfade=transition=${xfadeType}:duration=${cf || 0.4}:offset=${offset.toFixed(2)}[${out}]`)
+      const tr = beta ? transitionAt(inp.plan, offset, fallbackType, cf || 0.4) : { type: fallbackType, dur: cf || 0.4 }
+      parts.push(`[${last}][v${i}]xfade=transition=${tr.type}:duration=${tr.dur.toFixed(2)}:offset=${offset.toFixed(2)}[${out}]`)
       offset += Math.max(0.5, imgs[i].rangeEnd - imgs[i].rangeStart)
       last = out
     }
@@ -144,6 +177,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
   const punchOn = project.punchZoom || !!beta?.autoZoom.atKeyPhrases
   const punch = punchOn ? `,zoompan=z='min(zoom+0.0015,1.08)':d=1:s=${w}x${h}:fps=${FPS}` : ''
   parts.push(`[${last}]${grad}subtitles='${assForFilter(assPath)}'${punch}[v]`)
+  const aMap = audioWithSfx(parts, audioIdx, sfxIdx)
 
   const crf = settings.quality === '1440p' ? '20' : settings.quality === '720p' ? '23' : '21'
   return [
@@ -151,7 +185,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
     ...inputs,
     '-filter_complex', parts.join(';'),
     '-map', '[v]',
-    '-map', `${audioIdx}:a`,
+    '-map', aMap,
     '-c:v', 'libx264',
     '-preset', 'medium',
     '-crf', crf,

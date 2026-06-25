@@ -20,7 +20,9 @@ import { THUMB_W, THUMB_H, DEFAULT_BETA_OPTS, type TextLayer, type ThumbnailTemp
 import { buildAss } from './services/captions'
 import { buildRenderArgs } from './services/render'
 import { extractThemes, rankCandidates, planCoverage, buildBrollBed, type BrollCandidate } from './services/broll'
-import { validateEffectPlan, deriveStylePlan, styleCaptionLead } from '../shared/effectPlan'
+import { validateEffectPlan, deriveStylePlan, styleCaptionLead, type EffectPlan } from '../shared/effectPlan'
+import { buildSfxTrack } from './services/sfx'
+import { readFileSync as readFileSyncSfx } from 'node:fs'
 import { resolveBinDir } from './services/ytdlp'
 import { runAll, lastMaxActive } from './services/queue'
 import { runProfile, newVideos } from './ipc/automation'
@@ -461,6 +463,22 @@ async function runSmokeM6(): Promise<void> {
     const styleOk = validatorOk && ruleOk && assStyled.ass.includes(lead) && lead.length > 0 && styleArgs.includes('xfade=transition=fadeblack')
     console.log(`SMOKE_M6_STYLE validator=${validatorOk} rule=${ruleOk} lead=${assStyled.ass.includes(lead)} transition=${styleArgs.includes('xfade=transition=fadeblack')}`)
 
+    // ---- Beta transition SFX + per-boundary placement ----
+    const fxPlan: EffectPlan = { transitions: [{ atSec: 6, type: 'circleopen', durationSec: 0.5, sfx: 'whoosh_soft' }], textEffects: [] }
+    const sfxWav = buildSfxTrack(fxPlan.transitions, 12)
+    const sfxHeaderOk = !!sfxWav && existsSync(sfxWav) && readFileSyncSfx(sfxWav).subarray(0, 4).toString() === 'RIFF'
+    // 2-image project: boundary at offset=6 → the plan's circleopen lands on that cut.
+    const perBoundaryArgs = buildRenderArgs({
+      project: { ...proj('p-fx', 'Fx'), kenBurns: false },
+      images: [
+        { id: 'i0', projectId: 'p-fx', ord: 0, path: '/x/a.png', thumb: '', rangeStart: 0, rangeEnd: 6, manual: false },
+        { id: 'i1', projectId: 'p-fx', ord: 1, path: '/x/b.png', thumb: '', rangeStart: 6, rangeEnd: 12, manual: false }
+      ],
+      assPath: '/tmp/x.ass', outPath: '/tmp/o.mp4', settings: betaSettings, transition: 'fade', plan: fxPlan, sfxPath: sfxWav ?? undefined
+    }).join(' ')
+    const sfxOk = sfxHeaderOk && perBoundaryArgs.includes('xfade=transition=circleopen') && perBoundaryArgs.includes('amix=inputs=2')
+    console.log(`SMOKE_M6_SFX wav=${sfxHeaderOk} perBoundary=${perBoundaryArgs.includes('xfade=transition=circleopen')} mix=${perBoundaryArgs.includes('amix=inputs=2')}`)
+
     // dry-run queue with two jobs at concurrency 2 (unique ids → smoke is re-runnable)
     setSettings({ outputFolder: join(app.getPath('temp'), 'me-m6-out'), concurrency: 2 })
     process.env['ME_RENDER_FIXTURE'] = '1'
@@ -480,7 +498,7 @@ async function runSmokeM6(): Promise<void> {
     console.log(`SMOKE_M6_ASS ok=${assOk} zoomHits=${ass169.zoomHits.length}`)
     console.log(`SMOKE_M6_ARGS ok=${argsOk}`)
     console.log(`SMOKE_M6_QUEUE status=${j1?.status} pct=${j1?.pct} maxActive=${lastMaxActive()} out=${!!j1?.outputPath} ass=${assFileOk}`)
-    const ok = assOk && argsOk && queueOk && assFileOk && betaOk && brollOk && styleOk
+    const ok = assOk && argsOk && queueOk && assFileOk && betaOk && brollOk && styleOk && sfxOk
     console.log(ok ? 'SMOKE_M6_OK' : 'SMOKE_M6_FAIL')
     closeDatabase()
     app.exit(ok ? 0 : 1)

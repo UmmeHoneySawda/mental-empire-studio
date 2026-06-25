@@ -349,8 +349,10 @@ function buildRepositories(d: Database.Database): Repositories {
       const tx = d.transaction(() => {
         d.prepare('DELETE FROM source_videos WHERE sourceId=?').run(sourceId)
         const now = new Date().toISOString()
+        // INSERT OR REPLACE: the same video id can surface under more than one source
+        // (the id is a global PK) — replace rather than collide.
         const ins = d.prepare(
-          `INSERT INTO source_videos (id,sourceId,title,durationSec,views,uploadDate,thumb,scrapedAt)
+          `INSERT OR REPLACE INTO source_videos (id,sourceId,title,durationSec,views,uploadDate,thumb,scrapedAt)
            VALUES (@id,@sourceId,@title,@durationSec,@views,@uploadDate,@thumb,@scrapedAt)`
         )
         rows.forEach((r) => ins.run({ ...r, sourceId, scrapedAt: now }))
