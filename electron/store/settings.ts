@@ -46,3 +46,10 @@ export function setSettings(patch: DeepPartial<AppSettings>): AppSettings {
   store!.set('settings', next)
   return next
 }
+
+/** Restore every setting to its factory default and persist. */
+export function resetSettings(): AppSettings {
+  if (!store) initSettings()
+  store!.set('settings', DEFAULT_SETTINGS)
+  return DEFAULT_SETTINGS
+}

@@ -36,7 +36,8 @@ const api: NativeApi = {
 
   settings: {
     get: () => ipcRenderer.invoke('settings:get'),
-    set: (patch: DeepPartial<AppSettings>) => ipcRenderer.invoke('settings:set', patch)
+    set: (patch: DeepPartial<AppSettings>) => ipcRenderer.invoke('settings:set', patch),
+    reset: () => ipcRenderer.invoke('app:reset')
   },
 
   db: {

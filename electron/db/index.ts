@@ -78,7 +78,18 @@ CREATE TABLE IF NOT EXISTS transcript_words (
   id TEXT PRIMARY KEY, projectId TEXT, ord INTEGER, word TEXT,
   start REAL, end REAL, emphasis INTEGER
 );
+CREATE TABLE IF NOT EXISTS app_meta (
+  key TEXT PRIMARY KEY, value TEXT
+);
 `
+
+// Every table that holds user/domain data — wiped by resetAll(). app_meta is
+// intentionally excluded so the "don't re-seed" flag survives the reset.
+const DATA_TABLES = [
+  'my_channels', 'source_channels', 'source_videos', 'downloaded_videos', 'uploads',
+  'profiles', 'thumbnail_templates', 'render_jobs', 'activity_log',
+  'projects', 'project_images', 'transcript_words'
+]
 
 /** Add a column only if it isn't already present — idempotent forward migration. */
 function ensureColumn(d: Database.Database, table: string, col: string, type: string): void {
@@ -179,6 +190,9 @@ export interface Repositories {
   renderJob(id: string): RenderJob | undefined
   queuedJobs(): RenderJob[]
   setRenderStatus(id: string, patch: { status?: RenderStatus; pct?: number; outputPath?: string; error?: string }): void
+  /** Wipe every domain table (channels, profiles, projects, jobs, …) back to empty,
+   *  and mark the DB seeded so demo content is not re-inserted on next launch. */
+  resetAll(): void
 }
 
 let db: Database.Database | null = null
@@ -457,6 +471,16 @@ function buildRepositories(d: Database.Database): Repositories {
         }
       }
       d.prepare(`UPDATE render_jobs SET ${sets.join(', ')} WHERE id=@id`).run(params)
+    },
+
+    resetAll: () => {
+      const tx = d.transaction(() => {
+        for (const t of DATA_TABLES) d.prepare(`DELETE FROM ${t}`).run()
+        // Keep the DB empty: record that seeding has already happened so the next
+        // launch's seedIfEmpty() does not re-insert the demo channels/profiles.
+        d.prepare("INSERT OR REPLACE INTO app_meta (key,value) VALUES ('seeded','1')").run()
+      })
+      tx()
     }
   }
 }

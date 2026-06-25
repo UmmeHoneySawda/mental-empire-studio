@@ -410,6 +410,8 @@ export interface NativeApi {
   settings: {
     get(): Promise<AppSettings>
     set(patch: DeepPartial<AppSettings>): Promise<AppSettings>
+    /** factory reset: settings → defaults and wipe all projects/profiles/channels/jobs */
+    reset(): Promise<AppSettings>
   }
   db: {
     myChannels(): Promise<MyChannel[]>

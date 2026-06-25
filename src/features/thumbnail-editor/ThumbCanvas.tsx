@@ -11,6 +11,9 @@ import { buildLayerGroup, loadImage, type LayerImages } from './render'
 export function ThumbCanvas(): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
   const stageRef = useRef<Konva.Stage | null>(null)
+  // Cache decoded images by src so edits don't reload subject/background from disk
+  // on every change — reloading is what caused the canvas to flash black.
+  const imgCacheRef = useRef<Map<string, HTMLImageElement>>(new Map())
 
   const layers = useStore((s) => s.layers)
   const selectedLayerId = useStore((s) => s.selectedLayerId)
@@ -46,23 +49,38 @@ export function ThumbCanvas(): JSX.Element {
     const stage = stageRef.current
     if (!stage) return
     const klayer = stage.getLayers()[0]
-    klayer.destroyChildren()
     let cancelled = false
 
     void (async () => {
-      const images: LayerImages = {}
+      // Resolve every layer's image src up front, loading only the ones we haven't
+      // decoded before. Cache hits resolve without touching disk, so geometry/text
+      // edits rebuild instantly with no black gap.
+      const cache = imgCacheRef.current
+      const need: Array<{ id: string; src: string }> = []
       for (const l of layers) {
         const src = l.kind === 'subject' ? l.src : l.kind === 'background' && l.mode === 'image' ? l.src : undefined
-        if (src) {
+        if (src) need.push({ id: l.id, src })
+      }
+      await Promise.all(
+        need.map(async ({ src }) => {
+          if (cache.has(src)) return
           try {
-            images[l.id] = await loadImage(src)
+            cache.set(src, await loadImage(src))
           } catch {
             /* skip missing image */
           }
-        }
-      }
+        })
+      )
       if (cancelled) return
 
+      const images: LayerImages = {}
+      for (const { id, src } of need) {
+        const im = cache.get(src)
+        if (im) images[id] = im
+      }
+
+      // Build the new content first, then swap it in — destroying the old children
+      // only once the replacement is ready avoids an empty (black) frame on edits.
       const group = buildLayerGroup(layers, images)
       group.getChildren().forEach((node) => {
         const id = node.getAttr('layerId') as string
@@ -74,6 +92,7 @@ export function ThumbCanvas(): JSX.Element {
           node.on('dragend', () => updateGeometry(id, { x: node.x(), y: node.y() }))
         }
       })
+      klayer.destroyChildren()
       klayer.add(group)
 
       // title-safe dashed inset overlay (non-interactive)

@@ -1,6 +1,6 @@
 import { ipcMain } from 'electron'
 import type { AppSettings, DeepPartial, GoalsPatch, Profile, ThumbnailTemplate } from '../../shared/types'
-import { getSettings, setSettings } from '../store/settings'
+import { getSettings, setSettings, resetSettings } from '../store/settings'
 import { getRepos } from '../db'
 import { registerScrapeIpc } from './scrape'
 import { registerDownloadIpc } from './download'
@@ -21,6 +21,14 @@ export function registerIpc(): void {
     // React to background/auto-scrape changes: re-register login item + scheduler.
     if (patch.background?.startOnSignIn !== undefined) applyLoginItem(next)
     if (patch.autoScrape !== undefined) schedulerStart()
+    return next
+  })
+  // Factory reset: settings back to defaults + wipe all projects/profiles/channels/jobs.
+  ipcMain.handle('app:reset', () => {
+    const next = resetSettings()
+    getRepos().resetAll()
+    applyLoginItem(next)
+    schedulerStart()
     return next
   })
 

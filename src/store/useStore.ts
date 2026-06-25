@@ -31,6 +31,8 @@ interface AppState {
   hydrated: boolean
   hydrate: () => Promise<void>
   updateSettings: (patch: DeepPartial<AppSettings>) => void
+  /** factory reset: settings → defaults, wipe all data, then reload the window */
+  resetAll: () => Promise<void>
 
   // appearance "tweaks" — mirrored from settings so screens read them directly
   accent: AccentName
@@ -115,6 +117,13 @@ export const useStore = create<AppState>((set, get) => ({
   updateSettings: (patch) => {
     pushPatch(patch)
     set(mirror(mergeSettings(get().settings, patch)))
+  },
+  resetAll: async () => {
+    const defaults = await window.api?.settings?.reset?.()
+    if (defaults) set(mirror(defaults))
+    // Reload so every screen (channels, profiles, projects, render queue) re-reads
+    // the now-empty database and the restored default settings from scratch.
+    window.location.reload()
   },
 
   accent: DEFAULT_SETTINGS.accent,

@@ -55,7 +55,15 @@ function rowToggle(label: string, on: boolean, right?: React.ReactNode, onClick?
 export function Settings(): JSX.Element {
   const settings = useStore((s) => s.settings)
   const updateSettings = useStore((s) => s.updateSettings)
+  const resetAll = useStore((s) => s.resetAll)
   const { quality, autoScrape, background } = settings
+
+  const onReset = (): void => {
+    const ok = window.confirm(
+      'Reset everything to default settings?\n\nThis deletes all channels, profiles, projects, downloads, thumbnail templates and the render queue, and restores every setting to its default. This cannot be undone.'
+    )
+    if (ok) void resetAll()
+  }
   const qualities: AppSettings['quality'][] = ['720p', '1080p', '1440p']
 
   return (
@@ -125,6 +133,16 @@ export function Settings(): JSX.Element {
               {rowToggle('Start on Windows sign-in', background.startOnSignIn, undefined, () => updateSettings({ background: { startOnSignIn: !background.startOnSignIn } }))}
               {rowToggle('Desktop notifications (goals & reminders)', background.notifications, undefined, () => updateSettings({ background: { notifications: !background.notifications } }))}
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, border: '1px solid #1d2129', borderRadius: 9, padding: '9px 13px', background: '#0e1116' }}><span style={{ color: '#cdd2da', flex: 'none' }}>Webhook</span><input value={background.webhook} onChange={(e) => updateSettings({ background: { webhook: e.target.value } })} placeholder="https://… (Pushover / Zapier / calendar)" style={{ flex: 1, border: '1px solid #23272f', borderRadius: 7, padding: '6px 10px', fontSize: 11, color: '#aab0bb', fontFamily: 'var(--font-mono)', background: '#0c0d11', outline: 'none' }} /></div>
+            </div>
+          </Card>
+
+          <Card label="DANGER ZONE">
+            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 12.5, color: '#cdd2da', marginBottom: 3 }}>Reset to default settings</div>
+                <div style={{ fontSize: 11, color: '#6a7180', lineHeight: 1.4 }}>Wipes all channels, profiles, projects, downloads, templates and the render queue, and restores every setting. Can’t be undone.</div>
+              </div>
+              <div className="me-btn" onClick={onReset} style={{ flex: 'none', border: '1px solid #ff5a6e', color: '#ff8a96', background: 'rgba(255,90,110,.10)', borderRadius: 9, padding: '9px 15px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Reset everything</div>
             </div>
           </Card>
         </div>

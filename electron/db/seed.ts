@@ -55,8 +55,14 @@ const defaultTemplate: { id: string; name: string; layers: ThumbnailLayer[] } = 
 }
 
 export function seedIfEmpty(d: Database.Database): void {
+  // A 'seeded' marker means we've populated demo data once (or the user reset to a
+  // deliberately empty state) — either way, never auto-insert demo content again.
+  const marker = d.prepare("SELECT value FROM app_meta WHERE key='seeded'").get() as { value: string } | undefined
   const count = (d.prepare('SELECT COUNT(*) AS n FROM my_channels').get() as { n: number }).n
-  if (count > 0) return
+  if (marker || count > 0) {
+    if (!marker) d.prepare("INSERT OR REPLACE INTO app_meta (key,value) VALUES ('seeded','1')").run()
+    return
+  }
 
   const tx = d.transaction(() => {
     const src = d.prepare('INSERT INTO source_channels (id,url,handle,name) VALUES (@id,@url,@handle,@name)')
@@ -86,6 +92,8 @@ export function seedIfEmpty(d: Database.Database): void {
 
     const al = d.prepare('INSERT INTO activity_log (t,icon,color,text) VALUES (@t,@icon,@color,@text)')
     activity.forEach((a) => al.run(a))
+
+    d.prepare("INSERT OR REPLACE INTO app_meta (key,value) VALUES ('seeded','1')").run()
   })
   tx()
 }
