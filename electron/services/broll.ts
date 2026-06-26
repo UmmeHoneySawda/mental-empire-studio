@@ -1,9 +1,9 @@
-import { spawn } from 'node:child_process'
-import { createWriteStream, existsSync, mkdirSync, readFileSync, writeFileSync, copyFileSync } from 'node:fs'
+import { spawn, spawnSync } from 'node:child_process'
+import { createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, copyFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { app } from 'electron'
 import type { AppSettings, BrollDensity, TranscriptWord } from '../../shared/types'
-import { ffmpegPath } from './render'
+import { ffmpegPath, ffprobePath } from './render'
 
 // Auto B-roll: themed stock-footage pool driven by the transcript. We pick the
 // video's dominant themes, fetch a small pool of clips (Pexels → Pixabay → Coverr),
@@ -141,8 +141,40 @@ async function searchCoverr(key: string, q: string): Promise<BrollCandidate[]> {
   })).filter((c) => c.url)
 }
 
+/** Probe a clip's duration (seconds) via ffprobe; 0 on failure. */
+function probeDurationSec(path: string): number {
+  try {
+    const r = spawnSync(ffprobePath(), ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', path], { encoding: 'utf8' })
+    return parseFloat((r.stdout || '').trim()) || 0
+  } catch {
+    return 0
+  }
+}
+
+/** Offline seam: build candidates from REAL local .mp4 clips in ME_BROLL_LOCAL. Unlike
+ *  ME_BROLL_FIXTURE (which stubs the bed), these flow through the genuine assembleBed
+ *  ffmpeg path, so a true b-roll render can be produced without any network. */
+function localCandidates(themes: string[], target: { w: number; h: number }): BrollCandidate[] {
+  const dir = process.env['ME_BROLL_LOCAL'] as string
+  const files = readdirSync(dir).filter((f) => f.toLowerCase().endsWith('.mp4'))
+  return files.map((f) => {
+    const path = join(dir, f)
+    return {
+      provider: 'pexels' as const,
+      id: f.replace(/\.mp4$/i, ''),
+      url: path, // carry the real path; downloadPool resolves it directly
+      width: target.w,
+      height: target.h,
+      durationSec: probeDurationSec(path),
+      tags: themes.length ? themes : ['cinematic']
+    }
+  })
+}
+
 /** Fetch a ranked candidate pool across providers in priority order until poolSize. */
 export async function fetchPool(settings: AppSettings, themes: string[], target: { w: number; h: number }, poolSize: number): Promise<BrollCandidate[]> {
+  // Local real-clip seam (genuine assembly, offline).
+  if (process.env['ME_BROLL_LOCAL']) return localCandidates(themes, target).slice(0, poolSize)
   // Fixture seam: recorded candidates so the pipeline is testable offline.
   const fixture = process.env['ME_BROLL_FIXTURE']
   if (fixture) {
@@ -206,12 +238,15 @@ async function downloadOne(c: BrollCandidate, dir: string): Promise<string> {
 export async function downloadPool(cands: BrollCandidate[], poolSize: number): Promise<BrollClip[]> {
   const dir = brollDir()
   const fixture = process.env['ME_BROLL_FIXTURE']
+  const local = process.env['ME_BROLL_LOCAL']
   const out: BrollClip[] = []
   for (const c of cands) {
     if (out.length >= poolSize) break
     try {
       let path: string
-      if (fixture) {
+      if (local) {
+        path = c.url // localCandidates already carries the real on-disk path
+      } else if (fixture) {
         path = join(dir, `${c.provider}-${c.id}.mp4`)
         copyFileSync(join(fixture, 'sample.mp4'), path)
       } else {

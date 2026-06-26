@@ -19,6 +19,16 @@ import '@fontsource/anton/400.css'
 import './theme/tokens.css'
 import './theme/global.css'
 import { App } from './app'
+import { rasterizeLayers, withHeadline } from './features/thumbnail-editor/render'
+import type { ThumbnailLayer } from '@shared/types'
+
+// Headless test hook: exposes the SAME production Konva rasterizer used by batch
+// generate so the e2e harness can render a thumbnail from real background/subject
+// images and assert a valid PNG. Pure (no secrets); namespaced to avoid collisions.
+;(window as unknown as { __meThumb?: unknown }).__meThumb = {
+  rasterizeLayers: (layers: ThumbnailLayer[]) => rasterizeLayers(layers),
+  withHeadline
+}
 
 ReactDOM.createRoot(document.getElementById('root')!).render(
   <React.StrictMode>

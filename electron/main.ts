@@ -851,7 +851,7 @@ async function runDemoRender(): Promise<void> {
       autoHighlight: true,
       overlay: { bottom: true, top: false, left: false, right: false },
       autoZoom: { atStart: true, atKeyPhrases: true },
-      broll: { enabled: false, density: 'sparse', poolSize: 18, mode: 'full' },
+      broll: { enabled: !!process.env['ME_BROLL_LOCAL'], density: 'full', poolSize: 6, mode: 'full' },
       style: 'Cinematic',
       effectPlanJson: JSON.stringify({
         transitions: [
@@ -966,6 +966,55 @@ app.whenReady().then(() => {
         }
         app.exit(0)
       }, 1100)
+    })
+  }
+
+  // Headless thumbnail render (ME_THUMB=<png path>) from REAL background + subject
+  // PNGs (ME_THUMB_BG / ME_THUMB_SUBJECT) through the production Konva rasterizer.
+  const thumbPath = process.env['ME_THUMB']
+  if (thumbPath && mainWindow) {
+    mainWindow.webContents.once('did-finish-load', () => {
+      setTimeout(async () => {
+        const wc = mainWindow!.webContents
+        const fs = await import('node:fs')
+        const toDataUrl = (p?: string): string =>
+          p && fs.existsSync(p) ? `data:image/png;base64,${fs.readFileSync(p).toString('base64')}` : ''
+        const bg = toDataUrl(process.env['ME_THUMB_BG'])
+        const subject = toDataUrl(process.env['ME_THUMB_SUBJECT'])
+        const layers = [
+          {
+            id: 'headline', kind: 'text', name: 'Headline', visible: true, locked: false,
+            frame: { x: 70, y: 372, width: 720, height: 300, rotation: 0 },
+            text: 'THEY LIED TO YOU', lines: [{ text: 'THEY LIED', size: 118 }, { text: 'TO YOU', size: 150 }],
+            highlightWord: 'LIED', highlightColor: '#ffd400', highlightSquare: true, color: '#ffffff',
+            fontFamily: 'Anton', align: 'left',
+            effects: { shadow: { enabled: true, color: '#000000', size: 0, opacity: 0.65, distance: 7, angle: 45 }, stroke: { enabled: true, color: '#000000', size: 7, opacity: 1 }, glow: { enabled: false, color: '#ffffff', size: 26, opacity: 0.85 }, caps: true }
+          },
+          {
+            id: 'subject', kind: 'subject', name: 'Subject', visible: true, locked: false,
+            frame: { x: 700, y: 70, width: 520, height: 650, rotation: 0 }, src: subject,
+            outline: { enabled: true, color: '#ffffff', size: 7, opacity: 1 },
+            shadow: { enabled: true, color: '#000000', size: 30, opacity: 0.7, distance: 12, angle: 90 },
+            glow: { enabled: false, color: '#19c3d6', size: 30, opacity: 0.85 }
+          },
+          {
+            id: 'bg', kind: 'background', name: 'Background', visible: true, locked: true,
+            frame: { x: 0, y: 0, width: 1280, height: 720, rotation: 0 },
+            fill: '#1a1230', mode: bg ? 'image' : 'gradient', src: bg
+          }
+        ]
+        const dataUrl: string = await wc.executeJavaScript(
+          `window.__meThumb.rasterizeLayers(${JSON.stringify(layers)})`
+        )
+        const out: string = await wc.executeJavaScript(
+          `window.api.thumbnails.writePng('demo-thumb', ${JSON.stringify(dataUrl)})`
+        )
+        const valid = fs.existsSync(out) && (() => { const h = fs.readFileSync(out).subarray(0, 4); return h[0] === 0x89 && h[1] === 0x50 && h[2] === 0x4e && h[3] === 0x47 })()
+        if (valid) fs.copyFileSync(out, thumbPath)
+        console.log(`THUMB_OUT ${out}`)
+        console.log(valid ? 'THUMB_OK' : 'THUMB_FAIL')
+        app.exit(valid ? 0 : 1)
+      }, 1200)
     })
   }
 
