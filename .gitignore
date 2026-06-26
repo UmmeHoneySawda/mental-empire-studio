@@ -6,3 +6,4 @@ dist/
 .vite/
 .preview/
 resources/bin/
+browser-test-out/
