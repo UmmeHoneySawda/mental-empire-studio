@@ -58,16 +58,21 @@ export function Download(): JSX.Element {
     setMessage(toQueue ? 'Downloading selected audio before opening Compose…' : 'Starting download…')
     try {
       const rows = await startDownload(selected, url, bitrate)
-      const usable = rows.find((d) => d.filePath && (d.durationSec ?? 0) > 0)
+      const succeeded = rows.filter((d) => d.filePath && (d.durationSec ?? 0) > 0)
+      const failed = rows.filter((d) => d.stage === 'Failed')
       if (toQueue) {
-        if (!usable) {
-          setMessage('Download did not produce a usable MP3 yet. Check the row below and resume if needed.')
+        if (succeeded.length === 0) {
+          setMessage('No downloads completed successfully. Check the rows below and try resuming.')
           return
         }
-        await openProject(usable.id)
+        if (failed.length > 0) {
+          setMessage(`${succeeded.length} downloaded, ${failed.length} failed. Opening the first completed video in Compose…`)
+          await new Promise((r) => setTimeout(r, 1200))
+        }
+        await openProject(succeeded[0].id)
         setActive('compose')
       } else {
-        setMessage(rows.some((d) => d.stage === 'Failed') ? 'Some downloads failed. Check Activity or logs for details.' : 'Download finished.')
+        setMessage(failed.length > 0 ? 'Some downloads failed. Check Activity or logs for details.' : 'Download finished.')
       }
       setSel(new Set())
     } catch (e) {
@@ -148,9 +153,10 @@ export function Download(): JSX.Element {
           {downloads.map((d) => {
             const live = dlProgress[d.id]
             const pct = live ? `${Math.round(live.pct)}%` : d.pct
-            const done = pct === '100%'
-            const barColor = done ? '#36c98e' : 'var(--accent)'
-            const stageColor = done ? '#4fd6a0' : '#cdd2da'
+            const currentStage = live?.stage ?? d.stage
+            const done = currentStage === 'Downloaded only'
+            const barColor = done ? '#36c98e' : currentStage === 'Failed' ? '#ff5a6e' : 'var(--accent)'
+            const stageColor = done ? '#4fd6a0' : currentStage === 'Failed' ? '#ff8a96' : '#cdd2da'
             return (
               <div key={d.id} className="me-row" style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid #14171d' }}>
                 <div style={{ flex: 2.4, display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
@@ -158,9 +164,15 @@ export function Download(): JSX.Element {
                   <div style={{ minWidth: 0 }}><div style={{ fontSize: 12.5, color: '#dde0e5', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.title}</div><div style={{ fontSize: 10, color: '#5b616f', fontFamily: 'var(--font-mono)' }}>{d.size} · {d.when}</div></div>
                 </div>
                 <div style={{ width: 120, fontSize: 11, color: '#8a909c', fontFamily: 'var(--font-mono)' }}>{d.channel}</div>
-                <div style={{ width: 130, fontSize: 11.5, color: stageColor }}>{live?.stage ?? d.stage}</div>
+                <div style={{ width: 130, fontSize: 11.5, color: stageColor }}>{currentStage}</div>
                 <div style={{ width: 140 }}><div style={{ height: 6, borderRadius: 4, background: '#1a1e26', overflow: 'hidden' }}><div style={{ width: pct, height: '100%', background: barColor }} /></div></div>
-                <div style={{ width: 80, textAlign: 'right' }}><span onClick={() => void resumeDownload(d.id)} className="me-btn" style={{ display: 'inline-block', border: '1px solid #262b34', background: '#15181f', borderRadius: 7, padding: '6px 12px', fontSize: 11, color: '#dde0e5', cursor: 'pointer' }}>{d.action}</span></div>
+                <div style={{ width: 80, textAlign: 'right' }}>
+                  {(() => {
+                    if (currentStage === 'Downloading') return <span style={{ fontSize: 11, color: '#f5b323', fontFamily: 'var(--font-mono)' }}>Downloading…</span>
+                    if (currentStage === 'Downloaded only') return <span onClick={() => window.api?.download?.openFolder?.(d.id)} className="me-btn" style={{ display: 'inline-block', border: '1px solid #262b34', background: '#15181f', borderRadius: 7, padding: '6px 12px', fontSize: 11, color: '#dde0e5', cursor: 'pointer' }}>Open</span>
+                    return <span onClick={() => void resumeDownload(d.id)} className="me-btn" style={{ display: 'inline-block', border: '1px solid #262b34', background: '#15181f', borderRadius: 7, padding: '6px 12px', fontSize: 11, color: '#dde0e5', cursor: 'pointer' }}>Resume</span>
+                  })()}
+                </div>
               </div>
             )
           })}

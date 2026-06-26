@@ -129,6 +129,8 @@ function migrate(d: Database.Database): void {
   ensureColumn(d, 'projects', 'betaOpts', 'TEXT')
   ensureColumn(d, 'profiles', 'betaOpts', 'TEXT')
   ensureColumn(d, 'uploads', 'thumb', 'TEXT')
+  // M8: per-project saved thumbnail path
+  ensureColumn(d, 'projects', 'thumbPath', 'TEXT')
 
   purgeLegacyDemoSeed(d)
 }

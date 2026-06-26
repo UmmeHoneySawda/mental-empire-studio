@@ -380,6 +380,8 @@ export interface Project {
   keywords: boolean
   punchZoom: boolean
   stage: string
+  /** saved thumbnail path (written by thumbnails:saveProjectThumb) */
+  thumbPath?: string
   createdAt: string
   /** beta-feature options (hook/highlight/overlay/zoom/b-roll/style). Always present
    *  from the DB; optional on the type so construction-site literals stay terse. */
@@ -572,6 +574,8 @@ export interface NativeApi {
     assignToProfile(profileId: string, templateId: string): Promise<Profile[]>
     /** write a rasterized PNG (data URL) to the output folder; returns the file path */
     writePng(name: string, dataUrl: string): Promise<string>
+    /** save a project-specific thumbnail: write PNG + update project.thumbPath */
+    saveProjectThumb(projectId: string, name: string, dataUrl: string): Promise<string>
   }
   render: {
     /** the queue as joined rows (job + project checklist) */

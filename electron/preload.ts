@@ -106,7 +106,8 @@ const api: NativeApi = {
     templates: () => ipcRenderer.invoke('thumbnails:templates'),
     assignToProfile: (profileId: string, templateId: string) =>
       ipcRenderer.invoke('thumbnails:assignToProfile', profileId, templateId),
-    writePng: (name: string, dataUrl: string) => ipcRenderer.invoke('thumbnails:writePng', name, dataUrl)
+    writePng: (name: string, dataUrl: string) => ipcRenderer.invoke('thumbnails:writePng', name, dataUrl),
+    saveProjectThumb: (projectId: string, name: string, dataUrl: string) => ipcRenderer.invoke('thumbnails:saveProjectThumb', projectId, name, dataUrl)
   },
 
   render: {

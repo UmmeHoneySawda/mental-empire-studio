@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react'
 import { useStore } from '../store/useStore'
+import { useData } from '../store/useData'
 import { ScreenPad } from '../components/primitives'
 import type { BackgroundLayer, FxGlow, FxOutline, FxShadow, SubjectLayer, TextLayer, ThumbnailLayer } from '@shared/types'
 import { asGlow, asOutline, asShadow } from '@shared/types'
@@ -28,7 +29,19 @@ function Toolbar(): JSX.Element {
   const runAutoArrange = useStore((s) => s.runAutoArrange)
   const saveCurrentTemplate = useStore((s) => s.saveCurrentTemplate)
   const templates = useStore((s) => s.templates)
+  const layers = useStore((s) => s.layers)
+  const activeProject = useData((s) => s.activeProject)
+  const [saved, setSaved] = useState(false)
   const btn = { display: 'flex', alignItems: 'center', gap: 6, border: '1px solid #262b34', background: '#15181f', borderRadius: 9, padding: '8px 12px', fontSize: 11.5, color: '#dde0e5', cursor: 'pointer' } as const
+
+  const saveThumbnail = async (): Promise<void> => {
+    if (!activeProject) return
+    const url = await rasterizeLayers(layers)
+    await window.api?.thumbnails?.saveProjectThumb?.(activeProject.id, activeProject.title, url)
+    setSaved(true)
+    setTimeout(() => setSaved(false), 2000)
+  }
+
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 16, flexWrap: 'wrap' }}>
       <div onClick={addTextLayer} className="me-btn" style={btn}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M4 7V5h16v2M9 20h6M12 5v15" /></svg>Add text</div>
@@ -36,6 +49,12 @@ function Toolbar(): JSX.Element {
       <div onClick={() => addShapeLayer('circle')} className="me-btn" style={btn}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><circle cx="12" cy="12" r="8" /></svg>Add badge</div>
       <div onClick={runAutoArrange} className="me-btn" style={{ display: 'flex', alignItems: 'center', gap: 6, border: '1px solid var(--accent)', background: 'var(--accent-soft)', borderRadius: 9, padding: '8px 13px', fontSize: 11.5, color: 'var(--accent)', fontWeight: 600, cursor: 'pointer' }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2z" /></svg>Auto-arrange type</div>
       <div style={{ flex: 1 }} />
+      {activeProject && (
+        <div onClick={() => void saveThumbnail()} className="me-btn" style={{ display: 'flex', alignItems: 'center', gap: 6, border: '1px solid var(--accent)', background: 'var(--accent-soft)', borderRadius: 9, padding: '8px 13px', fontSize: 11.5, color: 'var(--accent)', fontWeight: 600, cursor: 'pointer' }}>
+          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 3h11l3 3v15H5z" /><path d="M8 3v6h7" /></svg>
+          {saved ? 'Saved ✓' : 'Save thumbnail'}
+        </div>
+      )}
       <div onClick={() => saveCurrentTemplate(`Template ${templates.length + 1}`)} className="me-btn" style={{ ...btn, color: '#c4cad3' }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 3h11l3 3v15H5z" /><path d="M8 3v6h7" /></svg>Save as profile template</div>
     </div>
   )
@@ -259,7 +278,7 @@ function BatchGenerate(): JSX.Element {
         <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 15, color: '#e9ebef' }}>Batch generate</span>
         <span style={{ fontSize: 12, color: '#6a7180', marginLeft: 10 }}>same template · one line per title</span>
         <div style={{ flex: 1 }} />
-        <div onClick={generate} className="me-btn" style={{ background: 'linear-gradient(180deg,var(--accent),var(--accent-deep))', color: 'var(--accent-ink)', fontWeight: 600, fontSize: 11.5, padding: '8px 16px', borderRadius: 9, cursor: 'pointer', opacity: busy ? 0.6 : 1 }}>{busy ? 'Generating…' : 'Generate all →'}</div>
+        <div onClick={generate} className="me-btn" style={{ background: 'linear-gradient(180deg,var(--accent),var(--accent-deep))', color: 'var(--accent-ink)', fontWeight: 600, fontSize: 11.5, padding: '8px 16px', borderRadius: 9, cursor: 'pointer', opacity: busy ? 0.6 : 1 }}>{busy ? 'Generating…' : 'Batch generate from titles →'}</div>
       </div>
       <textarea value={titles} onChange={(e) => setTitles(e.target.value)} rows={4} style={{ width: '100%', border: '1px solid #23272f', borderRadius: 8, padding: 10, fontSize: 12, color: '#dde0e5', background: '#0e1116', resize: 'vertical', fontFamily: 'var(--font-mono)', marginBottom: 14, boxSizing: 'border-box' }} />
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(6,1fr)', gap: 10 }}>

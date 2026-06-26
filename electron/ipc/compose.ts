@@ -50,8 +50,10 @@ function safeName(name: string): string {
   return (name.replace(/[^a-z0-9\-_. ]/gi, '_').trim() || 'thumbnail').slice(0, 120)
 }
 
-function thumbnailPath(project: Project): string {
-  return join(outputDir(), 'thumbnails', `${safeName(project.title)}.png`)
+function effectiveThumbnailPath(project: Project): string | null {
+  if (project.thumbPath) return project.thumbPath
+  const computed = join(outputDir(), 'thumbnails', `${safeName(project.title)}.png`)
+  return existsSync(computed) ? computed : null
 }
 
 function validateDownloadedAudio(downloadId: string, mp3Path: string, durationSec: number): void {
@@ -124,9 +126,11 @@ function validateRenderReady(projectId: string): void {
   const missing: string[] = []
   if (!project.mp3Path || !existsSync(project.mp3Path)) missing.push('MP3')
   if (!project.durationSec || project.durationSec <= 0) missing.push('audio duration')
-  if (repos.getProjectImages(projectId).length === 0) missing.push('images')
+  const brollEnabled = project.betaOpts?.broll?.enabled ?? false
+  if (!brollEnabled && repos.getProjectImages(projectId).length === 0) missing.push('images')
   if (repos.getTranscript(projectId).length === 0) missing.push('captions')
-  if (!existsSync(thumbnailPath(project))) missing.push('thumbnail')
+  const thumbFile = effectiveThumbnailPath(project)
+  if (!thumbFile) missing.push('thumbnail')
   if (missing.length) throw new Error(`Project is not render-ready. Missing: ${missing.join(', ')}.`)
 }
 

@@ -45,7 +45,9 @@ export function RenderQueue(): JSX.Element {
   }
   const processing = rows.filter((r) => live(r).status === 'rendering').length
   const outputFolder = settings.outputFolder || '<Downloads>/MentalEmpire_out'
-  const canRender = rows.length > 0 && rows.every((r) => r.isReady) && !rendering
+  const readyCount = rows.filter((r) => r.isReady).length
+  const canRenderAll = rows.length > 0 && rows.every((r) => r.isReady) && !rendering
+  const canRenderSome = readyCount > 0 && !rows.every((r) => r.isReady) && !rendering
 
   const browse = async (): Promise<void> => {
     const dir = await window.api?.chooseFolder?.()
@@ -97,7 +99,12 @@ export function RenderQueue(): JSX.Element {
         </div>
         <div><div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '.6px', color: '#5b616f', marginBottom: 7 }}>FORMAT</div><div style={{ border: '1px solid #23272f', borderRadius: 9, padding: '10px 14px', fontSize: 12, color: '#dde0e5', background: '#0e1116' }}>mp4 · {settings.quality} ▾</div></div>
         <div style={{ flex: 1 }} />
-        <button type="button" disabled={!canRender} onClick={() => void renderAll()} className="me-btn" title={!rows.length ? 'No render jobs queued' : rows.some((r) => !r.isReady) ? 'Fix missing MP3, images, thumbnail, and captions before rendering' : undefined} style={{ display: 'flex', alignItems: 'center', gap: 9, border: 0, background: 'linear-gradient(180deg,var(--accent),var(--accent-deep))', color: 'var(--accent-ink)', fontWeight: 600, fontSize: 13.5, padding: '13px 26px', borderRadius: 11, cursor: canRender ? 'pointer' : 'not-allowed', boxShadow: '0 6px 20px -5px var(--accent-glow)', opacity: canRender ? 1 : 0.5 }}><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M5 4l14 8-14 8z" /></svg>{rendering ? 'Rendering…' : `Render all (${rows.length})`}</button>
+        {canRenderSome && (
+          <button type="button" onClick={() => void renderAll()} className="me-btn" style={{ display: 'flex', alignItems: 'center', gap: 9, border: '1px solid var(--accent)', background: 'var(--accent-soft)', color: 'var(--accent)', fontWeight: 600, fontSize: 13.5, padding: '13px 26px', borderRadius: 11, cursor: 'pointer' }}>
+            Render ready ({readyCount})
+          </button>
+        )}
+        <button type="button" disabled={!canRenderAll} onClick={() => void renderAll()} className="me-btn" title={!rows.length ? 'No render jobs queued' : !rows.every((r) => r.isReady) ? `${rows.length - readyCount} items still missing assets` : undefined} style={{ display: 'flex', alignItems: 'center', gap: 9, border: 0, background: 'linear-gradient(180deg,var(--accent),var(--accent-deep))', color: 'var(--accent-ink)', fontWeight: 600, fontSize: 13.5, padding: '13px 26px', borderRadius: 11, cursor: canRenderAll ? 'pointer' : 'not-allowed', boxShadow: '0 6px 20px -5px var(--accent-glow)', opacity: canRenderAll ? 1 : 0.5 }}><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M5 4l14 8-14 8z" /></svg>{rendering ? 'Rendering…' : `Render all (${rows.length})`}</button>
       </div>
       {rows.some((r) => !r.isReady) && <div style={{ marginTop: 10, fontSize: 12, color: '#ff8a96', textAlign: 'right' }}>Fix blocked rows in Compose/Thumbnails before rendering.</div>}
     </ScreenPad>

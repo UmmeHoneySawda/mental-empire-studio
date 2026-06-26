@@ -213,7 +213,11 @@ function BetaPanel(): JSX.Element {
         <Row label="Auto B-roll (stock footage)" on={o.broll.enabled} set={() => patch({ broll: { ...o.broll, enabled: !o.broll.enabled } })} hint="Themed clip pool from the transcript" />
         {o.broll.enabled && (
           <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
-            {(['full', 'sparse', 'keywords'] as const).map((d) => <span key={d} onClick={() => patch({ broll: { ...o.broll, density: d } })} style={{ border: o.broll.density === d ? '1px solid var(--accent)' : '1px solid #23272f', color: o.broll.density === d ? 'var(--accent)' : '#8a909c', background: o.broll.density === d ? 'var(--accent-soft)' : 'transparent', borderRadius: 7, padding: '4px 10px', fontSize: 10.5, cursor: 'pointer', textTransform: 'capitalize' }}>{d}</span>)}
+            {([
+              { d: 'full', tip: 'B-roll covers the entire video' },
+              { d: 'sparse', tip: 'B-roll clips placed every ~30 seconds' },
+              { d: 'keywords', tip: 'B-roll cut in on auto-detected topic keywords' }
+            ] as const).map(({ d, tip }) => <span key={d} title={tip} onClick={() => patch({ broll: { ...o.broll, density: d } })} style={{ border: o.broll.density === d ? '1px solid var(--accent)' : '1px solid #23272f', color: o.broll.density === d ? 'var(--accent)' : '#8a909c', background: o.broll.density === d ? 'var(--accent-soft)' : 'transparent', borderRadius: 7, padding: '4px 10px', fontSize: 10.5, cursor: 'pointer', textTransform: 'capitalize' }}>{d}</span>)}
           </div>
         )}
       </div>
@@ -264,7 +268,12 @@ function CaptionsTab(): JSX.Element {
           </div>
         </div>
         <div style={{ border: '1px solid #1d2129', borderRadius: 14, padding: 15, background: '#12151b', display: 'flex', flexDirection: 'column', gap: 14 }}>
-          <div><div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 6 }}>Font</div><div style={{ border: '1px solid #23272f', borderRadius: 8, padding: 9, fontSize: 13, color: '#dde0e5', background: '#0e1116', textAlign: 'center', fontWeight: 600 }}>{project?.captionFont ?? 'Montserrat'} ▾</div></div>
+          <div>
+            <div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 6 }}>Font</div>
+            <select value={project?.captionFont ?? 'Montserrat'} onChange={(e) => void setCaptions({ captionFont: e.target.value })} style={{ width: '100%', border: '1px solid #23272f', borderRadius: 8, padding: '9px 10px', fontSize: 13, color: '#dde0e5', background: '#0e1116', appearance: 'none', fontWeight: 600, cursor: 'pointer' }}>
+              {['Montserrat', 'Anton', 'Space Grotesk', 'Hanken Grotesk', 'JetBrains Mono', 'Arial', 'Impact', 'Oswald', 'Bebas Neue', 'Roboto'].map((f) => <option key={f} value={f}>{f}</option>)}
+            </select>
+          </div>
           <div><div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 7 }}>Animation</div><div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, fontSize: 10.5 }}>{(['Pop-in', 'Bounce', 'Slide', 'Type'] as const).map((a) => chip(a, project?.captionAnim === a, () => void setCaptions({ captionAnim: a }), a))}</div></div>
           <div style={{ display: 'flex', gap: 9 }}>
             <div onClick={() => void setCaptions({ keywords: !project?.keywords })} style={{ flex: 1, border: '1px solid #1d2129', borderRadius: 9, padding: 9, background: '#0e1116', cursor: 'pointer' }}><div style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ fontSize: 11, fontWeight: 600, color: '#dde0e5' }}>Keywords</span><span style={{ marginLeft: 'auto', fontSize: 8.5, fontWeight: 700, background: project?.keywords ? '#1f9c6b' : '#2b303b', color: '#fff', borderRadius: 9, padding: '1px 6px' }}>{project?.keywords ? 'ON' : 'OFF'}</span></div><div style={{ fontSize: 9, color: '#6a7180', marginTop: 4 }}>Auto-highlight</div></div>
@@ -297,10 +306,10 @@ function CaptionsTab(): JSX.Element {
           )}
         </div>
         <div style={{ border: '1px solid #1d2129', borderRadius: 12, padding: 14, background: '#12151b', marginTop: 14 }}>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, color: '#5b616f', marginBottom: 10 }}>WORD TIMELINE — click ★ to emphasize</div>
-          <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', alignItems: 'center' }}>
-            {transcript.slice(0, 16).map((w) => (
-              <span key={w.id} onClick={() => void toggleWordEmphasis(w.id)} style={{ border: w.emphasis ? '1px solid #1f9c6b' : '1px solid #2c303b', borderRadius: 6, padding: '5px 9px', fontSize: 11.5, color: w.emphasis ? '#fff' : '#aab0bb', background: w.emphasis ? '#1f9c6b' : '#0e1116', fontWeight: w.emphasis ? 600 : undefined, cursor: 'pointer' }}>{w.word}{w.emphasis ? ' ★' : ''}</span>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, color: '#5b616f', marginBottom: 10 }}>WORD TIMELINE — click ★ to mark a word for karaoke emphasis</div>
+          <div style={{ display: 'flex', gap: 5, alignItems: 'center', overflowX: 'auto', paddingBottom: 6 }}>
+            {transcript.map((w) => (
+              <span key={w.id} onClick={() => void toggleWordEmphasis(w.id)} style={{ flexShrink: 0, border: w.emphasis ? '1px solid #1f9c6b' : '1px solid #2c303b', borderRadius: 6, padding: '5px 9px', fontSize: 11.5, color: w.emphasis ? '#fff' : '#aab0bb', background: w.emphasis ? '#1f9c6b' : '#0e1116', fontWeight: w.emphasis ? 600 : undefined, cursor: 'pointer' }}>{w.word}{w.emphasis ? ' ★' : ''}</span>
             ))}
           </div>
         </div>

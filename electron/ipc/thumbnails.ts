@@ -5,6 +5,7 @@ import type { ThumbnailTemplate } from '../../shared/types'
 import { getRepos } from '../db'
 import { getSettings } from '../store/settings'
 
+
 // Thumbnail engine IPC (M5): template library + per-profile lock + PNG writer.
 // Rasterization happens in the renderer (offscreen Konva → PNG data URL); main
 // just persists the bytes to the output folder.
@@ -32,6 +33,13 @@ export function registerThumbnailsIpc(): void {
     const b64 = dataUrl.replace(/^data:image\/\w+;base64,/, '')
     const file = join(thumbsDir(), `${safeName(name)}.png`)
     writeFileSync(file, Buffer.from(b64, 'base64'))
+    return file
+  })
+  ipcMain.handle('thumbnails:saveProjectThumb', (_e, projectId: string, name: string, dataUrl: string) => {
+    const b64 = dataUrl.replace(/^data:image\/\w+;base64,/, '')
+    const file = join(thumbsDir(), `${safeName(name)}.png`)
+    writeFileSync(file, Buffer.from(b64, 'base64'))
+    getRepos().updateProject(projectId, { thumbPath: file })
     return file
   })
 }
