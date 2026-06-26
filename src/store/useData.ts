@@ -97,7 +97,7 @@ export const useData = create<DataState>((set, get) => ({
       set({ ready: true })
       return
     }
-    await Promise.all([get().loadChannels(), get().loadDownloads(), get().loadActivity(), get().loadProfiles()])
+    await Promise.all([get().loadChannels(), get().loadDownloads(), get().loadActivity(), get().loadProfiles(), get().loadRenderJobs()])
     set({ ready: true })
     a.reminders.check().catch(() => {})
 

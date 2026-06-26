@@ -18,7 +18,7 @@ import type {
   ImageMode
 } from '../../shared/types'
 import { asBetaOpts, DEFAULT_BETA_OPTS } from '../../shared/types'
-import { seedIfEmpty } from './seed'
+import { seedIfEmpty, seedDemoData } from './seed'
 
 // Embedded, synchronous SQLite (better-sqlite3) holds all domain data: channels,
 // source links, download history, uploads, profiles, thumbnail templates, render
@@ -128,6 +128,33 @@ function migrate(d: Database.Database): void {
   // Beta features — one JSON column each, so future fields need no migration.
   ensureColumn(d, 'projects', 'betaOpts', 'TEXT')
   ensureColumn(d, 'profiles', 'betaOpts', 'TEXT')
+
+  purgeLegacyDemoSeed(d)
+}
+
+/**
+ * One-time cleanup for installs (≤ v0.1.4) that were seeded with fabricated demo
+ * data — fake channels (ids me/sh/sd), fake downloads (d1–d4 with no real video),
+ * demo profiles, and canned activity. That data made the dashboard look invented
+ * and produced "Incomplete YouTube ID" download errors. We remove the exact known
+ * demo rows (only ones with no real file path / real youtube id) once, guarded by a
+ * meta marker so a user's real data is never touched.
+ */
+function purgeLegacyDemoSeed(d: Database.Database): void {
+  const done = d.prepare("SELECT value FROM app_meta WHERE key='demo_purged_v2'").get()
+  if (done) return
+  const tx = d.transaction(() => {
+    // Fake downloads had hardcoded ids d1–d4 and never a real filePath.
+    d.prepare("DELETE FROM downloaded_videos WHERE id IN ('d1','d2','d3','d4') AND (filePath IS NULL OR filePath='')").run()
+    // Demo channels/profiles used the fixed ids me/sh/sd with the seeded handles.
+    d.prepare("DELETE FROM my_channels WHERE id IN ('me','sh','sd') AND handle IN ('@powerwithin','@stoichour','@sleepdeep')").run()
+    d.prepare("DELETE FROM profiles WHERE id IN ('me','sh','sd') AND name IN ('Mental Empire','Stoic Hour','Sleep Deep')").run()
+    d.prepare("DELETE FROM source_channels WHERE id IN ('src-pw','src-ds','src-rs')").run()
+    // Canned activity feed from the seed (no real run ever produced these exact rows).
+    d.prepare("DELETE FROM activity_log WHERE text IN ('Skipped 1 video — members only','Auto-watch found 5 new uploads','Downloaded 5 mp3 from @stoichour','Captions burned (Hormozi)','Rendered Gaslighting Explained → ME_out')").run()
+    d.prepare("INSERT OR REPLACE INTO app_meta (key,value) VALUES ('demo_purged_v2','1')").run()
+  })
+  tx()
 }
 
 /** Parse the betaOpts JSON column (null/garbage → defaults), deriving from legacy
@@ -232,6 +259,12 @@ export function initDatabase(filePath: string): Repositories {
 export function getRepos(): Repositories {
   if (!repos) throw new Error('Database not initialised — call initDatabase() first')
   return repos
+}
+
+/** Insert the deterministic demo dataset — used ONLY by the headless smoke/e2e harnesses. */
+export function seedDemoForSmoke(): void {
+  if (!db) throw new Error('Database not initialised — call initDatabase() first')
+  seedDemoData(db)
 }
 
 export function closeDatabase(): void {

@@ -42,7 +42,7 @@ function Kpi({ label, value, sub, accentCard }: { label: string; value: string; 
   )
 }
 
-const up = (txt: string) => <div style={{ display: 'flex', alignItems: 'center', gap: 5, fontSize: 11.5, color: '#36c98e' }}><svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5"><path d="M4 17l6-6 4 4 6-7" /></svg>{txt}</div>
+const muted = (txt: string) => <div style={{ fontSize: 11.5, color: '#6a7180' }}>{txt}</div>
 
 export function Library(): JSX.Element {
   const showRail = useStore((s) => s.showActivityRail)
@@ -53,6 +53,8 @@ export function Library(): JSX.Element {
   const scraping = useData((s) => s.scraping)
   const rescrapeAll = useData((s) => s.rescrapeAll)
   const greet = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }).toUpperCase()
+  const hr = new Date().getHours()
+  const timeOfDay = hr < 12 ? 'morning' : hr < 18 ? 'afternoon' : 'evening'
 
   const totalViews = channels.reduce((a, c) => a + parseHuman(c.views), 0)
   const totalSubs = channels.reduce((a, c) => a + parseHuman(c.subs), 0)
@@ -64,7 +66,7 @@ export function Library(): JSX.Element {
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16, marginBottom: 26 }}>
         <div>
           <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '1px', color: 'var(--accent)', marginBottom: 7 }}>{greet}</div>
-          <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 27, letterSpacing: '-.5px', color: '#f4f6f9', lineHeight: 1 }}>Good evening — {channels.length} channels running</div>
+          <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 27, letterSpacing: '-.5px', color: '#f4f6f9', lineHeight: 1 }}>Good {timeOfDay} — {channels.length === 0 ? 'add a channel to begin' : `${channels.length} channel${channels.length === 1 ? '' : 's'} running`}</div>
         </div>
         <div style={{ flex: 1 }} />
         <div onClick={() => void rescrapeAll()} className="me-btn" style={{ display: 'flex', alignItems: 'center', gap: 8, border: '1px solid #262b34', background: '#15181f', borderRadius: 10, padding: '9px 14px', fontSize: 12.5, color: '#c4cad3', cursor: 'pointer' }}>
@@ -73,8 +75,8 @@ export function Library(): JSX.Element {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 24 }}>
-        <Kpi label="TOTAL VIEWS" value={human(totalViews)} sub={up('+18% this week')} />
-        <Kpi label="SUBSCRIBERS" value={human(totalSubs)} sub={up('+214 (7d)')} />
+        <Kpi label="TOTAL VIEWS" value={human(totalViews)} sub={muted(channels.length ? 'across all channels' : 'no channels yet')} />
+        <Kpi label="SUBSCRIBERS" value={human(totalSubs)} sub={muted(channels.length ? `across ${channels.length} channels` : 'add a channel to start')} />
         <Kpi label="UPLOADED" value={String(totalUploaded)} sub={<div style={{ fontSize: 11.5, color: '#6a7180' }}>across {channels.length} channels</div>} />
         <Kpi label="IN QUEUE" value={String(inQueue)} sub={<div style={{ fontSize: 11.5, color: '#cdd2da' }}>{downloads.length} downloaded</div>} accentCard />
       </div>
@@ -152,6 +154,9 @@ export function Library(): JSX.Element {
                 <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: 9.5, color: '#5b616f' }}>live</span>
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
+                {activity.length === 0 && (
+                  <div style={{ fontSize: 11, color: '#5b616f', lineHeight: 1.5 }}>No activity yet. Scrape, download, or render to see events here.</div>
+                )}
                 {activity.map((a, i) => (
                   <div key={i} style={{ display: 'flex', gap: 10 }}>
                     <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#4f5662', flex: 'none', width: 32, paddingTop: 1 }}>{a.t}</span>
@@ -162,9 +167,9 @@ export function Library(): JSX.Element {
               </div>
             </div>
             <div style={{ border: '1px solid var(--accent)', borderRadius: 14, padding: 16, background: 'linear-gradient(165deg,var(--accent-soft),#0f1217)' }}>
-              <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 13, color: '#f2f4f7', marginBottom: 6 }}>Next auto-run</div>
-              <div style={{ fontSize: 11.5, color: '#aab0bb', lineHeight: 1.5, marginBottom: 13 }}>Mental Empire · checks for new uploads in <b style={{ color: 'var(--accent)' }}>3h 42m</b></div>
-              <div onClick={() => void rescrapeAll()} className="me-btn" style={{ textAlign: 'center', border: '1px solid #2a2f39', background: '#15181f', borderRadius: 9, padding: 8, fontSize: 12, fontWeight: 600, color: '#dde0e5', cursor: 'pointer' }}>Run now</div>
+              <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 13, color: '#f2f4f7', marginBottom: 6 }}>Auto-scrape</div>
+              <div style={{ fontSize: 11.5, color: '#aab0bb', lineHeight: 1.5, marginBottom: 13 }}>{channels.length ? <>Re-scrape {channels.length} channel{channels.length === 1 ? '' : 's'} for new uploads + stats.</> : <>Add a channel, then re-scrape to pull stats &amp; uploads.</>}</div>
+              <div onClick={() => void rescrapeAll()} className="me-btn" style={{ textAlign: 'center', border: '1px solid #2a2f39', background: '#15181f', borderRadius: 9, padding: 8, fontSize: 12, fontWeight: 600, color: '#dde0e5', cursor: 'pointer' }}>{scraping ? 'Scraping…' : 'Run now'}</div>
             </div>
           </div>
         )}

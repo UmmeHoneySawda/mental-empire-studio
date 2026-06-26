@@ -585,6 +585,8 @@ export interface NativeApi {
   }
   /** pick an output folder via the OS dialog; returns the chosen path or '' */
   chooseFolder(): Promise<string>
+  /** resolve the absolute filesystem path of a picked/dropped File (Electron webUtils) */
+  pathForFile(file: File): string
   /** subscribe to live scrape progress; returns an unsubscribe fn */
   onScrapeProgress(cb: (p: ScrapeProgress) => void): () => void
   /** subscribe to new activity-log entries; returns an unsubscribe fn */

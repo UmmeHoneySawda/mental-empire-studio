@@ -36,7 +36,7 @@ export function installGlobalLogging(): void {
  * it records versions, all resolved paths, and whether the bundled yt-dlp/ffmpeg
  * binaries actually EXIST on disk — the usual cause of "download does nothing".
  */
-export function logStartupDiagnostics(extra: { ytdlp: string; ffmpeg: string; dbPath: string }): void {
+export function logStartupDiagnostics(extra: { ytdlp: string; ffmpeg: string; ffprobe: string; dbPath: string }): void {
   L.info('================ STARTUP ================')
   L.info(`app v${app.getVersion()} | electron ${process.versions.electron} | node ${process.versions.node} | chrome ${process.versions.chrome}`)
   L.info(`platform ${process.platform} ${process.arch} | packaged ${app.isPackaged}`)
@@ -46,8 +46,12 @@ export function logStartupDiagnostics(extra: { ytdlp: string; ffmpeg: string; db
   L.info(`logFile: ${logFilePath()}`)
   L.info(`yt-dlp: ${extra.ytdlp} | exists=${existsSync(extra.ytdlp)}`)
   L.info(`ffmpeg: ${extra.ffmpeg} | exists=${existsSync(extra.ffmpeg)}`)
+  L.info(`ffprobe: ${extra.ffprobe} | exists=${existsSync(extra.ffprobe)}`)
   L.info(`db: ${extra.dbPath} | exists=${existsSync(extra.dbPath)}`)
   if (!existsSync(extra.ytdlp)) L.error('yt-dlp binary NOT FOUND — scraping + downloads will fail. Run `npm run fetch:bin` or reinstall.')
-  if (!existsSync(extra.ffmpeg)) L.warn('ffmpeg binary NOT FOUND — mp3 extraction + rendering will fail.')
+  if (!existsSync(extra.ffmpeg)) L.error('ffmpeg binary NOT FOUND — mp3 extraction + rendering will fail.')
+  // yt-dlp mp3 post-processing needs BOTH ffmpeg AND ffprobe; a missing ffprobe is the
+  // classic cause of "ffprobe and ffmpeg not found" even when ffmpeg.exe is present.
+  if (!existsSync(extra.ffprobe)) L.error('ffprobe binary NOT FOUND — mp3 downloads will fail with "ffprobe and ffmpeg not found". Run `npm run fetch:bin` or reinstall.')
   L.info('=========================================')
 }

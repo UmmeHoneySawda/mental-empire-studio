@@ -20,6 +20,12 @@ export function ffmpegPath(): string {
   return existsSync(vendored) ? vendored : exe // else rely on PATH
 }
 
+export function ffprobePath(): string {
+  const exe = process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe'
+  const vendored = join(resolveBinDir(), exe)
+  return existsSync(vendored) ? vendored : exe // else rely on PATH
+}
+
 /** Output dimensions for a quality + aspect (even numbers for yuv420p). */
 export function dimensions(quality: AppSettings['quality'], aspect: CaptionAspect): { w: number; h: number } {
   const base = quality === '720p' ? 720 : quality === '1440p' ? 1440 : 1080

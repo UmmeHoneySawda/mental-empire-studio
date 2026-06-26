@@ -1,4 +1,4 @@
-import { contextBridge, ipcRenderer, type IpcRendererEvent } from 'electron'
+import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'electron'
 import type {
   ActivityRow,
   AppSettings,
@@ -122,6 +122,17 @@ const api: NativeApi = {
   },
 
   chooseFolder: () => ipcRenderer.invoke('fs:chooseFolder'),
+
+  // Electron 32 removed the File.path property; webUtils.getPathForFile is the
+  // supported way to get the absolute path of a dropped/picked file for the main
+  // process (used to import images/audio in Compose).
+  pathForFile: (file: File) => {
+    try {
+      return webUtils.getPathForFile(file)
+    } catch {
+      return (file as File & { path?: string }).path ?? ''
+    }
+  },
 
   onScrapeProgress: (cb: (p: ScrapeProgress) => void) => subscribe('scrape:progress', cb),
   onActivity: (cb: (row: ActivityRow) => void) => subscribe('activity:new', cb),

@@ -6,11 +6,18 @@ import { resolveBinDir, resolveYtdlpPath } from './ytdlp'
 import { formatOutputName } from './audio'
 import { L } from './logger'
 
-/** Vendored ffmpeg dir if present, else undefined → yt-dlp falls back to PATH. */
+/** Vendored ffmpeg dir if present, else undefined → yt-dlp falls back to PATH.
+ *  yt-dlp's mp3 extraction needs BOTH ffmpeg and ffprobe in the same dir; we log a
+ *  clear error if ffprobe is missing (the usual "ffprobe and ffmpeg not found" cause). */
 function vendoredFfmpegDir(): string | undefined {
   const dir = resolveBinDir()
-  const exe = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
-  return existsSync(join(dir, exe)) ? dir : undefined
+  const win = process.platform === 'win32'
+  const hasFfmpeg = existsSync(join(dir, win ? 'ffmpeg.exe' : 'ffmpeg'))
+  const hasFfprobe = existsSync(join(dir, win ? 'ffprobe.exe' : 'ffprobe'))
+  if (hasFfmpeg && !hasFfprobe) {
+    L.error(`downloader: ffmpeg found but ffprobe MISSING in ${dir} — yt-dlp mp3 extraction will fail. Run \`npm run fetch:bin\` or reinstall.`)
+  }
+  return hasFfmpeg ? dir : undefined
 }
 
 // Downloads a source video's audio as mp3 via yt-dlp (+ vendored ffmpeg for the

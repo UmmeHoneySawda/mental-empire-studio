@@ -34,8 +34,12 @@ function MediaTab(): JSX.Element {
   const mode = project?.imageMode ?? 'sequence'
 
   const pickFiles = (e: React.ChangeEvent<HTMLInputElement>): void => {
-    const paths = Array.from(e.target.files ?? []).map((f) => (f as File & { path?: string }).path).filter((p): p is string => !!p)
+    // Electron 32 removed File.path — resolve via webUtils through the preload bridge.
+    const paths = Array.from(e.target.files ?? [])
+      .map((f) => window.api?.pathForFile?.(f) ?? (f as File & { path?: string }).path ?? '')
+      .filter((p): p is string => !!p)
     if (paths.length) void setProjectImages(paths)
+    e.target.value = '' // allow re-picking the same file
   }
 
   return (

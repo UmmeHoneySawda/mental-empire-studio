@@ -23,19 +23,11 @@ jobs:
           node-version: 20
           cache: npm
 
-      # ffmpeg (built with libass) so fetch:bin can vendor it into the installer.
-      - name: Install ffmpeg (Linux)
-        if: runner.os == 'Linux'
-        run: sudo apt-get update && sudo apt-get install -y ffmpeg
-      - name: Install ffmpeg (macOS)
-        if: runner.os == 'macOS'
-        run: brew install ffmpeg
-      - name: Install ffmpeg (Windows)
-        if: runner.os == 'Windows'
-        run: choco install ffmpeg -y
-
       - run: npm ci
-      - name: Provision sidecars (yt-dlp + ffmpeg → resources/bin)
+      # Downloads static ffmpeg + ffprobe (libass) and yt-dlp into resources/bin.
+      # No OS package manager needed — fetch:bin pulls BtbN/evermeet static builds
+      # so BOTH ffmpeg and ffprobe are guaranteed present in the installer.
+      - name: Provision sidecars (yt-dlp + ffmpeg + ffprobe → resources/bin)
         run: npm run fetch:bin
 
       - name: Build + package + publish

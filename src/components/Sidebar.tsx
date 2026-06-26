@@ -1,5 +1,6 @@
 import type { ReactNode } from 'react'
 import { useStore } from '../store/useStore'
+import { useData } from '../store/useData'
 import type { ScreenKey } from '@shared/types'
 
 interface NavDef {
@@ -22,15 +23,16 @@ const PRODUCE: NavDef[] = [
 ]
 
 const AUTOMATE: NavDef[] = [
-  { key: 'render', label: 'Render Queue', icon: icon(<path d="M5 5l13 7-13 7z" />), badge: '4' },
+  { key: 'render', label: 'Render Queue', icon: icon(<path d="M5 5l13 7-13 7z" />) },
   { key: 'profiles', label: 'Profiles', icon: icon(<path d="M12 3l8 4v5c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V7z" />) },
   { key: 'settings', label: 'Settings', icon: icon(<><circle cx="12" cy="12" r="3.2" /><path d="M19.4 13.5a7.8 7.8 0 000-3l1.7-1.3-1.8-3.1-2 .8a7.6 7.6 0 00-2.6-1.5l-.3-2.1H8l-.3 2.1a7.6 7.6 0 00-2.6 1.5l-2-.8L1.3 9.2 3 10.5a7.8 7.8 0 000 3l-1.7 1.3 1.8 3.1 2-.8a7.6 7.6 0 002.6 1.5l.3 2.1h4l.3-2.1a7.6 7.6 0 002.6-1.5l2 .8 1.8-3.1z" /></>) }
 ]
 
-function NavItem({ def }: { def: NavDef }): JSX.Element {
+function NavItem({ def, badge }: { def: NavDef; badge?: string }): JSX.Element {
   const active = useStore((s) => s.active)
   const setActive = useStore((s) => s.setActive)
   const on = active === def.key
+  const shownBadge = badge ?? def.badge
   return (
     <div
       onClick={() => setActive(def.key)}
@@ -45,8 +47,8 @@ function NavItem({ def }: { def: NavDef }): JSX.Element {
       <span style={{ position: 'absolute', left: -12, top: 8, bottom: 8, width: 3, borderRadius: '0 4px 4px 0', background: on ? 'var(--accent)' : 'transparent', boxShadow: on ? '0 0 10px var(--accent-glow)' : 'none' }} />
       {def.icon}
       {def.label}
-      {def.badge && (
-        <span style={{ marginLeft: 'auto', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 10, fontWeight: 700, fontFamily: 'var(--font-mono)', padding: '1px 7px', borderRadius: 8 }}>{def.badge}</span>
+      {shownBadge && (
+        <span style={{ marginLeft: 'auto', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 10, fontWeight: 700, fontFamily: 'var(--font-mono)', padding: '1px 7px', borderRadius: 8 }}>{shownBadge}</span>
       )}
     </div>
   )
@@ -57,6 +59,12 @@ function Heading({ children }: { children: ReactNode }): JSX.Element {
 }
 
 export function Sidebar(): JSX.Element {
+  const renderJobs = useData((s) => s.renderJobs)
+  const channels = useData((s) => s.channels)
+  const profiles = useData((s) => s.profiles)
+  const queued = renderJobs.filter((j) => j.job.status === 'queued' || j.job.status === 'rendering').length
+  const watching = profiles.filter((p) => p.autoWatch).length
+
   return (
     <div style={{ width: 236, flex: 'none', background: '#0a0c10', borderRight: '1px solid #1a1e26', display: 'flex', flexDirection: 'column', padding: '16px 12px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 11, padding: '6px 8px 16px' }}>
@@ -71,21 +79,21 @@ export function Sidebar(): JSX.Element {
       {PRODUCE.map((d) => <NavItem key={d.key} def={d} />)}
 
       <div style={{ paddingTop: 8 }}><Heading>AUTOMATE</Heading></div>
-      {AUTOMATE.map((d) => <NavItem key={d.key} def={d} />)}
+      {AUTOMATE.map((d) => (
+        <NavItem key={d.key} def={d} badge={d.key === 'render' && queued > 0 ? String(queued) : undefined} />
+      ))}
 
       <div style={{ flex: 1 }} />
 
       <div style={{ border: '1px solid #1d2129', borderRadius: 12, padding: 12, background: 'linear-gradient(180deg,#10141a,#0c0f13)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 9 }}>
-          <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#36c98e', boxShadow: '0 0 8px #36c98e', animation: 'mePulse 2s infinite' }} />
-          <span style={{ fontSize: 11, fontWeight: 600, color: '#cdd2da' }}>Auto-watch active</span>
+          <span style={{ width: 7, height: 7, borderRadius: '50%', background: watching > 0 ? '#36c98e' : '#5b616f', boxShadow: watching > 0 ? '0 0 8px #36c98e' : 'none', animation: watching > 0 ? 'mePulse 2s infinite' : 'none' }} />
+          <span style={{ fontSize: 11, fontWeight: 600, color: '#cdd2da' }}>{watching > 0 ? 'Auto-watch active' : 'Auto-watch off'}</span>
         </div>
-        <div style={{ fontSize: 10.5, color: '#6a7180', lineHeight: 1.5 }}>3 channels · checks every 6h · last run 09:30</div>
-        <div style={{ marginTop: 10, height: 5, borderRadius: 3, background: '#1a1e26', overflow: 'hidden' }}>
-          <div style={{ width: '62%', height: '100%', background: 'linear-gradient(90deg,var(--accent),var(--accent-deep))' }} />
-        </div>
-        <div style={{ display: 'flex', justifyContent: 'space-between', marginTop: 7, fontFamily: 'var(--font-mono)', fontSize: 9.5, color: '#5b616f' }}>
-          <span>14.2 GB used</span><span>23 GB</span>
+        <div style={{ fontSize: 10.5, color: '#6a7180', lineHeight: 1.5 }}>
+          {watching > 0
+            ? `${watching} profile${watching === 1 ? '' : 's'} watching · ${channels.length} channel${channels.length === 1 ? '' : 's'}`
+            : 'Enable auto-watch on a profile to run hands-free.'}
         </div>
       </div>
     </div>

@@ -7,7 +7,7 @@ import { applyLoginItem, trayIconPath } from './services/background'
 import * as scheduler from './services/scheduler'
 import { initAutoUpdate, checkForUpdates } from './services/updater'
 import { initSettings, setSettings, getSettings } from './store/settings'
-import { initDatabase, getRepos, closeDatabase } from './db'
+import { initDatabase, getRepos, closeDatabase, seedDemoForSmoke } from './db'
 import { registerIpc } from './ipc/register'
 import { refreshChannel, sourceVideos, checkReminders } from './ipc/scrape'
 import { startDownloads, resume as resumeDownload } from './ipc/download'
@@ -18,7 +18,7 @@ import { splitRanges } from './services/audio'
 import { autoArrangeText } from '../shared/thumbnail'
 import { THUMB_W, THUMB_H, DEFAULT_BETA_OPTS, type TextLayer, type ThumbnailTemplate, type TranscriptWord } from '../shared/types'
 import { buildAss } from './services/captions'
-import { buildRenderArgs, runRender, ffmpegPath } from './services/render'
+import { buildRenderArgs, runRender, ffmpegPath, ffprobePath } from './services/render'
 import { extractThemes, rankCandidates, planCoverage, buildBrollBed, assembleBed, type BrollCandidate } from './services/broll'
 import { validateEffectPlan, deriveStylePlan, styleCaptionLead, textPresetTag, type EffectPlan } from '../shared/effectPlan'
 import { buildSfxTrack } from './services/sfx'
@@ -173,7 +173,7 @@ function initPersistence(): void {
     throw e
   }
   // The most valuable lines in a bug report: versions + whether the sidecars exist.
-  logStartupDiagnostics({ ytdlp: resolveYtdlpPath(), ffmpeg: ffmpegPath(), dbPath })
+  logStartupDiagnostics({ ytdlp: resolveYtdlpPath(), ffmpeg: ffmpegPath(), ffprobe: ffprobePath(), dbPath })
 }
 
 /**
@@ -662,6 +662,11 @@ async function runSmokeE2E(): Promise<void> {
   try {
     setSettings({ outputFolder: join(app.getPath('temp'), 'me-e2e-out'), concurrency: 2 })
 
+    // Deterministic state: production no longer seeds demo content, and prior smoke
+    // runs share this userData DB — so wipe + seed the demo dataset for a clean journey.
+    repos.resetAll()
+    seedDemoForSmoke()
+
     // ---- J1: source ↔ my-channel mapping ----
     console.log('J1 — source↔channel mapping')
     const me = await refreshChannel('me')
@@ -880,6 +885,11 @@ app.whenReady().then(() => {
   if (process.env['ME_SMOKE'] === 'e2e') {
     void runSmokeE2E()
     return
+  }
+  // Demo-dependent smokes (M2–M7) assert against deterministic seeded rows. Production
+  // now starts clean, so the harness seeds the demo dataset explicitly here.
+  if (['1', 'm3', 'm4', 'm5', 'm6', 'm7'].includes(process.env['ME_SMOKE'] ?? '')) {
+    seedDemoForSmoke()
   }
   if (process.env['ME_SMOKE'] === 'm7') {
     void runSmokeM7()
