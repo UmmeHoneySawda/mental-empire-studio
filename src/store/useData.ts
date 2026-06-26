@@ -34,6 +34,8 @@ interface DataState {
   projectImages: ProjectImage[]
   transcript: TranscriptWord[]
   transcribing: boolean
+  transcribeMessage: string
+  transcribeError: string
   renderJobs: RenderQueueRow[]
   renderProgress: Record<string, RenderProgress>
   rendering: boolean
@@ -49,11 +51,12 @@ interface DataState {
   rescrapeAll: () => Promise<void>
   updateGoals: (id: string, patch: { weekGoal?: number; monthGoal?: number; reminder?: string; reminderNote?: string }) => Promise<void>
   fetchSource: (url: string, order: ScrapeOrder, count: number) => Promise<void>
-  startDownload: (videos: ScrapedVideo[], sourceUrl: string, bitrate: number) => Promise<void>
+  startDownload: (videos: ScrapedVideo[], sourceUrl: string, bitrate: number) => Promise<DownloadedVideo[]>
   resumeDownload: (id: string) => Promise<void>
   openProject: (downloadId: string) => Promise<void>
   openProjectById: (projectId: string) => Promise<void>
   setProjectImages: (paths: string[]) => Promise<void>
+  reorderProjectImages: (imageIds: string[]) => Promise<void>
   setMedia: (patch: Partial<Project>) => Promise<void>
   setCaptions: (patch: Partial<Project>) => Promise<void>
   runTranscribe: () => Promise<void>
@@ -84,6 +87,8 @@ export const useData = create<DataState>((set, get) => ({
   projectImages: [],
   transcript: [],
   transcribing: false,
+  transcribeMessage: '',
+  transcribeError: '',
   renderJobs: [],
   renderProgress: {},
   rendering: false,
@@ -106,12 +111,16 @@ export const useData = create<DataState>((set, get) => ({
     a.onActivity((row) => set((s) => ({ activity: [row, ...s.activity].slice(0, 30) })))
     a.onDownloadProgress((p) => {
       set((s) => ({ dlProgress: { ...s.dlProgress, [p.downloadId]: p } }))
-      if (p.done) get().loadDownloads()
+      void get().loadDownloads()
     })
-    a.onTranscribeProgress((p) => set({ transcribing: p.phase !== 'done' && p.phase !== 'error' }))
+    a.onTranscribeProgress((p) => set({
+      transcribing: p.phase !== 'done' && p.phase !== 'error',
+      transcribeMessage: p.phase === 'done' ? 'Done' : p.phase === 'error' ? '' : p.message,
+      transcribeError: p.phase === 'error' ? (p.error ?? p.message) : ''
+    }))
     a.onRenderProgress((p) => {
       set((s) => ({ renderProgress: { ...s.renderProgress, [p.jobId]: p } }))
-      if (p.done) get().loadRenderJobs()
+      void get().loadRenderJobs()
     })
   },
 
@@ -172,9 +181,10 @@ export const useData = create<DataState>((set, get) => ({
   },
   startDownload: async (videos, sourceUrl, bitrate) => {
     const a = api()
-    if (!a || videos.length === 0) return
-    await a.download.start(videos, { bitrate, sourceUrl })
+    if (!a || videos.length === 0) return []
+    const rows = await a.download.start(videos, { bitrate, sourceUrl })
     await get().loadDownloads()
+    return rows
   },
   resumeDownload: async (id) => {
     const a = api()
@@ -188,7 +198,7 @@ export const useData = create<DataState>((set, get) => ({
     if (!a) return
     const project = await a.compose.createProject(downloadId)
     const [projectImages, transcript] = await Promise.all([a.compose.images(project.id), a.transcribe.get(project.id)])
-    set({ activeProject: project, projectImages, transcript })
+    set({ activeProject: project, projectImages, transcript, transcribeError: '', transcribeMessage: '' })
   },
   openProjectById: async (projectId) => {
     const a = api()
@@ -196,13 +206,20 @@ export const useData = create<DataState>((set, get) => ({
     const project = await a.compose.get(projectId)
     if (!project) return
     const [projectImages, transcript] = await Promise.all([a.compose.images(projectId), a.transcribe.get(projectId)])
-    set({ activeProject: project, projectImages, transcript })
+    set({ activeProject: project, projectImages, transcript, transcribeError: '', transcribeMessage: '' })
   },
   setProjectImages: async (paths) => {
     const a = api()
     const p = get().activeProject
     if (!a || !p) return
     const projectImages = await a.compose.setImages(p.id, paths)
+    set({ projectImages })
+  },
+  reorderProjectImages: async (imageIds) => {
+    const a = api()
+    const p = get().activeProject
+    if (!a || !p) return
+    const projectImages = await a.compose.reorderImages(p.id, imageIds)
     set({ projectImages })
   },
   setMedia: async (patch) => {
@@ -222,11 +239,13 @@ export const useData = create<DataState>((set, get) => ({
   runTranscribe: async () => {
     const a = api()
     const p = get().activeProject
-    if (!a || !p) return
-    set({ transcribing: true })
+    if (!a || !p || get().transcribing) return
+    set({ transcribing: true, transcribeError: '', transcribeMessage: 'Starting' })
     try {
       const transcript = await a.transcribe.run(p.id)
-      set({ transcript })
+      set({ transcript, transcribeError: '', transcribeMessage: 'Done' })
+    } catch (e) {
+      set({ transcribeError: (e as Error).message, transcribeMessage: '' })
     } finally {
       set({ transcribing: false })
     }
