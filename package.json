@@ -19,7 +19,9 @@
     "dist:dir": "electron-vite build && electron-builder --dir",
     "dist:win": "electron-vite build && electron-builder --win",
     "dist:mac": "electron-vite build && electron-builder --mac",
-    "dist:linux": "electron-vite build && electron-builder --linux"
+    "dist:linux": "electron-vite build && electron-builder --linux",
+    "dev:browser": "electron-vite dev --rendererOnly",
+    "preview:browser": "vite preview --base ./ --outDir out/renderer --port 4173"
   },
   "dependencies": {
     "@fontsource/anton": "^5.2.7",

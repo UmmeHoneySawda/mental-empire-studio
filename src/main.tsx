@@ -1,5 +1,8 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
+// Installs a browser test mock for window.api ONLY when there's no Electron backend
+// (no-op inside the real app). Must run before the stores hydrate.
+import './mockApi'
 // Self-hosted fonts (offline — no Google CDN). Vite bundles the woff2.
 import '@fontsource/space-grotesk/400.css'
 import '@fontsource/space-grotesk/500.css'
