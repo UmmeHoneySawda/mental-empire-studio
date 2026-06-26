@@ -4,16 +4,27 @@ import { useData } from '../store/useData'
 
 export function MyChannels(): JSX.Element {
   const channels = useData((s) => s.channels)
-  const scraping = useData((s) => s.scraping)
   const addChannel = useData((s) => s.addChannel)
   const updateGoals = useData((s) => s.updateGoals)
   const [url, setUrl] = useState('')
+  const [connecting, setConnecting] = useState(false)
+  const [connectError, setConnectError] = useState('')
   const [editingId, setEditingId] = useState('')
   const [draft, setDraft] = useState({ weekGoal: 5, monthGoal: 20, reminder: 'On track', reminderNote: '' })
 
-  const connect = (): void => {
-    void addChannel(url)
-    setUrl('')
+  const connect = async (): Promise<void> => {
+    const trimmed = url.trim()
+    if (!trimmed || connecting) return
+    setConnecting(true)
+    setConnectError('')
+    try {
+      await addChannel(trimmed)
+      setUrl('')
+    } catch (e) {
+      setConnectError(e instanceof Error ? e.message : 'Failed to connect channel')
+    } finally {
+      setConnecting(false)
+    }
   }
 
   const beginEdit = (c: (typeof channels)[number]): void => {
@@ -45,12 +56,18 @@ export function MyChannels(): JSX.Element {
         Paste a channel URL and Studio scrapes its stats (views, subs, upload count) — no API. <b style={{ color: '#cdd2da' }}>Link the source channel</b> you pull videos from and Studio maps which downloaded videos you've already uploaded (the ↔ chip). Set a weekly/monthly goal per channel and a reminder date; you'll get a desktop notification when you're behind.
       </div>
 
-      <div style={{ display: 'flex', gap: 11, marginBottom: 24 }}>
-        <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 10, background: '#12151b', border: '1px dashed #2c303b', borderRadius: 11, padding: '12px 15px' }}>
-          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5b616f" strokeWidth="2"><path d="M10 13a5 5 0 007 0l2-2a5 5 0 00-7-7l-1 1" /><path d="M14 11a5 5 0 00-7 0l-2 2a5 5 0 007 7l1-1" /></svg>
-          <input value={url} onChange={(e) => setUrl(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && connect()} placeholder="youtube.com/@your-channel" style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', fontSize: 13, color: '#dde0e5', fontFamily: 'var(--font-mono)' }} />
+      <div style={{ marginBottom: 24 }}>
+        <div style={{ display: 'flex', gap: 11 }}>
+          <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 10, background: '#12151b', border: `1px dashed ${connectError ? '#ff5a6e' : '#2c303b'}`, borderRadius: 11, padding: '12px 15px' }}>
+            <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5b616f" strokeWidth="2"><path d="M10 13a5 5 0 007 0l2-2a5 5 0 00-7-7l-1 1" /><path d="M14 11a5 5 0 00-7 0l-2 2a5 5 0 007 7l1-1" /></svg>
+            <input value={url} onChange={(e) => { setUrl(e.target.value); setConnectError('') }} onKeyDown={(e) => e.key === 'Enter' && void connect()} placeholder="youtube.com/@your-channel" style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', fontSize: 13, color: '#dde0e5', fontFamily: 'var(--font-mono)' }} />
+          </div>
+          <div onClick={() => void connect()} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 11, padding: '0 20px', display: 'flex', alignItems: 'center', gap: 7, fontSize: 12.5, color: connecting ? '#6a7180' : '#c4cad3', cursor: connecting ? 'default' : 'pointer', minWidth: 140, justifyContent: 'center' }}>
+            {connecting && <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ animation: 'meSpin 1s linear infinite' }}><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" /></svg>}
+            {connecting ? 'Connecting…' : 'Connect & scrape'}
+          </div>
         </div>
-        <div onClick={connect} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 11, padding: '0 20px', display: 'flex', alignItems: 'center', fontSize: 12.5, color: '#c4cad3', cursor: 'pointer' }}>{scraping ? 'Scraping…' : 'Connect & scrape'}</div>
+        {connectError && <div style={{ marginTop: 7, fontSize: 11.5, color: '#ff8a96', paddingLeft: 4 }}>{connectError}</div>}
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -61,7 +78,11 @@ export function MyChannels(): JSX.Element {
           return (
             <div key={c.id} className="me-card" style={{ border: '1px solid #1d2129', borderRadius: 15, padding: '18px 20px', background: 'linear-gradient(165deg,#14171e,#0f1217)', display: 'flex', gap: 24, alignItems: 'center' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 13, width: 256, flex: 'none' }}>
-                <div style={{ width: 46, height: 46, borderRadius: 12, background: c.avatar, display: 'grid', placeItems: 'center', fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15, color: '#0c0d11' }}>{c.mono}</div>
+                {c.avatar?.startsWith('http') ? (
+                  <img src={c.avatar} alt={c.name} style={{ width: 46, height: 46, borderRadius: 12, objectFit: 'cover', flexShrink: 0 }} />
+                ) : (
+                  <div style={{ width: 46, height: 46, borderRadius: 12, background: c.avatar || '#2a2f3b', display: 'grid', placeItems: 'center', fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15, color: '#0c0d11', flexShrink: 0 }}>{c.mono}</div>
+                )}
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontWeight: 600, fontSize: 15, color: '#eef0f3' }}>{c.name}</div>
                   <div style={{ fontSize: 11, color: '#6a7180', fontFamily: 'var(--font-mono)' }}>{c.handle}</div>

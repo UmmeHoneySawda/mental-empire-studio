@@ -411,7 +411,7 @@ async function runSmokeM6(): Promise<void> {
 
     const proj = (id: string, title: string): Parameters<typeof repos.createProject>[0] => ({
       id, downloadId: id, title, channel: 'Mental Empire', mp3Path: join(process.cwd(), 'test', 'fixtures', 'audio', 'sample.mp3'),
-      durationSec: 12, imageMode: 'sequence', poolSize: 10, kenBurns: true, seed: 4821, crossfade: true,
+      durationSec: 12, imageMode: 'sequence', poolSize: 10, kenBurns: true, seed: 4821, crossfade: 0.8,
       captionPreset: 'Hormozi', captionFont: 'Anton', captionAnim: 'Pop-in', captionAspect: '16:9',
       emphasis: true, keywords: true, punchZoom: true, stage: 'queued', createdAt: new Date().toISOString()
     })
@@ -854,7 +854,7 @@ async function runDemoRender(): Promise<void> {
 
   repos.createProject({
     id: pid, downloadId: pid, title: 'Why The Narcissist Can Never Move On', channel: 'Mental Empire',
-    mp3Path: mp3, durationSec: dur, imageMode: 'sequence', poolSize: 1, kenBurns: false, seed: 7, crossfade: true,
+    mp3Path: mp3, durationSec: dur, imageMode: 'sequence', poolSize: 1, kenBurns: false, seed: 7, crossfade: 0.8,
     captionPreset: 'Hormozi', captionFont: 'Anton', captionAnim: 'Pop-in', captionAspect: '16:9',
     emphasis: true, keywords: true, punchZoom: false, stage: 'queued', createdAt: new Date().toISOString(),
     betaOpts: {

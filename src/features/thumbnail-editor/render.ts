@@ -218,7 +218,7 @@ function drawText(l: TextLayer): Konva.Group {
       group.add(node)
       cx += wWidth + fontSize * 0.28
     }
-    cy += fontSize * 1.02
+    cy += fontSize * 1.15
   }
   return group
 }

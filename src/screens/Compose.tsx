@@ -67,8 +67,8 @@ function MediaTab(): JSX.Element {
     <>
       <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
         <div style={{ display: 'flex', background: '#0e1116', border: '1px solid #23272f', borderRadius: 10, overflow: 'hidden', fontSize: 12.5 }}>
-          <button type="button" onClick={() => void setMedia({ imageMode: 'sequence' })} style={{ border: 0, padding: '9px 16px', cursor: 'pointer', background: mode === 'sequence' ? 'var(--accent)' : 'transparent', color: mode === 'sequence' ? 'var(--accent-ink)' : '#8a909c', fontWeight: 600 }}>Sequence</button>
-          <button type="button" onClick={() => void setMedia({ imageMode: 'pool' })} style={{ border: 0, padding: '9px 16px', cursor: 'pointer', background: mode === 'pool' ? 'var(--accent)' : 'transparent', color: mode === 'pool' ? 'var(--accent-ink)' : '#8a909c', fontWeight: 600 }}>Random pool</button>
+          <button type="button" title="Play images in a fixed order, one after another" onClick={() => void setMedia({ imageMode: 'sequence' })} style={{ border: 0, padding: '9px 16px', cursor: 'pointer', background: mode === 'sequence' ? 'var(--accent)' : 'transparent', color: mode === 'sequence' ? 'var(--accent-ink)' : '#8a909c', fontWeight: 600 }}>Sequence</button>
+          <button type="button" title="Shuffle images randomly on each render (locked by seed)" onClick={() => void setMedia({ imageMode: 'pool' })} style={{ border: 0, padding: '9px 16px', cursor: 'pointer', background: mode === 'pool' ? 'var(--accent)' : 'transparent', color: mode === 'pool' ? 'var(--accent-ink)' : '#8a909c', fontWeight: 600 }}>Random pool</button>
         </div>
       </div>
       <div style={{ display: 'flex', gap: 20, marginBottom: 20 }}>
@@ -85,7 +85,9 @@ function MediaTab(): JSX.Element {
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
             <button type="button" onClick={() => void setMedia({ seed: Math.floor(Math.random() * 9000) + 1000 })} className="me-btn" style={{ display: 'flex', alignItems: 'center', gap: 7, border: '1px solid #262b34', background: '#15181f', borderRadius: 9, padding: '8px 13px', fontSize: 11.5, color: '#c4cad3', cursor: 'pointer' }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 11-3-6.7M21 4v5h-5" /></svg>Re-roll</button>
-            <div style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 9, padding: '8px 13px', fontSize: 11.5, color: '#8a909c' }}>Crossfade ▾</div>
+            <label title="Duration of the crossfade transition between images (0 = cut)" style={{ display: 'flex', alignItems: 'center', gap: 5, border: '1px solid #262b34', background: '#15181f', borderRadius: 9, padding: '8px 13px', fontSize: 11.5, color: '#8a909c', cursor: 'default' }}>
+              Crossfade<input type="number" min={0} max={3} step={0.1} value={project?.crossfade ?? 0.8} onChange={(e) => void setMedia({ crossfade: parseFloat(e.target.value) || 0 })} style={{ width: 34, border: 'none', background: 'transparent', color: '#c4cad3', fontSize: 11.5, textAlign: 'right', outline: 'none', padding: 0 }} />s
+            </label>
             <div style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 9, padding: '8px 13px', fontSize: 11.5, color: '#8a909c', fontFamily: 'var(--font-mono)' }}>seed {project?.seed ?? '—'}</div>
           </div>
         </div>
@@ -121,7 +123,9 @@ function MediaTab(): JSX.Element {
           <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#6a7180', width: 48 }}>IMAGE</span>
           <div style={{ flex: 1, display: 'flex', gap: 4, height: 24 }}>
             {(images.length ? images : [null, null, null]).map((im, i) => (
-              <div key={im?.id ?? i} style={{ flex: 1, borderRadius: 6, background: i === 0 ? 'var(--accent)' : '#2b303b', opacity: i === 0 ? 0.85 : 1, display: 'grid', placeItems: 'center', fontSize: 10, color: i === 0 ? 'var(--accent-ink)' : '#aab0bb', fontWeight: i === 0 ? 600 : undefined }}>img {i + 1}</div>
+              <div key={im?.id ?? i} title={im ? `${fmt(im.rangeStart)}–${fmt(im.rangeEnd)}` : undefined} style={{ flex: 1, borderRadius: 6, background: i === 0 ? 'var(--accent)' : '#2b303b', opacity: i === 0 ? 0.85 : 1, display: 'grid', placeItems: 'center', fontSize: 9, color: i === 0 ? 'var(--accent-ink)' : '#aab0bb', fontWeight: i === 0 ? 600 : undefined, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', padding: '0 3px' }}>
+                {im ? `${fmt(im.rangeStart)}–${fmt(im.rangeEnd)}` : `img ${i + 1}`}
+              </div>
             ))}
           </div>
         </div>
@@ -170,6 +174,13 @@ function BetaPanel(): JSX.Element {
   })()
 
   const styles: VideoStyle[] = ['None', 'Cinematic', 'Intense', 'Heartfelt', 'Clean']
+  const styleTips: Record<VideoStyle, string> = {
+    None: 'No automatic transitions or text effects',
+    Cinematic: 'Slow zoom, fade transitions, elegant typography',
+    Intense: 'Fast cuts, punch-zoom, bold caps with glow',
+    Heartfelt: 'Soft cross-dissolves, warm colours, gentle motion',
+    Clean: 'Minimal cuts, no extra effects — pure content',
+  }
   const Row = ({ label, on, set, hint }: { label: string; on: boolean; set: () => void; hint?: string }): JSX.Element => (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
       <div style={{ flex: 1 }}><div style={{ fontSize: 11.5, color: '#cdd2da' }}>{label}</div>{hint && <div style={{ fontSize: 9.5, color: '#6a7180' }}>{hint}</div>}</div>
@@ -225,7 +236,7 @@ function BetaPanel(): JSX.Element {
       <div>
         <div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 7 }}>Style (transitions &amp; text effects)</div>
         <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-          {styles.map((s) => <span key={s} onClick={() => patch({ style: s })} style={{ border: o.style === s ? '1px solid var(--accent)' : '1px solid #23272f', color: o.style === s ? 'var(--accent)' : '#8a909c', background: o.style === s ? 'var(--accent-soft)' : 'transparent', borderRadius: 7, padding: '4px 10px', fontSize: 10.5, cursor: 'pointer' }}>{s}</span>)}
+          {styles.map((s) => <span key={s} title={styleTips[s]} onClick={() => patch({ style: s })} style={{ border: o.style === s ? '1px solid var(--accent)' : '1px solid #23272f', color: o.style === s ? 'var(--accent)' : '#8a909c', background: o.style === s ? 'var(--accent-soft)' : 'transparent', borderRadius: 7, padding: '4px 10px', fontSize: 10.5, cursor: 'pointer' }}>{s}</span>)}
         </div>
         <div style={{ fontSize: 9.5, color: '#6a7180', marginTop: 6 }}>The style auto-applies tasteful transitions + text effects. Advanced: generate a custom plan below.</div>
       </div>
@@ -293,7 +304,19 @@ function CaptionsTab(): JSX.Element {
       </div>
 
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}><span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#6a7180' }}>TRANSCRIPT · WORD-LEVEL</span><div style={{ flex: 1 }} />{transcribing && <span style={{ fontSize: 10.5, color: '#8a909c' }}>{transcribeMessage || 'Transcribing…'}</span>}<button type="button" disabled={transcribing} onClick={() => void runTranscribe()} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 8, padding: '6px 11px', fontSize: 11, color: '#c4cad3', cursor: transcribing ? 'not-allowed' : 'pointer', opacity: transcribing ? 0.55 : 1 }}>{transcribing ? 'Transcribing…' : 'Re-transcribe ↻'}</button></div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#6a7180' }}>TRANSCRIPT · WORD-LEVEL</span>
+          <div style={{ flex: 1 }} />
+          {transcribing && <span style={{ fontSize: 10.5, color: '#8a909c' }}>{transcribeMessage || 'Transcribing…'}</span>}
+          <button type="button" disabled={transcribing || transcript.length === 0} title="Mark meaningful words (≥4 chars, non-stop-words) for karaoke emphasis" onClick={() => {
+            const stopWords = new Set(['that', 'this', 'with', 'from', 'they', 'have', 'were', 'been', 'will', 'your', 'when', 'then', 'than', 'what', 'also', 'just', 'like', 'more', 'some', 'into', 'their', 'there', 'about', 'which', 'would', 'could', 'should', 'these', 'those', 'being', 'after', 'over'])
+            const candidates = transcript.filter((w) => w.word.length >= 4 && !stopWords.has(w.word.toLowerCase().replace(/[^a-z]/g, '')))
+            const toMark = candidates.filter((_, i) => i % 3 === 0).slice(0, 30)
+            toMark.forEach((w) => { if (!w.emphasis) void toggleWordEmphasis(w.id) })
+          }} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 8, padding: '5px 10px', fontSize: 10.5, color: '#c4cad3', cursor: transcript.length === 0 ? 'not-allowed' : 'pointer', opacity: transcript.length === 0 ? 0.45 : 1 }}>Auto-detect emphasis</button>
+          <button type="button" disabled={transcribing} onClick={() => void runTranscribe()} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 8, padding: '5px 10px', fontSize: 10.5, color: '#c4cad3', cursor: transcribing ? 'not-allowed' : 'pointer', opacity: transcribing ? 0.55 : 1 }}>{transcribing ? 'Transcribing…' : 'Re-transcribe ↻'}</button>
+        </div>
+        <div style={{ fontSize: 10.5, color: '#5b616f', marginBottom: 8 }}>Click a word to toggle emphasis for karaoke highlight, or use Auto-detect to mark key words automatically.</div>
         <div style={{ border: '1px solid #1d2129', borderRadius: 12, padding: 16, background: '#12151b', fontSize: 14, lineHeight: 2.1, color: '#cdd2da', height: 178, overflow: 'auto' }}>
           {transcribeError ? (
             <span style={{ color: '#ff8a96', fontSize: 12 }}>{transcribeError}</span>

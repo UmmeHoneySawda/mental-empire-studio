@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useRef, useState } from 'react'
 import { useStore } from '../store/useStore'
 import { useData } from '../store/useData'
 import { ScreenPad } from '../components/primitives'
@@ -133,29 +133,57 @@ function FxControl({ label, kind, value, onChange }: { label: string; kind: 'sha
   )
 }
 
+function CollapseSection({ label, defaultOpen = true, children, headerRight }: { label: string; defaultOpen?: boolean; children: React.ReactNode; headerRight?: React.ReactNode }): JSX.Element {
+  const [open, setOpen] = useState(defaultOpen)
+  return (
+    <div style={{ borderTop: '1px solid #1d2129', paddingTop: 11 }}>
+      <div style={{ display: 'flex', alignItems: 'center', marginBottom: open ? 9 : 0, cursor: 'pointer', userSelect: 'none' }} onClick={() => setOpen((o) => !o)}>
+        <span style={{ fontSize: 10.5, color: '#6a7180', flex: 1 }}>{label}</span>
+        {headerRight && <span onClick={(e) => e.stopPropagation()}>{headerRight}</span>}
+        <span style={{ fontSize: 9, color: '#5b616f', marginLeft: 6, transform: open ? 'rotate(90deg)' : 'none', display: 'inline-block', transition: 'transform .15s' }}>▶</span>
+      </div>
+      {open && children}
+    </div>
+  )
+}
+
 function TextLayerEditor({ layer }: { layer: TextLayer }): JSX.Element {
   const updateLayer = useStore((s) => s.updateLayer)
   const setSubjectImage = useStore((s) => s.setSubjectImage)
   const setBackground = useStore((s) => s.setBackground)
   const layers = useStore((s) => s.layers)
+  const textEditorFocusTrigger = useStore((s) => s.textEditorFocusTrigger)
   const subject = layers.find((l) => l.kind === 'subject') as SubjectLayer | undefined
   const subjectFile = useRef<HTMLInputElement>(null)
   const bgFile = useRef<HTMLInputElement>(null)
+  const textareaRef = useRef<HTMLTextAreaElement>(null)
   const swatches = ['#ffffff', '#f2c200', '#e8403a', '#19c3d6']
   const bgSwatches = ['linear-gradient(135deg,#2a2540,#46243a)', '#1a1a1a', '#0f3a32', '#23304a']
+
+  // Focus the textarea when the canvas triggers dblclick on this text layer
+  useEffect(() => {
+    if (textEditorFocusTrigger > 0) {
+      setTimeout(() => textareaRef.current?.focus(), 50)
+    }
+  }, [textEditorFocusTrigger])
 
   const setLineSize = (i: number, size: number): void => {
     const lines = layer.lines.map((ln, idx) => (idx === i ? { ...ln, size } : ln))
     updateLayer(layer.id, { lines })
   }
 
-  return (
-    <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 14, overflowY: 'auto' }}>
-      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '.6px', color: 'var(--accent)' }}>SELECTED · {layer.name.toUpperCase()}</div>
+  const resetEffects = (): void => {
+    updateLayer(layer.id, { effects: { caps: false, shadow: { enabled: false, color: '#000000', size: 16, opacity: 0.6, distance: 10, angle: 45 }, stroke: { enabled: false, color: '#000000', size: 6, opacity: 1 }, glow: { enabled: false, color: '#ffffff', size: 26, opacity: 0.85 } } })
+  }
 
-      <div>
+  return (
+    <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 0, overflowY: 'auto' }}>
+      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '.6px', color: 'var(--accent)', marginBottom: 12 }}>SELECTED · {layer.name.toUpperCase()}</div>
+
+      <div style={{ marginBottom: 12 }}>
         <div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 6 }}>Text (one line per row)</div>
         <textarea
+          ref={textareaRef}
           value={layer.lines.map((l) => l.text).join('\n')}
           onChange={(e) => {
             const rows = e.target.value.split('\n')
@@ -167,8 +195,7 @@ function TextLayerEditor({ layer }: { layer: TextLayer }): JSX.Element {
         />
       </div>
 
-      <div>
-        <div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 8 }}>Per-line size</div>
+      <CollapseSection label="Per-line size">
         {layer.lines.map((ln, i) => (
           <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: i < layer.lines.length - 1 ? 8 : 0 }}>
             <span style={{ fontSize: 10.5, color: '#8a909c', width: 42 }}>Line {i + 1}</span>
@@ -176,10 +203,9 @@ function TextLayerEditor({ layer }: { layer: TextLayer }): JSX.Element {
             <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#8a909c', width: 30 }}>{ln.size}</span>
           </div>
         ))}
-      </div>
+      </CollapseSection>
 
-      <div>
-        <div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 7 }}>Highlighted word</div>
+      <CollapseSection label="Highlighted word">
         <input
           value={layer.highlightWord ?? ''}
           onChange={(e) => updateLayer(layer.id, { highlightWord: e.target.value })}
@@ -194,37 +220,36 @@ function TextLayerEditor({ layer }: { layer: TextLayer }): JSX.Element {
           <span style={{ fontSize: 10.5, color: '#8a909c' }}>Color</span>
           {swatches.map((c) => <span key={c} onClick={() => updateLayer(layer.id, { highlightColor: c })} style={{ width: 22, height: 22, borderRadius: 6, background: c, border: c === layer.highlightColor ? '2px solid var(--accent)' : '1px solid #2c303b', cursor: 'pointer' }} />)}
         </div>
-      </div>
+      </CollapseSection>
 
-      <div>
-        <div style={{ display: 'flex', alignItems: 'center', marginBottom: 8 }}>
-          <span style={{ fontSize: 10.5, color: '#6a7180', flex: 1 }}>Text effects</span>
-          <span onClick={() => updateLayer(layer.id, { effects: { ...layer.effects, caps: !layer.effects.caps } })} style={{ border: layer.effects.caps ? '1px solid var(--accent)' : '1px solid #23272f', color: layer.effects.caps ? 'var(--accent)' : '#8a909c', borderRadius: 7, padding: '4px 10px', fontSize: 11, background: layer.effects.caps ? 'var(--accent-soft)' : 'transparent', cursor: 'pointer' }}>CAPS</span>
+      <CollapseSection label="Text effects" headerRight={
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
+          <span title="Reset all effects to off" onClick={resetEffects} style={{ border: '1px solid #23272f', color: '#6a7180', borderRadius: 6, padding: '3px 8px', fontSize: 10, background: 'transparent', cursor: 'pointer' }}>Reset</span>
+          <span onClick={() => updateLayer(layer.id, { effects: { ...layer.effects, caps: !layer.effects.caps } })} style={{ border: layer.effects.caps ? '1px solid var(--accent)' : '1px solid #23272f', color: layer.effects.caps ? 'var(--accent)' : '#8a909c', borderRadius: 7, padding: '3px 8px', fontSize: 10, background: layer.effects.caps ? 'var(--accent-soft)' : 'transparent', cursor: 'pointer' }}>CAPS</span>
         </div>
+      }>
         <FxControl label="Drop shadow" kind="shadow" value={asShadow(layer.effects.shadow)} onChange={(p) => updateLayer(layer.id, { effects: { ...layer.effects, shadow: { ...asShadow(layer.effects.shadow), ...p } } })} />
         <FxControl label="Border (stroke)" kind="outline" value={asOutline(layer.effects.stroke, '#000000')} onChange={(p) => updateLayer(layer.id, { effects: { ...layer.effects, stroke: { ...asOutline(layer.effects.stroke, '#000000'), ...p } } })} />
         <FxControl label="Glow" kind="glow" value={asGlow(layer.effects.glow, layer.highlightColor)} onChange={(p) => updateLayer(layer.id, { effects: { ...layer.effects, glow: { ...asGlow(layer.effects.glow, layer.highlightColor), ...p } } })} />
-      </div>
+      </CollapseSection>
 
       {subject && (
-        <div style={{ borderTop: '1px solid #1d2129', paddingTop: 13 }}>
-          <div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 8 }}>Subject (PNG) effects</div>
+        <CollapseSection label="Subject (PNG) effects" defaultOpen={false}>
           <FxControl label="Border (outline)" kind="outline" value={asOutline(subject.outline)} onChange={(p) => updateLayer(subject.id, { outline: { ...asOutline(subject.outline), ...p } } as Partial<SubjectLayer>)} />
           <FxControl label="Drop shadow" kind="shadow" value={asShadow(subject.shadow)} onChange={(p) => updateLayer(subject.id, { shadow: { ...asShadow(subject.shadow), ...p } } as Partial<SubjectLayer>)} />
           <FxControl label="Glow" kind="glow" value={asGlow(subject.glow, '#19c3d6')} onChange={(p) => updateLayer(subject.id, { glow: { ...asGlow(subject.glow, '#19c3d6'), ...p } } as Partial<SubjectLayer>)} />
           <input ref={subjectFile} type="file" accept="image/png,image/*" style={{ display: 'none' }} onChange={async (e) => { const f = e.target.files?.[0]; if (f) setSubjectImage(await readAsDataUrl(f)) }} />
           <div onClick={() => subjectFile.current?.click()} className="me-btn" style={{ border: '1px solid #262b34', borderRadius: 8, padding: 8, textAlign: 'center', fontSize: 11, color: '#c4cad3', background: '#0e1116', cursor: 'pointer' }}>⇪ Replace subject · PNG</div>
-        </div>
+        </CollapseSection>
       )}
 
-      <div style={{ borderTop: '1px solid #1d2129', paddingTop: 13 }}>
-        <div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 8 }}>Background</div>
+      <CollapseSection label="Background" defaultOpen={false}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 9 }}>
           {bgSwatches.map((c) => <span key={c} onClick={() => setBackground({ mode: c.startsWith('linear') ? 'gradient' : 'solid', fill: c })} style={{ width: 22, height: 22, borderRadius: 6, background: c, border: '1px solid #2c303b', cursor: 'pointer' }} />)}
         </div>
         <input ref={bgFile} type="file" accept="image/*" style={{ display: 'none' }} onChange={async (e) => { const f = e.target.files?.[0]; if (f) setBackground({ mode: 'image', src: await readAsDataUrl(f) } as Partial<BackgroundLayer>) }} />
         <div onClick={() => bgFile.current?.click()} className="me-btn" style={{ border: '1px solid #262b34', borderRadius: 8, padding: 8, textAlign: 'center', fontSize: 11, color: '#c4cad3', background: '#0e1116', cursor: 'pointer' }}>⇪ Use image background</div>
-      </div>
+      </CollapseSection>
     </div>
   )
 }

@@ -548,10 +548,10 @@ function buildRepositories(d: Database.Database): Repositories {
   }
 }
 
-const PROJECT_BOOL_KEYS = new Set(['kenBurns', 'crossfade', 'emphasis', 'keywords', 'punchZoom'])
+const PROJECT_BOOL_KEYS = new Set(['kenBurns', 'emphasis', 'keywords', 'punchZoom'])
 
 function projectToRow(p: Project): Record<string, unknown> {
-  return { ...p, kenBurns: p.kenBurns ? 1 : 0, crossfade: p.crossfade ? 1 : 0, emphasis: p.emphasis ? 1 : 0, keywords: p.keywords ? 1 : 0, punchZoom: p.punchZoom ? 1 : 0, betaOpts: JSON.stringify(p.betaOpts ?? DEFAULT_BETA_OPTS) }
+  return { ...p, kenBurns: p.kenBurns ? 1 : 0, crossfade: p.crossfade ?? 0.8, emphasis: p.emphasis ? 1 : 0, keywords: p.keywords ? 1 : 0, punchZoom: p.punchZoom ? 1 : 0, betaOpts: JSON.stringify(p.betaOpts ?? DEFAULT_BETA_OPTS) }
 }
 function projectPatchToRow(patch: Partial<Project>): Record<string, unknown> {
   const out: Record<string, unknown> = {}
@@ -563,7 +563,7 @@ function projectPatchToRow(patch: Partial<Project>): Record<string, unknown> {
   return out
 }
 function rowToProject(r: Record<string, unknown>): Project {
-  return { ...(r as unknown as Project), kenBurns: !!r.kenBurns, crossfade: !!r.crossfade, emphasis: !!r.emphasis, keywords: !!r.keywords, punchZoom: !!r.punchZoom, betaOpts: parseBetaOpts(r) }
+  return { ...(r as unknown as Project), kenBurns: !!r.kenBurns, crossfade: Number(r.crossfade) || 0.8, emphasis: !!r.emphasis, keywords: !!r.keywords, punchZoom: !!r.punchZoom, betaOpts: parseBetaOpts(r) }
 }
 function rowToImage(r: Record<string, unknown>): ProjectImage {
   return { ...(r as unknown as ProjectImage), manual: !!r.manual }

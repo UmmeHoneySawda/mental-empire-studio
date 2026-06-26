@@ -371,7 +371,7 @@ export interface Project {
   poolSize: number
   kenBurns: boolean
   seed: number
-  crossfade: boolean
+  crossfade: number
   captionPreset: string
   captionFont: string
   captionAnim: string

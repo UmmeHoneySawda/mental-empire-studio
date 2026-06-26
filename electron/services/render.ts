@@ -101,7 +101,7 @@ function audioWithSfx(parts: string[], mp3Idx: number, sfxIdx: number | null): s
 export function buildRenderArgs(inp: RenderInputs): string[] {
   const { project, images, assPath, outPath, settings } = inp
   const { w, h } = dimensions(settings.quality, project.captionAspect)
-  const cf = project.crossfade ? 0.6 : 0
+  const cf = typeof project.crossfade === 'number' ? project.crossfade : 0
   // Beta options only apply when beta mode is on; otherwise the graph is unchanged.
   const beta = settings.beta?.enabled ? asBetaOpts(project.betaOpts) : null
   const imgs: ProjectImage[] =

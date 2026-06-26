@@ -55,8 +55,11 @@ interface AppState {
   // thumbnail editor
   layers: ThumbnailLayer[]
   selectedLayerId: string
+  /** incremented by requestFocusTextEditor; ThumbCanvas dblclick → Thumbnails inspector textarea */
+  textEditorFocusTrigger: number
   templates: ThumbnailTemplate[]
   selectLayer: (id: string) => void
+  requestFocusTextEditor: () => void
   toggleLayerVisible: (id: string) => void
   duplicateLayer: (id: string) => void
   deleteLayer: (id: string) => void
@@ -155,8 +158,10 @@ export const useStore = create<AppState>((set, get) => ({
 
   layers: initialLayers,
   selectedLayerId: 'headline',
+  textEditorFocusTrigger: 0,
   templates: [],
   selectLayer: (id) => set({ selectedLayerId: id }),
+  requestFocusTextEditor: () => set((s) => ({ textEditorFocusTrigger: s.textEditorFocusTrigger + 1 })),
   toggleLayerVisible: (id) =>
     set((s) => ({
       layers: s.layers.map((l) => (l.id === id ? { ...l, visible: !l.visible } : l))

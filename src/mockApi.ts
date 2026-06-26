@@ -178,7 +178,7 @@ function installMock(): void {
       poolSize: 10,
       kenBurns: true,
       seed: 4821,
-      crossfade: true,
+      crossfade: 0.8,
       captionPreset: 'Hormozi',
       captionFont: 'Anton',
       captionAnim: 'Pop-in',

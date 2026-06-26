@@ -19,6 +19,7 @@ export function ThumbCanvas(): JSX.Element {
   const selectedLayerId = useStore((s) => s.selectedLayerId)
   const selectLayer = useStore((s) => s.selectLayer)
   const updateGeometry = useStore((s) => s.updateGeometry)
+  const requestFocusTextEditor = useStore((s) => s.requestFocusTextEditor)
 
   // create the stage once
   useEffect(() => {
@@ -87,6 +88,9 @@ export function ThumbCanvas(): JSX.Element {
         const layer = layers.find((l) => l.id === id)
         if (!layer) return
         node.on('mousedown tap', () => selectLayer(id))
+        if (layer.kind === 'text') {
+          node.on('dblclick dbltap', () => { selectLayer(id); requestFocusTextEditor() })
+        }
         if (!layer.locked) {
           node.draggable(true)
           node.on('dragend', () => updateGeometry(id, { x: node.x(), y: node.y() }))
