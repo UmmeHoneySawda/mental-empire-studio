@@ -178,6 +178,7 @@ export interface Repositories {
   getProfile(id: string): Profile | undefined
   setProfileCursor(id: string, patch: { lastSeenVideoId?: string; lastRunAt?: string }): void
   saveTemplate(t: ThumbnailTemplate): ThumbnailTemplate[]
+  deleteTemplate(id: string): ThumbnailTemplate[]
   getTemplate(id: string): ThumbnailTemplate | undefined
   assignTemplateToProfile(profileId: string, templateId: string): Profile[]
   // ---- M3 scraping writes ----
@@ -311,6 +312,10 @@ function buildRepositories(d: Database.Database): Repositories {
         `INSERT INTO thumbnail_templates (id,name,layers) VALUES (@id,@name,@layers)
          ON CONFLICT(id) DO UPDATE SET name=@name, layers=@layers`
       ).run({ id: t.id, name: t.name, layers: JSON.stringify(t.layers) })
+      return allTemplates()
+    },
+    deleteTemplate: (id) => {
+      d.prepare('DELETE FROM thumbnail_templates WHERE id=?').run(id)
       return allTemplates()
     },
     getTemplate: (id) => {

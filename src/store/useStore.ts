@@ -69,6 +69,7 @@ interface AppState {
   runAutoArrange: () => void
   loadTemplates: () => Promise<void>
   saveCurrentTemplate: (name: string) => Promise<void>
+  deleteTemplate: (id: string) => Promise<void>
   applyTemplate: (t: ThumbnailTemplate) => void
 }
 
@@ -259,6 +260,10 @@ export const useStore = create<AppState>((set, get) => ({
     const id = `tpl-${Date.now()}`
     const template: ThumbnailTemplate = { id, name, layers: get().layers }
     const templates = (await window.api?.thumbnails?.saveTemplate?.(template)) ?? get().templates
+    set({ templates })
+  },
+  deleteTemplate: async (id) => {
+    const templates = (await window.api?.thumbnails?.deleteTemplate?.(id)) ?? get().templates.filter((t) => t.id !== id)
     set({ templates })
   },
   applyTemplate: (t) =>

@@ -486,6 +486,10 @@ export interface NativeApi {
   minimize(): void
   maximize(): void
   close(): void
+  /** reveal the log file in the OS file manager (for bug reports) */
+  openLogs(): Promise<string>
+  /** absolute path of the current log file */
+  logPath(): Promise<string>
   settings: {
     get(): Promise<AppSettings>
     set(patch: DeepPartial<AppSettings>): Promise<AppSettings>
@@ -552,6 +556,8 @@ export interface NativeApi {
   thumbnails: {
     /** persist a template (insert/update) and return the full library */
     saveTemplate(template: ThumbnailTemplate): Promise<ThumbnailTemplate[]>
+    /** delete a template by id, return the remaining library */
+    deleteTemplate(id: string): Promise<ThumbnailTemplate[]>
     /** list saved templates */
     templates(): Promise<ThumbnailTemplate[]>
     /** lock a template to a profile (subject/background/style reused per video) */

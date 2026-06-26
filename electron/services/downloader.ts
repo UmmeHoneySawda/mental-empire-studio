@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import type { AppSettings, ScrapedVideo } from '../../shared/types'
 import { resolveBinDir, resolveYtdlpPath } from './ytdlp'
 import { formatOutputName } from './audio'
+import { L } from './logger'
 
 /** Vendored ffmpeg dir if present, else undefined → yt-dlp falls back to PATH. */
 function vendoredFfmpegDir(): string | undefined {
@@ -83,23 +84,29 @@ function runYtdlpDownload(
     ]
     const ffmpegDir = vendoredFfmpegDir()
     if (ffmpegDir) args.push('--ffmpeg-location', ffmpegDir)
+    else L.warn('downloader: no vendored ffmpeg found — mp3 extraction may fail')
     if (a.proxy) args.push('--proxy', a.proxy)
     if (a.cookiesPath) args.push('--cookies', a.cookiesPath)
     args.push(watchUrl(video.id))
 
-    const child = spawn(resolveYtdlpPath(), args, { windowsHide: true })
+    const bin = resolveYtdlpPath()
+    L.info(`yt-dlp download: ${bin} ${args.join(' ')}`)
+    if (!existsSync(bin)) L.error(`yt-dlp binary missing at ${bin} — download will fail`)
+    const child = spawn(bin, args, { windowsHide: true })
     let err = ''
     child.stdout.on('data', (d: Buffer) => {
       const m = d.toString().match(/\[download\]\s+([\d.]+)%/)
       if (m) onProgress?.(parseFloat(m[1]))
     })
     child.stderr.on('data', (d: Buffer) => (err += d))
-    child.on('error', reject)
+    child.on('error', (e) => { L.error(`yt-dlp download spawn error: ${e.message} (bin=${bin})`); reject(e) })
     child.on('close', (code) => {
       if (code === 0 && existsSync(dest)) {
+        L.info(`download ok: ${dest}`)
         onProgress?.(100)
         resolve()
       } else {
+        L.error(`yt-dlp download failed (${code}) for "${video.title}": ${err.slice(0, 600)}`)
         reject(new Error(`yt-dlp download failed (${code}): ${err.slice(0, 300)}`))
       }
     })

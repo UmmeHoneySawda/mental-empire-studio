@@ -214,11 +214,17 @@ function TemplateRail(): JSX.Element {
   const templates = useStore((s) => s.templates)
   const applyTemplate = useStore((s) => s.applyTemplate)
   const saveCurrentTemplate = useStore((s) => s.saveCurrentTemplate)
+  const deleteTemplate = useStore((s) => s.deleteTemplate)
   return (
     <div style={{ flex: 'none', width: 120, display: 'flex', flexDirection: 'column', gap: 10 }}>
       <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '.6px', color: '#5b616f', marginBottom: 1 }}>PROFILE TEMPLATES</div>
       {templates.map((t) => (
-        <div key={t.id} onClick={() => applyTemplate(t)} className="me-card" style={{ border: '1px solid #1d2129', background: '#12151b', borderRadius: 9, padding: 6, cursor: 'pointer' }}>
+        <div key={t.id} onClick={() => applyTemplate(t)} className="me-card" style={{ position: 'relative', border: '1px solid #1d2129', background: '#12151b', borderRadius: 9, padding: 6, cursor: 'pointer' }}>
+          <div
+            onClick={(e) => { e.stopPropagation(); if (window.confirm(`Delete template "${t.name}"?`)) void deleteTemplate(t.id) }}
+            title="Delete template"
+            style={{ position: 'absolute', top: 3, right: 3, zIndex: 2, width: 18, height: 18, borderRadius: 5, background: 'rgba(0,0,0,.55)', color: '#ff8a96', display: 'grid', placeItems: 'center', fontSize: 12, lineHeight: 1, cursor: 'pointer' }}
+          >×</div>
           <div style={{ aspectRatio: '16/9', borderRadius: 5, background: 'linear-gradient(135deg,#2a2540,#46243a)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span style={{ width: '50%', height: 4, borderRadius: 2, background: 'var(--accent)' }} /></div>
           <div style={{ fontSize: 9.5, textAlign: 'center', marginTop: 5, color: '#cdd2da', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.name}</div>
         </div>
@@ -290,7 +296,9 @@ export function Thumbnails(): JSX.Element {
 
       <div style={{ display: 'flex', gap: 18, marginBottom: 22 }}>
         <TemplateRail />
-        <div style={{ flex: 1 }}>
+        {/* minWidth:0 lets the canvas column shrink; without it the Konva canvas's pixel
+            width becomes the flex min-size and pushes the inspector off the right edge. */}
+        <div style={{ flex: 1, minWidth: 0 }}>
           <ThumbCanvas />
           <div style={{ fontSize: 11.5, color: '#6a7180', marginTop: 11, lineHeight: 1.5 }}>Drag any layer on the canvas; the selected subject/shape gets resize handles. <span style={{ color: 'var(--accent)' }}>Auto-arrange type</span> lays out the headline opposite the subject. Dashed = title-safe.</div>
         </div>

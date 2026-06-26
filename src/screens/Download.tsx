@@ -86,13 +86,13 @@ export function Download(): JSX.Element {
           const on = sel.has(v.id)
           return (
             <div key={v.id} onClick={() => toggle(v.id)} className="me-vid me-card" style={{ border: `1px solid ${on ? 'var(--accent)' : '#1d2129'}`, borderRadius: 12, overflow: 'hidden', background: '#12151b', cursor: 'pointer' }}>
-              <div style={{ position: 'relative', height: 92, background: GRADS[i % GRADS.length] }}>
+              <div style={{ position: 'relative', height: 92, background: GRADS[i % GRADS.length], backgroundSize: 'cover', backgroundPosition: 'center', ...(v.thumb && v.thumb.startsWith('http') ? { backgroundImage: `url("${v.thumb}")` } : v.thumb && v.thumb.startsWith('linear-gradient') ? { background: v.thumb } : {}) }}>
                 <div className="me-vidsel" style={{ position: 'absolute', top: 8, left: 8, width: 22, height: 22, borderRadius: 6, border: `1.5px solid ${on ? 'var(--accent)' : 'rgba(255,255,255,.5)'}`, background: on ? 'var(--accent)' : 'rgba(0,0,0,.45)', display: 'grid', placeItems: 'center', color: 'var(--accent-ink)' }}>{on ? '✓' : ''}</div>
                 <div style={{ position: 'absolute', bottom: 7, right: 7, fontFamily: 'var(--font-mono)', fontSize: 10, background: 'rgba(0,0,0,.7)', color: '#dde0e5', padding: '2px 6px', borderRadius: 5 }}>{fmtDur(v.durationSec)}</div>
               </div>
               <div style={{ padding: '11px 12px' }}>
                 <div style={{ fontSize: 12, color: '#dde0e5', lineHeight: 1.35, height: 33, overflow: 'hidden' }}>{v.title}</div>
-                <div style={{ fontSize: 10.5, color: '#5b616f', fontFamily: 'var(--font-mono)', marginTop: 6 }}>{v.views.toLocaleString()} views</div>
+                <div style={{ fontSize: 10.5, color: '#5b616f', fontFamily: 'var(--font-mono)', marginTop: 6 }}>{v.views > 0 ? `${v.views.toLocaleString()} views` : '— views'}</div>
               </div>
             </div>
           )

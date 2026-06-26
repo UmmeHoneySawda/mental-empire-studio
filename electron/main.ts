@@ -23,7 +23,8 @@ import { extractThemes, rankCandidates, planCoverage, buildBrollBed, assembleBed
 import { validateEffectPlan, deriveStylePlan, styleCaptionLead, textPresetTag, type EffectPlan } from '../shared/effectPlan'
 import { buildSfxTrack } from './services/sfx'
 import { readFileSync as readFileSyncSfx } from 'node:fs'
-import { resolveBinDir } from './services/ytdlp'
+import { resolveBinDir, resolveYtdlpPath } from './services/ytdlp'
+import { L, installGlobalLogging, logStartupDiagnostics, logFilePath } from './services/logger'
 import { runAll, lastMaxActive } from './services/queue'
 import { runProfile, newVideos } from './ipc/automation'
 import { postWebhook } from './services/webhook'
@@ -46,6 +47,14 @@ app.on('second-instance', () => showWindow())
 ipcMain.on('app:version', (e) => {
   e.returnValue = app.getVersion()
 })
+
+// Open the log file in the OS file manager so the user can send it back when debugging.
+ipcMain.handle('app:openLogs', () => {
+  const p = logFilePath()
+  if (p) shell.showItemInFolder(p)
+  return p
+})
+ipcMain.handle('app:logPath', () => logFilePath())
 
 // Design window size from the prototype: 1352×868 content, frameless studio chrome.
 const WIN_WIDTH = 1352
@@ -154,8 +163,17 @@ ipcMain.on('window:close', () => mainWindow?.close())
 
 /** Bring up persistence before any window or IPC: electron-store + the SQLite DB. */
 function initPersistence(): void {
+  installGlobalLogging()
   initSettings()
-  initDatabase(join(app.getPath('userData'), 'mental-empire.db'))
+  const dbPath = join(app.getPath('userData'), 'mental-empire.db')
+  try {
+    initDatabase(dbPath)
+  } catch (e) {
+    L.error(`DB init FAILED at ${dbPath}: ${(e as Error).message}`)
+    throw e
+  }
+  // The most valuable lines in a bug report: versions + whether the sidecars exist.
+  logStartupDiagnostics({ ytdlp: resolveYtdlpPath(), ffmpeg: ffmpegPath(), dbPath })
 }
 
 /**

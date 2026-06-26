@@ -33,6 +33,8 @@ const api: NativeApi = {
   minimize: () => ipcRenderer.send('window:minimize'),
   maximize: () => ipcRenderer.send('window:maximize'),
   close: () => ipcRenderer.send('window:close'),
+  openLogs: () => ipcRenderer.invoke('app:openLogs'),
+  logPath: () => ipcRenderer.invoke('app:logPath'),
 
   settings: {
     get: () => ipcRenderer.invoke('settings:get'),
@@ -99,6 +101,7 @@ const api: NativeApi = {
 
   thumbnails: {
     saveTemplate: (t: ThumbnailTemplate) => ipcRenderer.invoke('thumbnails:saveTemplate', t),
+    deleteTemplate: (id: string) => ipcRenderer.invoke('thumbnails:deleteTemplate', id),
     templates: () => ipcRenderer.invoke('thumbnails:templates'),
     assignToProfile: (profileId: string, templateId: string) =>
       ipcRenderer.invoke('thumbnails:assignToProfile', profileId, templateId),

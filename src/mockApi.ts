@@ -52,6 +52,7 @@ function installMock(): void {
 
   const api = {
     platform: 'web', appVersion: '0.1.3 (browser mock)', minimize: noop, maximize: noop, close: noop,
+    openLogs: async () => '(browser mock — no logs)', logPath: async () => '(browser mock)',
     settings: ns({ get: async () => settings, set: async (p: object) => Object.assign(settings, p), reset: async () => settings }),
     db: ns({ myChannels: async () => channels, recentUploads: async () => recentUploads, downloads: async () => downloads, sourceChannels: async () => [], profiles: async () => profiles, templates: async () => templates, activity: async () => activity, upsertProfile: async () => profiles, saveTemplate: async (t: { id: string; name: string; layers: unknown[] }) => { templates.push(t); return templates }, updateChannelGoals: async () => channels }),
     scrape: ns({ channel: async () => ({}), addMyChannel: async () => channels[0], refreshChannel: async () => channels[0], all: async () => channels, sourceVideos: async () => sourceVideos }),
@@ -72,7 +73,7 @@ function installMock(): void {
     }),
     compose: ns({ list: async () => [], get: async () => null, images: async () => [] }),
     transcribe: ns({ get: async () => [] }),
-    thumbnails: ns({ templates: async () => templates, saveTemplate: async (t: { id: string; name: string; layers: unknown[] }) => { templates.push(t); return templates }, assignToProfile: async () => profiles, writePng: async (name: string) => `/out/${name}` }),
+    thumbnails: ns({ templates: async () => templates, saveTemplate: async (t: { id: string; name: string; layers: unknown[] }) => { templates.push(t); return templates }, deleteTemplate: async (id: string) => { const i = templates.findIndex((t) => t.id === id); if (i >= 0) templates.splice(i, 1); return templates }, assignToProfile: async () => profiles, writePng: async (name: string) => `/out/${name}` }),
     render: ns({ jobs: async () => [], all: async () => {}, cancel: async () => {} }),
     effects: ns({ generate: async () => '{}' }),
     automation: ns({ runProfile: async () => [], upsertProfile: async () => profiles, deleteProfile: async () => profiles, tick: async () => {} }),

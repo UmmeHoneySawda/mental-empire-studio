@@ -8,6 +8,7 @@ import { downloadAudio } from '../services/downloader'
 import { channelUrl } from '../services/scraper'
 import { probeDuration } from '../services/audio'
 import { emit, hhmm, pushActivity } from './events'
+import { L } from '../services/logger'
 
 // Download orchestration: yt-dlp mp3 download → DB history → duration probe, with
 // streamed progress. Resume reuses finished files (no re-fetch).
@@ -74,9 +75,13 @@ async function runOne(video: ScrapedVideo, sourceId: string, channel: string, bi
     emitProgress({ downloadId: id, title: video.title, pct: 100, stage: 'Downloaded only', done: true })
     return repos.download(id) as DownloadedVideo
   } catch (e) {
+    const msg = (e as Error).message
+    L.error(`download FAILED "${video.title}": ${msg}`)
     repos.setDownloadProgress(id, { stage: 'Failed' })
-    emitProgress({ downloadId: id, title: video.title, pct: 0, stage: 'Failed', done: true, error: (e as Error).message })
-    throw e
+    // Surface the reason in the in-app activity feed (not just a silent "Failed").
+    pushActivity({ t: hhmm(), icon: '✕', color: '#ff5a6e', text: `Download failed: ${video.title.slice(0, 40)} — ${msg.slice(0, 80)}` })
+    emitProgress({ downloadId: id, title: video.title, pct: 0, stage: 'Failed', done: true, error: msg })
+    return repos.download(id) as DownloadedVideo // don't reject the whole batch — keep going
   }
 }
 

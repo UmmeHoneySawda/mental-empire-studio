@@ -180,6 +180,7 @@ export function Settings(): JSX.Element {
             <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Storage used</span><span style={{ color: '#cdd2da', fontFamily: 'var(--font-mono)' }}>14.2 GB</span></div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Jobs this week</span><span style={{ color: '#cdd2da', fontFamily: 'var(--font-mono)' }}>23</span></div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Version</span><span style={{ color: '#cdd2da', fontFamily: 'var(--font-mono)' }}>{window.api?.appVersion || '0.1.0'}</span></div>
+            <div onClick={() => void window.api?.openLogs?.()} className="me-btn" style={{ marginTop: 6, border: '1px solid #262b34', borderRadius: 8, padding: '8px 10px', textAlign: 'center', fontSize: 11, color: '#c4cad3', background: '#0e1116', cursor: 'pointer' }}>📄 Open logs folder (for bug reports)</div>
           </div>
         </div>
       </div>

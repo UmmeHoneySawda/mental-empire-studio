@@ -23,6 +23,7 @@ function safeName(name: string): string {
 
 export function registerThumbnailsIpc(): void {
   ipcMain.handle('thumbnails:saveTemplate', (_e, t: ThumbnailTemplate) => getRepos().saveTemplate(t))
+  ipcMain.handle('thumbnails:deleteTemplate', (_e, id: string) => getRepos().deleteTemplate(id))
   ipcMain.handle('thumbnails:templates', () => getRepos().templates())
   ipcMain.handle('thumbnails:assignToProfile', (_e, profileId: string, templateId: string) =>
     getRepos().assignTemplateToProfile(profileId, templateId)

@@ -27,7 +27,9 @@ function handleOf(data: YtdlpPlaylist, fallbackUrl: string): string {
 
 function pickThumb(e: YtdlpEntry): string {
   const list = e.thumbnails ?? []
-  return list.length ? (list[list.length - 1].url ?? '') : ''
+  if (list.length && list[list.length - 1].url) return list[list.length - 1].url as string
+  // yt-dlp --flat-playlist usually omits thumbnails; YouTube's are deterministic from the id.
+  return e.id ? `https://i.ytimg.com/vi/${e.id}/hqdefault.jpg` : ''
 }
 
 function toScrapedVideo(e: YtdlpEntry): ScrapedVideo {

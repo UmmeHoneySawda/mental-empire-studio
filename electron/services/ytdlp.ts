@@ -2,6 +2,7 @@ import { spawn } from 'node:child_process'
 import { dirname, join } from 'node:path'
 import { existsSync, readFileSync } from 'node:fs'
 import type { AppSettings } from '../../shared/types'
+import { L } from './logger'
 
 // Low-level yt-dlp runner. yt-dlp is the no-API way to read public channel/video
 // metadata: we spawn the standalone binary, ask for a single JSON dump of the
@@ -94,16 +95,21 @@ function spawnYtdlp(url: string, opts: YtdlpOptions): Promise<YtdlpPlaylist> {
     if (opts.delaySec) args.push('--sleep-requests', String(opts.delaySec))
     args.push(url)
 
-    const child = spawn(resolveYtdlpPath(), args, { windowsHide: true })
+    const bin = resolveYtdlpPath()
+    L.info(`yt-dlp scrape: ${bin} ${args.join(' ')}`)
+    if (!existsSync(bin)) L.error(`yt-dlp binary missing at ${bin}`)
+    const child = spawn(bin, args, { windowsHide: true })
     let out = ''
     let err = ''
     child.stdout.on('data', (d) => (out += d))
     child.stderr.on('data', (d) => (err += d))
-    child.on('error', reject)
+    child.on('error', (e) => { L.error(`yt-dlp spawn error: ${e.message} (bin=${bin})`); reject(e) })
     child.on('close', (code) => {
       if (code !== 0 && !out.trim()) {
+        L.error(`yt-dlp scrape exited ${code}: ${err.slice(0, 600)}`)
         return reject(new Error(`yt-dlp exited ${code}: ${err.slice(0, 300)}`))
       }
+      if (err.trim()) L.warn(`yt-dlp scrape stderr: ${err.slice(0, 400)}`)
       try {
         resolve(JSON.parse(out) as YtdlpPlaylist)
       } catch {
