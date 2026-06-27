@@ -50,6 +50,10 @@ export function registerIpc(): void {
     getRepos().updateChannelGoals(id, patch)
     return getRepos().myChannels()
   })
+  ipcMain.handle('db:deleteMyChannel', (_e, id: string) => {
+    getRepos().deleteMyChannel(id)
+    return getRepos().myChannels()
+  })
 
   // ---- scraping + reminders (M3) ----
   registerScrapeIpc()

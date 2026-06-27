@@ -461,6 +461,8 @@ export interface AppSettings {
   outputFolder: string
   concurrency: number
   quality: '720p' | '1080p' | '1440p'
+  /** video encoder: 'cpu' = libx264 (works everywhere), 'nvenc' = NVIDIA GPU (h264_nvenc) */
+  encoder: 'cpu' | 'nvenc'
   autoScrape: { enabled: boolean; frequency: string; delaySec: number; retries: number; proxy: string; cookiesPath: string }
   background: { tray: boolean; startOnSignIn: boolean; notifications: boolean; webhook: string }
   transcription: { apiKey: string; model: string }
@@ -478,6 +480,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   outputFolder: '',
   concurrency: 2,
   quality: '1080p',
+  encoder: 'cpu',
   autoScrape: { enabled: true, frequency: 'Every 6 hours', delaySec: 1.5, retries: 3, proxy: '', cookiesPath: '' },
   background: { tray: true, startOnSignIn: false, notifications: true, webhook: '' },
   transcription: { apiKey: '', model: 'whisper-large-v3-turbo' },
@@ -524,6 +527,8 @@ export interface NativeApi {
     saveTemplate(template: ThumbnailTemplate): Promise<ThumbnailTemplate[]>
     recentUploads(limit?: number): Promise<RecentUpload[]>
     updateChannelGoals(id: string, patch: GoalsPatch): Promise<MyChannel[]>
+    /** remove an owned channel (and its scraped uploads) */
+    deleteMyChannel(id: string): Promise<MyChannel[]>
   }
   scrape: {
     /** preview a channel's stats without persisting */

@@ -48,6 +48,7 @@ interface DataState {
   loadDownloads: () => Promise<void>
   loadActivity: () => Promise<void>
   addChannel: (url: string, linkedSourceId?: string) => Promise<void>
+  deleteChannel: (id: string) => Promise<void>
   rescrapeAll: () => Promise<void>
   updateGoals: (id: string, patch: { weekGoal?: number; monthGoal?: number; reminder?: string; reminderNote?: string }) => Promise<void>
   fetchSource: (url: string, order: ScrapeOrder, count: number) => Promise<void>
@@ -64,6 +65,7 @@ interface DataState {
   sendActiveToRender: () => Promise<void>
   loadRenderJobs: () => Promise<void>
   renderAll: () => Promise<void>
+  clearProgress: (id: string) => void
   cancelJob: (id: string) => Promise<void>
   deleteJob: (id: string) => Promise<void>
   requeueJob: (id: string) => Promise<void>
@@ -152,6 +154,13 @@ export const useData = create<DataState>((set, get) => ({
     } finally {
       set({ scraping: false })
     }
+  },
+  deleteChannel: async (id) => {
+    const a = api()
+    if (!a) return
+    const channels = await a.db.deleteMyChannel(id)
+    set({ channels })
+    await get().loadChannels()
   },
   rescrapeAll: async () => {
     const a = api()
@@ -283,22 +292,32 @@ export const useData = create<DataState>((set, get) => ({
       set({ rendering: false })
     }
   },
+  // Drop any stale live-progress for a job so the row doesn't keep showing a frozen
+  // "rendering 50%" after it's been cancelled/removed.
+  clearProgress: (id: string) => set((s) => {
+    const next = { ...s.renderProgress }
+    delete next[id]
+    return { renderProgress: next }
+  }),
   cancelJob: async (id) => {
     const a = api()
     if (!a) return
     await a.render.cancel(id)
+    get().clearProgress(id)
     await get().loadRenderJobs()
   },
   deleteJob: async (id) => {
     const a = api()
     if (!a) return
     await a.render.delete(id)
+    get().clearProgress(id)
     await get().loadRenderJobs()
   },
   requeueJob: async (id) => {
     const a = api()
     if (!a) return
     await a.render.requeue(id)
+    get().clearProgress(id)
     await get().loadRenderJobs()
   },
   deleteDownload: async (id) => {

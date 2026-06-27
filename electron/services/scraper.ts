@@ -50,10 +50,15 @@ export function humanizeCount(n: number): string {
   return String(n)
 }
 
-/** Scrape a channel's stats + full upload list. */
-export async function scrapeChannel(handleOrUrl: string, settings: AppSettings): Promise<ScrapedChannel> {
+/** Scrape a channel's stats + upload list. Pass `fetch:{ flat:false, limit }` to get
+ *  real per-video view counts/durations (slower, count-limited) for the Download picker. */
+export async function scrapeChannel(
+  handleOrUrl: string,
+  settings: AppSettings,
+  fetch?: { flat?: boolean; limit?: number }
+): Promise<ScrapedChannel> {
   const base = channelUrl(handleOrUrl)
-  const data = await runYtdlpJson(videosTab(base), ytdlpOptionsFromSettings(settings))
+  const data = await runYtdlpJson(videosTab(base), { ...ytdlpOptionsFromSettings(settings), ...fetch })
   const videos = (data.entries ?? []).filter((e): e is YtdlpEntry => !!e).map(toScrapedVideo)
   const summedViews = videos.reduce((a, v) => a + v.views, 0)
   // yt-dlp exposes the channel avatar as `thumbnail` at the playlist level, or as the

@@ -5,6 +5,7 @@ import { useData } from '../store/useData'
 export function MyChannels(): JSX.Element {
   const channels = useData((s) => s.channels)
   const addChannel = useData((s) => s.addChannel)
+  const deleteChannel = useData((s) => s.deleteChannel)
   const updateGoals = useData((s) => s.updateGoals)
   const [url, setUrl] = useState('')
   const [connecting, setConnecting] = useState(false)
@@ -124,6 +125,13 @@ export function MyChannels(): JSX.Element {
                 <div style={{ fontSize: 10.5, color: '#8a909c', lineHeight: 1.4 }}>{c.reminderNote}</div>
                 <div onClick={() => beginEdit(c)} className="me-btn" style={{ marginTop: 9, border: '1px solid #262b34', background: '#15181f', borderRadius: 8, padding: '6px 10px', fontSize: 10.5, color: '#c4cad3', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}>Edit goal &amp; reminder</div>
               </div>
+
+              <div
+                className="me-btn"
+                title="Remove this channel"
+                onClick={() => { if (window.confirm(`Remove ${c.name}? This deletes the channel and its scraped uploads.`)) void deleteChannel(c.id) }}
+                style={{ flex: 'none', alignSelf: 'flex-start', border: '1px solid #262b34', background: '#15181f', borderRadius: 8, width: 28, height: 28, display: 'grid', placeItems: 'center', fontSize: 14, color: '#6a7180', cursor: 'pointer' }}
+              >×</div>
             </div>
           )
         })}

@@ -154,7 +154,11 @@ export async function scrapeAll(): Promise<MyChannel[]> {
 export async function sourceVideos(url: string, order: ScrapeOrder, count: number) {
   const repos = getRepos()
   const settings = getSettings()
-  const ch = await scrapeChannel(url, settings)
+  // Non-flat + count-limited so each entry carries a real view_count/duration (the
+  // flat dump omits them, which is why the picker showed "— views"). Over-fetch a
+  // little for "Popular" so the sort has more than `count` to choose from.
+  const fetchN = order === 'Popular' ? Math.min(Math.max(count * 4, count), 50) : count
+  const ch = await scrapeChannel(url, settings, { flat: false, limit: fetchN })
   const ordered = orderVideos(ch.videos, order, count)
   const existing = repos.sourceChannelByUrl(channelUrl(url))
   const sourceId = existing?.id ?? `src-${ch.handle.replace(/^@/, '')}`

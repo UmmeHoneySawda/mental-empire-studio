@@ -9,7 +9,7 @@ import { getRepos } from '../db'
 import { getSettings } from '../store/settings'
 import { formatOutputName } from './audio'
 import { buildAss } from './captions'
-import { runRender, dimensions } from './render'
+import { runRender, dimensions, consumeCancelIntent } from './render'
 import { buildBrollBed } from './broll'
 import { emit, hhmm, pushActivity } from '../ipc/events'
 
@@ -46,12 +46,13 @@ export async function runJob(job: RenderJob): Promise<void> {
   const images = repos.getProjectImages(job.projectId)
   const words = repos.getTranscript(job.projectId)
   const settings = getSettings()
+  // Only the audio is truly required to produce a video: the graph falls back to a
+  // solid background when there are no images, captions are optional (no subtitles),
+  // and the thumbnail is a separate PNG deliverable that never enters the mp4. So we
+  // no longer block a render on images/captions/thumbnail — they're advisory only.
   const preflightMissing: string[] = []
   if (!project.mp3Path || !existsSync(project.mp3Path)) preflightMissing.push('MP3')
   if (!project.durationSec || project.durationSec <= 0) preflightMissing.push('duration')
-  if (images.length === 0) preflightMissing.push('images')
-  if (words.length === 0) preflightMissing.push('captions')
-  if (!existsSync(join(outputDir(), 'thumbnails', `${safeName(project.title)}.png`))) preflightMissing.push('thumbnail')
   if (preflightMissing.length) {
     const msg = `Missing required render assets: ${preflightMissing.join(', ')}`
     repos.setRenderStatus(job.id, { status: 'error', pct: 0, error: msg })
@@ -108,7 +109,7 @@ export async function runJob(job: RenderJob): Promise<void> {
   }
 
   try {
-    await runRender({ project, images, assPath, outPath, settings, videoBedPath, transition, plan, sfxPath }, (pct) => {
+    await runRender({ project, images, assPath, outPath, settings, videoBedPath, transition, plan, sfxPath, jobId: job.id }, (pct) => {
       repos.setRenderStatus(job.id, { status: 'rendering', pct })
       emitR({ jobId: job.id, pct, stage: 'rendering', done: false })
     })
@@ -117,6 +118,15 @@ export async function runJob(job: RenderJob): Promise<void> {
     emitR({ jobId: job.id, pct: 100, stage: 'done', done: true, outputPath: outPath })
     pushActivity({ t: hhmm(), icon: '✓', color: '#36c98e', text: `Rendered ${project.title} → ${base}.mp4` })
   } catch (e) {
+    // A ffmpeg failure caused by the user cancelling/deleting the job isn't an error:
+    // restore it to 'queued' (cancel) or leave the now-deleted row alone (delete).
+    const intent = consumeCancelIntent(job.id)
+    if (intent) {
+      if (intent === 'cancel') repos.setRenderStatus(job.id, { status: 'queued', pct: 0, error: '' })
+      emitR({ jobId: job.id, pct: 0, stage: 'done', done: true })
+      pushActivity({ t: hhmm(), icon: '⊘', color: '#8a909c', text: `Render ${intent === 'cancel' ? 'cancelled' : 'removed'}: ${project.title.slice(0, 42)}` })
+      return
+    }
     const msg = (e as Error).message
     repos.setRenderStatus(job.id, { status: 'error', pct: 0, error: msg })
     emitR({ jobId: job.id, pct: 0, stage: 'error', done: true, error: msg })

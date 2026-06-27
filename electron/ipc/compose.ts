@@ -123,14 +123,14 @@ function validateRenderReady(projectId: string): void {
   const repos = getRepos()
   const project = repos.getProject(projectId)
   if (!project) throw new Error(`Unknown project: ${projectId}`)
+  // Only the audio is truly required to queue/produce a video. Images are optional
+  // (the render falls back to a solid background, or B-roll supplies the visuals),
+  // captions are optional (no subtitles), and the thumbnail is a separate PNG that
+  // never enters the mp4. So we don't block "Save & send to render" on them — they're
+  // surfaced as advisory checklist items on the Render Queue instead.
   const missing: string[] = []
   if (!project.mp3Path || !existsSync(project.mp3Path)) missing.push('MP3')
   if (!project.durationSec || project.durationSec <= 0) missing.push('audio duration')
-  const brollEnabled = project.betaOpts?.broll?.enabled ?? false
-  if (!brollEnabled && repos.getProjectImages(projectId).length === 0) missing.push('images')
-  if (repos.getTranscript(projectId).length === 0) missing.push('captions')
-  const thumbFile = effectiveThumbnailPath(project)
-  if (!thumbFile) missing.push('thumbnail')
   if (missing.length) throw new Error(`Project is not render-ready. Missing: ${missing.join(', ')}.`)
 }
 

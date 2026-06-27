@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
 import type { AppSettings, Project, ProjectImage } from '../../shared/types'
@@ -13,6 +13,39 @@ import { resolutionFor, type CaptionAspect } from './captions'
 // real encode for a stub so the runner is testable without ffmpeg.
 
 const FPS = 30
+
+/** Video codec args for the chosen encoder. CPU = libx264 (CRF); NVIDIA = h264_nvenc
+ *  (constant-quality VBR). Both target visually-equivalent quality at the given level. */
+export function videoCodecArgs(settings: AppSettings, crf: string): string[] {
+  if (settings.encoder === 'nvenc') {
+    return ['-c:v', 'h264_nvenc', '-preset', 'p4', '-rc', 'vbr', '-cq', crf, '-pix_fmt', 'yuv420p']
+  }
+  return ['-c:v', 'libx264', '-preset', 'medium', '-crf', crf, '-pix_fmt', 'yuv420p']
+}
+
+// Live ffmpeg children keyed by render-job id, so the Render Queue's cancel/delete
+// actions can actually terminate a running encode (otherwise ffmpeg keeps pegging the
+// CPU after the row is gone). `intents` records why a child was killed so runJob can
+// set the right post-kill status instead of marking it a render error.
+const running = new Map<string, ChildProcess>()
+const intents = new Map<string, 'cancel' | 'delete'>()
+
+/** Kill the ffmpeg encode for a job (if running) and record why. Returns true if one was killed. */
+export function cancelRender(jobId: string, mode: 'cancel' | 'delete'): boolean {
+  const child = running.get(jobId)
+  if (!child) return false
+  intents.set(jobId, mode)
+  child.kill('SIGKILL')
+  running.delete(jobId)
+  return true
+}
+
+/** Whether a job's last failure was an intentional cancel/delete (consumes the flag). */
+export function consumeCancelIntent(jobId: string): 'cancel' | 'delete' | undefined {
+  const m = intents.get(jobId)
+  if (m) intents.delete(jobId)
+  return m
+}
 
 export function ffmpegPath(): string {
   const exe = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
@@ -68,6 +101,8 @@ export interface RenderInputs {
   assPath: string
   outPath: string
   settings: AppSettings
+  /** render_jobs row id — lets cancel/delete find & kill the running ffmpeg child */
+  jobId?: string
   /** beta auto-B-roll: a pre-assembled full-length video bed used instead of stills */
   videoBedPath?: string
   /** beta style: fallback xfade transition type between image segments (default 'fade') */
@@ -125,7 +160,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
       ...(inp.sfxPath ? ['-i', inp.sfxPath] : []),
       '-filter_complex', bedParts.join(';'),
       '-map', '[v]', '-map', aMap,
-      '-c:v', 'libx264', '-preset', 'medium', '-crf', crfBed, '-pix_fmt', 'yuv420p', '-r', String(FPS),
+      ...videoCodecArgs(settings, crfBed), '-r', String(FPS),
       '-c:a', 'aac', '-b:a', '192k',
       '-t', project.durationSec > 0 ? project.durationSec.toFixed(2) : '1',
       '-shortest', outPath
@@ -192,10 +227,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
     '-filter_complex', parts.join(';'),
     '-map', '[v]',
     '-map', aMap,
-    '-c:v', 'libx264',
-    '-preset', 'medium',
-    '-crf', crf,
-    '-pix_fmt', 'yuv420p',
+    ...videoCodecArgs(settings, crf),
     '-r', String(FPS),
     '-c:a', 'aac',
     '-b:a', '192k',
@@ -223,13 +255,14 @@ export async function runRender(inp: RenderInputs, onProgress?: (pct: number) =>
     return { outputPath: inp.outPath }
   }
 
-  await spawnFfmpeg(buildRenderArgs(inp), inp.project.durationSec, onProgress)
+  await spawnFfmpeg(buildRenderArgs(inp), inp.project.durationSec, onProgress, inp.jobId)
   return { outputPath: inp.outPath }
 }
 
-function spawnFfmpeg(args: string[], durationSec: number, onProgress?: (pct: number) => void): Promise<void> {
+function spawnFfmpeg(args: string[], durationSec: number, onProgress?: (pct: number) => void, jobId?: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(ffmpegPath(), ['-progress', 'pipe:1', '-nostats', ...args], { windowsHide: true })
+    if (jobId) running.set(jobId, child)
     let err = ''
     child.stdout.on('data', (d: Buffer) => {
       // ffmpeg -progress reports out_time_us (microseconds, despite the legacy _ms alias).
@@ -240,8 +273,12 @@ function spawnFfmpeg(args: string[], durationSec: number, onProgress?: (pct: num
       }
     })
     child.stderr.on('data', (d: Buffer) => (err += d))
-    child.on('error', reject)
+    child.on('error', (e) => {
+      if (jobId) running.delete(jobId)
+      reject(e)
+    })
     child.on('close', (code) => {
+      if (jobId) running.delete(jobId)
       if (code === 0) {
         onProgress?.(100)
         resolve()

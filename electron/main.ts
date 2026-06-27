@@ -119,6 +119,11 @@ function shouldStartHidden(): boolean {
 }
 
 function createWindow(showOnReady = true): void {
+  // Production has no use for the default Electron menu — and it ships Ctrl/Cmd+R
+  // (reload) + DevTools accelerators that let the user reload the SPA like a web
+  // page, wiping in-memory state. Keep the menu only in dev (renderer URL present).
+  if (!process.env['ELECTRON_RENDERER_URL']) Menu.setApplicationMenu(null)
+
   mainWindow = new BrowserWindow({
     width: WIN_WIDTH,
     height: WIN_HEIGHT,

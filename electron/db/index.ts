@@ -221,6 +221,8 @@ export interface Repositories {
   setChannelMapping(id: string, mapDone: number, mapTotal: number): void
   markDownloadMatches(matches: Array<{ downloadId: string; uploadId: string }>): void
   updateChannelGoals(id: string, patch: GoalsPatch): void
+  /** Remove an owned channel and its scraped uploads. */
+  deleteMyChannel(id: string): void
   // ---- M4 download + compose writes ----
   download(id: string): DownloadedVideo | undefined
   upsertDownload(d: DownloadedVideo): void
@@ -438,6 +440,13 @@ function buildRepositories(d: Database.Database): Repositories {
         }
       }
       if (sets.length) d.prepare(`UPDATE my_channels SET ${sets.join(', ')} WHERE id=@id`).run(params)
+    },
+    deleteMyChannel: (id) => {
+      const tx = d.transaction(() => {
+        d.prepare('DELETE FROM uploads WHERE myChannelId=?').run(id)
+        d.prepare('DELETE FROM my_channels WHERE id=?').run(id)
+      })
+      tx()
     },
 
     // ---- M4 download + compose writes ----

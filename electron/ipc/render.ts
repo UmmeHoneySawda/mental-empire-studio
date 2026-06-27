@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import type { RenderQueueRow } from '../../shared/types'
 import { getRepos } from '../db'
 import { runAll, outputDir } from '../services/queue'
+import { cancelRender } from '../services/render'
 
 // Render queue IPC (M6): the joined queue view, run-all, cancel, and an output
 // folder picker for the Render Queue screen.
@@ -21,12 +22,12 @@ function jobsView(): RenderQueueRow[] {
     const words = repos.getTranscript(job.projectId)
     const hasThumb = !!project && existsSync(join(thumbsDir, `${safeName(project.title)}.png`))
     const hasMp3 = !!project?.mp3Path && existsSync(project.mp3Path)
+    // Only the audio actually blocks a render (the graph falls back to a solid
+    // background with no images, and captions/thumbnail are optional). hasThumb /
+    // hasCaptions / images are still surfaced as advisory checklist columns.
     const missing: string[] = []
     if (!hasMp3) missing.push('MP3')
     if (!project?.durationSec || project.durationSec <= 0) missing.push('duration')
-    if (images.length === 0) missing.push('images')
-    if (!hasThumb) missing.push('thumbnail')
-    if (words.length === 0) missing.push('captions')
     return {
       job,
       images: images.length,
@@ -44,8 +45,15 @@ function jobsView(): RenderQueueRow[] {
 export function registerRenderIpc(): void {
   ipcMain.handle('render:jobs', () => jobsView())
   ipcMain.handle('render:all', () => runAll())
-  ipcMain.handle('render:cancel', (_e, id: string) => getRepos().setRenderStatus(id, { status: 'queued', pct: 0 }))
-  ipcMain.handle('render:delete', (_e, id: string) => getRepos().deleteRenderJob(id))
+  ipcMain.handle('render:cancel', (_e, id: string) => {
+    // Kill the running encode if any; if it was mid-render the queue runner restores
+    // it to 'queued', otherwise set it here for an already-idle job.
+    if (!cancelRender(id, 'cancel')) getRepos().setRenderStatus(id, { status: 'queued', pct: 0, error: '' })
+  })
+  ipcMain.handle('render:delete', (_e, id: string) => {
+    cancelRender(id, 'delete') // stop ffmpeg before the row disappears
+    getRepos().deleteRenderJob(id)
+  })
   ipcMain.handle('render:requeue', (_e, id: string) => getRepos().setRenderStatus(id, { status: 'queued', pct: 0, error: '' }))
   ipcMain.handle('fs:chooseFolder', async () => {
     const win = BrowserWindow.getAllWindows()[0]

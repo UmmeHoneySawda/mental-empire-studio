@@ -51,6 +51,11 @@ export interface YtdlpOptions {
   cookiesPath?: string
   delaySec?: number
   retries?: number
+  /** When false, omit --flat-playlist so per-video metadata (view_count, duration)
+   *  is included. Slower — pair with `limit` to cap how many videos are extracted. */
+  flat?: boolean
+  /** Cap the number of playlist entries (yt-dlp --playlist-end). */
+  limit?: number
 }
 
 export function ytdlpOptionsFromSettings(s: AppSettings): YtdlpOptions {
@@ -92,7 +97,11 @@ export async function runYtdlpJson(url: string, opts: YtdlpOptions = {}): Promis
 
 function spawnYtdlp(url: string, opts: YtdlpOptions): Promise<YtdlpPlaylist> {
   return new Promise((resolve, reject) => {
-    const args = ['-J', '--flat-playlist', '--no-warnings', '--ignore-errors']
+    const args = ['-J', '--no-warnings', '--ignore-errors']
+    // Default to a flat dump (fast, full list); callers that need real per-video
+    // view counts pass flat:false (+ a limit) to get full metadata extraction.
+    if (opts.flat !== false) args.push('--flat-playlist')
+    if (opts.limit && opts.limit > 0) args.push('--playlist-end', String(opts.limit))
     if (opts.proxy) args.push('--proxy', opts.proxy)
     if (opts.cookiesPath) args.push('--cookies', opts.cookiesPath)
     if (opts.delaySec) args.push('--sleep-requests', String(opts.delaySec))

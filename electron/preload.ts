@@ -57,7 +57,8 @@ const api: NativeApi = {
     upsertProfile: (p: Profile) => ipcRenderer.invoke('db:upsertProfile', p),
     saveTemplate: (t: ThumbnailTemplate) => ipcRenderer.invoke('db:saveTemplate', t),
     recentUploads: (limit?: number) => ipcRenderer.invoke('db:recentUploads', limit),
-    updateChannelGoals: (id: string, patch: GoalsPatch) => ipcRenderer.invoke('db:updateChannelGoals', id, patch)
+    updateChannelGoals: (id: string, patch: GoalsPatch) => ipcRenderer.invoke('db:updateChannelGoals', id, patch),
+    deleteMyChannel: (id: string) => ipcRenderer.invoke('db:deleteMyChannel', id)
   },
 
   scrape: {
