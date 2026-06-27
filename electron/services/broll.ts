@@ -16,6 +16,7 @@ import { parseFfmpegProgressBlock, type FfmpegProgress } from './engine/progress
 // (themes / ranking / coverage) runs offline and is unit-asserted.
 
 const STOPWORDS = new Set(['the', 'a', 'an', 'and', 'or', 'but', 'of', 'to', 'in', 'on', 'is', 'are', 'was', 'it', 'you', 'your', 'i', 'we', 'they', 'he', 'she', 'for', 'with', 'as', 'at', 'by', 'be', 'this', 'that', 'have', 'has', 'will', 'would', 'can', 'just', 'not', 'so', 'do', 'if', 'how', 'what', 'when', 'all', 'one', 'about', 'from', 'they', 'their', 'them'])
+const DEFAULT_MAX_SEGMENTS = 40
 
 export interface BrollCandidate {
   provider: 'pexels' | 'pixabay' | 'coverr'
@@ -85,7 +86,7 @@ export function planCoverage(
   opts: { density: BrollDensity; maxSegments?: number; tailReserve?: number }
 ): BrollSegment[] {
   if (clips.length === 0 || durationSec <= 0) return []
-  const maxSeg = opts.maxSegments ?? 60
+  const maxSeg = Math.max(1, opts.maxSegments ?? DEFAULT_MAX_SEGMENTS)
   const slot = Math.max(durationSec / maxSeg, slotLenFor(opts.density))
   // When the bed will crossfade, reserve a little tail of each clip so there is
   // overlap material for the xfade (else the cut has nothing to fade into).
@@ -97,11 +98,12 @@ export function planCoverage(
     const clip = clips[i % clips.length]
     const remaining = durationSec - t
     const want = Math.min(slot, remaining)
-    // A clip can fill at most its own length (minus the reserved crossfade tail); if
-    // shorter than the slot it makes a shorter segment and the next clip continues.
-    const segLen = Math.min(want, Math.max(0.5, clip.durationSec - reserve))
+    // Keep the segment count bounded even when stock clips are short. Render inputs
+    // loop clips under -t, so a 9s clip can safely fill a calmer 25s slot.
+    const usable = Math.max(0.5, clip.durationSec - reserve)
+    const segLen = Math.max(0.5, want)
     // Rotate the in-point so re-used clips don't always show the same opening frames.
-    const srcStart = clip.durationSec > segLen ? (i * 1.7) % (clip.durationSec - segLen) : 0
+    const srcStart = usable > 0.5 ? (i * 1.7) % usable : 0
     segments.push({ path: clip.path, start: t, end: t + segLen, srcStart })
     t += segLen
     i++
@@ -301,7 +303,7 @@ export async function assembleBed(
     // planCoverage's tailReserve) so the xfade has overlap material; offsets accumulate
     // by visible segment length so the total still equals the audio duration.
     segments.forEach((s, i) => {
-      inputs.push('-ss', s.srcStart.toFixed(2), '-t', (s.end - s.start + BED_CF).toFixed(2), '-i', s.path)
+      inputs.push('-stream_loop', '-1', '-ss', s.srcStart.toFixed(2), '-t', (s.end - s.start + BED_CF).toFixed(2), '-i', s.path)
       parts.push(`[${i}:v]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1,fps=${fps}[v${i}]`)
     })
     let last = 'v0'
@@ -315,7 +317,7 @@ export async function assembleBed(
     mapLabel = `[${last}]`
   } else {
     segments.forEach((s, i) => {
-      inputs.push('-ss', s.srcStart.toFixed(2), '-t', (s.end - s.start).toFixed(2), '-i', s.path)
+      inputs.push('-stream_loop', '-1', '-ss', s.srcStart.toFixed(2), '-t', (s.end - s.start).toFixed(2), '-i', s.path)
       parts.push(`[${i}:v]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1,fps=${fps}[v${i}]`)
     })
     const concatIn = segments.map((_, i) => `[v${i}]`).join('')
@@ -348,6 +350,7 @@ export async function buildBrollBed(opts: {
   poolSize: number
   dims: { w: number; h: number }
   fps: number
+  maxSegments?: number
   /** crossfade clips with this transition (e.g. the style's); undefined = hard cuts */
   transition?: string
   caps?: RenderCapabilities
@@ -373,6 +376,8 @@ export async function buildBrollSegments(opts: {
   dims: { w: number; h: number }
   /** reserve overlap tail only when the final graph will xfade */
   transition?: string
+  /** hard cap for long videos; clips loop when a slot is longer than source media */
+  maxSegments?: number
   onProgress?: (phase: 'fetch' | 'download', done: number, total: number) => void
 }): Promise<BrollPlanResult | null> {
   const themes = extractThemes(opts.words)
@@ -381,6 +386,6 @@ export async function buildBrollSegments(opts: {
   opts.onProgress?.('fetch', cands.length, opts.poolSize)
   const clips = await downloadPool(cands, opts.poolSize, (done, total) => opts.onProgress?.('download', done, total))
   if (clips.length === 0) return null
-  const segments = planCoverage(opts.durationSec, clips, { density: opts.density, tailReserve: opts.transition ? BED_CF : 0 })
+  const segments = planCoverage(opts.durationSec, clips, { density: opts.density, maxSegments: opts.maxSegments, tailReserve: opts.transition ? BED_CF : 0 })
   return { clips, segments }
 }

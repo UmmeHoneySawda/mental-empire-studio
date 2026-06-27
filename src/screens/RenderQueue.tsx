@@ -39,8 +39,10 @@ function check(on: boolean, count?: number): JSX.Element {
 function fmtEta(sec?: number): string {
   if (sec == null || !Number.isFinite(sec)) return ''
   if (sec <= 0) return 'done'
+  const h = Math.floor(sec / 3600)
   const m = Math.floor(sec / 60)
   const s = Math.round(sec % 60)
+  if (h > 0) return `~${h}h ${String(Math.floor((sec % 3600) / 60)).padStart(2, '0')}m left`
   return m > 0 ? `~${m}m ${String(s).padStart(2, '0')}s left` : `~${s}s left`
 }
 

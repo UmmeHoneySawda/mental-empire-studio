@@ -466,6 +466,13 @@ async function runSmokeM6(): Promise<void> {
     const cov = planCoverage(12, [{ path: 'c1', durationSec: 3 }, { path: 'c2', durationSec: 8 }], { density: 'sparse' })
     const covEnd = cov.length ? cov[cov.length - 1].end : 0
     const longTrimmed = cov.every((s) => s.end - s.start <= 9.001)
+    const longCov = planCoverage(1174, [
+      { path: 'short1', durationSec: 9 },
+      { path: 'short2', durationSec: 12 },
+      { path: 'short3', durationSec: 18 }
+    ], { density: 'sparse', maxSegments: 32 })
+    const longCovEnd = longCov.length ? longCov[longCov.length - 1].end : 0
+    const longCapped = longCov.length <= 32 && Math.abs(longCovEnd - 1174) < 0.1
     process.env['ME_BROLL_FIXTURE'] = join(process.cwd(), 'test', 'fixtures', 'broll')
     const bed = await buildBrollBed({ settings: { ...smokeSettings, beta: { enabled: true, pexelsKey: 'k', pixabayKey: '', coverrKey: '' } }, words, durationSec: 12, density: 'sparse', poolSize: 4, dims: { w: 1920, h: 1080 }, fps: 30 })
     delete process.env['ME_BROLL_FIXTURE']
@@ -477,9 +484,9 @@ async function runSmokeM6(): Promise<void> {
       outPath: '/tmp/o.mp4',
       settings: smokeSettings
     }).join(' ')
-    const directOk = directBrollArgs.includes('concat=n=') && directBrollArgs.includes('/x/clip.mp4') && !directBrollArgs.includes('bed-')
-    const brollOk = themes.includes('discipline') && ranked[0].id === 'b' && Math.abs(covEnd - 12) < 0.1 && longTrimmed && !!bed && existsSync(bed!) && directOk
-    console.log(`SMOKE_M6_BROLL themes=${themes.slice(0, 3).join(',')} topRank=${ranked[0].id} covEnd=${covEnd.toFixed(1)} trimmed=${longTrimmed} bed=${!!bed} direct=${directOk}`)
+    const directOk = directBrollArgs.includes('concat=n=') && directBrollArgs.includes('-stream_loop -1') && directBrollArgs.includes('/x/clip.mp4') && !directBrollArgs.includes('bed-')
+    const brollOk = themes.includes('discipline') && ranked[0].id === 'b' && Math.abs(covEnd - 12) < 0.1 && longTrimmed && longCapped && !!bed && existsSync(bed!) && directOk
+    console.log(`SMOKE_M6_BROLL themes=${themes.slice(0, 3).join(',')} topRank=${ranked[0].id} covEnd=${covEnd.toFixed(1)} trimmed=${longTrimmed} long=${longCov.length}/${longCovEnd.toFixed(1)} bed=${!!bed} direct=${directOk}`)
 
     // ---- Beta style + effect plan: validator guardrails, rule engine, render wiring ----
     const vp = validateEffectPlan({

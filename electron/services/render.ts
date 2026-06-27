@@ -163,7 +163,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
     segments.forEach((s, i) => {
       const dur = Math.max(0.5, s.end - s.start)
       const extra = inp.transition && i < segments.length - 1 ? 0.3 : 0
-      inputs.push('-ss', s.srcStart.toFixed(2), '-t', (dur + extra).toFixed(2), '-i', s.path)
+      inputs.push('-stream_loop', '-1', '-ss', s.srcStart.toFixed(2), '-t', (dur + extra).toFixed(2), '-i', s.path)
       parts.push(`[${i}:v]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1,fps=${FPS}[bv${i}]`)
     })
     inputs.push('-i', project.mp3Path)

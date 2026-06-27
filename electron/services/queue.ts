@@ -168,9 +168,11 @@ export async function runJob(job: RenderJob): Promise<void> {
   // Beta auto-B-roll: assemble a themed stock-footage bed; fall back to stills on failure.
   let videoBedPath: string | undefined
   let brollSegments: BrollSegment[] | undefined
+  let brollTransition = transition
   if (beta?.broll.enabled) {
     try {
       const dims = dimensions(settings.quality, renderProject.captionAspect)
+      const maxSegments = renderProject.durationSec > 600 ? 32 : 40
       const planned = await buildBrollSegments({
         settings,
         words,
@@ -179,6 +181,7 @@ export async function runJob(job: RenderJob): Promise<void> {
         poolSize: beta.broll.poolSize,
         dims,
         transition,
+        maxSegments,
         onProgress: (phase, done, total) => {
           emitStage('fetching-broll', total > 0 ? (done / total) * 100 : 0, `${phase === 'download' ? 'Downloading' : 'Fetching'} B-roll ${done}/${total}`)
         }
@@ -186,7 +189,8 @@ export async function runJob(job: RenderJob): Promise<void> {
       if (planned?.segments.length) {
         if (planned.segments.length <= 45) {
           brollSegments = planned.segments
-          emitStage('assembling', 100, `Using single-pass B-roll (${planned.segments.length} clips)`)
+          brollTransition = planned.segments.length > 24 ? undefined : transition
+          emitStage('assembling', 100, `Using single-pass B-roll (${planned.segments.length} clips${brollTransition ? ', crossfades' : ', hard cuts'})`)
         } else {
           const bed = await buildBrollBed({
             settings,
@@ -197,9 +201,10 @@ export async function runJob(job: RenderJob): Promise<void> {
             poolSize: beta.broll.poolSize,
             dims,
             fps: 30,
-            transition,
+            maxSegments,
+            transition: undefined,
             onProgress: (phase, done, total, ffmpeg) => {
-              if (phase === 'assemble') emitStage('assembling', ffmpeg?.pct ?? done, `Assembling B-roll fallback ${done}/${total}`, ffmpeg)
+              if (phase === 'assemble') emitStage('assembling', ffmpeg?.pct ?? done, `Encoding B-roll fallback ${Math.round(ffmpeg?.pct ?? done)}%`, ffmpeg)
             }
           })
           videoBedPath = bed ?? undefined
@@ -214,7 +219,7 @@ export async function runJob(job: RenderJob): Promise<void> {
   }
 
   try {
-    await runRender({ project: renderProject, images, assPath, outPath, settings, caps, videoBedPath, brollSegments, transition, plan, sfxPath, jobId: job.id, logPath }, (p) => {
+    await runRender({ project: renderProject, images, assPath, outPath, settings, caps, videoBedPath, brollSegments, transition: brollSegments ? brollTransition : transition, plan, sfxPath, jobId: job.id, logPath }, (p) => {
       emitStage('encoding', p.pct, `Encoding with ${enc.label}`, p)
     })
     emitStage('finalizing', 90, 'Writing output')
