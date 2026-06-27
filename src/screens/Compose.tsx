@@ -41,6 +41,7 @@ function MediaTab(): JSX.Element {
   const mode = project?.imageMode ?? 'sequence'
   const dragId = useRef<string | null>(null)
   const durationMissing = !project || !project.durationSec || project.durationSec <= 0
+  const brollEnabled = asBetaOpts(project?.betaOpts).broll.enabled
 
   const pickFiles = (e: React.ChangeEvent<HTMLInputElement>): void => {
     // Electron 32 removed File.path — resolve via webUtils through the preload bridge.
@@ -65,12 +66,22 @@ function MediaTab(): JSX.Element {
 
   return (
     <>
-      <div style={{ display: 'flex', justifyContent: 'flex-end', marginBottom: 16 }}>
+      <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+        {brollEnabled && (
+          <div style={{ fontSize: 11, color: '#f5b323', background: 'rgba(245,179,35,.1)', border: '1px solid rgba(245,179,35,.3)', borderRadius: 8, padding: '5px 10px' }}>
+            ⚠ Auto B-roll on — your images may be overlaid with stock footage during render
+          </div>
+        )}
         <div style={{ display: 'flex', background: '#0e1116', border: '1px solid #23272f', borderRadius: 10, overflow: 'hidden', fontSize: 12.5 }}>
           <button type="button" title="Play images in a fixed order, one after another" onClick={() => void setMedia({ imageMode: 'sequence' })} style={{ border: 0, padding: '9px 16px', cursor: 'pointer', background: mode === 'sequence' ? 'var(--accent)' : 'transparent', color: mode === 'sequence' ? 'var(--accent-ink)' : '#8a909c', fontWeight: 600 }}>Sequence</button>
           <button type="button" title="Shuffle images randomly on each render (locked by seed)" onClick={() => void setMedia({ imageMode: 'pool' })} style={{ border: 0, padding: '9px 16px', cursor: 'pointer', background: mode === 'pool' ? 'var(--accent)' : 'transparent', color: mode === 'pool' ? 'var(--accent-ink)' : '#8a909c', fontWeight: 600 }}>Random pool</button>
         </div>
       </div>
+      {mode === 'pool' && (
+        <div style={{ fontSize: 11, color: '#8a909c', marginBottom: 12, padding: '8px 12px', background: '#0e1116', border: '1px solid #23272f', borderRadius: 9 }}>
+          Images will be shuffled into a random order on each render. Use Re-roll to preview a different arrangement, or lock a specific order with the seed.
+        </div>
+      )}
       <div style={{ display: 'flex', gap: 20, marginBottom: 20 }}>
         <div style={{ flex: 'none', width: 520 }}>
           <div style={{ border: '1px solid #1d2129', borderRadius: 14, aspectRatio: '16/9', background: images[0] ? '#0e1116' : 'linear-gradient(135deg,#23262e,#15171d)', position: 'relative', overflow: 'hidden', display: 'grid', placeItems: 'center' }}>
@@ -123,7 +134,7 @@ function MediaTab(): JSX.Element {
           <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#6a7180', width: 48 }}>IMAGE</span>
           <div style={{ flex: 1, display: 'flex', gap: 4, height: 24 }}>
             {(images.length ? images : [null, null, null]).map((im, i) => (
-              <div key={im?.id ?? i} title={im ? `${fmt(im.rangeStart)}–${fmt(im.rangeEnd)}` : undefined} style={{ flex: 1, borderRadius: 6, background: i === 0 ? 'var(--accent)' : '#2b303b', opacity: i === 0 ? 0.85 : 1, display: 'grid', placeItems: 'center', fontSize: 9, color: i === 0 ? 'var(--accent-ink)' : '#aab0bb', fontWeight: i === 0 ? 600 : undefined, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', padding: '0 3px' }}>
+              <div key={im?.id ?? i} title={im ? `${fmt(im.rangeStart)}–${fmt(im.rangeEnd)}` : undefined} style={{ flex: 1, borderRadius: 6, background: '#2b303b', display: 'grid', placeItems: 'center', fontSize: 9, color: '#aab0bb', overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis', padding: '0 3px' }}>
                 {im ? `${fmt(im.rangeStart)}–${fmt(im.rangeEnd)}` : `img ${i + 1}`}
               </div>
             ))}
@@ -371,7 +382,19 @@ export function Compose(): JSX.Element {
       <div style={{ display: 'flex', alignItems: 'flex-end', marginBottom: 18 }}>
         <div><Eyebrow>STEP 02 — COMPOSE</Eyebrow><Title>Build the video</Title></div>
         <div style={{ flex: 1 }} />
-        <div style={{ fontSize: 12, color: '#6a7180' }}>{project ? `${project.title} · ${Math.floor((project.durationSec || 0) / 60)}:${String(Math.round((project.durationSec || 0) % 60)).padStart(2, '0')}` : 'No project — download a clip first'}</div>
+        {downloads.length > 1 ? (
+          <select
+            value={project?.downloadId ?? ''}
+            onChange={(e) => { if (e.target.value) void openProject(e.target.value) }}
+            style={{ border: '1px solid #23272f', borderRadius: 9, padding: '7px 12px', fontSize: 12, color: '#dde0e5', background: '#0e1116', maxWidth: 280, outline: 'none', cursor: 'pointer' }}
+          >
+            {downloads.map((d) => (
+              <option key={d.id} value={d.id}>{d.title}</option>
+            ))}
+          </select>
+        ) : (
+          <div style={{ fontSize: 12, color: '#6a7180' }}>{project ? `${project.title} · ${Math.floor((project.durationSec || 0) / 60)}:${String(Math.round((project.durationSec || 0) % 60)).padStart(2, '0')}` : 'No project — download a clip first'}</div>
+        )}
       </div>
       <div style={{ display: 'flex', gap: 9, marginBottom: 22 }}>
         <Tab id="media" label="Audio + Image" icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="5" width="18" height="14" rx="2.5" /><circle cx="8.5" cy="10" r="1.7" /><path d="M4 17l5-4 4 3 2-2 5 4" /></svg>} />

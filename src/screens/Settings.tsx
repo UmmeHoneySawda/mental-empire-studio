@@ -64,6 +64,12 @@ export function Settings(): JSX.Element {
     )
     if (ok) void resetAll()
   }
+  const onSoftReset = (): void => {
+    const ok = window.confirm(
+      'Reset data and keep API keys?\n\nThis deletes all channels, profiles, projects, downloads and the render queue, but keeps your API keys, appearance settings, and thumbnail templates. This cannot be undone.'
+    )
+    if (ok) void window.api?.settings?.softReset?.()
+  }
   const qualities: AppSettings['quality'][] = ['720p', '1080p', '1440p']
 
   return (
@@ -89,7 +95,7 @@ export function Settings(): JSX.Element {
             <div style={{ display: 'flex', gap: 26, flexWrap: 'wrap' }}>
               <div><div style={{ fontSize: 12, color: '#8a909c', marginBottom: 7 }}>Parallel renders</div><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><input type="number" min={1} max={8} value={settings.concurrency} onChange={(e) => updateSettings({ concurrency: Math.max(1, Number(e.target.value)) })} style={{ width: 56, border: '1px solid #23272f', borderRadius: 8, padding: '8px 12px', fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 15, color: '#eef0f3', background: '#0e1116', outline: 'none' }} /><span style={{ fontSize: 11, color: '#6a7180' }}>at a time</span></div></div>
               <div><div style={{ fontSize: 12, color: '#8a909c', marginBottom: 7 }}>Quality</div><div style={{ display: 'flex', border: '1px solid #23272f', borderRadius: 8, overflow: 'hidden', fontSize: 11.5 }}>{qualities.map((q) => { const on = q === quality; return <div key={q} onClick={() => updateSettings({ quality: q })} style={{ padding: '8px 12px', cursor: 'pointer', background: on ? 'var(--accent)' : undefined, color: on ? 'var(--accent-ink)' : '#8a909c', fontWeight: on ? 600 : undefined }}>{q}</div> })}</div></div>
-              <div><div style={{ fontSize: 12, color: '#8a909c', marginBottom: 7 }}>Encoder</div><div style={{ border: '1px solid #23272f', borderRadius: 8, padding: '8px 13px', fontSize: 11.5, color: '#dde0e5', background: '#0e1116' }}>H.264 · GPU ▾</div></div>
+              <div><div style={{ fontSize: 12, color: '#8a909c', marginBottom: 7 }}>Encoder</div><div style={{ border: '1px solid #23272f', borderRadius: 8, padding: '8px 13px', fontSize: 11.5, color: '#dde0e5', background: '#0e1116' }}>H.264 · CPU (libx264) ▾</div></div>
             </div>
           </Card>
 
@@ -159,12 +165,21 @@ export function Settings(): JSX.Element {
           </Card>
 
           <Card label="DANGER ZONE">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 12.5, color: '#cdd2da', marginBottom: 3 }}>Reset to default settings</div>
-                <div style={{ fontSize: 11, color: '#6a7180', lineHeight: 1.4 }}>Wipes all channels, profiles, projects, downloads, templates and the render queue, and restores every setting. Can’t be undone.</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 12.5, color: '#cdd2da', marginBottom: 3 }}>Reset data (keep API keys)</div>
+                  <div style={{ fontSize: 11, color: '#6a7180', lineHeight: 1.4 }}>Clears channels, profiles, projects, downloads and the render queue. Keeps your API keys, appearance and thumbnail templates. Can't be undone.</div>
+                </div>
+                <div className="me-btn" onClick={onSoftReset} style={{ flex: 'none', border: '1px solid #f5b323', color: '#f5b323', background: 'rgba(245,179,35,.08)', borderRadius: 9, padding: '9px 15px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Reset data</div>
               </div>
-              <div className="me-btn" onClick={onReset} style={{ flex: 'none', border: '1px solid #ff5a6e', color: '#ff8a96', background: 'rgba(255,90,110,.10)', borderRadius: 9, padding: '9px 15px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Reset everything</div>
+              <div style={{ borderTop: '1px solid #1d2129', paddingTop: 11, display: 'flex', alignItems: 'center', gap: 14 }}>
+                <div style={{ flex: 1 }}>
+                  <div style={{ fontSize: 12.5, color: '#cdd2da', marginBottom: 3 }}>Reset to default settings</div>
+                  <div style={{ fontSize: 11, color: '#6a7180', lineHeight: 1.4 }}>Wipes all channels, profiles, projects, downloads, templates and the render queue, and restores every setting including API keys. Can't be undone.</div>
+                </div>
+                <div className="me-btn" onClick={onReset} style={{ flex: 'none', border: '1px solid #ff5a6e', color: '#ff8a96', background: 'rgba(255,90,110,.10)', borderRadius: 9, padding: '9px 15px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Reset everything</div>
+              </div>
             </div>
           </Card>
         </div>

@@ -30,8 +30,11 @@ export function RenderQueue(): JSX.Element {
   const rendering = useData((s) => s.rendering)
   const loadRenderJobs = useData((s) => s.loadRenderJobs)
   const renderAll = useData((s) => s.renderAll)
+  const deleteJob = useData((s) => s.deleteJob)
+  const requeueJob = useData((s) => s.requeueJob)
   const settings = useStore((s) => s.settings)
   const updateSettings = useStore((s) => s.updateSettings)
+  const setActive = useStore((s) => s.setActive)
 
   useEffect(() => {
     void loadRenderJobs()
@@ -64,26 +67,59 @@ export function RenderQueue(): JSX.Element {
 
       <div style={{ border: '1px solid #1d2129', borderRadius: 14, overflow: 'hidden', background: '#12151b', marginBottom: 20 }}>
         <div style={{ display: 'flex', padding: '12px 18px', borderBottom: '1px solid #1d2129', fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '.6px', color: '#5b616f' }}>
-          <div style={{ flex: 2.2 }}>VIDEO</div><div style={{ width: 70, textAlign: 'center' }}>MP3</div><div style={{ width: 74, textAlign: 'center' }}>IMAGES</div><div style={{ width: 70, textAlign: 'center' }}>THUMB</div><div style={{ width: 80, textAlign: 'center' }}>CAPTIONS</div><div style={{ width: 170 }}>STATUS</div>
+          <div style={{ flex: 2.2 }}>VIDEO</div><div style={{ width: 60, textAlign: 'center' }}>MP3</div><div style={{ width: 64, textAlign: 'center' }}>IMAGES</div><div style={{ width: 60, textAlign: 'center' }}>THUMB</div><div style={{ width: 72, textAlign: 'center' }}>CAPTIONS</div><div style={{ flex: 1 }}>STATUS</div><div style={{ width: 60, textAlign: 'right' }}>ACTIONS</div>
         </div>
         {rows.length === 0 && (
-          <div style={{ padding: '28px 18px', textAlign: 'center', fontSize: 12.5, color: '#6a7180' }}>Nothing queued yet — compose a video and hit “Save &amp; send to render”.</div>
+          <div style={{ padding: '28px 18px', textAlign: 'center', fontSize: 12.5, color: '#6a7180' }}>Nothing queued yet — compose a video and hit "Save &amp; send to render".</div>
         )}
         {rows.map((r) => {
           const { pct, status } = live(r)
+          const isBlocked = !r.isReady && status !== 'rendering' && status !== 'done'
           const st = STATUS_TEXT[status]
           const barColor = status === 'done' ? '#36c98e' : status === 'error' ? '#ff5a6e' : 'var(--accent)'
+          const statusLabel = isBlocked ? 'blocked' : status === 'rendering' ? `${pct}%` : st.text
+          const statusColor = isBlocked ? '#ff8a96' : st.color
           return (
-            <div key={r.job.id} className="me-row" style={{ display: 'flex', alignItems: 'center', padding: '14px 18px', borderBottom: '1px solid #14171d' }}>
+            <div key={r.job.id} className="me-row" style={{ display: 'flex', alignItems: 'center', padding: '12px 18px', borderBottom: '1px solid #14171d' }}>
               <div style={{ flex: 2.2, display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
                 <div style={{ width: 50, height: 28, borderRadius: 6, background: THUMB_BG, flex: 'none', overflow: 'hidden' }}>{r.firstImagePath && <img src={mediaSrc(r.firstImagePath)} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />}</div>
-                <div style={{ minWidth: 0 }}><div style={{ fontSize: 13, color: '#dde0e5', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.job.title}</div><div style={{ fontSize: 10.5, color: '#5b616f', fontFamily: 'var(--font-mono)' }}>{r.job.channel}{r.missing.length ? ` · missing ${r.missing.join(', ')}` : ''}</div></div>
+                <div style={{ minWidth: 0 }}>
+                  <div style={{ fontSize: 13, color: '#dde0e5', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.job.title}</div>
+                  {isBlocked && r.missing.length > 0 && (
+                    <div style={{ fontSize: 10, color: '#ff8a96', marginTop: 2 }}>
+                      Missing: {r.missing.map((m, i) => (
+                        <span key={m}>
+                          {i > 0 && ', '}
+                          {(m === 'thumbnail') ? (
+                            <span style={{ cursor: 'pointer', textDecoration: 'underline' }} onClick={() => setActive('thumb')}>{m}</span>
+                          ) : (m === 'captions' || m === 'images') ? (
+                            <span style={{ cursor: 'pointer', textDecoration: 'underline' }} onClick={() => setActive('compose')}>{m}</span>
+                          ) : m}
+                        </span>
+                      ))}
+                    </div>
+                  )}
+                  {!isBlocked && <div style={{ fontSize: 10.5, color: '#5b616f', fontFamily: 'var(--font-mono)' }}>{r.job.channel}</div>}
+                </div>
               </div>
-              <div style={{ width: 70, textAlign: 'center' }}>{check(r.hasMp3)}</div>
-              <div style={{ width: 74, textAlign: 'center' }}>{check(true, r.images)}</div>
-              <div style={{ width: 70, textAlign: 'center' }}>{check(r.hasThumb)}</div>
-              <div style={{ width: 80, textAlign: 'center' }}>{check(r.hasCaptions)}</div>
-              <div style={{ width: 170 }}><div style={{ display: 'flex', alignItems: 'center', gap: 9 }}><div style={{ flex: 1, height: 6, borderRadius: 4, background: '#1a1e26', overflow: 'hidden' }}><div style={{ width: `${pct}%`, height: '100%', background: barColor }} /></div><span style={{ fontSize: 10.5, color: r.isReady ? st.color : '#ff8a96', fontFamily: 'var(--font-mono)', width: 56 }}>{!r.isReady && status === 'queued' ? 'blocked' : status === 'rendering' ? `${pct}%` : st.text}</span></div></div>
+              <div style={{ width: 60, textAlign: 'center' }}>{check(r.hasMp3)}</div>
+              <div style={{ width: 64, textAlign: 'center' }}>{check(true, r.images)}</div>
+              <div style={{ width: 60, textAlign: 'center' }}>{check(r.hasThumb)}</div>
+              <div style={{ width: 72, textAlign: 'center' }}>{check(r.hasCaptions)}</div>
+              <div style={{ flex: 1 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ flex: 1, height: 6, borderRadius: 4, background: '#1a1e26', overflow: 'hidden' }}>
+                    <div style={{ width: `${isBlocked ? 0 : pct}%`, height: '100%', background: barColor }} />
+                  </div>
+                  <div style={{ fontSize: 10.5, color: statusColor, fontFamily: 'var(--font-mono)', width: 52, textAlign: 'right', flexShrink: 0, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{statusLabel}</div>
+                </div>
+              </div>
+              <div style={{ width: 60, display: 'flex', justifyContent: 'flex-end', gap: 5 }}>
+                {(status === 'error' || isBlocked) && (
+                  <button type="button" onClick={() => void requeueJob(r.job.id)} title="Reset to queued and retry" className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 6, padding: '4px 7px', fontSize: 10, color: '#c4cad3', cursor: 'pointer' }}>↻</button>
+                )}
+                <button type="button" onClick={() => void deleteJob(r.job.id)} title="Remove from queue" className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 6, padding: '4px 7px', fontSize: 10, color: '#6a7180', cursor: 'pointer' }}>×</button>
+              </div>
             </div>
           )
         })}
@@ -104,9 +140,13 @@ export function RenderQueue(): JSX.Element {
             Render ready ({readyCount})
           </button>
         )}
-        <button type="button" disabled={!canRenderAll} onClick={() => void renderAll()} className="me-btn" title={!rows.length ? 'No render jobs queued' : !rows.every((r) => r.isReady) ? `${rows.length - readyCount} items still missing assets` : undefined} style={{ display: 'flex', alignItems: 'center', gap: 9, border: 0, background: 'linear-gradient(180deg,var(--accent),var(--accent-deep))', color: 'var(--accent-ink)', fontWeight: 600, fontSize: 13.5, padding: '13px 26px', borderRadius: 11, cursor: canRenderAll ? 'pointer' : 'not-allowed', boxShadow: '0 6px 20px -5px var(--accent-glow)', opacity: canRenderAll ? 1 : 0.5 }}><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M5 4l14 8-14 8z" /></svg>{rendering ? 'Rendering…' : `Render all (${rows.length})`}</button>
+        <button type="button" disabled={!canRenderAll} onClick={() => void renderAll()} className="me-btn" title={!rows.length ? 'No render jobs queued' : !rows.every((r) => r.isReady) ? `${rows.length - readyCount} item${rows.length - readyCount !== 1 ? 's' : ''} still missing assets — click ↻ to retry after fixing` : undefined} style={{ display: 'flex', alignItems: 'center', gap: 9, border: 0, background: 'linear-gradient(180deg,var(--accent),var(--accent-deep))', color: 'var(--accent-ink)', fontWeight: 600, fontSize: 13.5, padding: '13px 26px', borderRadius: 11, cursor: canRenderAll ? 'pointer' : 'not-allowed', boxShadow: '0 6px 20px -5px var(--accent-glow)', opacity: canRenderAll ? 1 : 0.5 }}><svg width="15" height="15" viewBox="0 0 24 24" fill="currentColor"><path d="M5 4l14 8-14 8z" /></svg>{rendering ? 'Rendering…' : `Render all (${rows.length})`}</button>
       </div>
-      {rows.some((r) => !r.isReady) && <div style={{ marginTop: 10, fontSize: 12, color: '#ff8a96', textAlign: 'right' }}>Fix blocked rows in Compose/Thumbnails before rendering.</div>}
+      {rows.some((r) => !r.isReady) && (
+        <div style={{ marginTop: 10, fontSize: 11.5, color: '#ff8a96', textAlign: 'right' }}>
+          Blocked rows are missing assets — click the underlined items to fix them, then ↻ to retry.
+        </div>
+      )}
     </ScreenPad>
   )
 }

@@ -40,6 +40,12 @@ export function registerThumbnailsIpc(): void {
     const file = join(thumbsDir(), `${safeName(name)}.png`)
     writeFileSync(file, Buffer.from(b64, 'base64'))
     getRepos().updateProject(projectId, { thumbPath: file })
+    // Auto-requeue any render jobs for this project that were blocked by a missing thumbnail.
+    const repos = getRepos()
+    const blocked = repos.renderJobs().filter(
+      (j) => j.projectId === projectId && j.status === 'error' && j.error?.includes('Missing required render assets')
+    )
+    blocked.forEach((j) => repos.setRenderStatus(j.id, { status: 'queued', pct: 0, error: '' }))
     return file
   })
 }

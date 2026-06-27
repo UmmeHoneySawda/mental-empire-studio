@@ -26,6 +26,7 @@ export function Download(): JSX.Element {
   const fetchSource = useData((s) => s.fetchSource)
   const startDownload = useData((s) => s.startDownload)
   const resumeDownload = useData((s) => s.resumeDownload)
+  const deleteDownload = useData((s) => s.deleteDownload)
   const openProject = useData((s) => s.openProject)
   const setActive = useStore((s) => s.setActive)
 
@@ -145,7 +146,7 @@ export function Download(): JSX.Element {
         </div>
         <div style={{ border: '1px solid #1d2129', borderRadius: 14, overflow: 'hidden', background: '#12151b' }}>
           <div style={{ display: 'flex', padding: '11px 16px', borderBottom: '1px solid #1d2129', fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '.6px', color: '#5b616f' }}>
-            <div style={{ flex: 2.4 }}>CLIP</div><div style={{ width: 120 }}>SOURCE</div><div style={{ width: 130 }}>STAGE</div><div style={{ width: 140 }}>PROGRESS</div><div style={{ width: 80, textAlign: 'right' }}>ACTION</div>
+            <div style={{ flex: 2.4 }}>CLIP</div><div style={{ width: 120 }}>SOURCE</div><div style={{ width: 130 }}>STAGE</div><div style={{ width: 140 }}>PROGRESS</div><div style={{ width: 100, textAlign: 'right' }}>ACTION</div>
           </div>
           {downloads.length === 0 && (
             <div style={{ padding: '22px 16px', textAlign: 'center', fontSize: 12, color: '#5b616f' }}>Nothing downloaded yet.</div>
@@ -166,12 +167,13 @@ export function Download(): JSX.Element {
                 <div style={{ width: 120, fontSize: 11, color: '#8a909c', fontFamily: 'var(--font-mono)' }}>{d.channel}</div>
                 <div style={{ width: 130, fontSize: 11.5, color: stageColor }}>{currentStage}</div>
                 <div style={{ width: 140 }}><div style={{ height: 6, borderRadius: 4, background: '#1a1e26', overflow: 'hidden' }}><div style={{ width: pct, height: '100%', background: barColor }} /></div></div>
-                <div style={{ width: 80, textAlign: 'right' }}>
+                <div style={{ width: 100, display: 'flex', justifyContent: 'flex-end', gap: 5 }}>
                   {(() => {
                     if (currentStage === 'Downloading') return <span style={{ fontSize: 11, color: '#f5b323', fontFamily: 'var(--font-mono)' }}>Downloading…</span>
                     if (currentStage === 'Downloaded only') return <span onClick={() => window.api?.download?.openFolder?.(d.id)} className="me-btn" style={{ display: 'inline-block', border: '1px solid #262b34', background: '#15181f', borderRadius: 7, padding: '6px 12px', fontSize: 11, color: '#dde0e5', cursor: 'pointer' }}>Open</span>
                     return <span onClick={() => void resumeDownload(d.id)} className="me-btn" style={{ display: 'inline-block', border: '1px solid #262b34', background: '#15181f', borderRadius: 7, padding: '6px 12px', fontSize: 11, color: '#dde0e5', cursor: 'pointer' }}>Resume</span>
                   })()}
+                  <span onClick={() => void deleteDownload(d.id)} title="Remove from history" className="me-btn" style={{ display: 'inline-block', border: '1px solid #262b34', background: '#15181f', borderRadius: 7, padding: '6px 9px', fontSize: 11, color: '#6a7180', cursor: 'pointer' }}>×</span>
                 </div>
               </div>
             )

@@ -65,6 +65,9 @@ interface DataState {
   loadRenderJobs: () => Promise<void>
   renderAll: () => Promise<void>
   cancelJob: (id: string) => Promise<void>
+  deleteJob: (id: string) => Promise<void>
+  requeueJob: (id: string) => Promise<void>
+  deleteDownload: (id: string) => Promise<void>
   loadProfiles: () => Promise<void>
   runProfile: (id: string) => Promise<string[]>
   saveProfile: (p: Profile) => Promise<void>
@@ -285,6 +288,24 @@ export const useData = create<DataState>((set, get) => ({
     if (!a) return
     await a.render.cancel(id)
     await get().loadRenderJobs()
+  },
+  deleteJob: async (id) => {
+    const a = api()
+    if (!a) return
+    await a.render.delete(id)
+    await get().loadRenderJobs()
+  },
+  requeueJob: async (id) => {
+    const a = api()
+    if (!a) return
+    await a.render.requeue(id)
+    await get().loadRenderJobs()
+  },
+  deleteDownload: async (id) => {
+    const a = api()
+    if (!a) return
+    await a.download.delete(id)
+    await get().loadDownloads()
   },
 
   loadProfiles: async () => {

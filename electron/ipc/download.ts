@@ -114,6 +114,7 @@ export function registerDownloadIpc(): void {
   ipcMain.handle('download:start', (_e, videos: ScrapedVideo[], opts: DownloadOptions) => startDownloads(videos, opts))
   ipcMain.handle('download:resume', (_e, id: string) => resume(id))
   ipcMain.handle('download:openFolder', (_e, id: string) => openFolder(id))
+  ipcMain.handle('download:delete', (_e, id: string) => getRepos().deleteDownload(id))
 }
 
 // Exported for the headless M4 smoke harness.

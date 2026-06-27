@@ -56,6 +56,10 @@ export async function scrapeChannel(handleOrUrl: string, settings: AppSettings):
   const data = await runYtdlpJson(videosTab(base), ytdlpOptionsFromSettings(settings))
   const videos = (data.entries ?? []).filter((e): e is YtdlpEntry => !!e).map(toScrapedVideo)
   const summedViews = videos.reduce((a, v) => a + v.views, 0)
+  // yt-dlp exposes the channel avatar as `thumbnail` at the playlist level, or as the
+  // highest-resolution entry in `thumbnails`. Prefer an https URL; ignore data URIs.
+  const rawThumb = data.thumbnail ?? data.thumbnails?.find((t) => t.url?.startsWith('https'))?.url
+  const avatar = rawThumb?.startsWith('https') ? rawThumb : undefined
   return {
     handle: handleOf(data, base),
     name: data.channel ?? data.uploader ?? handleOf(data, base),
@@ -65,7 +69,8 @@ export async function scrapeChannel(handleOrUrl: string, settings: AppSettings):
     // labeled approximation (an exact about-page scrape can replace this later).
     totalViews: summedViews,
     totalViewsExact: false,
-    videos
+    videos,
+    avatar
   }
 }
 

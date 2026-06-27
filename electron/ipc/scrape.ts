@@ -107,7 +107,9 @@ export async function addMyChannel(url: string, linkedSourceId?: string): Promis
     name: scraped.name,
     handle: scraped.handle,
     mono: monoFor(scraped.name),
-    avatar: avatarFor(id),
+    // Prefer the real channel avatar URL when yt-dlp provides one; fall back to the
+    // deterministic CSS gradient so the card always has something to render.
+    avatar: scraped.avatar ?? avatarFor(id),
     views: humanizeCount(scraped.totalViews),
     subs: humanizeCount(scraped.subs),
     total: scraped.videos.length,

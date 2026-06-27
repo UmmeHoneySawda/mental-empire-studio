@@ -31,6 +31,10 @@ export function registerIpc(): void {
     schedulerStart()
     return next
   })
+  // Soft reset: wipe data (channels/downloads/projects/jobs) but keep settings + API keys.
+  ipcMain.handle('app:softReset', () => {
+    getRepos().softReset()
+  })
 
   // ---- domain data (sqlite) ----
   ipcMain.handle('db:myChannels', () => getRepos().myChannels())

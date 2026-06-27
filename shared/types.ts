@@ -103,6 +103,8 @@ export interface ScrapedChannel {
   totalViews: number
   totalViewsExact: boolean
   videos: ScrapedVideo[]
+  /** channel avatar/thumbnail URL from yt-dlp (may be absent for some channels) */
+  avatar?: string
 }
 
 /** Streamed progress for a long scrape (one channel at a time). */
@@ -504,6 +506,8 @@ export interface NativeApi {
     set(patch: DeepPartial<AppSettings>): Promise<AppSettings>
     /** factory reset: settings → defaults and wipe all projects/profiles/channels/jobs */
     reset(): Promise<AppSettings>
+    /** data-only reset: wipe channels/projects/downloads/jobs/transcripts but keep API keys and settings */
+    softReset(): Promise<void>
   }
   effects: {
     /** beta: generate a validated effect-plan JSON for a project via Groq */
@@ -544,6 +548,8 @@ export interface NativeApi {
     resume(id: string): Promise<DownloadedVideo>
     /** reveal a downloaded file in the OS file manager */
     openFolder(id: string): Promise<void>
+    /** remove a download row from history */
+    delete(id: string): Promise<void>
   }
   compose: {
     createProject(downloadId: string): Promise<Project>
@@ -584,6 +590,10 @@ export interface NativeApi {
     all(): Promise<void>
     /** cancel a queued/rendering job */
     cancel(jobId: string): Promise<void>
+    /** permanently remove a job from the queue */
+    delete(jobId: string): Promise<void>
+    /** reset an error/blocked job back to queued so it can be retried */
+    requeue(jobId: string): Promise<void>
   }
   automation: {
     /** run a profile's pipeline; interactive returns new project ids for quick-edit */

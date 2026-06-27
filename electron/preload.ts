@@ -39,7 +39,8 @@ const api: NativeApi = {
   settings: {
     get: () => ipcRenderer.invoke('settings:get'),
     set: (patch: DeepPartial<AppSettings>) => ipcRenderer.invoke('settings:set', patch),
-    reset: () => ipcRenderer.invoke('app:reset')
+    reset: () => ipcRenderer.invoke('app:reset'),
+    softReset: () => ipcRenderer.invoke('app:softReset')
   },
 
   effects: {
@@ -76,7 +77,8 @@ const api: NativeApi = {
   download: {
     start: (videos: ScrapedVideo[], opts: DownloadOptions) => ipcRenderer.invoke('download:start', videos, opts),
     resume: (id: string) => ipcRenderer.invoke('download:resume', id),
-    openFolder: (id: string) => ipcRenderer.invoke('download:openFolder', id)
+    openFolder: (id: string) => ipcRenderer.invoke('download:openFolder', id),
+    delete: (id: string) => ipcRenderer.invoke('download:delete', id)
   },
 
   compose: {
@@ -113,7 +115,9 @@ const api: NativeApi = {
   render: {
     jobs: () => ipcRenderer.invoke('render:jobs'),
     all: () => ipcRenderer.invoke('render:all'),
-    cancel: (jobId: string) => ipcRenderer.invoke('render:cancel', jobId)
+    cancel: (jobId: string) => ipcRenderer.invoke('render:cancel', jobId),
+    delete: (jobId: string) => ipcRenderer.invoke('render:delete', jobId),
+    requeue: (jobId: string) => ipcRenderer.invoke('render:requeue', jobId)
   },
 
   automation: {

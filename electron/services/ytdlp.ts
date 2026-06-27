@@ -40,6 +40,9 @@ export interface YtdlpPlaylist {
   uploader_id?: string
   channel_id?: string
   channel_follower_count?: number
+  /** channel avatar URL (present when yt-dlp fetches channel-level metadata) */
+  thumbnail?: string
+  thumbnails?: Array<{ url?: string; id?: string }>
   entries?: Array<YtdlpEntry | null>
 }
 

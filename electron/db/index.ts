@@ -241,9 +241,16 @@ export interface Repositories {
   renderJob(id: string): RenderJob | undefined
   queuedJobs(): RenderJob[]
   setRenderStatus(id: string, patch: { status?: RenderStatus; pct?: number; outputPath?: string; error?: string }): void
+  /** Remove a single download row from history. */
+  deleteDownload(id: string): void
+  /** Remove a single render job from the queue. */
+  deleteRenderJob(id: string): void
   /** Wipe every domain table (channels, profiles, projects, jobs, …) back to empty,
    *  and mark the DB seeded so demo content is not re-inserted on next launch. */
   resetAll(): void
+  /** Wipe data tables (channels, downloads, projects, jobs, transcripts) but leave
+   *  settings (electron-store) untouched — keeps API keys and app preferences. */
+  softReset(): void
 }
 
 let db: Database.Database | null = null
@@ -541,6 +548,23 @@ function buildRepositories(d: Database.Database): Repositories {
         for (const t of DATA_TABLES) d.prepare(`DELETE FROM ${t}`).run()
         // Keep the DB empty: record that seeding has already happened so the next
         // launch's seedIfEmpty() does not re-insert the demo channels/profiles.
+        d.prepare("INSERT OR REPLACE INTO app_meta (key,value) VALUES ('seeded','1')").run()
+      })
+      tx()
+    },
+
+    deleteDownload: (id) => d.prepare('DELETE FROM downloaded_videos WHERE id=?').run(id),
+    deleteRenderJob: (id) => d.prepare('DELETE FROM render_jobs WHERE id=?').run(id),
+
+    softReset: () => {
+      // Wipe domain data but leave thumbnail_templates (user art) intact.
+      const softTables = [
+        'my_channels', 'source_channels', 'source_videos', 'downloaded_videos', 'uploads',
+        'profiles', 'render_jobs', 'activity_log',
+        'projects', 'project_images', 'transcript_words'
+      ]
+      const tx = d.transaction(() => {
+        for (const t of softTables) d.prepare(`DELETE FROM ${t}`).run()
         d.prepare("INSERT OR REPLACE INTO app_meta (key,value) VALUES ('seeded','1')").run()
       })
       tx()

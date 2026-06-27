@@ -45,6 +45,8 @@ export function registerRenderIpc(): void {
   ipcMain.handle('render:jobs', () => jobsView())
   ipcMain.handle('render:all', () => runAll())
   ipcMain.handle('render:cancel', (_e, id: string) => getRepos().setRenderStatus(id, { status: 'queued', pct: 0 }))
+  ipcMain.handle('render:delete', (_e, id: string) => getRepos().deleteRenderJob(id))
+  ipcMain.handle('render:requeue', (_e, id: string) => getRepos().setRenderStatus(id, { status: 'queued', pct: 0, error: '' }))
   ipcMain.handle('fs:chooseFolder', async () => {
     const win = BrowserWindow.getAllWindows()[0]
     const res = win
