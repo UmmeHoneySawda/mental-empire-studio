@@ -83,9 +83,9 @@ export function Settings(): JSX.Element {
   const qualities: AppSettings['quality'][] = ['720p', '1080p', '1440p']
   const encoders: Array<{ value: AppSettings['encoder']; label: string; enabled: boolean; note: string }> = [
     { value: 'cpu', label: 'CPU', enabled: true, note: 'Works on any machine.' },
-    { value: 'nvenc', label: 'NVENC', enabled: caps?.hasNvenc ?? false, note: caps?.hasNvenc ? 'NVIDIA GPU available.' : 'NVIDIA NVENC unavailable; renders fall back to CPU.' },
-    { value: 'qsv', label: 'QSV', enabled: caps?.hasQsv ?? false, note: caps?.hasQsv ? 'Intel Quick Sync available.' : 'Intel QSV unavailable; renders fall back to CPU.' },
-    { value: 'amf', label: 'AMF', enabled: caps?.hasAmf ?? false, note: caps?.hasAmf ? 'AMD AMF available.' : 'AMD AMF unavailable; renders fall back to CPU.' }
+    { value: 'nvenc', label: 'NVENC', enabled: caps?.hasNvenc ?? false, note: caps?.hasNvenc ? 'NVIDIA NVENC available. Renders will use the GPU.' : caps?.gpuVendor === 'nvidia' ? 'NVIDIA GPU detected, but the NVENC encode probe failed; renders fall back to CPU.' : 'No working NVIDIA NVENC encoder detected.' },
+    { value: 'qsv', label: 'QSV', enabled: caps?.hasQsv ?? false, note: caps?.hasQsv ? 'Intel Quick Sync encode probe passed.' : 'No working Intel QSV encoder detected.' },
+    { value: 'amf', label: 'AMF', enabled: caps?.hasAmf ?? false, note: caps?.hasAmf ? 'AMD AMF encode probe passed.' : 'No working AMD AMF encoder detected.' }
   ]
   const selectedEncoder = encoders.find((e) => e.value === (settings.encoder ?? 'cpu')) ?? encoders[0]
 
