@@ -43,6 +43,10 @@ const api: NativeApi = {
     softReset: () => ipcRenderer.invoke('app:softReset')
   },
 
+  caps: {
+    get: () => ipcRenderer.invoke('caps:get')
+  },
+
   effects: {
     generate: (projectId: string, style: string) => ipcRenderer.invoke('effects:generate', projectId, style)
   },

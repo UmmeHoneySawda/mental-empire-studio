@@ -10,6 +10,7 @@ import { registerRenderIpc } from './render'
 import { registerAutomationIpc } from './automation'
 import { tick, start as schedulerStart } from '../services/scheduler'
 import { applyLoginItem } from '../services/background'
+import { probeRenderCapabilities } from '../services/engine/caps'
 
 // All native capability the renderer can reach is registered here as invoke
 // handlers and exposed through the typed preload bridge (window.api.*).
@@ -23,6 +24,7 @@ export function registerIpc(): void {
     if (patch.autoScrape !== undefined) schedulerStart()
     return next
   })
+  ipcMain.handle('caps:get', () => probeRenderCapabilities())
   // Factory reset: settings back to defaults + wipe all projects/profiles/channels/jobs.
   ipcMain.handle('app:reset', () => {
     const next = resetSettings()

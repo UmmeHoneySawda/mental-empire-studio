@@ -44,14 +44,14 @@ interface PresetStyle {
   emphasis: string
 }
 
-// ASS colours are &HBBGGRR. White=&H00FFFFFF, yellow=&H0000FFFF, cyan=&H00FFFF00, red=&H000000FF.
+// ASS colours are &HBBGGRR. White=&H00FFFFFF, CapCut yellow #FFD93D=&H003DD9FF.
 const PRESETS: Record<string, PresetStyle> = {
-  Pop: { font: 'Montserrat', size: 96, primary: '&H0000FFFF', secondary: '&H00FFFFFF', outline: '&H00000000', back: '&H00000000', bold: 1, borderStyle: 1, outlineW: 5, shadow: 2, emphasis: '&H0000FFFF' },
-  Bold: { font: 'Anton', size: 104, primary: '&H00FFFFFF', secondary: '&H00CCCCCC', outline: '&H00000000', back: '&HA0000000', bold: 1, borderStyle: 3, outlineW: 6, shadow: 0, emphasis: '&H0000FFFF' },
-  Hormozi: { font: 'Anton', size: 112, primary: '&H0000FFFF', secondary: '&H00FFFFFF', outline: '&H00000000', back: '&H00000000', bold: 1, borderStyle: 1, outlineW: 7, shadow: 3, emphasis: '&H000000FF' },
-  Word: { font: 'Montserrat', size: 130, primary: '&H00FFFFFF', secondary: '&H00FFFFFF', outline: '&H00000000', back: '&H00000000', bold: 1, borderStyle: 1, outlineW: 6, shadow: 2, emphasis: '&H0000FFFF' },
+  Pop: { font: 'Anton', size: 96, primary: '&H003DD9FF', secondary: '&H00FFFFFF', outline: '&H00000000', back: '&H00000000', bold: 1, borderStyle: 1, outlineW: 4, shadow: 2, emphasis: '&H003DD9FF' },
+  Bold: { font: 'Anton', size: 104, primary: '&H003DD9FF', secondary: '&H00FFFFFF', outline: '&H00000000', back: '&HA0000000', bold: 1, borderStyle: 3, outlineW: 5, shadow: 0, emphasis: '&H003DD9FF' },
+  Hormozi: { font: 'Anton', size: 112, primary: '&H003DD9FF', secondary: '&H00FFFFFF', outline: '&H00000000', back: '&H00000000', bold: 1, borderStyle: 1, outlineW: 4, shadow: 1.5, emphasis: '&H003DD9FF' },
+  Word: { font: 'Anton', size: 130, primary: '&H003DD9FF', secondary: '&H00FFFFFF', outline: '&H00000000', back: '&H00000000', bold: 1, borderStyle: 1, outlineW: 5, shadow: 2, emphasis: '&H003DD9FF' },
   Neon: { font: 'Montserrat', size: 98, primary: '&H00FFFF00', secondary: '&H00AAAA00', outline: '&H00FF00CC', back: '&H00000000', bold: 1, borderStyle: 1, outlineW: 4, shadow: 0, emphasis: '&H00FF00CC' },
-  Minimal: { font: 'Hanken Grotesk', size: 78, primary: '&H00FFFFFF', secondary: '&H00DDDDDD', outline: '&H00000000', back: '&H00000000', bold: 0, borderStyle: 1, outlineW: 2, shadow: 1, emphasis: '&H0000FFFF' }
+  Minimal: { font: 'Hanken Grotesk', size: 78, primary: '&H003DD9FF', secondary: '&H00FFFFFF', outline: '&H00000000', back: '&H00000000', bold: 1, borderStyle: 1, outlineW: 3, shadow: 1, emphasis: '&H003DD9FF' }
 }
 
 const STOPWORDS = new Set(['the', 'a', 'an', 'and', 'or', 'but', 'of', 'to', 'in', 'on', 'is', 'are', 'was', 'it', 'you', 'your', 'i', 'we', 'they', 'he', 'she', 'for', 'with', 'as', 'at', 'by', 'be', 'this', 'that'])
@@ -100,16 +100,20 @@ export function groupWords(words: TranscriptWord[], perGroup: number): CaptionGr
   return groups
 }
 
-function styleLine(p: PresetStyle): string {
+function styleLine(p: PresetStyle, marginV: number): string {
   // Format: Name,Font,Size,Primary,Secondary,Outline,Back,Bold,Italic,Underline,StrikeOut,
   // ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding
-  return `Style: Default,${p.font},${p.size},${p.primary},${p.secondary},${p.outline},${p.back},${p.bold},0,0,0,100,100,0,0,${p.borderStyle},${p.outlineW},${p.shadow},2,60,60,120,1`
+  return `Style: Default,${p.font},${p.size},${p.primary},${p.secondary},${p.outline},${p.back},${p.bold},0,0,0,100,100,0,0,${p.borderStyle},${p.outlineW},${p.shadow},2,60,60,${marginV},1`
 }
 
 export function buildAss(words: TranscriptWord[], opts: CaptionOptions): AssResult {
-  const preset = PRESETS[opts.preset] ?? PRESETS.Hormozi
+  const rawPreset = PRESETS[opts.preset] ?? PRESETS.Hormozi
   const { w, h } = resolutionFor(opts.aspect)
-  const perGroup = opts.preset === 'Word' ? 1 : Math.max(1, opts.perGroup ?? 3)
+  const fontPx = Math.round(Math.max(64, Math.min(opts.aspect === '9:16' ? h * 0.11 : h * 0.085, opts.aspect === '9:16' ? 150 : 108)))
+  const preset = { ...rawPreset, size: opts.preset === 'Word' ? Math.round(fontPx * 1.12) : fontPx }
+  const defaultGroup = opts.aspect === '9:16' ? 4 : opts.aspect === '1:1' ? 3 : 2
+  const perGroup = opts.preset === 'Word' ? 1 : Math.max(1, opts.perGroup ?? defaultGroup)
+  const marginV = Math.round(h * (opts.aspect === '9:16' ? 0.28 : 0.26))
   const groups = groupWords(words, perGroup)
   const zoomHits: number[] = []
   // Per-word text-effect presets from the plan → ASS tag, keyed by normalized word.
@@ -129,7 +133,7 @@ export function buildAss(words: TranscriptWord[], opts: CaptionOptions): AssResu
     '',
     '[V4+ Styles]',
     'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
-    styleLine(preset),
+    styleLine(preset, marginV),
     // Hook style: big, centered on screen, heavy outline (alignment 5 = middle-centre).
     `Style: Hook,Anton,${Math.round(h * 0.12)},&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,1,0,0,0,100,100,0,0,1,8,0,5,80,80,80,1`,
     '',
@@ -143,16 +147,17 @@ export function buildAss(words: TranscriptWord[], opts: CaptionOptions): AssResu
         const durCs = Math.max(1, Math.round((word.end - word.start) * 100))
         const key = isKeyword(word, opts.keywords)
         if (key) zoomHits.push(word.start)
-        const body = escapeAss(word.word)
+        const body = escapeAss(word.word.toUpperCase())
         // A plan text-effect preset for this exact word is prepended as its own block.
         const fx = wordFx.get(word.word.toLowerCase().replace(/[^a-z0-9]/g, '')) ?? ''
-        // \kf sweeps the karaoke fill; emphasized keyword pops scale + recolours.
+        // \kf sweeps white text to the yellow active fill; keywords use the same
+        // uniform pop treatment so no word appears randomly larger than another.
         return key
-          ? `${fx}{\\kf${durCs}\\fscx118\\fscy118\\1c${preset.emphasis}}${body}{\\fscx100\\fscy100\\1c${preset.primary}}`
-          : `${fx}{\\kf${durCs}}${body}`
+          ? `${fx}{\\kf${durCs}\\t(0,120,\\fscx112\\fscy112)\\1c${preset.emphasis}}${body}{\\fscx100\\fscy100\\1c${preset.primary}}`
+          : `${fx}{\\kf${durCs}\\t(0,120,\\fscx112\\fscy112)}${body}{\\fscx100\\fscy100}`
       })
       .join(' ')
-    return `Dialogue: 0,${secToAss(g.start)},${secToAss(g.end)},Default,,0,0,0,,${opts.styleLead ?? ''}${text}`
+    return `Dialogue: 0,${secToAss(g.start)},${secToAss(g.end)},Default,,0,0,0,,${opts.styleLead ?? ''}{\\fad(40,40)}${text}`
   })
 
   // Beta hook: a centered intro card on its own style, fading in/out, on top (layer 1).

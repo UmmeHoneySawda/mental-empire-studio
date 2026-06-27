@@ -1,8 +1,9 @@
+import { useEffect, useState } from 'react'
 import { ScreenPad } from '../components/primitives'
 import { Toggle } from '../components/primitives'
 import { activity } from '../data/mock'
 import { useStore } from '../store/useStore'
-import type { AccentName, AppSettings } from '@shared/types'
+import type { AccentName, AppSettings, RenderCapabilities } from '@shared/types'
 
 const ACCENTS: AccentName[] = ['Amber', 'Violet', 'Emerald', 'Crimson']
 const ACCENT_SWATCH: Record<AccentName, string> = {
@@ -57,6 +58,11 @@ export function Settings(): JSX.Element {
   const updateSettings = useStore((s) => s.updateSettings)
   const resetAll = useStore((s) => s.resetAll)
   const { quality, autoScrape, background } = settings
+  const [caps, setCaps] = useState<RenderCapabilities | null>(null)
+
+  useEffect(() => {
+    void window.api?.caps?.get?.().then(setCaps).catch(() => setCaps(null))
+  }, [])
 
   const onReset = (): void => {
     const ok = window.confirm(
@@ -75,6 +81,13 @@ export function Settings(): JSX.Element {
     window.location.reload()
   }
   const qualities: AppSettings['quality'][] = ['720p', '1080p', '1440p']
+  const encoders: Array<{ value: AppSettings['encoder']; label: string; enabled: boolean; note: string }> = [
+    { value: 'cpu', label: 'CPU', enabled: true, note: 'Works on any machine.' },
+    { value: 'nvenc', label: 'NVENC', enabled: caps?.hasNvenc ?? false, note: caps?.hasNvenc ? 'NVIDIA GPU available.' : 'NVIDIA NVENC unavailable; renders fall back to CPU.' },
+    { value: 'qsv', label: 'QSV', enabled: caps?.hasQsv ?? false, note: caps?.hasQsv ? 'Intel Quick Sync available.' : 'Intel QSV unavailable; renders fall back to CPU.' },
+    { value: 'amf', label: 'AMF', enabled: caps?.hasAmf ?? false, note: caps?.hasAmf ? 'AMD AMF available.' : 'AMD AMF unavailable; renders fall back to CPU.' }
+  ]
+  const selectedEncoder = encoders.find((e) => e.value === (settings.encoder ?? 'cpu')) ?? encoders[0]
 
   return (
     <ScreenPad>
@@ -99,7 +112,7 @@ export function Settings(): JSX.Element {
             <div style={{ display: 'flex', gap: 26, flexWrap: 'wrap' }}>
               <div><div style={{ fontSize: 12, color: '#8a909c', marginBottom: 7 }}>Parallel renders</div><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><input type="number" min={1} max={8} value={settings.concurrency} onChange={(e) => updateSettings({ concurrency: Math.max(1, Number(e.target.value)) })} style={{ width: 56, border: '1px solid #23272f', borderRadius: 8, padding: '8px 12px', fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 15, color: '#eef0f3', background: '#0e1116', outline: 'none' }} /><span style={{ fontSize: 11, color: '#6a7180' }}>at a time</span></div></div>
               <div><div style={{ fontSize: 12, color: '#8a909c', marginBottom: 7 }}>Quality</div><div style={{ display: 'flex', border: '1px solid #23272f', borderRadius: 8, overflow: 'hidden', fontSize: 11.5 }}>{qualities.map((q) => { const on = q === quality; return <div key={q} onClick={() => updateSettings({ quality: q })} style={{ padding: '8px 12px', cursor: 'pointer', background: on ? 'var(--accent)' : undefined, color: on ? 'var(--accent-ink)' : '#8a909c', fontWeight: on ? 600 : undefined }}>{q}</div> })}</div></div>
-              <div><div style={{ fontSize: 12, color: '#8a909c', marginBottom: 7 }}>Encoder</div><div style={{ display: 'flex', border: '1px solid #23272f', borderRadius: 8, overflow: 'hidden', fontSize: 11.5 }}>{([['cpu', 'CPU (libx264)'], ['nvenc', 'NVIDIA GPU (NVENC)']] as const).map(([val, label]) => { const on = (settings.encoder ?? 'cpu') === val; return <div key={val} onClick={() => updateSettings({ encoder: val })} style={{ padding: '8px 12px', cursor: 'pointer', background: on ? 'var(--accent)' : undefined, color: on ? 'var(--accent-ink)' : '#8a909c', fontWeight: on ? 600 : undefined }}>{label}</div> })}</div><div style={{ fontSize: 10, color: '#6a7180', marginTop: 5 }}>{(settings.encoder ?? 'cpu') === 'nvenc' ? 'Requires an NVIDIA GPU; falls back with an error if unavailable.' : 'Works on any machine.'}</div></div>
+              <div><div style={{ fontSize: 12, color: '#8a909c', marginBottom: 7 }}>Encoder</div><div style={{ display: 'flex', border: '1px solid #23272f', borderRadius: 8, overflow: 'hidden', fontSize: 11.5 }}>{encoders.map((enc) => { const on = (settings.encoder ?? 'cpu') === enc.value; return <div key={enc.value} title={enc.note} onClick={() => updateSettings({ encoder: enc.value })} style={{ padding: '8px 12px', cursor: 'pointer', background: on ? 'var(--accent)' : undefined, color: on ? 'var(--accent-ink)' : enc.enabled ? '#8a909c' : '#555b66', fontWeight: on ? 600 : undefined }}>{enc.label}</div> })}</div><div style={{ fontSize: 10, color: selectedEncoder.enabled || selectedEncoder.value === 'cpu' ? '#6a7180' : '#f5b323', marginTop: 5 }}>{caps ? selectedEncoder.note : 'Checking ffmpeg GPU capabilities...'}</div></div>
             </div>
           </Card>
 

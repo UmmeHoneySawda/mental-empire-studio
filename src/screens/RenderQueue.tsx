@@ -2,7 +2,7 @@ import { useEffect } from 'react'
 import { ScreenPad } from '../components/primitives'
 import { useStore } from '../store/useStore'
 import { useData } from '../store/useData'
-import type { RenderQueueRow, RenderStatus } from '@shared/types'
+import type { RenderProgress, RenderQueueRow, RenderStage, RenderStatus } from '@shared/types'
 
 const STATUS_TEXT: Record<RenderStatus, { text: string; color: string }> = {
   queued: { text: 'queued', color: '#8a909c' },
@@ -12,6 +12,18 @@ const STATUS_TEXT: Record<RenderStatus, { text: string; color: string }> = {
 }
 
 const THUMB_BG = 'linear-gradient(135deg,#2a2540,#46243a)'
+const STAGES: RenderStage[] = ['preparing', 'captioning', 'fetching-broll', 'assembling', 'encoding', 'finalizing']
+const STAGE_LABEL: Partial<Record<RenderStage, string>> = {
+  preparing: 'Preparing',
+  captioning: 'Captions',
+  'fetching-broll': 'B-roll',
+  assembling: 'Assembling',
+  encoding: 'Encoding',
+  finalizing: 'Finalizing',
+  done: 'Done',
+  error: 'Error',
+  cancelled: 'Cancelled'
+}
 
 function mediaSrc(path: string | undefined): string {
   if (!path) return ''
@@ -22,6 +34,29 @@ function mediaSrc(path: string | undefined): string {
 function check(on: boolean, count?: number): JSX.Element {
   if (count !== undefined) return <span style={{ fontSize: 12, color: '#aab0bb', fontFamily: 'var(--font-mono)' }}>{count}</span>
   return <span style={{ color: on ? '#36c98e' : '#ff5a6e' }}>{on ? '✓' : '!'}</span>
+}
+
+function fmtEta(sec?: number): string {
+  if (sec == null || !Number.isFinite(sec)) return ''
+  if (sec <= 0) return 'done'
+  const m = Math.floor(sec / 60)
+  const s = Math.round(sec % 60)
+  return m > 0 ? `~${m}m ${String(s).padStart(2, '0')}s left` : `~${s}s left`
+}
+
+function StageStepper({ p }: { p?: RenderProgress }): JSX.Element {
+  const active = p?.stage
+  return (
+    <div style={{ display: 'flex', gap: 4, marginTop: 6 }}>
+      {STAGES.map((stage) => {
+        const activeIdx = active ? STAGES.indexOf(active) : -1
+        const idx = STAGES.indexOf(stage)
+        const on = idx <= activeIdx
+        const isActive = stage === active
+        return <span key={stage} title={STAGE_LABEL[stage]} style={{ height: 4, flex: 1, minWidth: 11, borderRadius: 4, background: on ? (isActive ? 'var(--accent)' : '#4fd6a0') : '#252a34', opacity: isActive ? 1 : 0.75 }} />
+      })}
+    </div>
+  )
 }
 
 export function RenderQueue(): JSX.Element {
@@ -73,12 +108,16 @@ export function RenderQueue(): JSX.Element {
           <div style={{ padding: '28px 18px', textAlign: 'center', fontSize: 12.5, color: '#6a7180' }}>Nothing queued yet — compose a video and hit "Save &amp; send to render".</div>
         )}
         {rows.map((r) => {
+          const p = progress[r.job.id]
           const { pct, status } = live(r)
           const isBlocked = !r.isReady && status !== 'rendering' && status !== 'done'
           const st = STATUS_TEXT[status]
           const barColor = status === 'done' ? '#36c98e' : status === 'error' ? '#ff5a6e' : 'var(--accent)'
           const statusLabel = isBlocked ? 'blocked' : status === 'rendering' ? `${pct}%` : st.text
           const statusColor = isBlocked ? '#ff8a96' : st.color
+          const detail = p?.stageDetail || (p?.stage ? STAGE_LABEL[p.stage] : '')
+          const eta = fmtEta(p?.etaSec)
+          const speed = p?.speed ? `${p.speed.toFixed(1)}x` : ''
           return (
             <div key={r.job.id} className="me-row" style={{ display: 'flex', alignItems: 'center', padding: '12px 18px', borderBottom: '1px solid #14171d' }}>
               <div style={{ flex: 2.2, display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
@@ -113,6 +152,16 @@ export function RenderQueue(): JSX.Element {
                   </div>
                   <div style={{ fontSize: 10.5, color: statusColor, fontFamily: 'var(--font-mono)', width: 52, textAlign: 'right', flexShrink: 0, overflow: 'hidden', whiteSpace: 'nowrap', textOverflow: 'ellipsis' }}>{statusLabel}</div>
                 </div>
+                {status === 'rendering' && (
+                  <>
+                    <StageStepper p={p} />
+                    <div style={{ marginTop: 5, display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
+                      <span style={{ fontSize: 10, color: '#8a909c', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{detail}</span>
+                      {p?.encoder && <span style={{ flex: 'none', border: '1px solid #262b34', borderRadius: 999, padding: '1px 6px', fontSize: 9.5, color: p.device === 'gpu' ? '#4fd6a0' : '#aab0bb', fontFamily: 'var(--font-mono)' }}>{p.encoder}</span>}
+                      {(eta || speed) && <span style={{ flex: 'none', fontSize: 9.5, color: '#6a7180', fontFamily: 'var(--font-mono)' }}>{[eta, speed].filter(Boolean).join(' · ')}</span>}
+                    </div>
+                  </>
+                )}
               </div>
               <div style={{ width: 60, display: 'flex', justifyContent: 'flex-end', gap: 5 }}>
                 {(status === 'error' || isBlocked) && (

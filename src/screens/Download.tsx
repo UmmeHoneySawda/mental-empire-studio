@@ -124,7 +124,7 @@ export function Download(): JSX.Element {
               </div>
               <div style={{ padding: '11px 12px' }}>
                 <div style={{ fontSize: 12, color: '#dde0e5', lineHeight: 1.35, height: 33, overflow: 'hidden' }}>{v.title}</div>
-                <div style={{ fontSize: 10.5, color: '#5b616f', fontFamily: 'var(--font-mono)', marginTop: 6 }}>{v.views > 0 ? `${v.views.toLocaleString()} views` : '— views'}</div>
+                <div style={{ fontSize: 10.5, color: '#5b616f', fontFamily: 'var(--font-mono)', marginTop: 6 }}>{v.views > 0 ? `${v.views.toLocaleString()} views` : ''}</div>
               </div>
             </div>
           )
@@ -165,7 +165,7 @@ export function Download(): JSX.Element {
                   <div style={{ minWidth: 0 }}><div style={{ fontSize: 12.5, color: '#dde0e5', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.title}</div><div style={{ fontSize: 10, color: '#5b616f', fontFamily: 'var(--font-mono)' }}>{d.size} · {d.when}</div></div>
                 </div>
                 <div style={{ width: 120, fontSize: 11, color: '#8a909c', fontFamily: 'var(--font-mono)' }}>{d.channel}</div>
-                <div style={{ width: 130, fontSize: 11.5, color: stageColor }}>{currentStage}</div>
+                <div style={{ width: 130, fontSize: 11.5, color: stageColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{currentStage}</div>
                 <div style={{ width: 140 }}><div style={{ height: 6, borderRadius: 4, background: '#1a1e26', overflow: 'hidden' }}><div style={{ width: pct, height: '100%', background: barColor }} /></div></div>
                 <div style={{ width: 100, display: 'flex', justifyContent: 'flex-end', gap: 5 }}>
                   {(() => {

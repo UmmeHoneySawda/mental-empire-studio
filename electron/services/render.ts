@@ -1,11 +1,16 @@
 import { spawn, type ChildProcess } from 'node:child_process'
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { dirname, join } from 'node:path'
-import type { AppSettings, Project, ProjectImage } from '../../shared/types'
+import type { AppSettings, Project, ProjectImage, RenderCapabilities } from '../../shared/types'
 import { asBetaOpts } from '../../shared/types'
 import type { EffectPlan } from '../../shared/effectPlan'
 import { resolveBinDir } from './ytdlp'
 import { resolutionFor, type CaptionAspect } from './captions'
+import { FALLBACK_CAPS, selectEncoder } from './engine/encoder'
+import { parseFfmpegProgressBlock, type FfmpegProgress } from './engine/progress'
+import { gradeChain } from './engine/grade'
+import { masterAudioTwoPass } from './engine/audio-master'
+import type { BrollSegment } from './broll'
 
 // ffmpeg render: image(s) over the mp3 with Ken Burns + crossfades, burned ASS
 // captions, optional punch-zoom, encoded H.264 at the chosen quality. The graph is
@@ -16,11 +21,8 @@ const FPS = 30
 
 /** Video codec args for the chosen encoder. CPU = libx264 (CRF); NVIDIA = h264_nvenc
  *  (constant-quality VBR). Both target visually-equivalent quality at the given level. */
-export function videoCodecArgs(settings: AppSettings, crf: string): string[] {
-  if (settings.encoder === 'nvenc') {
-    return ['-c:v', 'h264_nvenc', '-preset', 'p4', '-rc', 'vbr', '-cq', crf, '-pix_fmt', 'yuv420p']
-  }
-  return ['-c:v', 'libx264', '-preset', 'medium', '-crf', crf, '-pix_fmt', 'yuv420p']
+export function videoCodecArgs(settings: AppSettings, crf: string, caps: RenderCapabilities = FALLBACK_CAPS): string[] {
+  return selectEncoder(settings, caps, crf).args
 }
 
 // Live ffmpeg children keyed by render-job id, so the Render Queue's cancel/delete
@@ -101,16 +103,21 @@ export interface RenderInputs {
   assPath: string
   outPath: string
   settings: AppSettings
+  caps?: RenderCapabilities
   /** render_jobs row id — lets cancel/delete find & kill the running ffmpeg child */
   jobId?: string
   /** beta auto-B-roll: a pre-assembled full-length video bed used instead of stills */
   videoBedPath?: string
+  /** beta auto-B-roll segments composed directly in the final graph (single-pass path) */
+  brollSegments?: BrollSegment[]
   /** beta style: fallback xfade transition type between image segments (default 'fade') */
   transition?: string
   /** beta: validated effect plan — places per-boundary transitions + drives SFX */
   plan?: EffectPlan
   /** beta: low-gain WAV of transition SFX to mix under the voice track */
   sfxPath?: string
+  /** optional per-job render log for args/fallback diagnostics */
+  logPath?: string
 }
 
 /** The transition type/duration to use at a segment boundary: the nearest planned
@@ -127,7 +134,9 @@ function transitionAt(plan: EffectPlan | undefined, timeSec: number, fallbackTyp
 
 /** Append an SFX-mix audio chain to a filtergraph; returns the [label] to map for audio. */
 function audioWithSfx(parts: string[], mp3Idx: number, sfxIdx: number | null): string {
-  if (sfxIdx == null) return `${mp3Idx}:a`
+  if (sfxIdx == null) {
+    return `${mp3Idx}:a`
+  }
   parts.push(`[${mp3Idx}:a][${sfxIdx}:a]amix=inputs=2:normalize=0:duration=first[aout]`)
   return '[aout]'
 }
@@ -135,6 +144,7 @@ function audioWithSfx(parts: string[], mp3Idx: number, sfxIdx: number | null): s
 /** Build the full ffmpeg argument list for a render (pure — unit-asserted). */
 export function buildRenderArgs(inp: RenderInputs): string[] {
   const { project, images, assPath, outPath, settings } = inp
+  const caps = inp.caps ?? FALLBACK_CAPS
   const { w, h } = dimensions(settings.quality, project.captionAspect)
   const cf = typeof project.crossfade === 'number' ? project.crossfade : 0
   // Beta options only apply when beta mode is on; otherwise the graph is unchanged.
@@ -144,13 +154,70 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
       ? images
       : [{ id: 'x', projectId: project.id, ord: 0, path: '', thumb: '', rangeStart: 0, rangeEnd: project.durationSec, manual: false }]
 
-  // Beta auto-B-roll: a single full-length video bed replaces the still-image track.
+  // Beta auto-B-roll single-pass path: planned stock clips become direct video inputs
+  // in the final graph, so the job avoids a pre-encoded full-length bed.
+  if (inp.brollSegments?.length) {
+    const segments = inp.brollSegments
+    const inputs: string[] = []
+    const parts: string[] = []
+    segments.forEach((s, i) => {
+      const dur = Math.max(0.5, s.end - s.start)
+      const extra = inp.transition && i < segments.length - 1 ? 0.3 : 0
+      inputs.push('-ss', s.srcStart.toFixed(2), '-t', (dur + extra).toFixed(2), '-i', s.path)
+      parts.push(`[${i}:v]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1,fps=${FPS}[bv${i}]`)
+    })
+    inputs.push('-i', project.mp3Path)
+    const audioIdx = segments.length
+    const sfxIdx = inp.sfxPath ? segments.length + 1 : null
+    if (inp.sfxPath) inputs.push('-i', inp.sfxPath)
+
+    let last = 'bv0'
+    if (segments.length > 1) {
+      if (inp.transition) {
+        let offset = segments[0].end - segments[0].start
+        for (let i = 1; i < segments.length; i++) {
+          const out = `bx${i}`
+          parts.push(`[${last}][bv${i}]xfade=transition=${inp.transition}:duration=0.30:offset=${offset.toFixed(2)}[${out}]`)
+          offset += segments[i].end - segments[i].start
+          last = out
+        }
+      } else {
+        parts.push(`${segments.map((_, i) => `[bv${i}]`).join('')}concat=n=${segments.length}:v=1:a=0[bv]`)
+        last = 'bv'
+      }
+    }
+
+    const grad = beta ? overlayGradient(beta.overlay, w, h) : ''
+    const grade = gradeChain(beta?.style)
+    const punchOn = project.punchZoom || !!beta?.autoZoom.atKeyPhrases
+    const punch = punchOn ? `,zoompan=z='min(zoom+0.0015,1.08)':d=1:s=${w}x${h}:fps=${FPS}` : ''
+    parts.push(`[${last}]${grade}${grad}subtitles='${assForFilter(assPath)}'${punch}[v]`)
+    const aMap = audioWithSfx(parts, audioIdx, sfxIdx)
+    const crf = settings.quality === '1440p' ? '20' : settings.quality === '720p' ? '23' : '21'
+
+    return [
+      '-y',
+      ...inputs,
+      '-filter_complex', parts.join(';'),
+      '-map', '[v]',
+      '-map', aMap,
+      ...videoCodecArgs(settings, crf, caps),
+      '-r', String(FPS),
+      '-c:a', 'aac',
+      '-b:a', '192k',
+      '-t', project.durationSec > 0 ? project.durationSec.toFixed(2) : '1',
+      outPath
+    ]
+  }
+
+  // Beta auto-B-roll fallback: a single full-length video bed replaces the still-image track.
   if (inp.videoBedPath) {
     const grad = beta ? overlayGradient(beta.overlay, w, h) : ''
+    const grade = gradeChain(beta?.style)
     const punchOn = project.punchZoom || !!beta?.autoZoom.atKeyPhrases
     const punch = punchOn ? `,zoompan=z='min(zoom+0.0015,1.08)':d=1:s=${w}x${h}:fps=${FPS}` : ''
     const crfBed = settings.quality === '1440p' ? '20' : settings.quality === '720p' ? '23' : '21'
-    const bedParts = [`[0:v]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1,fps=${FPS},${grad}subtitles='${assForFilter(assPath)}'${punch}[v]`]
+    const bedParts = [`[0:v]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1,fps=${FPS},${grade}${grad}subtitles='${assForFilter(assPath)}'${punch}[v]`]
     const sfxIdx = inp.sfxPath ? 2 : null
     const aMap = audioWithSfx(bedParts, 1, sfxIdx)
     return [
@@ -160,10 +227,10 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
       ...(inp.sfxPath ? ['-i', inp.sfxPath] : []),
       '-filter_complex', bedParts.join(';'),
       '-map', '[v]', '-map', aMap,
-      ...videoCodecArgs(settings, crfBed), '-r', String(FPS),
+      ...videoCodecArgs(settings, crfBed, caps), '-r', String(FPS),
       '-c:a', 'aac', '-b:a', '192k',
       '-t', project.durationSec > 0 ? project.durationSec.toFixed(2) : '1',
-      '-shortest', outPath
+      outPath
     ]
   }
 
@@ -214,10 +281,11 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
 
   // Beta darkening gradient goes under the captions (applied before the subtitles burn).
   const grad = beta ? overlayGradient(beta.overlay, w, h) : ''
+  const grade = gradeChain(beta?.style)
   // Burn captions; punch-zoom adds a subtle pulse when enabled (project flag or beta key-phrases).
   const punchOn = project.punchZoom || !!beta?.autoZoom.atKeyPhrases
   const punch = punchOn ? `,zoompan=z='min(zoom+0.0015,1.08)':d=1:s=${w}x${h}:fps=${FPS}` : ''
-  parts.push(`[${last}]${grad}subtitles='${assForFilter(assPath)}'${punch}[v]`)
+  parts.push(`[${last}]${grade}${grad}subtitles='${assForFilter(assPath)}'${punch}[v]`)
   const aMap = audioWithSfx(parts, audioIdx, sfxIdx)
 
   const crf = settings.quality === '1440p' ? '20' : settings.quality === '720p' ? '23' : '21'
@@ -227,15 +295,13 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
     '-filter_complex', parts.join(';'),
     '-map', '[v]',
     '-map', aMap,
-    ...videoCodecArgs(settings, crf),
+    ...videoCodecArgs(settings, crf, caps),
     '-r', String(FPS),
     '-c:a', 'aac',
     '-b:a', '192k',
-    // Clamp the output to the audio length: Ken Burns zoompan + xfade overlaps make
-    // the filtered video slightly longer than the mp3, and -shortest doesn't reliably
-    // trim it, so pin the duration to the audio explicitly.
+    // Clamp the output to the authoritative audio length. Short side inputs are
+    // padded/mixed in the graph; using -shortest here can truncate long MP3 renders.
     '-t', project.durationSec > 0 ? project.durationSec.toFixed(2) : '1',
-    '-shortest',
     outPath
   ]
 }
@@ -244,33 +310,41 @@ export interface RenderResult {
   outputPath: string
 }
 
-export async function runRender(inp: RenderInputs, onProgress?: (pct: number) => void): Promise<RenderResult> {
+export async function runRender(inp: RenderInputs, onProgress?: (p: FfmpegProgress) => void): Promise<RenderResult> {
   mkdirSync(dirname(inp.outPath), { recursive: true })
 
   // Dry-run seam: no ffmpeg in the sandbox → write a stub mp4 so the runner / DB /
   // naming / ASS file are all exercised for real; the real encode runs on the user's box.
   if (process.env['ME_RENDER_FIXTURE']) {
     writeFileSync(inp.outPath, Buffer.from('\x00\x00\x00\x18ftypmp42stub-render'))
-    onProgress?.(100)
+    onProgress?.({ outTimeSec: inp.project.durationSec, pct: 100, speed: 1, etaSec: 0 })
     return { outputPath: inp.outPath }
   }
 
-  await spawnFfmpeg(buildRenderArgs(inp), inp.project.durationSec, onProgress, inp.jobId)
+  try {
+    const args = buildRenderArgs(inp)
+    if (inp.logPath) appendFileSync(inp.logPath, `\n[ffmpeg]\n${args.join(' ')}\n`)
+    await spawnFfmpeg(args, inp.project.durationSec, onProgress, inp.jobId)
+  } catch (e) {
+    if ((inp.settings.encoder ?? 'cpu') === 'cpu') throw e
+    const fallbackSettings = { ...inp.settings, encoder: 'cpu' as const }
+    const args = buildRenderArgs({ ...inp, settings: fallbackSettings, caps: FALLBACK_CAPS })
+    if (inp.logPath) appendFileSync(inp.logPath, `\n[ffmpeg:fallback-cpu]\n${args.join(' ')}\n`)
+    await spawnFfmpeg(args, inp.project.durationSec, onProgress, inp.jobId)
+  }
+  if (inp.logPath) appendFileSync(inp.logPath, '\n[audio-master]\ntwo-pass loudnorm I=-14 TP=-1 LRA=11\n')
+  await masterAudioTwoPass(inp.outPath)
   return { outputPath: inp.outPath }
 }
 
-function spawnFfmpeg(args: string[], durationSec: number, onProgress?: (pct: number) => void, jobId?: string): Promise<void> {
+function spawnFfmpeg(args: string[], durationSec: number, onProgress?: (p: FfmpegProgress) => void, jobId?: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(ffmpegPath(), ['-progress', 'pipe:1', '-nostats', ...args], { windowsHide: true })
     if (jobId) running.set(jobId, child)
     let err = ''
     child.stdout.on('data', (d: Buffer) => {
-      // ffmpeg -progress reports out_time_us (microseconds, despite the legacy _ms alias).
-      const m = d.toString().match(/out_time_us=(\d+)/) ?? d.toString().match(/out_time_ms=(\d+)/)
-      if (m && durationSec > 0) {
-        const seconds = parseInt(m[1], 10) / 1_000_000
-        onProgress?.(Math.max(0, Math.min(99, Math.round((seconds / durationSec) * 100))))
-      }
+      const p = parseFfmpegProgressBlock(d.toString(), durationSec)
+      if (p) onProgress?.(p)
     })
     child.stderr.on('data', (d: Buffer) => (err += d))
     child.on('error', (e) => {
@@ -280,7 +354,7 @@ function spawnFfmpeg(args: string[], durationSec: number, onProgress?: (pct: num
     child.on('close', (code) => {
       if (jobId) running.delete(jobId)
       if (code === 0) {
-        onProgress?.(100)
+        onProgress?.({ outTimeSec: durationSec, pct: 100, speed: 1, etaSec: 0 })
         resolve()
       } else {
         reject(new Error(`ffmpeg exited ${code}: ${err.slice(-300)}`))

@@ -52,7 +52,7 @@ function persistScrape(channelId: string, scraped: ScrapedChannel): MyChannel {
 
   emitProgress({ channelId, channelName: scraped.name, phase: 'stats', message: 'Saving stats' })
   repos.setChannelStats(channelId, {
-    views: humanizeCount(scraped.totalViews),
+    views: scraped.totalViews > 0 ? humanizeCount(scraped.totalViews) : '',
     subs: humanizeCount(scraped.subs),
     total: scraped.videos.length,
     lastScrapedAt: now
@@ -110,7 +110,7 @@ export async function addMyChannel(url: string, linkedSourceId?: string): Promis
     // Prefer the real channel avatar URL when yt-dlp provides one; fall back to the
     // deterministic CSS gradient so the card always has something to render.
     avatar: scraped.avatar ?? avatarFor(id),
-    views: humanizeCount(scraped.totalViews),
+    views: scraped.totalViews > 0 ? humanizeCount(scraped.totalViews) : '',
     subs: humanizeCount(scraped.subs),
     total: scraped.videos.length,
     linkedSourceId,
@@ -154,11 +154,9 @@ export async function scrapeAll(): Promise<MyChannel[]> {
 export async function sourceVideos(url: string, order: ScrapeOrder, count: number) {
   const repos = getRepos()
   const settings = getSettings()
-  // Non-flat + count-limited so each entry carries a real view_count/duration (the
-  // flat dump omits them, which is why the picker showed "— views"). Over-fetch a
-  // little for "Popular" so the sort has more than `count` to choose from.
-  const fetchN = order === 'Popular' ? Math.min(Math.max(count * 4, count), 50) : count
-  const ch = await scrapeChannel(url, settings, { flat: false, limit: fetchN })
+  // Fast flat fetch is the product choice: do not block the picker on per-video
+  // metadata. Empty views/dates are hidden cleanly in the UI.
+  const ch = await scrapeChannel(url, settings, { flat: true, limit: count })
   const ordered = orderVideos(ch.videos, order, count)
   const existing = repos.sourceChannelByUrl(channelUrl(url))
   const sourceId = existing?.id ?? `src-${ch.handle.replace(/^@/, '')}`

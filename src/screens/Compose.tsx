@@ -153,6 +153,27 @@ function MiniToggle({ on, onClick }: { on: boolean; onClick: () => void }): JSX.
   return <div onClick={onClick} style={{ width: 32, height: 18, borderRadius: 11, background: on ? 'var(--accent)' : '#2b303b', position: 'relative', cursor: 'pointer', flex: 'none' }}><span style={{ position: 'absolute', top: 2, right: on ? 2 : 16, width: 14, height: 14, borderRadius: '50%', background: '#fff' }} /></div>
 }
 
+function CaptionPreview({ words, aspect, imagePath }: { words: TranscriptWord[]; aspect: string; imagePath?: string }): JSX.Element {
+  const sample = (words.length ? words : [
+    { id: 'p1', projectId: '', ord: 0, word: 'you', start: 0, end: 0.25, emphasis: false },
+    { id: 'p2', projectId: '', ord: 1, word: 'are', start: 0.25, end: 0.45, emphasis: false },
+    { id: 'p3', projectId: '', ord: 2, word: 'not', start: 0.45, end: 0.8, emphasis: true },
+    { id: 'p4', projectId: '', ord: 3, word: 'crazy', start: 0.8, end: 1.1, emphasis: false }
+  ]).slice(0, aspect === '9:16' ? 4 : 2)
+  const activeIndex = Math.min(1, sample.length - 1)
+  const ratio = aspect === '9:16' ? '9/16' : aspect === '1:1' ? '1/1' : '16/9'
+  const fontSize = aspect === '9:16' ? 18 : 20
+  return (
+    <div style={{ width: 210, border: '1px solid #1d2129', borderRadius: 12, aspectRatio: ratio, background: 'linear-gradient(135deg,#23262e,#15171d)', position: 'relative', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', padding: aspect === '9:16' ? '0 14px 66px' : '0 16px 34px', overflow: 'hidden' }}>
+      {imagePath ? <img src={mediaSrc(imagePath)} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: 0.72 }} /> : <div style={{ position: 'absolute', left: '14%', bottom: 0, width: '34%', height: '80%', background: 'linear-gradient(180deg,#3a4150,#23262e)', borderRadius: '50px 50px 0 0' }} />}
+      <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.48))' }} />
+      <div style={{ position: 'relative', textAlign: 'center', fontFamily: 'Anton, var(--font-poster)', fontSize, lineHeight: 1.04, color: '#fff', textTransform: 'uppercase', WebkitTextStroke: '1.4px #000', textShadow: '0 2px 0 #000, 0 4px 12px rgba(0,0,0,.5)' }}>
+        {sample.map((w, i) => <span key={w.id} style={{ display: 'inline-block', color: i === activeIndex || w.emphasis ? '#FFD93D' : '#fff', transform: i === activeIndex ? 'scale(1.12)' : undefined, margin: '0 3px' }}>{w.word}</span>)}
+      </div>
+    </div>
+  )
+}
+
 /** Compose "Customize (beta)" panel — greyed out unless Settings → beta is enabled. */
 function BetaPanel(): JSX.Element {
   const betaOn = useStore((s) => s.settings.beta.enabled)
@@ -246,8 +267,17 @@ function BetaPanel(): JSX.Element {
 
       <div>
         <div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 7 }}>Style (transitions &amp; text effects)</div>
-        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
-          {styles.map((s) => <span key={s} title={styleTips[s]} onClick={() => patch({ style: s })} style={{ border: o.style === s ? '1px solid var(--accent)' : '1px solid #23272f', color: o.style === s ? 'var(--accent)' : '#8a909c', background: o.style === s ? 'var(--accent-soft)' : 'transparent', borderRadius: 7, padding: '4px 10px', fontSize: 10.5, cursor: 'pointer' }}>{s}</span>)}
+        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
+          {styles.map((s) => {
+            const on = o.style === s
+            const bg = s === 'Cinematic' ? 'linear-gradient(135deg,#26333a,#1d1714)' : s === 'Intense' ? 'linear-gradient(135deg,#3a1d25,#141820)' : s === 'Heartfelt' ? 'linear-gradient(135deg,#3a2b24,#15171d)' : s === 'Clean' ? 'linear-gradient(135deg,#26313a,#15171d)' : '#0e1116'
+            return (
+              <button key={s} type="button" title={styleTips[s]} onClick={() => patch({ style: s })} style={{ textAlign: 'left', border: on ? '1px solid var(--accent)' : '1px solid #23272f', color: on ? '#f2f4f7' : '#8a909c', background: bg, borderRadius: 8, padding: 8, cursor: 'pointer', minHeight: 54 }}>
+                <div style={{ fontSize: 11.5, fontWeight: 700 }}>{s}</div>
+                <div style={{ fontSize: 9.5, color: on ? '#cdd2da' : '#6a7180', lineHeight: 1.25, marginTop: 3 }}>{styleTips[s]}</div>
+              </button>
+            )
+          })}
         </div>
         <div style={{ fontSize: 9.5, color: '#6a7180', marginTop: 6 }}>The style auto-applies tasteful transitions + text effects. Advanced: generate a custom plan below.</div>
       </div>
@@ -275,6 +305,7 @@ function CaptionsTab(): JSX.Element {
   const runTranscribe = useData((s) => s.runTranscribe)
   const toggleWordEmphasis = useData((s) => s.toggleWordEmphasis)
   const setCaptions = useData((s) => s.setCaptions)
+  const images = useData((s) => s.projectImages)
   const preset = project?.captionPreset ?? 'Hormozi'
 
   return (
@@ -307,11 +338,8 @@ function CaptionsTab(): JSX.Element {
 
       <div style={{ flex: 'none', width: 210 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}><span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#6a7180' }}>PREVIEW</span><span style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, background: 'var(--accent-soft)', color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: 10, padding: '2px 8px' }}>{project?.captionAspect ?? '16:9'}</span></div>
-        <div style={{ width: 210, border: '1px solid #1d2129', borderRadius: 12, aspectRatio: '16/9', background: 'linear-gradient(135deg,#23262e,#15171d)', position: 'relative', display: 'flex', alignItems: 'flex-end', justifyContent: 'center', paddingBottom: 18, overflow: 'hidden' }}>
-          <div style={{ position: 'absolute', left: '14%', bottom: 0, width: '34%', height: '80%', background: 'linear-gradient(180deg,#3a4150,#23262e)', borderRadius: '50px 50px 0 0' }} />
-          <div style={{ position: 'relative', textAlign: 'center', fontFamily: 'var(--font-poster)', fontSize: 19, lineHeight: 1.05, color: '#fff', textShadow: '2px 2px 0 #000' }}>YOU ARE <span style={{ color: '#1f9c6b' }}>NOT</span> CRAZY</div>
-        </div>
-        <div style={{ fontSize: 10, color: '#6a7180', textAlign: 'center', marginTop: 9, lineHeight: 1.4 }}>Keyword pops green + scale ({preset})</div>
+        <CaptionPreview words={transcript} aspect={project?.captionAspect ?? '16:9'} imagePath={images[0]?.thumb || images[0]?.path} />
+        <div style={{ fontSize: 10, color: '#6a7180', textAlign: 'center', marginTop: 9, lineHeight: 1.4 }}>Yellow active word · uniform pop ({preset})</div>
       </div>
 
       <div style={{ flex: 1, minWidth: 0 }}>

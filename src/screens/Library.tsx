@@ -42,7 +42,7 @@ function Kpi({ label, value, sub, accentCard }: { label: string; value: string; 
         <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '.8px', color: accentCard ? '#cdd2da' : '#6a7180' }}>{label}</span>
         <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="2.6" /></svg>
       </div>
-      <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 30, color: '#f4f6f9', letterSpacing: '-1px' }}>{value}</div>
+      <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 30, color: '#f4f6f9', letterSpacing: '-1px' }}>{value || '—'}</div>
       <div style={{ marginTop: 6 }}>{sub}</div>
     </div>
   )
@@ -144,8 +144,8 @@ export function Library(): JSX.Element {
                       <span style={{ width: 6, height: 6, borderRadius: '50%', background: s.dot }} />Uploaded
                     </span>
                   </div>
-                  <div style={{ width: 64, textAlign: 'right', fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 12.5, color: u.views ? '#dde0e5' : '#6a7180' }}>{u.views || 'unavailable'}</div>
-                  <div style={{ width: 62, textAlign: 'right', fontSize: 11, color: '#6a7180', fontFamily: 'var(--font-mono)' }}>{u.publishedAt || '—'}</div>
+                  <div style={{ width: 64, textAlign: 'right', fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 12.5, color: u.views ? '#dde0e5' : '#6a7180' }}>{u.views || ''}</div>
+                  <div style={{ width: 62, textAlign: 'right', fontSize: 11, color: '#6a7180', fontFamily: 'var(--font-mono)' }}>{u.publishedAt || ''}</div>
                 </div>
               )
             })}

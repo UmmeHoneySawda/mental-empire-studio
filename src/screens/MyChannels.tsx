@@ -87,7 +87,7 @@ export function MyChannels(): JSX.Element {
                 <div style={{ minWidth: 0 }}>
                   <div style={{ fontWeight: 600, fontSize: 15, color: '#eef0f3' }}>{c.name}</div>
                   <div style={{ fontSize: 11, color: '#6a7180', fontFamily: 'var(--font-mono)' }}>{c.handle}</div>
-                  <div style={{ fontSize: 10.5, color: '#5b616f', marginTop: 3 }}>{c.views} views · {c.subs} subs · {c.total} uploaded</div>
+                  <div style={{ fontSize: 10.5, color: '#5b616f', marginTop: 3 }}>{c.views ? `${c.views} views · ` : ''}{c.subs} subs · {c.total} uploaded</div>
                   <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 6, border: '1px solid #23272f', borderRadius: 7, padding: '3px 8px', background: '#0e1116' }}>
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#6a7180" strokeWidth="2"><path d="M7 7h10l-3-3M17 17H7l3 3" /></svg>
                     <span style={{ fontSize: 10, color: '#8a909c', fontFamily: 'var(--font-mono)' }}>{c.source}</span>

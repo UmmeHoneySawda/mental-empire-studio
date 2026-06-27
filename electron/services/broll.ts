@@ -3,7 +3,10 @@ import { createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, wr
 import { join } from 'node:path'
 import { app } from 'electron'
 import type { AppSettings, BrollDensity, TranscriptWord } from '../../shared/types'
-import { ffmpegPath, ffprobePath } from './render'
+import { ffmpegPath, ffprobePath, videoCodecArgs } from './render'
+import type { RenderCapabilities } from '../../shared/types'
+import { FALLBACK_CAPS } from './engine/encoder'
+import { parseFfmpegProgressBlock, type FfmpegProgress } from './engine/progress'
 
 // Auto B-roll: themed stock-footage pool driven by the transcript. We pick the
 // video's dominant themes, fetch a small pool of clips (Pexels → Pixabay → Coverr),
@@ -31,6 +34,11 @@ export interface BrollSegment {
   start: number
   end: number
   srcStart: number
+}
+
+export interface BrollPlanResult {
+  clips: BrollClip[]
+  segments: BrollSegment[]
 }
 
 // ---------- pure core (offline, unit-tested) ----------
@@ -235,11 +243,12 @@ async function downloadOne(c: BrollCandidate, dir: string): Promise<string> {
 }
 
 /** Download up to poolSize clips, skipping ones that fail (try the next candidate). */
-export async function downloadPool(cands: BrollCandidate[], poolSize: number): Promise<BrollClip[]> {
+export async function downloadPool(cands: BrollCandidate[], poolSize: number, onProgress?: (done: number, total: number) => void): Promise<BrollClip[]> {
   const dir = brollDir()
   const fixture = process.env['ME_BROLL_FIXTURE']
   const local = process.env['ME_BROLL_LOCAL']
   const out: BrollClip[] = []
+  const total = Math.min(poolSize, cands.length)
   for (const c of cands) {
     if (out.length >= poolSize) break
     try {
@@ -253,6 +262,7 @@ export async function downloadPool(cands: BrollCandidate[], poolSize: number): P
         path = await downloadOne(c, dir)
       }
       out.push({ ...c, path })
+      onProgress?.(out.length, total)
     } catch {
       /* failed → fall through to the next candidate */
     }
@@ -265,7 +275,13 @@ const BED_CF = 0.3 // bed crossfade duration (also the planCoverage tail reserve
 /** Assemble the planned segments into one bed.mp4 (scaled to WxH). With a transition,
  *  consecutive clips crossfade; otherwise they hard-cut (concat). Dry-run seam
  *  (ME_RENDER_FIXTURE / fixture mode) writes a stub so callers work offline. */
-export async function assembleBed(segments: BrollSegment[], dims: { w: number; h: number }, fps: number, transition?: string): Promise<string> {
+export async function assembleBed(
+  segments: BrollSegment[],
+  dims: { w: number; h: number },
+  fps: number,
+  transition?: string,
+  opts: { settings?: AppSettings; caps?: RenderCapabilities; onProgress?: (p: FfmpegProgress) => void } = {}
+): Promise<string> {
   const dir = brollDir()
   const bed = join(dir, `bed-${Date.now()}.mp4`)
   if (process.env['ME_RENDER_FIXTURE'] || process.env['ME_BROLL_FIXTURE'] || segments.length === 0) {
@@ -274,6 +290,8 @@ export async function assembleBed(segments: BrollSegment[], dims: { w: number; h
   }
   const { w, h } = dims
   const total = segments[segments.length - 1].end
+  const settings = opts.settings ?? { encoder: 'cpu', quality: '1080p' } as AppSettings
+  const caps = opts.caps ?? FALLBACK_CAPS
   const inputs: string[] = []
   const parts: string[] = []
   let mapLabel: string
@@ -304,10 +322,15 @@ export async function assembleBed(segments: BrollSegment[], dims: { w: number; h
     parts.push(`${concatIn}concat=n=${segments.length}:v=1:a=0[v]`)
     mapLabel = '[v]'
   }
-  const args = ['-y', ...inputs, '-filter_complex', parts.join(';'), '-map', mapLabel, '-t', total.toFixed(2), '-c:v', 'libx264', '-preset', 'veryfast', '-pix_fmt', 'yuv420p', '-r', String(fps), bed]
+  const crf = settings.quality === '1440p' ? '20' : settings.quality === '720p' ? '23' : '21'
+  const args = ['-y', '-progress', 'pipe:1', '-nostats', ...inputs, '-filter_complex', parts.join(';'), '-map', mapLabel, '-t', total.toFixed(2), ...videoCodecArgs(settings, crf, caps), '-r', String(fps), bed]
   await new Promise<void>((resolve, reject) => {
     const child = spawn(ffmpegPath(), args, { windowsHide: true })
     let err = ''
+    child.stdout.on('data', (d: Buffer) => {
+      const p = parseFfmpegProgressBlock(d.toString(), total)
+      if (p) opts.onProgress?.(p)
+    })
     child.stderr.on('data', (d: Buffer) => (err += d))
     child.on('error', reject)
     child.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`broll ffmpeg ${code}: ${err.slice(-200)}`))))
@@ -327,11 +350,37 @@ export async function buildBrollBed(opts: {
   fps: number
   /** crossfade clips with this transition (e.g. the style's); undefined = hard cuts */
   transition?: string
+  caps?: RenderCapabilities
+  onProgress?: (phase: 'fetch' | 'download' | 'assemble', done: number, total: number, ffmpeg?: FfmpegProgress) => void
 }): Promise<string | null> {
+  const planned = await buildBrollSegments(opts)
+  if (!planned || planned.segments.length === 0) return null
+  opts.onProgress?.('assemble', 0, Math.max(1, planned.segments.length))
+  return assembleBed(planned.segments, opts.dims, opts.fps, opts.transition, {
+    settings: opts.settings,
+    caps: opts.caps,
+    onProgress: (p) => opts.onProgress?.('assemble', p.pct, 100, p)
+  })
+}
+
+/** End-to-end planning without pre-encoding: themes → pool → download → coverage. */
+export async function buildBrollSegments(opts: {
+  settings: AppSettings
+  words: TranscriptWord[]
+  durationSec: number
+  density: BrollDensity
+  poolSize: number
+  dims: { w: number; h: number }
+  /** reserve overlap tail only when the final graph will xfade */
+  transition?: string
+  onProgress?: (phase: 'fetch' | 'download', done: number, total: number) => void
+}): Promise<BrollPlanResult | null> {
   const themes = extractThemes(opts.words)
+  opts.onProgress?.('fetch', 0, opts.poolSize)
   const cands = await fetchPool(opts.settings, themes, opts.dims, opts.poolSize)
-  const clips = await downloadPool(cands, opts.poolSize)
+  opts.onProgress?.('fetch', cands.length, opts.poolSize)
+  const clips = await downloadPool(cands, opts.poolSize, (done, total) => opts.onProgress?.('download', done, total))
   if (clips.length === 0) return null
   const segments = planCoverage(opts.durationSec, clips, { density: opts.density, tailReserve: opts.transition ? BED_CF : 0 })
-  return assembleBed(segments, opts.dims, opts.fps, opts.transition)
+  return { clips, segments }
 }

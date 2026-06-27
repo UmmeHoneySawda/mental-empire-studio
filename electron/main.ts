@@ -2,7 +2,7 @@ import { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage } from 'ele
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
 import { existsSync, statSync, writeFileSync, readFileSync } from 'node:fs'
-import { execFileSync } from 'node:child_process'
+import { execFileSync, spawnSync } from 'node:child_process'
 import { applyLoginItem, trayIconPath } from './services/background'
 import * as scheduler from './services/scheduler'
 import { initAutoUpdate, checkForUpdates } from './services/updater'
@@ -22,6 +22,7 @@ import { buildRenderArgs, runRender, ffmpegPath, ffprobePath } from './services/
 import { extractThemes, rankCandidates, planCoverage, buildBrollBed, assembleBed, type BrollCandidate } from './services/broll'
 import { validateEffectPlan, deriveStylePlan, styleCaptionLead, textPresetTag, type EffectPlan } from '../shared/effectPlan'
 import { buildSfxTrack } from './services/sfx'
+import { buildMasterLoudnormFilter, buildSecondPassLoudnormFilter } from './services/engine/audio-master'
 import { readFileSync as readFileSyncSfx } from 'node:fs'
 import { resolveBinDir, resolveYtdlpPath } from './services/ytdlp'
 import { L, installGlobalLogging, logStartupDiagnostics, logFilePath } from './services/logger'
@@ -410,9 +411,9 @@ async function runSmokeM6(): Promise<void> {
     const assPop = buildAss(words, { preset: 'Pop', aspect: '16:9', keywords: false })
     const assOk =
       ass169.ass.includes('PlayResX: 1920') && ass916.ass.includes('PlayResX: 1080') &&
-      ass169.ass.includes('\\kf') && ass169.ass.includes('\\fscx118') &&
+      ass169.ass.includes('\\kf') && ass169.ass.includes('\\fscx112') && ass169.ass.includes('&H003DD9FF') &&
       ass169.zoomHits.length === 1 &&
-      ass169.ass.includes('Anton') && assPop.ass.includes('Montserrat')
+      ass169.ass.includes('Anton') && assPop.ass.includes('Anton')
 
     const proj = (id: string, title: string): Parameters<typeof repos.createProject>[0] => ({
       id, downloadId: id, title, channel: 'Mental Empire', mp3Path: join(process.cwd(), 'test', 'fixtures', 'audio', 'sample.mp3'),
@@ -420,16 +421,19 @@ async function runSmokeM6(): Promise<void> {
       captionPreset: 'Hormozi', captionFont: 'Anton', captionAnim: 'Pop-in', captionAspect: '16:9',
       emphasis: true, keywords: true, punchZoom: true, stage: 'queued', createdAt: new Date().toISOString()
     })
+    const smokeSettings = { ...getSettings(), quality: '1080p' as const, encoder: 'cpu' as const }
     const args = buildRenderArgs({
       project: proj('p-args', 'Args'),
       images: [
         { id: 'i0', projectId: 'p-args', ord: 0, path: '/x/a.png', thumb: '', rangeStart: 0, rangeEnd: 6, manual: false },
         { id: 'i1', projectId: 'p-args', ord: 1, path: '/x/b.png', thumb: '', rangeStart: 6, rangeEnd: 12, manual: false }
       ],
-      assPath: '/tmp/x.ass', outPath: '/tmp/o.mp4', settings: getSettings()
+      assPath: '/tmp/x.ass', outPath: '/tmp/o.mp4', settings: smokeSettings
     })
     const g = args.join(' ')
-    const argsOk = g.includes('zoompan') && g.includes('xfade') && g.includes('subtitles=') && g.includes('libx264') && g.includes('scale=1920:1080')
+    const loudnorm2 = buildSecondPassLoudnormFilter({ input_i: '-20.0', input_tp: '-3.0', input_lra: '7.0', input_thresh: '-30.0', target_offset: '1.2' })
+    const loudnormFallback = buildMasterLoudnormFilter({ input_i: '-inf', input_tp: '-inf', input_lra: '0.0', input_thresh: '-70.0', target_offset: 'inf' })
+    const argsOk = g.includes('zoompan') && g.includes('xfade') && g.includes('subtitles=') && g.includes('libx264') && g.includes('scale=1920:1080') && loudnorm2.includes('measured_I=-20.0') && loudnorm2.includes('linear=true') && loudnormFallback === 'loudnorm=I=-14:TP=-1:LRA=11' && !g.includes('-shortest')
 
     // ---- Beta features (hook / overlay gradient / auto-zoom at start) ----
     const assHook = buildAss(words, { preset: 'Hormozi', aspect: '16:9', keywords: false, hook: { text: 'wait for it', untilSec: 2.5 } })
@@ -438,10 +442,10 @@ async function runSmokeM6(): Promise<void> {
       betaOpts: { ...DEFAULT_BETA_OPTS, overlay: { bottom: true, top: false, left: false, right: false }, autoZoom: { atStart: true, atKeyPhrases: false } }
     }
     const betaImgs = [{ id: 'i0', projectId: 'p-beta', ord: 0, path: '/x/a.png', thumb: '', rangeStart: 0, rangeEnd: 12, manual: false }]
-    const betaSettings = { ...getSettings(), beta: { enabled: true, pexelsKey: '', pixabayKey: '', coverrKey: '' } }
+    const betaSettings = { ...smokeSettings, beta: { enabled: true, pexelsKey: '', pixabayKey: '', coverrKey: '' } }
     const betaArgs = buildRenderArgs({ project: betaProj, images: betaImgs, assPath: '/tmp/x.ass', outPath: '/tmp/o.mp4', settings: betaSettings }).join(' ')
     // Beta OFF (default settings) → no overlay/zoom injected (regression guard).
-    const offArgs = buildRenderArgs({ project: betaProj, images: betaImgs, assPath: '/tmp/x.ass', outPath: '/tmp/o.mp4', settings: { ...getSettings(), beta: { enabled: false, pexelsKey: '', pixabayKey: '', coverrKey: '' } } }).join(' ')
+    const offArgs = buildRenderArgs({ project: betaProj, images: betaImgs, assPath: '/tmp/x.ass', outPath: '/tmp/o.mp4', settings: { ...smokeSettings, beta: { enabled: false, pexelsKey: '', pixabayKey: '', coverrKey: '' } } }).join(' ')
     const betaOk =
       assHook.ass.includes('Style: Hook') && assHook.ass.includes('Dialogue: 1,') &&
       betaArgs.includes('drawbox') && betaArgs.includes('zoompan') &&
@@ -463,10 +467,19 @@ async function runSmokeM6(): Promise<void> {
     const covEnd = cov.length ? cov[cov.length - 1].end : 0
     const longTrimmed = cov.every((s) => s.end - s.start <= 9.001)
     process.env['ME_BROLL_FIXTURE'] = join(process.cwd(), 'test', 'fixtures', 'broll')
-    const bed = await buildBrollBed({ settings: { ...getSettings(), beta: { enabled: true, pexelsKey: 'k', pixabayKey: '', coverrKey: '' } }, words, durationSec: 12, density: 'sparse', poolSize: 4, dims: { w: 1920, h: 1080 }, fps: 30 })
+    const bed = await buildBrollBed({ settings: { ...smokeSettings, beta: { enabled: true, pexelsKey: 'k', pixabayKey: '', coverrKey: '' } }, words, durationSec: 12, density: 'sparse', poolSize: 4, dims: { w: 1920, h: 1080 }, fps: 30 })
     delete process.env['ME_BROLL_FIXTURE']
-    const brollOk = themes.includes('discipline') && ranked[0].id === 'b' && Math.abs(covEnd - 12) < 0.1 && longTrimmed && !!bed && existsSync(bed!)
-    console.log(`SMOKE_M6_BROLL themes=${themes.slice(0, 3).join(',')} topRank=${ranked[0].id} covEnd=${covEnd.toFixed(1)} trimmed=${longTrimmed} bed=${!!bed}`)
+    const directBrollArgs = buildRenderArgs({
+      project: proj('p-broll-direct', 'Broll direct'),
+      images: [],
+      brollSegments: cov.map((s) => ({ ...s, path: '/x/clip.mp4' })),
+      assPath: '/tmp/x.ass',
+      outPath: '/tmp/o.mp4',
+      settings: smokeSettings
+    }).join(' ')
+    const directOk = directBrollArgs.includes('concat=n=') && directBrollArgs.includes('/x/clip.mp4') && !directBrollArgs.includes('bed-')
+    const brollOk = themes.includes('discipline') && ranked[0].id === 'b' && Math.abs(covEnd - 12) < 0.1 && longTrimmed && !!bed && existsSync(bed!) && directOk
+    console.log(`SMOKE_M6_BROLL themes=${themes.slice(0, 3).join(',')} topRank=${ranked[0].id} covEnd=${covEnd.toFixed(1)} trimmed=${longTrimmed} bed=${!!bed} direct=${directOk}`)
 
     // ---- Beta style + effect plan: validator guardrails, rule engine, render wiring ----
     const vp = validateEffectPlan({
@@ -487,7 +500,7 @@ async function runSmokeM6(): Promise<void> {
     const lead = styleCaptionLead('Cinematic')
     const assStyled = buildAss(words, { preset: 'Hormozi', aspect: '16:9', keywords: false, styleLead: lead })
     const styleArgs = buildRenderArgs({
-      project: { ...proj('p-sty', 'Sty'), kenBurns: false },
+      project: { ...proj('p-sty', 'Sty'), kenBurns: false, betaOpts: { ...DEFAULT_BETA_OPTS, style: 'Cinematic' } },
       images: [
         { id: 'i0', projectId: 'p-sty', ord: 0, path: '/x/a.png', thumb: '', rangeStart: 0, rangeEnd: 6, manual: false },
         { id: 'i1', projectId: 'p-sty', ord: 1, path: '/x/b.png', thumb: '', rangeStart: 6, rangeEnd: 12, manual: false }
@@ -497,8 +510,8 @@ async function runSmokeM6(): Promise<void> {
     // Per-word + hook text-effect presets land as ASS override tags.
     const assWordFx = buildAss(words, { preset: 'Hormozi', aspect: '16:9', keywords: false, hook: { text: 'hi', untilSec: 2 }, textEffects: [{ word: 'crazy', preset: 'intense-zoom' }, { scope: 'hook', preset: 'cinematic-pop' }] })
     const wordFxOk = assWordFx.ass.includes(textPresetTag('intense-zoom')) && assWordFx.ass.includes(textPresetTag('cinematic-pop'))
-    const styleOk = validatorOk && ruleOk && assStyled.ass.includes(lead) && lead.length > 0 && styleArgs.includes('xfade=transition=fadeblack') && wordFxOk
-    console.log(`SMOKE_M6_STYLE validator=${validatorOk} rule=${ruleOk} lead=${assStyled.ass.includes(lead)} transition=${styleArgs.includes('xfade=transition=fadeblack')} wordFx=${wordFxOk}`)
+    const styleOk = validatorOk && ruleOk && assStyled.ass.includes(lead) && lead.length > 0 && styleArgs.includes('xfade=transition=fadeblack') && styleArgs.includes('vignette=PI/5') && styleArgs.includes('noise=alls=8') && wordFxOk
+    console.log(`SMOKE_M6_STYLE validator=${validatorOk} rule=${ruleOk} lead=${assStyled.ass.includes(lead)} transition=${styleArgs.includes('xfade=transition=fadeblack')} grade=${styleArgs.includes('vignette=PI/5')} wordFx=${wordFxOk}`)
 
     // ---- Beta transition SFX + per-boundary placement ----
     const fxPlan: EffectPlan = { transitions: [{ atSec: 6, type: 'circleopen', durationSec: 0.5, sfx: 'whoosh_soft' }], textEffects: [] }
@@ -657,6 +670,65 @@ function ffprobe(file: string): Probe | null {
   }
 }
 
+function loudnessI(file: string): number | null {
+  const r = spawnSync(ffmpegPath(), [
+    '-hide_banner', '-nostats',
+    '-i', file,
+    '-vn',
+    '-af', 'loudnorm=I=-14:TP=-1:LRA=11:print_format=json',
+    '-f', 'null',
+    '-'
+  ], { encoding: 'utf8', windowsHide: true, maxBuffer: 2 * 1024 * 1024 })
+  const txt = `${r.stdout ?? ''}\n${r.stderr ?? ''}`
+  const start = txt.lastIndexOf('{')
+  const end = txt.lastIndexOf('}')
+  if (start < 0 || end <= start) return null
+  try {
+    const j = JSON.parse(txt.slice(start, end + 1)) as { input_i?: string }
+    const n = Number(j.input_i)
+    return Number.isFinite(n) ? n : null
+  } catch {
+    return null
+  }
+}
+
+interface FrameStats {
+  activePixels: number
+  captionPixels: number
+  yellowPixels: number
+  totalPixels: number
+}
+
+function fixedFrameStats(file: string, probe: Probe, atSec = 1.25): FrameStats | null {
+  if (!probe.width || !probe.height) return null
+  const r = spawnSync(ffmpegPath(), [
+    '-v', 'error',
+    '-ss', atSec.toFixed(2),
+    '-i', file,
+    '-frames:v', '1',
+    '-f', 'rawvideo',
+    '-pix_fmt', 'rgba',
+    '-'
+  ], { encoding: 'buffer', windowsHide: true, maxBuffer: probe.width * probe.height * 4 + 1024 * 1024 })
+  const buf = r.stdout as Buffer
+  const totalPixels = probe.width * probe.height
+  if (!buf || buf.length < totalPixels * 4) return null
+  let activePixels = 0
+  let captionPixels = 0
+  let yellowPixels = 0
+  for (let i = 0; i < totalPixels * 4; i += 4) {
+    const red = buf[i] ?? 0
+    const green = buf[i + 1] ?? 0
+    const blue = buf[i + 2] ?? 0
+    if (red + green + blue > 48) activePixels++
+    const yellow = red > 200 && green > 150 && blue < 130
+    const white = red > 190 && green > 190 && blue > 190
+    if (yellow) yellowPixels++
+    if (yellow || white) captionPixels++
+  }
+  return { activePixels, captionPixels, yellowPixels, totalPixels }
+}
+
 /**
  * Full end-to-end journey (ME_SMOKE=e2e) on one continuous DB: fixture scrape +
  * download + transcript, REAL images, and a REAL ffmpeg render — probed with
@@ -674,9 +746,10 @@ async function runSmokeE2E(): Promise<void> {
   const F = (p: string): string => join(process.cwd(), 'test', 'fixtures', p)
   const imgs = ['images/img1.png', 'images/img2.png', 'images/img3.png'].map(F)
   delete process.env['ME_RENDER_FIXTURE'] // real ffmpeg this run
+  process.env['ME_WHISPER_FIXTURE'] = process.env['ME_WHISPER_FIXTURE'] || F('whisper/sample-words.json')
 
   try {
-    setSettings({ outputFolder: join(app.getPath('temp'), 'me-e2e-out'), concurrency: 2 })
+    setSettings({ outputFolder: join(app.getPath('temp'), 'me-e2e-out'), concurrency: 2, quality: '1080p', encoder: 'cpu' })
 
     // Deterministic state: production no longer seeds demo content, and prior smoke
     // runs share this userData DB — so wipe + seed the demo dataset for a clean journey.
@@ -749,6 +822,9 @@ async function runSmokeE2E(): Promise<void> {
       check(!!p && Math.abs(p.duration - 12) < 0.6, `${label}: matches audio ~12s (got ${p?.duration?.toFixed(1)})`)
       check(!!p && p.vcodec === 'h264' && p.acodec === 'aac', `${label}: h264/aac (got ${p?.vcodec}/${p?.acodec})`)
       check(existsSync(job!.outputPath!.replace(/\.mp4$/, '.ass')), `${label}: .ass written`)
+      const logPath = job!.outputPath!.replace(/\.mp4$/, '.render.log')
+      const logTxt = existsSync(logPath) ? readFileSyncSfx(logPath).toString() : ''
+      check(logTxt.includes('[stage]') && logTxt.includes('[ffmpeg]') && logTxt.includes('[audio-master]'), `${label}: render log has stages + ffmpeg + audio-master`)
     }
     probeJob(pA.id, 'J5a multi-image+xfade')
     probeJob(pB.id, 'J5b single-image')
@@ -767,6 +843,10 @@ async function runSmokeE2E(): Promise<void> {
       check(assTxt.includes('\\{FOR\\}'), 'J6a hook text ASS-escaped (no raw braces)')
       check(assTxt.includes(styleCaptionLead('Cinematic')), 'J6a Cinematic caption lead applied')
       check(assTxt.includes(textPresetTag('intense-zoom')), 'J6a per-word/hook text preset applied')
+      const stats = bp ? fixedFrameStats(betaJob.outputPath, bp) : null
+      check(!!stats && stats.activePixels > 5_000 && stats.captionPixels > 500, `J6a golden frame: nonblank + caption ink (active=${stats?.activePixels ?? 0}, caption=${stats?.captionPixels ?? 0}, yellow=${stats?.yellowPixels ?? 0})`)
+      const lufs = loudnessI(betaJob.outputPath)
+      check(lufs != null && Math.abs(lufs + 14) < 1.5, `J6a loudness near -14 LUFS (got ${lufs?.toFixed(2) ?? 'n/a'})`)
     }
 
     // J6b: REAL b-roll bed assembly + bed-mode render + SFX mix (amix normalize=0).
@@ -785,6 +865,11 @@ async function runSmokeE2E(): Promise<void> {
     const bo = ffprobe(bedOut)
     check(!!bo && bo.video && bo.audio && Math.abs(bo.duration - 12) < 0.6, `J6b bed-mode render: a/v + 12s (got ${bo?.duration?.toFixed(2)})`)
     check(!!bo && bo.vcodec === 'h264' && bo.acodec === 'aac', 'J6b bed-mode h264/aac')
+    const directOut = join(app.getPath('temp'), 'me-e2e-out', 'beta-direct-broll.mp4')
+    await runRender({ project: repos.getProject(pBeta.id)!, images: [], assPath: bedAss, outPath: directOut, settings: getSettings(), brollSegments: segs, transition: 'fade', sfxPath: sfxTrack ?? undefined })
+    const directProbe = ffprobe(directOut)
+    check(!!directProbe && directProbe.video && directProbe.audio && Math.abs(directProbe.duration - 12) < 0.6, `J6b single-pass b-roll render: a/v + 12s (got ${directProbe?.duration?.toFixed(2)})`)
+    check(!!directProbe && directProbe.vcodec === 'h264' && directProbe.acodec === 'aac', 'J6b single-pass b-roll h264/aac')
 
     // J6c: validator robustness (garbage / extremes) + ASS-escaping never throws.
     let validatorSafe = true

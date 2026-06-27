@@ -414,6 +414,20 @@ export interface DownloadOptions {
 
 // ---- Render pipeline (M6) ----
 export type RenderStatus = 'queued' | 'rendering' | 'done' | 'error'
+export type RenderStage =
+  | 'queued'
+  | 'rendering'
+  | 'preparing'
+  | 'transcribing'
+  | 'fetching-broll'
+  | 'assembling'
+  | 'grading'
+  | 'captioning'
+  | 'encoding'
+  | 'finalizing'
+  | 'done'
+  | 'error'
+  | 'cancelled'
 
 export interface RenderJob {
   id: string
@@ -430,8 +444,15 @@ export interface RenderJob {
 export interface RenderProgress {
   jobId: string
   pct: number
-  stage: string
+  stage: RenderStage
   done: boolean
+  stageDetail?: string
+  etaSec?: number
+  speed?: number
+  fps?: number
+  bitrate?: string
+  device?: 'cpu' | 'gpu'
+  encoder?: string
   error?: string
   outputPath?: string
 }
@@ -461,13 +482,22 @@ export interface AppSettings {
   outputFolder: string
   concurrency: number
   quality: '720p' | '1080p' | '1440p'
-  /** video encoder: 'cpu' = libx264 (works everywhere), 'nvenc' = NVIDIA GPU (h264_nvenc) */
-  encoder: 'cpu' | 'nvenc'
+  /** video encoder: cpu works everywhere; hardware modes are capability-gated and fall back. */
+  encoder: 'cpu' | 'nvenc' | 'qsv' | 'amf'
   autoScrape: { enabled: boolean; frequency: string; delaySec: number; retries: number; proxy: string; cookiesPath: string }
   background: { tray: boolean; startOnSignIn: boolean; notifications: boolean; webhook: string }
   transcription: { apiKey: string; model: string }
   /** experimental features + stock-footage API keys (gated; default off) */
   beta: { enabled: boolean; pexelsKey: string; pixabayKey: string; coverrKey: string }
+}
+
+export interface RenderCapabilities {
+  hasNvenc: boolean
+  hasQsv: boolean
+  hasAmf: boolean
+  gpuVendor: 'nvidia' | 'intel' | 'amd' | 'unknown'
+  ffmpegHasLibass: boolean
+  ffmpegHasCuda: boolean
 }
 
 /** Canonical defaults — shared by the main-process store and the renderer's initial state. */
@@ -511,6 +541,9 @@ export interface NativeApi {
     reset(): Promise<AppSettings>
     /** data-only reset: wipe channels/projects/downloads/jobs/transcripts but keep API keys and settings */
     softReset(): Promise<void>
+  }
+  caps: {
+    get(): Promise<RenderCapabilities>
   }
   effects: {
     /** beta: generate a validated effect-plan JSON for a project via Groq */
