@@ -91,8 +91,8 @@ export function styleTransition(style: VideoStyle): TransitionType {
   switch (style) {
     case 'Cinematic': return 'fadeblack'
     case 'Intense': return 'zoomin'
-    case 'Heartfelt': return 'fade'
-    case 'Clean': return 'fade'
+    case 'Heartfelt': return 'dissolve'
+    case 'Clean': return 'smoothleft'
     default: return 'fade'
   }
 }
@@ -163,7 +163,7 @@ export function buildMasterPrompt(words: TranscriptWord[], style: VideoStyle): s
     '- Text effects emphasize meaning: use intense-zoom only on genuinely emphatic words, cinematic-pop on the',
     '  hook/opening, soft-fade for calm passages. Never more than one effect per phrase.',
     '- Match the mood: Cinematic→fadeblack/dissolve + slow text fades; Intense→zoomin/slides + bigger text;',
-    '  Heartfelt→fade/smooth + gentle fades; Clean→minimal.',
+    '  Heartfelt→dissolve/smooth + gentle fades; Clean→smoothleft/minimal.',
     '- SFX optional and subtle: only *_soft values.',
     '',
     `Allowed transition types: ${TRANSITION_TYPES.join(', ')}.`,

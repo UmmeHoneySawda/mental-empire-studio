@@ -45,6 +45,44 @@ function emitProgress(p: ScrapeProgress): void {
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+const BROLL_LIBRARY_TITLE_COUNT = 80
+const warmingSources = new Set<string>()
+
+function hasStockBrollSource(): boolean {
+  const settings = getSettings()
+  return !!(settings.beta.pexelsKey || settings.beta.pixabayKey || settings.beta.coverrKey || process.env['ME_BROLL_LOCAL'] || process.env['ME_BROLL_FIXTURE'])
+}
+
+export async function warmSourceBrollLibrary(
+  url: string,
+  order: ScrapeOrder = 'Popular',
+  opts: { sourceKey?: string; displayName?: string; seedTitles?: string[] } = {}
+): Promise<void> {
+  if (!url.trim() || !hasStockBrollSource()) return
+  const settings = getSettings()
+  const sourceKey = opts.sourceKey ?? `src-${channelUrl(url).replace(/[^A-Za-z0-9]+/g, '_')}`
+  if (warmingSources.has(sourceKey)) return
+  warmingSources.add(sourceKey)
+  let titles = opts.seedTitles ?? []
+  let displayName = opts.displayName || url
+  try {
+    if (titles.length < 50) {
+      const ch = await scrapeChannel(url, settings, { flat: true, limit: BROLL_LIBRARY_TITLE_COUNT })
+      titles = orderVideos(ch.videos, order, BROLL_LIBRARY_TITLE_COUNT).map((v) => v.title)
+      displayName = opts.displayName || ch.name || displayName
+    }
+    const res = await warmBrollLibraryFromTitles(settings, titles, {
+      sourceKey,
+      targetClips: 80,
+      dims: { w: 1920, h: 1080 }
+    })
+    if (res) pushActivity({ t: hhmm(), icon: '▣', color: '#8b7cff', text: `B-roll library warmed: ${res.clips} clips for ${displayName}` })
+  } catch (e) {
+    L.warn(`B-roll library warm failed for ${url}: ${(e as Error).message}`)
+  } finally {
+    warmingSources.delete(sourceKey)
+  }
+}
 
 /** Persist a scrape result against an existing my_channels row: stats, uploads, mapping, notify. */
 function persistScrape(channelId: string, scraped: ScrapedChannel): MyChannel {
@@ -178,18 +216,7 @@ export async function sourceVideos(url: string, order: ScrapeOrder, count: numbe
   const sourceId = existing?.id ?? `src-${ch.handle.replace(/^@/, '')}`
   repos.upsertSourceChannel({ id: sourceId, url: channelUrl(url), handle: ch.handle, name: ch.name })
   repos.replaceSourceVideos(sourceId, ordered)
-  if (settings.beta.pexelsKey || settings.beta.pixabayKey || settings.beta.coverrKey || process.env['ME_BROLL_LOCAL'] || process.env['ME_BROLL_FIXTURE']) {
-    void warmBrollLibraryFromTitles(settings, ordered.map((v) => v.title), {
-      sourceKey: sourceId,
-      targetClips: 60,
-      dims: { w: 1920, h: 1080 }
-    }).then((res) => {
-      if (!res) return
-      pushActivity({ t: hhmm(), icon: '▣', color: '#8b7cff', text: `B-roll library warmed: ${res.clips} clips for ${ch.name}` })
-    }).catch((e) => {
-      L.warn(`B-roll library warm failed for ${sourceId}: ${(e as Error).message}`)
-    })
-  }
+  void warmSourceBrollLibrary(url, order, { sourceKey: sourceId, displayName: ch.name, seedTitles: ordered.map((v) => v.title) })
   return ordered
 }
 

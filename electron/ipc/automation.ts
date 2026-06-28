@@ -1,12 +1,13 @@
 import { ipcMain } from 'electron'
 import type { AutomationEvent, Profile, ScrapedVideo } from '../../shared/types'
 import { getRepos } from '../db'
-import { sourceVideos } from './scrape'
+import { sourceVideos, warmSourceBrollLibrary } from './scrape'
 import { startDownloads } from './download'
 import { createProject, sendToRender } from './compose'
 import { emit, hhmm, pushActivity } from './events'
 import { postWebhook } from '../services/webhook'
 import { notifyMessage } from '../services/notify'
+import { L } from '../services/logger'
 
 // Profile run orchestrator (req #2 / #3). Reuses the scrape → download → compose →
 // render functions. Interactive runs return the new project ids so the renderer can
@@ -93,8 +94,21 @@ export async function runProfile(profileId: string, headless = false): Promise<s
   }
 }
 
+export function upsertProfileAndWarm(p: Profile): Profile[] {
+  const profiles = getRepos().upsertProfile(p)
+  if (p.sourceUrl?.trim()) {
+    void warmSourceBrollLibrary(p.sourceUrl, p.sourceOrder, {
+      sourceKey: p.linkedSourceId || `profile-${p.id}`,
+      displayName: p.name
+    }).catch((e) => {
+      L.warn(`profile B-roll warm failed profile=${p.id}: ${(e as Error).message}`)
+    })
+  }
+  return profiles
+}
+
 export function registerAutomationIpc(): void {
   ipcMain.handle('automation:runProfile', (_e, id: string, headless?: boolean) => runProfile(id, !!headless))
-  ipcMain.handle('automation:upsertProfile', (_e, p: Profile) => getRepos().upsertProfile(p))
+  ipcMain.handle('automation:upsertProfile', (_e, p: Profile) => upsertProfileAndWarm(p))
   ipcMain.handle('automation:deleteProfile', (_e, id: string) => getRepos().deleteProfile(id))
 }

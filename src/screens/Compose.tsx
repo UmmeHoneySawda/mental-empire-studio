@@ -234,8 +234,8 @@ function BetaPanel(): JSX.Element {
     None: 'No automatic transitions or text effects',
     Cinematic: 'Slow zoom, fade transitions, elegant typography',
     Intense: 'Fast cuts, punch-zoom, bold caps with glow',
-    Heartfelt: 'Soft cross-dissolves, warm colours, gentle motion',
-    Clean: 'Minimal cuts, no extra effects — pure content',
+    Heartfelt: 'Soft dissolves, warm colours, gentle motion',
+    Clean: 'Smooth minimal slides, no extra noise',
   }
   const Row = ({ label, on, set, hint }: { label: string; on: boolean; set: () => void; hint?: string }): JSX.Element => (
     <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>

@@ -494,6 +494,7 @@ function libraryCandidates(themes: string[], target: { w: number; h: number }, p
   const wanted = new Set(tokens)
   const landscape = target.w >= target.h
   const scored: Array<{ score: number; candidate: BrollCandidate }> = []
+  const fallback: Array<{ score: number; candidate: BrollCandidate }> = []
   for (const index of readLibraryIndexes()) {
     for (const group of index.keywords) {
       const groupTokens = themeTokens([group.keyword])
@@ -505,13 +506,12 @@ function libraryCandidates(themes: string[], target: { w: number; h: number }, p
           if (tokens.some((t) => token.includes(t) || t.includes(token))) return sum + 3
           return sum
         }, 0)
-        if (tokens.length && matchScore <= 0) continue
         let score = matchScore
         if ((clip.width >= clip.height) === landscape) score += 3
         if (clip.width >= target.w && clip.height >= target.h) score += 2
         if (clip.durationSec >= 4) score += 1
         score += Math.random() * 0.5
-        scored.push({
+        const item = {
           score,
           candidate: {
             provider: clip.provider,
@@ -522,11 +522,14 @@ function libraryCandidates(themes: string[], target: { w: number; h: number }, p
             durationSec: clip.durationSec,
             tags: [...new Set([...clip.tags, group.keyword])]
           }
-        })
+        }
+        if (tokens.length && matchScore <= 0) fallback.push({ ...item, score: Math.min(score, 2) })
+        else scored.push(item)
       }
     }
   }
-  const out = scored.sort((a, b) => b.score - a.score).slice(0, poolSize).map((s) => s.candidate)
+  const ranked = scored.length ? scored : fallback
+  const out = ranked.sort((a, b) => b.score - a.score).slice(0, poolSize).map((s) => s.candidate)
   if (out.length) brollInfo(logPath, `library pool hit count=${out.length} requested=${poolSize} themes=${themes.join(',')}`)
   return out
 }

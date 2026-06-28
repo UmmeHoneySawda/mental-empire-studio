@@ -7,7 +7,7 @@ import { registerDownloadIpc } from './download'
 import { registerComposeIpc } from './compose'
 import { registerThumbnailsIpc } from './thumbnails'
 import { registerRenderIpc } from './render'
-import { registerAutomationIpc } from './automation'
+import { registerAutomationIpc, upsertProfileAndWarm } from './automation'
 import { tick, start as schedulerStart } from '../services/scheduler'
 import { applyLoginItem } from '../services/background'
 import { probeRenderCapabilities } from '../services/engine/caps'
@@ -45,7 +45,7 @@ export function registerIpc(): void {
   ipcMain.handle('db:profiles', () => getRepos().profiles())
   ipcMain.handle('db:templates', () => getRepos().templates())
   ipcMain.handle('db:activity', () => getRepos().activity())
-  ipcMain.handle('db:upsertProfile', (_e, p: Profile) => getRepos().upsertProfile(p))
+  ipcMain.handle('db:upsertProfile', (_e, p: Profile) => upsertProfileAndWarm(p))
   ipcMain.handle('db:saveTemplate', (_e, t: ThumbnailTemplate) => getRepos().saveTemplate(t))
   ipcMain.handle('db:recentUploads', (_e, limit?: number) => getRepos().recentUploads(limit ?? 8))
   ipcMain.handle('db:updateChannelGoals', (_e, id: string, patch: GoalsPatch) => {

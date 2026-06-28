@@ -534,7 +534,7 @@ async function runSmokeM6(): Promise<void> {
       { sourceKey: librarySourceKey, targetClips: 2, dims: { w: 320, h: 180 } }
     )
     delete process.env['ME_BROLL_LOCAL']
-    const cachedPool = await fetchPool({ ...smokeSettings, beta: { enabled: true, pexelsKey: '', pixabayKey: '', coverrKey: '' } }, ['toxic relationship'], { w: 320, h: 180 }, 1)
+    const cachedPool = await fetchPool({ ...smokeSettings, beta: { enabled: true, pexelsKey: '', pixabayKey: '', coverrKey: '' } }, ['unmatched random topic'], { w: 320, h: 180 }, 1)
     const libraryOk =
       titleThemes.includes('toxic relationship') &&
       titleThemes.includes('lonely person') &&
