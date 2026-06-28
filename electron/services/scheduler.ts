@@ -2,12 +2,15 @@ import { getRepos } from '../db'
 import { getSettings } from '../store/settings'
 import { sourceVideos, checkReminders } from '../ipc/scrape'
 import { newVideos, runProfile } from '../ipc/automation'
+import { hhmm, pushActivity } from '../ipc/events'
+import { logger } from './logger'
 
 // Auto-watch scheduler (req #3). On each tick it checks every watched profile's
 // linked source for new uploads and runs the profile hands-free. Runs in the main
 // process while the app is alive (the tray keeps it alive).
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+const SCHED_LOG = logger.scope('scheduler')
 
 /** Map a frequency label to an interval in ms. */
 export function frequencyToMs(freq: string): number {
@@ -38,8 +41,10 @@ export async function tick(): Promise<void> {
       } else if (newVideos(scraped, p.lastSeenVideoId).length > 0) {
         await runProfile(p.id, true)
       }
-    } catch {
-      /* isolate failures per profile */
+    } catch (e) {
+      const msg = (e as Error).message
+      SCHED_LOG.warn(`auto-watch failed profile=${p.name} source=${p.sourceUrl}: ${msg}`)
+      pushActivity({ t: hhmm(), icon: '!', color: '#ff5a6e', text: `Auto-watch failed: ${p.name} — ${msg.slice(0, 80)}` })
     }
     await sleep((settings.autoScrape.delaySec || 0) * 1000)
   }
