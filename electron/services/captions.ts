@@ -20,6 +20,8 @@ export interface CaptionOptions {
   perGroup?: number
   /** number of stacked caption lines the user wants on screen */
   lines?: 1 | 2 | 3
+  /** word mode keeps active-word highlighting; phrase mode reduces long-form CPU burn */
+  mode?: 'word' | 'phrase'
   /** beta: intro "hook" text card shown centered for the first untilSec seconds */
   hook?: { text: string; untilSec: number }
   /** beta: a leading ASS override tag applied to every caption line (the style "feel") */
@@ -208,15 +210,23 @@ export function buildAss(words: TranscriptWord[], opts: CaptionOptions): AssResu
         return `${fx}{\\1c${color}${pop}}${body}{\\fscx100\\fscy100}`
   }
 
-  const dialogues = groups.flatMap((g) =>
-    g.words.map((activeWord, activeIdx) => {
+  const mode = opts.mode ?? 'word'
+  const dialogues = mode === 'phrase'
+    ? groups.map((g) => {
+      const lineStart = g.start
+      const lineEnd = Math.max(lineStart + 0.3, g.end)
+      const text = wordsWithLineBreaks(g.words.map((word) => wordText(word, false)), lines)
+      return `Dialogue: 0,${secToAss(lineStart)},${secToAss(lineEnd)},Default,,0,0,0,,${opts.styleLead ?? ''}${animationLineLead(opts.animation, w, h, marginV, alignment)}${text}`
+    })
+    : groups.flatMap((g) =>
+      g.words.map((activeWord, activeIdx) => {
       const lineStart = activeWord.start
       const lineEnd = Math.max(lineStart + 0.05, g.words[activeIdx + 1]?.start ?? g.end)
       const visibleWords = opts.animation === 'Type' ? g.words.slice(0, activeIdx + 1) : g.words
       const text = wordsWithLineBreaks(visibleWords.map((word) => wordText(word, word.id === activeWord.id)), lines)
       return `Dialogue: 0,${secToAss(lineStart)},${secToAss(lineEnd)},Default,,0,0,0,,${opts.styleLead ?? ''}${animationLineLead(opts.animation, w, h, marginV, alignment)}${text}`
-    })
-  )
+      })
+    )
 
   // Beta hook: a centered intro card on its own style, fading in/out, on top (layer 1).
   if (opts.hook && opts.hook.text.trim() && opts.hook.untilSec > 0) {

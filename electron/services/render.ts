@@ -20,6 +20,7 @@ import { ffmpegPath, ffprobePath } from './bin'
 // real encode for a stub so the runner is testable without ffmpeg.
 
 const FPS = 24
+const LONG_FORM_FAST_SEC = 600
 
 /** Video codec args for the chosen encoder. CPU = libx264 (CRF); NVIDIA = h264_nvenc
  *  (constant-quality VBR). Both target visually-equivalent quality at the given level. */
@@ -29,6 +30,24 @@ export function videoCodecArgs(settings: AppSettings, crf: string, caps: RenderC
 
 export function canUseCudaFinalFilters(settings: AppSettings, caps: RenderCapabilities = FALLBACK_CAPS): boolean {
   return settings.encoder === 'nvenc' && caps.hasNvenc && caps.ffmpegHasCuda
+}
+
+function longFormFastPath(project: Pick<Project, 'durationSec'>): boolean {
+  return project.durationSec >= LONG_FORM_FAST_SEC
+}
+
+function punchZoomFilter(project: Project, beta: ReturnType<typeof asBetaOpts> | null, w: number, h: number): string {
+  const requested = project.punchZoom || !!beta?.autoZoom.atKeyPhrases
+  return requested && !longFormFastPath(project)
+    ? `,zoompan=z='min(zoom+0.0015,1.08)':d=1:s=${w}x${h}:fps=${FPS}`
+    : ''
+}
+
+function stillMotionFilter(project: Project, beta: ReturnType<typeof asBetaOpts> | null, index: number, frames: number, w: number, h: number): string {
+  const requested = project.kenBurns || (beta?.autoZoom.atStart && index === 0)
+  return requested && !longFormFastPath(project)
+    ? `,zoompan=z='min(zoom+0.0009,1.15)':d=${frames}:s=${w}x${h}:fps=${FPS}`
+    : `,fps=${FPS}`
 }
 
 function codecArgsForFilterOutput(settings: AppSettings, crf: string, caps: RenderCapabilities, hardwareFrames: boolean): string[] {
@@ -255,8 +274,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
 
     const parts: string[] = []
     const grade = gradeChain(beta?.style).replace(/,+$/, '')
-    const punchOn = project.punchZoom || !!beta?.autoZoom.atKeyPhrases
-    const punch = punchOn ? `,zoompan=z='min(zoom+0.0015,1.08)':d=1:s=${w}x${h}:fps=${FPS}` : ''
+    const punch = punchZoomFilter(project, beta, w, h)
     pushFinishedVideo(parts, '[0:v]', useCudaFinal
       ? [`scale_cuda=w=${w}:h=${h}:force_original_aspect_ratio=increase`, 'hwdownload', 'format=nv12', `crop=${w}:${h}`, 'setsar=1', `fps=${FPS}`, grade]
       : [`scale=${w}:${h}:force_original_aspect_ratio=increase`, `crop=${w}:${h}`, 'setsar=1', `fps=${FPS}`, grade], {
@@ -321,8 +339,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
     }
 
     const grade = gradeChain(beta?.style).replace(/,+$/, '')
-    const punchOn = project.punchZoom || !!beta?.autoZoom.atKeyPhrases
-    const punch = punchOn ? `,zoompan=z='min(zoom+0.0015,1.08)':d=1:s=${w}x${h}:fps=${FPS}` : ''
+    const punch = punchZoomFilter(project, beta, w, h)
     pushFinishedVideo(parts, `[${last}]`, [grade], { overlayIdx, assPath, punch, prefix: 'bd' })
     const aMap = audioWithSfx(parts, audioIdx, sfxIdx)
     const crf = settings.quality === '1440p' ? '20' : settings.quality === '720p' ? '23' : '21'
@@ -346,8 +363,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
   if (inp.videoBedPath) {
     const overlayPath = beta ? overlayGradientPath(beta.overlay, w, h) : undefined
     const grade = gradeChain(beta?.style).replace(/,+$/, '')
-    const punchOn = project.punchZoom || !!beta?.autoZoom.atKeyPhrases
-    const punch = punchOn ? `,zoompan=z='min(zoom+0.0015,1.08)':d=1:s=${w}x${h}:fps=${FPS}` : ''
+    const punch = punchZoomFilter(project, beta, w, h)
     const crfBed = settings.quality === '1440p' ? '20' : settings.quality === '720p' ? '23' : '21'
     const bedParts: string[] = []
     const sfxIdx = inp.sfxPath ? 2 : null
@@ -393,12 +409,10 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
   imgs.forEach((im, i) => {
     const frames = Math.round((Math.max(0.5, im.rangeEnd - im.rangeStart) + cf) * FPS)
     const base = `[${i}:v]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1`
-    // Ken Burns zooms every segment; beta "auto-zoom at start" adds the same ramp to
-    // just the first segment when Ken Burns is off.
-    const zoom = project.kenBurns || (beta?.autoZoom.atStart && i === 0)
-    const motion = zoom
-      ? `,zoompan=z='min(zoom+0.0009,1.15)':d=${frames}:s=${w}x${h}:fps=${FPS}`
-      : `,fps=${FPS}`
+    // Ken Burns is intentionally disabled on long-form jobs: with burned captions it
+    // becomes a second full-video CPU filter pass and made image-only renders as slow
+    // as B-roll on the user's 19-minute tests.
+    const motion = stillMotionFilter(project, beta, i, frames, w, h)
     parts.push(`${base}${motion}[v${i}]`)
   })
 
@@ -420,8 +434,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
   // Beta darkening gradient goes under the captions (applied before the subtitles burn).
   const grade = gradeChain(beta?.style).replace(/,+$/, '')
   // Burn captions; punch-zoom adds a subtle pulse when enabled (project flag or beta key-phrases).
-  const punchOn = project.punchZoom || !!beta?.autoZoom.atKeyPhrases
-  const punch = punchOn ? `,zoompan=z='min(zoom+0.0015,1.08)':d=1:s=${w}x${h}:fps=${FPS}` : ''
+  const punch = punchZoomFilter(project, beta, w, h)
   pushFinishedVideo(parts, `[${last}]`, [grade], { overlayIdx, assPath, punch, prefix: 'img' })
   const aMap = audioWithSfx(parts, audioIdx, sfxIdx)
 

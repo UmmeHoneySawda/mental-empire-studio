@@ -57,6 +57,10 @@ function alignImagesToDuration(images: ProjectImage[], durationSec: number): Pro
   return next
 }
 
+function captionRenderMode(durationSec: number, wordCount: number): 'word' | 'phrase' {
+  return durationSec >= 600 || wordCount >= 1500 ? 'phrase' : 'word'
+}
+
 let maxActive = 0
 /** Peak parallelism observed during the last runAll — asserted by the smoke. */
 export function lastMaxActive(): number {
@@ -184,6 +188,7 @@ export async function runJob(job: RenderJob): Promise<void> {
   const sfxPath = beta ? buildSfxTrack(plan.transitions, renderProject.durationSec) ?? undefined : undefined
 
   emitStage('captioning', 20, 'Building caption file')
+  const captionMode = captionRenderMode(renderProject.durationSec, words.length)
   const { ass } = buildAss(words, {
     preset: renderProject.captionPreset,
     font: renderProject.captionFont,
@@ -191,13 +196,16 @@ export async function runJob(job: RenderJob): Promise<void> {
     aspect: renderProject.captionAspect,
     lines: renderProject.captionLines ?? 1,
     position: renderProject.captionPosition ?? 'bottom',
+    mode: captionMode,
     keywords: renderProject.keywords || !!beta?.autoHighlight,
     hook: hookText ? { text: hookText, untilSec: 2.6 } : undefined,
     styleLead,
     textEffects: beta ? plan.textEffects : undefined
   })
   writeFileSync(assPath, ass)
-  emitStage('captioning', 100, 'Caption file ready')
+  const dialogueCount = (ass.match(/^Dialogue:/gm) ?? []).length
+  if (renderLogPath) appendFileSync(renderLogPath, `[captions]\nmode=${captionMode}\nwords=${words.length}\ndialogues=${dialogueCount}\nlines=${renderProject.captionLines ?? 1}\n`)
+  emitStage('captioning', 100, captionMode === 'phrase' ? `Caption file ready · long-form optimized (${dialogueCount} events)` : 'Caption file ready')
 
   // Beta auto-B-roll v2: normalize selected stock segments to a resumable concat
   // manifest, then feed that manifest into the final render as one continuous input.

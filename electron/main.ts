@@ -419,6 +419,21 @@ async function runSmokeM6(): Promise<void> {
     const assPop = buildAss(words, { preset: 'Pop', aspect: '16:9', keywords: false })
     const assTop = buildAss(words, { preset: 'Hormozi', aspect: '16:9', keywords: false, position: 'top' })
     const assFont = buildAss(words, { preset: 'Hormozi', font: 'Impact', aspect: '16:9', keywords: false })
+    const countDialogues = (ass: string): number => ass.split(/\r?\n/).filter((line) => line.startsWith('Dialogue: 0,')).length
+    const longWords: TranscriptWord[] = Array.from({ length: 1600 }, (_, i) => ({
+      id: `lw${i}`,
+      projectId: 'long',
+      ord: i,
+      word: i % 17 === 0 ? 'discipline' : i % 11 === 0 ? 'relationship' : `word${i}`,
+      start: i * 0.38,
+      end: (i * 0.38) + 0.28,
+      emphasis: i % 97 === 0
+    }))
+    const assLongWord = buildAss(longWords, { preset: 'Hormozi', aspect: '16:9', keywords: true, lines: 2 })
+    const assLongPhrase = buildAss(longWords, { preset: 'Hormozi', aspect: '16:9', keywords: true, lines: 2, mode: 'phrase' })
+    const longWordDialogues = countDialogues(assLongWord.ass)
+    const longPhraseDialogues = countDialogues(assLongPhrase.ass)
+    const captionPerfOk = longWordDialogues === longWords.length && longPhraseDialogues < longWordDialogues / 4 && assLongPhrase.ass.includes('\\N')
     const assOk =
       ass169.ass.includes('PlayResX: 1920') && ass916.ass.includes('PlayResX: 1080') &&
       !ass169.ass.includes('\\kf') && ass169.ass.includes('\\fscx112') && ass169.ass.includes('&H003DD9FF') &&
@@ -442,9 +457,17 @@ async function runSmokeM6(): Promise<void> {
       assPath: '/tmp/x.ass', outPath: '/tmp/o.mp4', settings: smokeSettings
     })
     const g = args.join(' ')
+    const longImageArgs = buildRenderArgs({
+      project: { ...proj('p-long', 'Long image'), durationSec: 1174, kenBurns: true, punchZoom: true },
+      images: [{ id: 'li0', projectId: 'p-long', ord: 0, path: '/x/a.png', thumb: '', rangeStart: 0, rangeEnd: 1174, manual: false }],
+      assPath: '/tmp/x.ass',
+      outPath: '/tmp/o.mp4',
+      settings: smokeSettings
+    }).join(' ')
     const loudnorm2 = buildSecondPassLoudnormFilter({ input_i: '-20.0', input_tp: '-3.0', input_lra: '7.0', input_thresh: '-30.0', target_offset: '1.2' })
     const loudnormFallback = buildMasterLoudnormFilter({ input_i: '-inf', input_tp: '-inf', input_lra: '0.0', input_thresh: '-70.0', target_offset: 'inf' })
     const argsOk = g.includes('zoompan') && g.includes('xfade') && g.includes('subtitles=') && g.includes('libx264') && g.includes('scale=1920:1080') && loudnorm2.includes('measured_I=-20.0') && loudnorm2.includes('linear=true') && loudnormFallback === 'loudnorm=I=-14:TP=-1:LRA=11' && !g.includes('-shortest')
+    const longMotionOk = !longImageArgs.includes('zoompan') && longImageArgs.includes('subtitles=') && longImageArgs.includes('-t 1174.00')
     const smooth = createProgressSmoother(120)
     const etaA = smooth({ outTimeSec: 1, pct: 1, speed: 0.1 })
     const etaB = smooth({ outTimeSec: 2, pct: 2, speed: 0.2 })
@@ -670,8 +693,9 @@ async function runSmokeM6(): Promise<void> {
 
     console.log(`SMOKE_M6_ASS ok=${assOk} zoomHits=${ass169.zoomHits.length} top=${assTop.ass.includes(',8,60,60,')}`)
     console.log(`SMOKE_M6_ARGS ok=${argsOk} eta=${etaOk}`)
+    console.log(`SMOKE_M6_LONGFORM captions=${captionPerfOk} wordEvents=${longWordDialogues} phraseEvents=${longPhraseDialogues} motion=${longMotionOk}`)
     console.log(`SMOKE_M6_QUEUE status=${j1?.status} pct=${j1?.pct} maxActive=${lastMaxActive()} out=${!!j1?.outputPath} ass=${assFileOk} stageTiming=${stageTimingOk} probe=${probeLogOk}`)
-    const ok = assOk && argsOk && etaOk && queueOk && assFileOk && stageTimingOk && probeLogOk && betaOk && brollOk && styleOk && sfxOk
+    const ok = assOk && argsOk && etaOk && captionPerfOk && longMotionOk && queueOk && assFileOk && stageTimingOk && probeLogOk && betaOk && brollOk && styleOk && sfxOk
     console.log(ok ? 'SMOKE_M6_OK' : 'SMOKE_M6_FAIL')
     closeDatabase()
     app.exit(ok ? 0 : 1)

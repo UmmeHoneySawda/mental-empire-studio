@@ -30,6 +30,7 @@ ME_SMOKE=e2e ME_YTDLP_FIXTURE=test/fixtures/ytdlp \
 | P2 | `electron/services/broll.ts`, `electron/services/render.ts`, `electron/services/queue.ts`, `src/screens/RenderQueue.tsx` | User render showed `GPU-NVENC` while CPU was pegged and ETA jumped wildly. The pasted ffmpeg command proved the old path used an 81-input CPU filtergraph (`scale` + `xfade`) and only used NVENC at the final encode step. | Replaced the long B-roll fallback with manifest-based per-clip normalization + concat input, added CUDA/NVENC args where available, smoothed ETA, logged stage timings/final probe, and split the UI into encoder/filter detail (`GPU-NVENC encode`, `CUDA scale + CPU captions` or `CPU filters`). | ✅ fixed |
 | P3 | `electron/services/engine/caps.ts`, `src/screens/Settings.tsx` | Settings could appear to contradict the user's hardware: having an NVIDIA GPU is not the same as a passing NVENC encode probe. | Capability checks now record ffmpeg path, GPU vendor/name, encoder-listed flags, one-frame probe result, CUDA filter availability, and a Recheck action. Current machine proof: NVIDIA GTX 1660 Ti detected; `h264_nvenc` probe passes; AMF probe fails (`amfrt64.dll` missing), so AMF should not be preferred. | ✅ fixed |
 | P4 | `electron/services/*`, `electron/services/effects.ts` | Several non-fatal fallbacks were still quiet, and Groq effect-plan calls did not expose safe request/response diagnostics. | Added scoped, redacted logging for Groq generation, capabilities, webhook, notification, login-item, image-copy, audio metadata fallback, B-roll provider requests, normalize commands, final ffmpeg command, stage timings, and ffprobe result. | ✅ fixed |
+| P5 | `electron/services/captions.ts`, `electron/services/render.ts`, `electron/services/queue.ts` | Long image-only and B-roll renders took almost the same time because both paths still burned thousands of word-level ASS events and stacked full-video `zoompan` filters around subtitles. | Added automatic long-form phrase captions (`duration >= 10 min` or large transcript) and disabled default Ken Burns/punch `zoompan` on long-form renders, while keeping the short-video look unchanged. Render logs now record caption mode, word count, dialogue count, and line count. | ✅ fixed |
 
 ## Render quality proof (2026-06-28)
 
@@ -50,6 +51,7 @@ Observed proof:
 - `SMOKE_M6_OK`.
 - `SMOKE_M6_ARGS ok=true eta=true`.
 - `SMOKE_M6_BROLL ... manifest=true resume=true cudaNormalize=true cudaFinal=true rateFallback=true allLimited=true`.
+- `SMOKE_M6_LONGFORM captions=true wordEvents=1600 phraseEvents=200 motion=true`.
 - `SMOKE_M6_QUEUE ... stageTiming=true probe=true`.
 - `SMOKE_BROLL_REAL encoder=nvenc cudaCaps=true durationOk=true stream=true caption=true tailMotion=true gpuArgs=true noFallback=true overlay=true progress=true brollLog=true probeLog=true`.
 - Current GPU probe: `NVIDIA GeForce GTX 1660 Ti, 610.62`; NVENC one-frame encode exits successfully.
