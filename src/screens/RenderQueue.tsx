@@ -124,7 +124,10 @@ export function RenderQueue(): JSX.Element {
           const eta = p?.etaState === 'estimating' ? 'estimating...' : fmtEta(p?.etaSec)
           const speed = p?.speed ? `${p.speed.toFixed(1)}x` : ''
           const encoderChip = p?.encoder ? (p.device === 'gpu' ? `${p.encoder} encode` : p.encoder) : ''
-          const filterChip = p?.filterDevice === 'cpu' && p?.device === 'gpu' ? 'CPU filters' : ''
+          const filterChip = p?.filterDetail || (p?.filterDevice === 'cpu' && p?.device === 'gpu' ? 'CPU filters' : '')
+          const filterTitle = filterChip.includes('CUDA')
+            ? 'Stock footage decode/scale uses CUDA where available; burned captions still use CPU/libass.'
+            : 'Current render filters, captions, and scaling still run on CPU; the GPU chip refers to encoding.'
           return (
             <div key={r.job.id} className="me-row" style={{ display: 'flex', alignItems: 'center', padding: '12px 18px', borderBottom: '1px solid #14171d' }}>
               <div style={{ flex: 2.2, display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
@@ -165,7 +168,7 @@ export function RenderQueue(): JSX.Element {
                     <div style={{ marginTop: 5, display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                       <span style={{ fontSize: 10, color: '#8a909c', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{detail}</span>
                       {encoderChip && <span style={{ flex: 'none', border: '1px solid #262b34', borderRadius: 999, padding: '1px 6px', fontSize: 9.5, color: p?.device === 'gpu' ? '#4fd6a0' : '#aab0bb', fontFamily: 'var(--font-mono)' }}>{encoderChip}</span>}
-                      {filterChip && <span title="Current render filters, captions, and scaling still run on CPU" style={{ flex: 'none', border: '1px solid #2d2534', borderRadius: 999, padding: '1px 6px', fontSize: 9.5, color: '#f5b323', fontFamily: 'var(--font-mono)' }}>{filterChip}</span>}
+                      {filterChip && <span title={filterTitle} style={{ flex: 'none', border: '1px solid #2d2534', borderRadius: 999, padding: '1px 6px', fontSize: 9.5, color: '#f5b323', fontFamily: 'var(--font-mono)' }}>{filterChip}</span>}
                       {(eta || speed) && <span style={{ flex: 'none', fontSize: 9.5, color: '#6a7180', fontFamily: 'var(--font-mono)' }}>{[eta, speed].filter(Boolean).join(' · ')}</span>}
                     </div>
                   </>

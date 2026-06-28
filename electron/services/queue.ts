@@ -78,6 +78,7 @@ export async function runJob(job: RenderJob): Promise<void> {
   const enc = selectEncoder(settings, caps)
   const filterDevice: RenderProgress['filterDevice'] = 'cpu'
   let encoderDetail = enc.device === 'gpu' ? `${enc.label} encode · CPU filters` : `${enc.label} encode`
+  let filterDetail = enc.device === 'gpu' ? 'CPU filters/captions' : undefined
   const dir = outputDir()
   mkdirSync(dir, { recursive: true })
   const base = formatOutputName(settings.namingTemplate, { channel: project.channel, title: project.title })
@@ -118,6 +119,7 @@ export async function runJob(job: RenderJob): Promise<void> {
       bitrate: ffmpeg?.bitrate,
       device: enc.device,
       filterDevice,
+      filterDetail,
       encoder: enc.label
     })
     if (renderLogPath) {
@@ -236,7 +238,8 @@ export async function runJob(job: RenderJob): Promise<void> {
       if (planned?.segments.length) {
         brollManifestPath = planned.manifestPath
         if (enc.device === 'gpu' && canUseCudaFinalFilters(settings, caps)) {
-          encoderDetail = `${enc.label} encode · CUDA scale · CPU captions`
+          encoderDetail = `${enc.label} encode · CUDA scale + CPU captions`
+          filterDetail = 'CUDA scale + CPU captions'
         }
         if (renderLogPath) appendFileSync(renderLogPath, `[broll]\nmanifest=${planned.manifestPath}\njson=${planned.jsonPath}\nsegments=${planned.segments.length}\n`)
         emitStage('assembling', 100, `Using B-roll manifest (${planned.segments.length} clips)`)
@@ -276,7 +279,7 @@ export async function runJob(job: RenderJob): Promise<void> {
     finishStageLog('done')
     repos.setRenderStatus(job.id, { status: 'done', pct: 100, outputPath: outPath })
     repos.updateProject(job.projectId, { stage: 'rendered' })
-    emitR({ jobId: job.id, pct: 100, stage: 'done', stageDetail: 'Done', done: true, outputPath: outPath, device: enc.device, filterDevice, encoder: enc.label, etaSec: 0, etaState: 'stable' })
+    emitR({ jobId: job.id, pct: 100, stage: 'done', stageDetail: 'Done', done: true, outputPath: outPath, device: enc.device, filterDevice, filterDetail, encoder: enc.label, etaSec: 0, etaState: 'stable' })
     pushActivity({ t: hhmm(), icon: '✓', color: '#36c98e', text: `Rendered ${project.title} → ${base}.mp4` })
   } catch (e) {
     // A ffmpeg failure caused by the user cancelling/deleting the job isn't an error:

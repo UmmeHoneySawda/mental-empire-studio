@@ -455,6 +455,7 @@ export interface RenderProgress {
   bitrate?: string
   device?: 'cpu' | 'gpu'
   filterDevice?: 'cpu' | 'gpu'
+  filterDetail?: string
   encoder?: string
   warning?: string
   error?: string
