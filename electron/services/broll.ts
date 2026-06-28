@@ -2,7 +2,7 @@ import { spawn, spawnSync } from 'node:child_process'
 import { appendFileSync, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, copyFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { app } from 'electron'
-import type { AppSettings, BrollDensity, TranscriptWord } from '../../shared/types'
+import type { AppSettings, BrollDensity, TranscriptWord, VideoStyle } from '../../shared/types'
 import { videoCodecArgs } from './render'
 import { ffmpegPath, ffprobePath } from './bin'
 import type { RenderCapabilities } from '../../shared/types'
@@ -72,6 +72,7 @@ export interface BrollSegment {
 }
 export interface BrollManifestSegment extends BrollSegment {
   normalizedPath: string
+  style?: VideoStyle
 }
 
 export interface BrollPlanResult {
@@ -706,13 +707,28 @@ export async function warmBrollLibraryFromTitles(
 
 const BED_CF = 0.3 // bed crossfade duration (also the planCoverage tail reserve)
 
+function brollStyleBoundaryFilters(style: VideoStyle | undefined, durationSec: number, index: number, total: number): string[] {
+  if (!style || style === 'None' || style === 'Clean' || total <= 1) return []
+  const fadeSec = style === 'Cinematic' ? 0.42 : style === 'Heartfelt' ? 0.36 : 0.14
+  const d = Math.max(0.05, Math.min(fadeSec, durationSec / 3))
+  const color = style === 'Heartfelt' ? 'white' : 'black'
+  const filters: string[] = []
+  if (index > 0) filters.push(`fade=t=in:st=0:d=${d.toFixed(2)}:color=${color}`)
+  if (index < total - 1) {
+    const start = Math.max(0, durationSec - d)
+    filters.push(`fade=t=out:st=${start.toFixed(2)}:d=${d.toFixed(2)}:color=${color}`)
+  }
+  return filters
+}
+
 export function buildBrollNormalizeArgs(
   segment: BrollSegment,
   outPath: string,
   dims: { w: number; h: number },
   fps: number,
   settings: AppSettings,
-  caps: RenderCapabilities
+  caps: RenderCapabilities,
+  styleOpts: { style?: VideoStyle; index?: number; total?: number } = {}
 ): string[] {
   const { w, h } = dims
   const dur = Math.max(0.5, segment.end - segment.start)
@@ -721,9 +737,13 @@ export function buildBrollNormalizeArgs(
   const inputArgs = useCuda
     ? ['-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda']
     : []
-  const filter = useCuda
-    ? `scale_cuda=w=${w}:h=${h}:force_original_aspect_ratio=increase,hwdownload,format=nv12,crop=${w}:${h},setsar=1,fps=${fps},format=yuv420p`
-    : `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1,fps=${fps},format=yuv420p`
+  const styleFilters = brollStyleBoundaryFilters(styleOpts.style, dur, styleOpts.index ?? 0, styleOpts.total ?? 1)
+  const filter = [
+    useCuda
+      ? `scale_cuda=w=${w}:h=${h}:force_original_aspect_ratio=increase,hwdownload,format=nv12,crop=${w}:${h},setsar=1,fps=${fps},format=yuv420p`
+      : `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1,fps=${fps},format=yuv420p`,
+    ...styleFilters
+  ].join(',')
   return [
     '-y',
     '-progress', 'pipe:1',
@@ -789,34 +809,37 @@ async function normalizeSegment(
     fps: number
     settings: AppSettings
     caps: RenderCapabilities
+    style?: VideoStyle
+    total: number
     shouldCancel?: () => boolean
     onProgress?: (p: FfmpegProgress) => void
     logPath?: string
   }
 ): Promise<BrollManifestSegment> {
-  const outPath = join(dir, `seg-${String(index).padStart(3, '0')}.mp4`)
+  const styleKey = opts.style && opts.style !== 'None' ? `-${safeId(opts.style)}` : ''
+  const outPath = join(dir, `seg-${String(index).padStart(3, '0')}${styleKey}.mp4`)
   const durationSec = Math.max(0.5, segment.end - segment.start)
   if (existsSync(outPath) && probeDurationSec(outPath) >= durationSec - 0.25) {
     brollInfo(opts.logPath, `normalize cache hit segment=${index} duration=${durationSec.toFixed(2)} bytes=${fileBytes(outPath)} path=${outPath}`)
     opts.onProgress?.({ outTimeSec: durationSec, pct: 100, speed: 1, etaSec: 0, etaState: 'stable' })
-    return { ...segment, normalizedPath: outPath }
+    return { ...segment, normalizedPath: outPath, style: opts.style }
   }
 
   try {
-    const args = buildBrollNormalizeArgs(segment, outPath, opts.dims, opts.fps, opts.settings, opts.caps)
-    brollInfo(opts.logPath, `normalize start segment=${index} encoder=${opts.settings.encoder ?? 'cpu'} duration=${durationSec.toFixed(2)} src=${segment.path} out=${outPath} cmd=${ffmpegPath()} ${args.join(' ')}`)
+    const args = buildBrollNormalizeArgs(segment, outPath, opts.dims, opts.fps, opts.settings, opts.caps, { style: opts.style, index, total: opts.total })
+    brollInfo(opts.logPath, `normalize start segment=${index} encoder=${opts.settings.encoder ?? 'cpu'} style=${opts.style ?? 'None'} duration=${durationSec.toFixed(2)} src=${segment.path} out=${outPath} cmd=${ffmpegPath()} ${args.join(' ')}`)
     await spawnNormalize(args, durationSec, opts)
     brollInfo(opts.logPath, `normalize done segment=${index} bytes=${fileBytes(outPath)} path=${outPath}`)
   } catch (e) {
     if (opts.shouldCancel?.() || (opts.settings.encoder ?? 'cpu') === 'cpu') throw e
     brollWarn(opts.logPath, `normalize hardware encode failed; retrying CPU for segment ${index}: ${(e as Error).message}`)
     const fallbackSettings = { ...opts.settings, encoder: 'cpu' as const }
-    const fallbackArgs = buildBrollNormalizeArgs(segment, outPath, opts.dims, opts.fps, fallbackSettings, FALLBACK_CAPS)
-    brollInfo(opts.logPath, `normalize fallback start segment=${index} encoder=cpu duration=${durationSec.toFixed(2)} src=${segment.path} out=${outPath} cmd=${ffmpegPath()} ${fallbackArgs.join(' ')}`)
+    const fallbackArgs = buildBrollNormalizeArgs(segment, outPath, opts.dims, opts.fps, fallbackSettings, FALLBACK_CAPS, { style: opts.style, index, total: opts.total })
+    brollInfo(opts.logPath, `normalize fallback start segment=${index} encoder=cpu style=${opts.style ?? 'None'} duration=${durationSec.toFixed(2)} src=${segment.path} out=${outPath} cmd=${ffmpegPath()} ${fallbackArgs.join(' ')}`)
     await spawnNormalize(fallbackArgs, durationSec, opts)
     brollInfo(opts.logPath, `normalize fallback done segment=${index} bytes=${fileBytes(outPath)} path=${outPath}`)
   }
-  return { ...segment, normalizedPath: outPath }
+  return { ...segment, normalizedPath: outPath, style: opts.style }
 }
 
 export async function buildBrollManifest(opts: {
@@ -828,13 +851,14 @@ export async function buildBrollManifest(opts: {
   poolSize: number
   dims: { w: number; h: number }
   fps: number
+  style?: VideoStyle
   jobId?: string
   maxSegments?: number
   shouldCancel?: () => boolean
   logPath?: string
   onProgress?: (phase: 'fetch' | 'download' | 'normalize' | 'manifest', done: number, total: number, ffmpeg?: FfmpegProgress) => void
 }): Promise<BrollManifestResult | null> {
-  brollInfo(opts.logPath, `manifest build start job=${opts.jobId ?? 'none'} duration=${opts.durationSec.toFixed(2)} density=${opts.density} poolSize=${opts.poolSize} dims=${opts.dims.w}x${opts.dims.h} fps=${opts.fps}`)
+  brollInfo(opts.logPath, `manifest build start job=${opts.jobId ?? 'none'} duration=${opts.durationSec.toFixed(2)} density=${opts.density} poolSize=${opts.poolSize} dims=${opts.dims.w}x${opts.dims.h} fps=${opts.fps} style=${opts.style ?? 'None'}`)
   const planned = await buildBrollSegments({
     settings: opts.settings,
     words: opts.words,
@@ -862,6 +886,8 @@ export async function buildBrollManifest(opts: {
       fps: opts.fps,
       settings: opts.settings,
       caps: opts.caps ?? FALLBACK_CAPS,
+      style: opts.style,
+      total,
       shouldCancel: opts.shouldCancel,
       logPath: opts.logPath,
       onProgress: (p) => opts.onProgress?.('normalize', i + (p.pct / 100), total, p)
@@ -882,6 +908,7 @@ export async function buildBrollManifest(opts: {
     createdAt: new Date().toISOString(),
     durationSec: opts.durationSec,
     density: opts.density,
+    style: opts.style ?? 'None',
     fps: opts.fps,
     dims: opts.dims,
     clips: planned.clips.map((c) => ({ provider: c.provider, id: c.id, path: c.path, durationSec: c.durationSec })),

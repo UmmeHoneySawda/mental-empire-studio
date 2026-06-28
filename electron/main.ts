@@ -652,8 +652,18 @@ async function runSmokeM6(): Promise<void> {
     // Per-word + hook text-effect presets land as ASS override tags.
     const assWordFx = buildAss(words, { preset: 'Hormozi', aspect: '16:9', keywords: false, hook: { text: 'hi', untilSec: 2 }, textEffects: [{ word: 'crazy', preset: 'intense-zoom' }, { scope: 'hook', preset: 'cinematic-pop' }] })
     const wordFxOk = assWordFx.ass.includes(textPresetTag('intense-zoom')) && assWordFx.ass.includes(textPresetTag('cinematic-pop'))
-    const styleOk = validatorOk && ruleOk && assStyled.ass.includes(lead) && lead.length > 0 && styleArgs.includes('xfade=transition=fadeblack') && styleArgs.includes('vignette=PI/5') && styleArgs.includes('noise=alls=8') && wordFxOk
-    console.log(`SMOKE_M6_STYLE validator=${validatorOk} rule=${ruleOk} lead=${assStyled.ass.includes(lead)} transition=${styleArgs.includes('xfade=transition=fadeblack')} grade=${styleArgs.includes('vignette=PI/5')} wordFx=${wordFxOk}`)
+    const normalizeStyleSeg = { path: '/x/clip.mp4', start: 0, end: 6, srcStart: 0 }
+    const noGpuCaps = { hasNvenc: false, hasQsv: false, hasAmf: false, gpuVendor: 'unknown' as const, ffmpegHasLibass: true, ffmpegHasCuda: false }
+    const cinematicBrollFx = buildBrollNormalizeArgs(normalizeStyleSeg, '/tmp/c.mp4', { w: 320, h: 180 }, 24, smokeSettings, noGpuCaps, { style: 'Cinematic', index: 0, total: 2 }).join(' ')
+    const heartfeltBrollFx = buildBrollNormalizeArgs(normalizeStyleSeg, '/tmp/h.mp4', { w: 320, h: 180 }, 24, smokeSettings, noGpuCaps, { style: 'Heartfelt', index: 1, total: 2 }).join(' ')
+    const intenseBrollFx = buildBrollNormalizeArgs(normalizeStyleSeg, '/tmp/i.mp4', { w: 320, h: 180 }, 24, smokeSettings, noGpuCaps, { style: 'Intense', index: 0, total: 2 }).join(' ')
+    const cleanBrollFx = buildBrollNormalizeArgs(normalizeStyleSeg, '/tmp/n.mp4', { w: 320, h: 180 }, 24, smokeSettings, noGpuCaps, { style: 'Clean', index: 0, total: 2 }).join(' ')
+    const brollStyleFxOk =
+      cinematicBrollFx.includes('fade=t=out') && cinematicBrollFx.includes('d=0.42') && cinematicBrollFx.includes('color=black') &&
+      heartfeltBrollFx.includes('fade=t=in') && heartfeltBrollFx.includes('d=0.36') && heartfeltBrollFx.includes('color=white') &&
+      intenseBrollFx.includes('fade=t=out') && intenseBrollFx.includes('d=0.14') && !cleanBrollFx.includes('fade=t=')
+    const styleOk = validatorOk && ruleOk && assStyled.ass.includes(lead) && lead.length > 0 && styleArgs.includes('xfade=transition=fadeblack') && styleArgs.includes('vignette=PI/5') && styleArgs.includes('noise=alls=8') && wordFxOk && brollStyleFxOk
+    console.log(`SMOKE_M6_STYLE validator=${validatorOk} rule=${ruleOk} lead=${assStyled.ass.includes(lead)} transition=${styleArgs.includes('xfade=transition=fadeblack')} grade=${styleArgs.includes('vignette=PI/5')} wordFx=${wordFxOk} brollFx=${brollStyleFxOk}`)
 
     // ---- Beta transition SFX + per-boundary placement ----
     const fxPlan: EffectPlan = { transitions: [{ atSec: 6, type: 'circleopen', durationSec: 0.5, sfx: 'whoosh_soft' }], textEffects: [] }

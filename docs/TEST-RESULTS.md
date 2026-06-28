@@ -31,6 +31,7 @@ ME_SMOKE=e2e ME_YTDLP_FIXTURE=test/fixtures/ytdlp \
 | P3 | `electron/services/engine/caps.ts`, `src/screens/Settings.tsx` | Settings could appear to contradict the user's hardware: having an NVIDIA GPU is not the same as a passing NVENC encode probe. | Capability checks now record ffmpeg path, GPU vendor/name, encoder-listed flags, one-frame probe result, CUDA filter availability, and a Recheck action. Current machine proof: NVIDIA GTX 1660 Ti detected; `h264_nvenc` probe passes; AMF probe fails (`amfrt64.dll` missing), so AMF should not be preferred. | ✅ fixed |
 | P4 | `electron/services/*`, `electron/services/effects.ts` | Several non-fatal fallbacks were still quiet, and Groq effect-plan calls did not expose safe request/response diagnostics. | Added scoped, redacted logging for Groq generation, capabilities, webhook, notification, login-item, image-copy, audio metadata fallback, B-roll provider requests, normalize commands, final ffmpeg command, stage timings, and ffprobe result. | ✅ fixed |
 | P5 | `electron/services/captions.ts`, `electron/services/render.ts`, `electron/services/queue.ts` | Long image-only and B-roll renders took almost the same time because both paths still burned thousands of word-level ASS events and stacked full-video `zoompan` filters around subtitles. | Added automatic long-form phrase captions (`duration >= 10 min` or large transcript) and disabled default Ken Burns/punch `zoompan` on long-form renders, while keeping the short-video look unchanged. Render logs now record caption mode, word count, dialogue count, and line count. | ✅ fixed |
+| P6 | `electron/services/broll.ts`, `electron/services/queue.ts`, `electron/ipc/compose.ts` | B-roll renders used the fast concat-manifest path, so the chosen style transition was not visibly represented between stock clips. | The per-clip normalize step now bakes lightweight style boundary fades into cached B-roll segments: Cinematic dips through black, Heartfelt fades through white, Intense uses a short black punch, and Clean stays hard-cut. Queue renders and preview renders pass the selected style into the B-roll manifest. | ✅ fixed |
 
 ## Render quality proof (2026-06-28)
 
@@ -51,6 +52,7 @@ Observed proof:
 - `SMOKE_M6_OK`.
 - `SMOKE_M6_ARGS ok=true eta=true`.
 - `SMOKE_M6_BROLL ... manifest=true resume=true cudaNormalize=true cudaFinal=true rateFallback=true allLimited=true`.
+- `SMOKE_M6_STYLE ... wordFx=true brollFx=true`.
 - `SMOKE_M6_LONGFORM captions=true wordEvents=1600 phraseEvents=200 motion=true`.
 - `SMOKE_M6_QUEUE ... stageTiming=true probe=true`.
 - `SMOKE_BROLL_REAL encoder=nvenc cudaCaps=true durationOk=true stream=true caption=true tailMotion=true gpuArgs=true noFallback=true overlay=true progress=true brollLog=true probeLog=true`.

@@ -246,6 +246,7 @@ async function previewProject(projectId: string): Promise<string> {
         poolSize: Math.min(4, beta.broll.poolSize),
         dims: dimensions(previewSettings.quality, project.captionAspect),
         fps: 24,
+        style,
         jobId: `preview-${projectId}`,
         maxSegments: 2,
         logPath

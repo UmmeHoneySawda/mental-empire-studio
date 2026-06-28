@@ -230,6 +230,7 @@ export async function runJob(job: RenderJob): Promise<void> {
         poolSize: beta.broll.poolSize,
         dims,
         fps: 24,
+        style,
         jobId: job.id,
         maxSegments,
         shouldCancel: () => hasCancelIntent(job.id),
