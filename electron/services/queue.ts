@@ -222,6 +222,7 @@ export async function runJob(job: RenderJob): Promise<void> {
         pushActivity({ t: hhmm(), icon: '!', color: '#f5b323', text: `B-roll skipped: no stock clips found for ${project.title.slice(0, 36)}` })
       }
     } catch (e) {
+      if (hasCancelIntent(job.id)) throw e
       const msg = (e as Error).message
       if (renderLogPath) appendFileSync(renderLogPath, `[broll:warn] ${msg}\n`)
       emitStage('fetching-broll', 100, 'B-roll unavailable; using image track')
