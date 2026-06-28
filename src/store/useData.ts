@@ -29,6 +29,7 @@ interface DataState {
   downloads: DownloadedVideo[]
   sourceVideos: ScrapedVideo[]
   fetching: boolean
+  sourceError: string
   scraping: boolean
   dlProgress: Record<string, DownloadProgress>
   activeProject: Project | null
@@ -92,6 +93,7 @@ export const useData = create<DataState>((set, get) => ({
   downloads: [],
   sourceVideos: [],
   fetching: false,
+  sourceError: '',
   scraping: false,
   dlProgress: {},
   activeProject: null,
@@ -199,10 +201,13 @@ export const useData = create<DataState>((set, get) => ({
   fetchSource: async (url, order, count) => {
     const a = api()
     if (!a || !url.trim()) return
-    set({ fetching: true })
+    set({ fetching: true, sourceError: '' })
     try {
       const sourceVideos = await a.scrape.sourceVideos(url.trim(), order, count)
-      set({ sourceVideos })
+      set({ sourceVideos, sourceError: '' })
+    } catch (e) {
+      const msg = (e as Error).message || 'Could not fetch videos from this source.'
+      set({ sourceVideos: [], sourceError: msg })
     } finally {
       set({ fetching: false })
     }

@@ -23,6 +23,7 @@ export function Download(): JSX.Element {
   const downloads = useData((s) => s.downloads)
   const dlProgress = useData((s) => s.dlProgress)
   const fetching = useData((s) => s.fetching)
+  const sourceError = useData((s) => s.sourceError)
   const fetchSource = useData((s) => s.fetchSource)
   const startDownload = useData((s) => s.startDownload)
   const resumeDownload = useData((s) => s.resumeDownload)
@@ -49,6 +50,7 @@ export function Download(): JSX.Element {
   const canFetch = url.trim().length > 0 && !fetching
   const fetchVids = (): void => {
     if (!canFetch) return
+    setMessage('')
     void fetchSource(url, order, qty)
   }
   const selected = sourceVideos.filter((v) => sel.has(v.id))
@@ -95,6 +97,7 @@ export function Download(): JSX.Element {
         </div>
         <button type="button" disabled={!canFetch} onClick={fetchVids} className="me-btn" style={{ display: 'flex', alignItems: 'center', gap: 8, border: 0, background: 'linear-gradient(180deg,var(--accent),var(--accent-deep))', color: 'var(--accent-ink)', fontWeight: 600, fontSize: 13, padding: '0 20px', borderRadius: 11, cursor: canFetch ? 'pointer' : 'not-allowed', boxShadow: '0 4px 16px -4px var(--accent-glow)', opacity: canFetch ? 1 : 0.5 }}>{fetching ? 'Fetching…' : 'Fetch'}</button>
       </div>
+      {sourceError && <div style={{ marginTop: -8, marginBottom: 16, border: '1px solid #4a2530', background: 'rgba(255,90,110,.08)', color: '#ff8a96', borderRadius: 10, padding: '9px 12px', fontSize: 12, lineHeight: 1.4 }}>{sourceError}</div>}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 13, border: '1px solid #1d2129', borderRadius: 13, padding: '13px 16px', marginBottom: 18, background: '#12151b' }}>
         <div style={{ width: 44, height: 44, borderRadius: 11, background: 'linear-gradient(135deg,#2d3340,#1a1e26)', display: 'grid', placeItems: 'center', fontFamily: 'var(--font-display)', fontWeight: 700, color: '#aab1bf' }}>▶</div>
