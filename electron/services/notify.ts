@@ -1,6 +1,7 @@
 import { Notification } from 'electron'
 import type { AppSettings, MyChannel, ReminderHit } from '../../shared/types'
 import { getSettings } from '../store/settings'
+import { logger } from './logger'
 
 // Behind-pace detection + desktop notifications (req #1 / #3). A channel is "behind
 // pace" when it hasn't met its weekly upload goal. The hands-free scheduler that
@@ -11,6 +12,7 @@ export const firedNotifications: ReminderHit[] = []
 
 /** Captured generic notifications (title/body) for the headless harness. */
 export const firedMessages: Array<{ title: string; body: string }> = []
+const NOTIFY_LOG = logger.scope('notify')
 
 /** Generic desktop notification for run/render events, gated by the user setting. */
 export function notifyMessage(title: string, body: string): void {
@@ -19,8 +21,8 @@ export function notifyMessage(title: string, body: string): void {
   if (process.env['ME_SMOKE']) return // headless: capture only
   try {
     if (Notification.isSupported()) new Notification({ title, body }).show()
-  } catch {
-    /* notifications unavailable — non-fatal */
+  } catch (e) {
+    NOTIFY_LOG.warn(`notification failed title=${JSON.stringify(title)} error=${(e as Error).message}`)
   }
 }
 
@@ -53,7 +55,7 @@ export function notify(hit: ReminderHit, settings: AppSettings): void {
     if (Notification.isSupported()) {
       new Notification({ title: 'Behind pace', body: hit.message }).show()
     }
-  } catch {
-    /* notifications unavailable on this platform — non-fatal */
+  } catch (e) {
+    NOTIFY_LOG.warn(`reminder notification failed channel=${hit.channelId} error=${(e as Error).message}`)
   }
 }

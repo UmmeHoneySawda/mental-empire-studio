@@ -2,9 +2,11 @@ import { app } from 'electron'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import type { AppSettings } from '../../shared/types'
+import { logger } from './logger'
 
 // Start-on-sign-in + asset resolution for the tray. Login items are an OS-session
 // feature (no-op / unsupported on some Linux setups) so the call is guarded.
+const BACKGROUND_LOG = logger.scope('background')
 
 /** Register/unregister the app to launch on OS sign-in, hidden into the tray. */
 export function applyLoginItem(settings: AppSettings): void {
@@ -14,8 +16,8 @@ export function applyLoginItem(settings: AppSettings): void {
       return
     }
     app.setLoginItemSettings({ openAtLogin: settings.background.startOnSignIn, openAsHidden: true })
-  } catch {
-    /* login items unsupported on this platform — non-fatal */
+  } catch (e) {
+    BACKGROUND_LOG.warn(`login item update failed: ${(e as Error).message}`)
   }
 }
 

@@ -1,8 +1,10 @@
 import { spawnSync } from 'node:child_process'
 import type { RenderCapabilities } from '../../../shared/types'
 import { ffmpegPath } from '../render'
+import { logger } from '../logger'
 
 let cached: RenderCapabilities | null = null
+const CAPS_LOG = logger.scope('caps')
 
 interface ProbeResult {
   ok: boolean
@@ -50,8 +52,8 @@ export function probeRenderCapabilities(force = false): RenderCapabilities {
     encoders = run(['-hide_banner', '-encoders'])
     filters = run(['-hide_banner', '-filters'])
     hwaccels = run(['-hide_banner', '-hwaccels'])
-  } catch {
-    /* Keep conservative fallback capabilities. */
+  } catch (e) {
+    CAPS_LOG.warn(`ffmpeg capability list failed: ${(e as Error).message}`)
   }
 
   const hasNvencListed = /\bh264_nvenc\b/.test(encoders)
@@ -82,5 +84,6 @@ export function probeRenderCapabilities(force = false): RenderCapabilities {
     amfProbeError: hasAmfListed && !amfProbe.ok ? amfProbe.error : undefined,
     nvidiaGpuName: nvidiaName
   }
+  CAPS_LOG.info(`probe ffmpeg=${cached.ffmpegPath} vendor=${cached.gpuVendor} nvenc=${cached.hasNvenc} qsv=${cached.hasQsv} amf=${cached.hasAmf} cuda=${cached.ffmpegHasCuda}`)
   return cached
 }

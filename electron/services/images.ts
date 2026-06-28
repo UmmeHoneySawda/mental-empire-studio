@@ -1,9 +1,11 @@
 import { copyFileSync, mkdirSync } from 'node:fs'
 import { basename, join } from 'node:path'
+import { logger } from './logger'
 
 // Image handling for Compose: copy dropped images into the project folder and
 // (for Random-pool mode) shuffle deterministically from a lockable seed so a
 // given seed always reproduces the same order.
+const IMAGE_LOG = logger.scope('images')
 
 /** Copy images into the project dir, returning the new paths (in order). */
 export function importImages(projectDir: string, paths: string[]): string[] {
@@ -13,7 +15,8 @@ export function importImages(projectDir: string, paths: string[]): string[] {
     try {
       copyFileSync(p, dest)
       return dest
-    } catch {
+    } catch (e) {
+      IMAGE_LOG.warn(`image copy failed src=${p} dest=${dest}: ${(e as Error).message}`)
       return p // fall back to the original path if copy fails
     }
   })

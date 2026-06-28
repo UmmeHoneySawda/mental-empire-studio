@@ -1,10 +1,12 @@
 import { spawnSync } from 'node:child_process'
 import { parseFile } from 'music-metadata'
 import { ffprobePath } from './render'
+import { logger } from './logger'
 
 // Audio helpers: duration probing and the even-split image range math that drives
 // the Compose timeline. ffprobe is the source of truth because VBR MP3 headers can
 // mislead music-metadata and produce short final renders.
+const AUDIO_LOG = logger.scope('audio')
 
 function probeDurationWithFfprobe(filePath: string): number {
   const r = spawnSync(ffprobePath(), ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', filePath], { encoding: 'utf8' })
@@ -19,8 +21,8 @@ export async function probeDuration(filePath: string): Promise<number> {
   try {
     const meta = await parseFile(filePath)
     metaSec = meta.format.duration ?? 0
-  } catch {
-    /* ffprobe result below is authoritative when available. */
+  } catch (e) {
+    AUDIO_LOG.debug(`metadata duration read failed path=${filePath}: ${(e as Error).message}`)
   }
   if (ffprobeSec > 0 && (!metaSec || Math.abs(ffprobeSec - metaSec) / ffprobeSec > 0.02)) {
     return Math.round(ffprobeSec)
