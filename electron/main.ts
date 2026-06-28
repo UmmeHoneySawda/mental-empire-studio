@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage } from 'electron'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { existsSync, statSync, writeFileSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, statSync, writeFileSync, readFileSync } from 'node:fs'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { applyLoginItem, trayIconPath } from './services/background'
 import * as scheduler from './services/scheduler'
@@ -16,11 +16,12 @@ import { firedNotifications } from './services/notify'
 import { channelUrl, orderVideos } from './services/scraper'
 import { splitRanges } from './services/audio'
 import { autoArrangeText } from '../shared/thumbnail'
-import { THUMB_W, THUMB_H, DEFAULT_BETA_OPTS, type TextLayer, type ThumbnailTemplate, type TranscriptWord } from '../shared/types'
+import { THUMB_W, THUMB_H, DEFAULT_BETA_OPTS, type Project, type TextLayer, type ThumbnailTemplate, type TranscriptWord } from '../shared/types'
 import { buildAss } from './services/captions'
-import { buildRenderArgs, runRender, ffmpegPath, ffprobePath } from './services/render'
+import { buildRenderArgs, runRender, ffmpegPath, ffprobePath, dimensions } from './services/render'
 import { extractThemes, rankCandidates, planCoverage, buildBrollBed, buildBrollManifest, buildBrollNormalizeArgs, assembleBed, fetchPool, type BrollCandidate } from './services/broll'
 import { createProgressSmoother } from './services/engine/progress'
+import { probeRenderCapabilities } from './services/engine/caps'
 import { validateEffectPlan, deriveStylePlan, styleCaptionLead, textPresetTag, type EffectPlan } from '../shared/effectPlan'
 import { buildSfxTrack } from './services/sfx'
 import { buildMasterLoudnormFilter, buildSecondPassLoudnormFilter } from './services/engine/audio-master'
@@ -827,6 +828,129 @@ function fixedFrameStats(file: string, probe: Probe, atSec = 1.25): FrameStats |
   return { activePixels, captionPixels, yellowPixels, totalPixels }
 }
 
+function scaledRawFrame(file: string, atSec: number, size = '160:90'): Buffer | null {
+  const [sw, sh] = size.split(':').map((n) => Number(n))
+  const expected = (sw || 0) * (sh || 0) * 4
+  if (!expected) return null
+  const r = spawnSync(ffmpegPath(), [
+    '-v', 'error',
+    '-ss', atSec.toFixed(2),
+    '-i', file,
+    '-frames:v', '1',
+    '-vf', `scale=${size}`,
+    '-f', 'rawvideo',
+    '-pix_fmt', 'rgba',
+    '-'
+  ], { encoding: 'buffer', windowsHide: true, maxBuffer: expected + 1024 * 1024 })
+  const buf = r.stdout as Buffer
+  return buf && buf.length >= expected ? buf.subarray(0, expected) : null
+}
+
+function averageFrameDelta(file: string, atA: number, atB: number): number | null {
+  const a = scaledRawFrame(file, atA)
+  const b = scaledRawFrame(file, atB)
+  if (!a || !b) return null
+  let total = 0
+  let samples = 0
+  for (let i = 0; i < Math.min(a.length, b.length); i += 4) {
+    total += Math.abs((a[i] ?? 0) - (b[i] ?? 0))
+    total += Math.abs((a[i + 1] ?? 0) - (b[i + 1] ?? 0))
+    total += Math.abs((a[i + 2] ?? 0) - (b[i + 2] ?? 0))
+    samples += 3
+  }
+  return samples ? total / samples : null
+}
+
+async function runSmokeBrollReal(): Promise<void> {
+  const outDir = join(app.getPath('temp'), 'me-broll-real-out')
+  const localDir = join(process.cwd(), 'test', 'fixtures', 'broll', 'local')
+  const audioPath = join(process.cwd(), 'test', 'fixtures', 'audio', 'sample.mp3')
+  const words: TranscriptWord[] = [
+    { id: 'br-w0', projectId: 'broll-real', ord: 0, word: 'The', start: 0.1, end: 0.3, emphasis: false },
+    { id: 'br-w1', projectId: 'broll-real', ord: 1, word: 'final', start: 0.3, end: 0.7, emphasis: true },
+    { id: 'br-w2', projectId: 'broll-real', ord: 2, word: 'render', start: 0.7, end: 1.1, emphasis: false },
+    { id: 'br-w3', projectId: 'broll-real', ord: 3, word: 'moves', start: 1.1, end: 1.5, emphasis: true }
+  ]
+  try {
+    mkdirSync(outDir, { recursive: true })
+    const caps = probeRenderCapabilities(true)
+    const settings = {
+      ...getSettings(),
+      outputFolder: outDir,
+      quality: '720p' as const,
+      encoder: caps.hasNvenc ? 'nvenc' as const : 'cpu' as const,
+      beta: { ...getSettings().beta, enabled: true }
+    }
+    const project: Project = {
+      id: 'broll-real',
+      downloadId: 'broll-real',
+      title: 'Broll Real Smoke',
+      channel: 'Mental Empire',
+      mp3Path: audioPath,
+      durationSec: 12,
+      imageMode: 'sequence',
+      poolSize: 2,
+      kenBurns: false,
+      seed: 1,
+      crossfade: 0,
+      captionPreset: 'Hormozi',
+      captionFont: 'Anton',
+      captionAnim: 'Pop-in',
+      captionAspect: '16:9',
+      captionPosition: 'bottom',
+      emphasis: true,
+      keywords: true,
+      punchZoom: false,
+      stage: 'queued',
+      createdAt: new Date().toISOString(),
+      betaOpts: { ...DEFAULT_BETA_OPTS, style: 'Clean', broll: { ...DEFAULT_BETA_OPTS.broll, enabled: true, poolSize: 2, density: 'sparse' } }
+    }
+    const assPath = join(outDir, 'broll-real.ass')
+    writeFileSync(assPath, buildAss(words, { preset: 'Hormozi', aspect: '16:9', keywords: true }).ass)
+
+    process.env['ME_BROLL_LOCAL'] = localDir
+    const manifest = await buildBrollManifest({
+      settings,
+      caps,
+      words,
+      durationSec: project.durationSec,
+      density: 'sparse',
+      poolSize: 2,
+      dims: dimensions(settings.quality, project.captionAspect),
+      fps: 30,
+      jobId: `broll-real-${Date.now()}`,
+      maxSegments: 4
+    })
+    delete process.env['ME_BROLL_LOCAL']
+    if (!manifest) throw new Error('manifest missing')
+
+    const outPath = join(outDir, 'broll-real.mp4')
+    const logPath = join(outDir, 'broll-real.render.log')
+    const progress: string[] = []
+    await runRender({ project, images: [], assPath, outPath, settings, caps, brollManifestPath: manifest.manifestPath, jobId: 'broll-real', logPath }, (p) => {
+      if (p.etaState === 'stable') progress.push(`pct=${p.pct} speed=${p.speed?.toFixed(2) ?? ''} eta=${p.etaSec ?? ''}`)
+    })
+
+    const probe = ffprobe(outPath)
+    const stats = probe ? fixedFrameStats(outPath, probe, 0.75) : null
+    const tailDelta = averageFrameDelta(outPath, 10.1, 11.1)
+    const logTxt = existsSync(logPath) ? readFileSync(logPath, 'utf8') : ''
+    const durationOk = !!probe && Math.abs(probe.duration - 12) < 0.75
+    const streamOk = !!probe && probe.video && probe.audio && probe.vcodec === 'h264' && probe.acodec === 'aac'
+    const frameOk = !!stats && stats.activePixels > 5_000 && stats.captionPixels > 250
+    const tailMotionOk = tailDelta != null && tailDelta > 2.5
+    const gpuArgOk = !caps.hasNvenc || (logTxt.includes('-hwaccel cuda') && logTxt.includes('scale_cuda=') && logTxt.includes('hwupload_cuda') && logTxt.includes('h264_nvenc'))
+    const progressOk = progress.length > 0
+    const ok = durationOk && streamOk && frameOk && tailMotionOk && gpuArgOk && progressOk
+    console.log(`SMOKE_BROLL_REAL encoder=${settings.encoder} cudaCaps=${caps.ffmpegHasCuda} duration=${probe?.duration?.toFixed(2) ?? 'n/a'} durationOk=${durationOk} stream=${streamOk} caption=${frameOk} tailDelta=${tailDelta?.toFixed(2) ?? 'n/a'} tailMotion=${tailMotionOk} gpuArgs=${gpuArgOk} progress=${progressOk} out=${outPath}`)
+    app.exit(ok ? 0 : 1)
+  } catch (e) {
+    delete process.env['ME_BROLL_LOCAL']
+    console.log('SMOKE_BROLL_REAL_FAIL ' + (e as Error).message)
+    app.exit(1)
+  }
+}
+
 /**
  * Full end-to-end journey (ME_SMOKE=e2e) on one continuous DB: fixture scrape +
  * download + transcript, REAL images, and a REAL ffmpeg render — probed with
@@ -1083,6 +1207,10 @@ app.whenReady().then(() => {
   }
   if (process.env['ME_SMOKE'] === 'e2e') {
     void runSmokeE2E()
+    return
+  }
+  if (process.env['ME_SMOKE'] === 'broll-real') {
+    void runSmokeBrollReal()
     return
   }
   // Demo-dependent smokes (M2–M7) assert against deterministic seeded rows. Production
