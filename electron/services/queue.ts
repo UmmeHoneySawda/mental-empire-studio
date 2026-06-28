@@ -196,6 +196,7 @@ export async function runJob(job: RenderJob): Promise<void> {
         jobId: job.id,
         maxSegments,
         shouldCancel: () => hasCancelIntent(job.id),
+        logPath,
         onProgress: (phase, done, total, ffmpeg) => {
           if (phase === 'normalize') {
             const pct = total > 0 ? (done / total) * 100 : 0

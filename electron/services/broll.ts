@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process'
-import { createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, copyFileSync, statSync } from 'node:fs'
+import { appendFileSync, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, copyFileSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import { app } from 'electron'
 import type { AppSettings, BrollDensity, TranscriptWord } from '../../shared/types'
@@ -20,6 +20,25 @@ const STOPWORDS = new Set(['the', 'a', 'an', 'and', 'or', 'but', 'of', 'to', 'in
 const DEFAULT_MAX_SEGMENTS = 40
 const BROLL_LOG = logger.scope('broll')
 type ProviderName = BrollCandidate['provider']
+
+function appendJobLog(logPath: string | undefined, line: string): void {
+  if (!logPath) return
+  try {
+    appendFileSync(logPath, `[broll] ${line}\n`)
+  } catch (e) {
+    BROLL_LOG.warn(`job log append failed path=${logPath}: ${(e as Error).message}`)
+  }
+}
+
+function brollInfo(logPath: string | undefined, line: string): void {
+  BROLL_LOG.info(line)
+  appendJobLog(logPath, line)
+}
+
+function brollWarn(logPath: string | undefined, line: string): void {
+  BROLL_LOG.warn(line)
+  appendJobLog(logPath, `WARN ${line}`)
+}
 
 class BrollRateLimitError extends Error {
   constructor(
@@ -136,19 +155,19 @@ export function planCoverage(
 
 // ---------- provider clients (network) ----------
 
-async function getJson(provider: ProviderName, query: string, url: string, headers: Record<string, string> = {}): Promise<unknown> {
+async function getJson(provider: ProviderName, query: string, url: string, headers: Record<string, string> = {}, logPath?: string): Promise<unknown> {
   const started = Date.now()
   const safeUrl = redactUrl(url)
-  BROLL_LOG.info(`provider request provider=${provider} query=${JSON.stringify(query)} url=${safeUrl}`)
+  brollInfo(logPath, `provider request provider=${provider} query=${JSON.stringify(query)} url=${safeUrl}`)
   let res: Response
   try {
     res = await fetch(url, { headers })
   } catch (e) {
-    BROLL_LOG.warn(`provider request failed provider=${provider} query=${JSON.stringify(query)} ms=${Date.now() - started} error=${(e as Error).message}`)
+    brollWarn(logPath, `provider request failed provider=${provider} query=${JSON.stringify(query)} ms=${Date.now() - started} error=${(e as Error).message}`)
     throw e
   }
   const ms = Date.now() - started
-  BROLL_LOG.info(`provider response provider=${provider} query=${JSON.stringify(query)} status=${res.status} ms=${ms} url=${safeUrl}`)
+  brollInfo(logPath, `provider response provider=${provider} query=${JSON.stringify(query)} status=${res.status} ms=${ms} url=${safeUrl}`)
   if (!res.ok) {
     if (isRateLimitStatus(res.status)) throw new BrollRateLimitError(provider, res.status, url)
     throw new Error(`${safeUrl} -> HTTP ${res.status}`)
@@ -179,47 +198,51 @@ function fileBytes(path: string): number {
   }
 }
 
-async function searchPexels(key: string, q: string, target: { w: number; h: number }): Promise<BrollCandidate[]> {
+async function searchPexels(key: string, q: string, target: { w: number; h: number }, logPath?: string): Promise<BrollCandidate[]> {
   const orientation = target.w >= target.h ? 'landscape' : 'portrait'
   const data = (await getJson(
     'pexels',
     q,
     `https://api.pexels.com/videos/search?query=${encodeURIComponent(q)}&orientation=${orientation}&size=medium&per_page=10`,
-    { Authorization: key }
+    { Authorization: key },
+    logPath
   )) as { videos?: Array<{ id: number; duration: number; video_files: Array<{ link: string; width: number; height: number; quality: string }> }> }
   const out = (data.videos ?? []).map((v) => {
     const best = [...v.video_files].sort((a, b) => b.width - a.width).find((f) => f.width <= target.w * 1.5) ?? v.video_files[0]
     return { provider: 'pexels' as const, id: String(v.id), url: best?.link ?? '', width: best?.width ?? 0, height: best?.height ?? 0, durationSec: v.duration ?? 0, tags: q.split(/\s+/) }
   }).filter((c) => c.url)
-  BROLL_LOG.info(`provider result provider=pexels query=${JSON.stringify(q)} count=${out.length}`)
+  brollInfo(logPath, `provider result provider=pexels query=${JSON.stringify(q)} count=${out.length}`)
   return out
 }
 
-async function searchPixabay(key: string, q: string): Promise<BrollCandidate[]> {
+async function searchPixabay(key: string, q: string, logPath?: string): Promise<BrollCandidate[]> {
   const data = (await getJson(
     'pixabay',
     q,
-    `https://pixabay.com/api/videos/?key=${key}&q=${encodeURIComponent(q)}&video_type=film&per_page=10`
+    `https://pixabay.com/api/videos/?key=${key}&q=${encodeURIComponent(q)}&video_type=film&per_page=10`,
+    {},
+    logPath
   )) as { hits?: Array<{ id: number; duration: number; tags: string; videos: Record<string, { url: string; width: number; height: number }> }> }
   const out = (data.hits ?? []).map((h) => {
     const v = h.videos.large ?? h.videos.medium ?? h.videos.small ?? h.videos.tiny
     return { provider: 'pixabay' as const, id: String(h.id), url: v?.url ?? '', width: v?.width ?? 0, height: v?.height ?? 0, durationSec: h.duration ?? 0, tags: (h.tags ?? '').split(',').map((t) => t.trim().toLowerCase()) }
   }).filter((c) => c.url)
-  BROLL_LOG.info(`provider result provider=pixabay query=${JSON.stringify(q)} count=${out.length}`)
+  brollInfo(logPath, `provider result provider=pixabay query=${JSON.stringify(q)} count=${out.length}`)
   return out
 }
 
-async function searchCoverr(key: string, q: string): Promise<BrollCandidate[]> {
+async function searchCoverr(key: string, q: string, logPath?: string): Promise<BrollCandidate[]> {
   const data = (await getJson(
     'coverr',
     q,
     `https://api.coverr.co/videos?query=${encodeURIComponent(q)}&urls=true&page_size=10`,
-    { Authorization: key }
+    { Authorization: key },
+    logPath
   )) as { hits?: Array<{ id: string; duration?: number; tags?: string[]; urls?: { mp4_download?: string; mp4?: string } }> }
   const out = (data.hits ?? []).map((h) => ({
     provider: 'coverr' as const, id: h.id, url: h.urls?.mp4_download ?? h.urls?.mp4 ?? '', width: 1920, height: 1080, durationSec: h.duration ?? 0, tags: h.tags ?? []
   })).filter((c) => c.url)
-  BROLL_LOG.info(`provider result provider=coverr query=${JSON.stringify(q)} count=${out.length}`)
+  brollInfo(logPath, `provider result provider=coverr query=${JSON.stringify(q)} count=${out.length}`)
   return out
 }
 
@@ -254,11 +277,12 @@ function localCandidates(themes: string[], target: { w: number; h: number }): Br
 }
 
 /** Fetch a ranked candidate pool across providers in priority order until poolSize. */
-export async function fetchPool(settings: AppSettings, themes: string[], target: { w: number; h: number }, poolSize: number): Promise<BrollCandidate[]> {
+export async function fetchPool(settings: AppSettings, themes: string[], target: { w: number; h: number }, poolSize: number, logPath?: string): Promise<BrollCandidate[]> {
+  brollInfo(logPath, `themes selected=${themes.join(',') || 'cinematic background'} target=${target.w}x${target.h} requested=${poolSize}`)
   // Local real-clip seam (genuine assembly, offline).
   if (process.env['ME_BROLL_LOCAL']) {
     const localPool = localCandidates(themes, target).slice(0, poolSize)
-    BROLL_LOG.info(`provider local pool count=${localPool.length} requested=${poolSize} dir=${process.env['ME_BROLL_LOCAL']}`)
+    brollInfo(logPath, `provider local pool count=${localPool.length} requested=${poolSize} dir=${process.env['ME_BROLL_LOCAL']}`)
     return localPool
   }
   // Fixture seam: recorded candidates so the pipeline is testable offline.
@@ -266,17 +290,17 @@ export async function fetchPool(settings: AppSettings, themes: string[], target:
   if (fixture) {
     const recorded = JSON.parse(readFileSync(join(fixture, 'candidates.json'), 'utf8')) as BrollCandidate[]
     const fixturePool = recorded.slice(0, poolSize)
-    BROLL_LOG.info(`provider fixture pool count=${fixturePool.length} requested=${poolSize} dir=${fixture}`)
+    brollInfo(logPath, `provider fixture pool count=${fixturePool.length} requested=${poolSize} dir=${fixture}`)
     return fixturePool
   }
   const out: BrollCandidate[] = []
   const seen = new Set<string>()
   const providers: Array<{ name: ProviderName; search: (q: string) => Promise<BrollCandidate[]> }> = []
-  if (settings.beta.pexelsKey) providers.push({ name: 'pexels', search: (q) => searchPexels(settings.beta.pexelsKey, q, target) })
-  if (settings.beta.pixabayKey) providers.push({ name: 'pixabay', search: (q) => searchPixabay(settings.beta.pixabayKey, q) })
-  if (settings.beta.coverrKey) providers.push({ name: 'coverr', search: (q) => searchCoverr(settings.beta.coverrKey, q) })
+  if (settings.beta.pexelsKey) providers.push({ name: 'pexels', search: (q) => searchPexels(settings.beta.pexelsKey, q, target, logPath) })
+  if (settings.beta.pixabayKey) providers.push({ name: 'pixabay', search: (q) => searchPixabay(settings.beta.pixabayKey, q, logPath) })
+  if (settings.beta.coverrKey) providers.push({ name: 'coverr', search: (q) => searchCoverr(settings.beta.coverrKey, q, logPath) })
   if (providers.length === 0) {
-    BROLL_LOG.warn('provider pool skipped: no stock provider keys configured')
+    brollWarn(logPath, 'provider pool skipped: no stock provider keys configured')
     return []
   }
   const queries = themes.length ? themes : ['cinematic background']
@@ -287,7 +311,7 @@ export async function fetchPool(settings: AppSettings, themes: string[], target:
       if (rateLimited.has(provider.name)) continue
       try {
         const ranked = rankCandidates(await provider.search(q), q, target)
-        BROLL_LOG.info(`provider ranked provider=${provider.name} query=${JSON.stringify(q)} count=${ranked.length}`)
+        brollInfo(logPath, `provider ranked provider=${provider.name} query=${JSON.stringify(q)} count=${ranked.length}`)
         for (const c of ranked) {
           if (out.length >= poolSize) break
           if (seen.has(`${c.provider}:${c.id}`)) continue
@@ -297,14 +321,14 @@ export async function fetchPool(settings: AppSettings, themes: string[], target:
       } catch (e) {
         if (isRateLimitError(e)) {
           rateLimited.add(provider.name)
-          BROLL_LOG.warn(`provider rate-limited provider=${provider.name} query=${JSON.stringify(q)}: ${(e as Error).message}`)
+          brollWarn(logPath, `provider rate-limited provider=${provider.name} query=${JSON.stringify(q)}: ${(e as Error).message}`)
         } else {
-          BROLL_LOG.warn(`provider search failed provider=${provider.name} query=${JSON.stringify(q)}: ${(e as Error).message}`)
+          brollWarn(logPath, `provider search failed provider=${provider.name} query=${JSON.stringify(q)}: ${(e as Error).message}`)
         }
       }
     }
   }
-  BROLL_LOG.info(`provider pool complete count=${out.length} requested=${poolSize} rateLimited=${[...rateLimited].join(',') || 'none'}`)
+  brollInfo(logPath, `provider pool complete count=${out.length} requested=${poolSize} rateLimited=${[...rateLimited].join(',') || 'none'}`)
   if (out.length === 0 && rateLimited.size === providers.length) {
     throw new Error('Stock B-roll unavailable: all configured providers are rate-limited or quota-blocked')
   }
@@ -325,16 +349,16 @@ function concatPath(p: string): string {
   return p.replace(/\\/g, '/').replace(/'/g, "\\'")
 }
 
-async function downloadOne(c: BrollCandidate, dir: string): Promise<string> {
+async function downloadOne(c: BrollCandidate, dir: string, logPath?: string): Promise<string> {
   const path = join(dir, `${c.provider}-${c.id}.mp4`)
   if (existsSync(path)) {
-    BROLL_LOG.info(`clip cache hit provider=${c.provider} id=${c.id} bytes=${fileBytes(path)} path=${path}`)
+    brollInfo(logPath, `clip cache hit provider=${c.provider} id=${c.id} bytes=${fileBytes(path)} path=${path}`)
     return path
   }
   const started = Date.now()
-  BROLL_LOG.info(`clip download start provider=${c.provider} id=${c.id} url=${redactUrl(c.url)}`)
+  brollInfo(logPath, `clip download start provider=${c.provider} id=${c.id} url=${redactUrl(c.url)}`)
   const res = await fetch(c.url)
-  BROLL_LOG.info(`clip download response provider=${c.provider} id=${c.id} status=${res.status} ms=${Date.now() - started} url=${redactUrl(c.url)}`)
+  brollInfo(logPath, `clip download response provider=${c.provider} id=${c.id} status=${res.status} ms=${Date.now() - started} url=${redactUrl(c.url)}`)
   if (!res.ok || !res.body) throw new Error(`download ${redactUrl(c.url)} -> ${res.status}`)
   let bytes = 0
   await new Promise<void>((resolve, reject) => {
@@ -353,12 +377,12 @@ async function downloadOne(c: BrollCandidate, dir: string): Promise<string> {
     }
     pump()
   })
-  BROLL_LOG.info(`clip download done provider=${c.provider} id=${c.id} bytes=${bytes || fileBytes(path)} ms=${Date.now() - started} path=${path}`)
+  brollInfo(logPath, `clip download done provider=${c.provider} id=${c.id} bytes=${bytes || fileBytes(path)} ms=${Date.now() - started} path=${path}`)
   return path
 }
 
 /** Download up to poolSize clips, skipping ones that fail (try the next candidate). */
-export async function downloadPool(cands: BrollCandidate[], poolSize: number, onProgress?: (done: number, total: number) => void): Promise<BrollClip[]> {
+export async function downloadPool(cands: BrollCandidate[], poolSize: number, onProgress?: (done: number, total: number) => void, logPath?: string): Promise<BrollClip[]> {
   const dir = brollDir()
   const fixture = process.env['ME_BROLL_FIXTURE']
   const local = process.env['ME_BROLL_LOCAL']
@@ -370,19 +394,19 @@ export async function downloadPool(cands: BrollCandidate[], poolSize: number, on
       let path: string
       if (local) {
         path = c.url // localCandidates already carries the real on-disk path
-        BROLL_LOG.info(`clip local provider=${c.provider} id=${c.id} bytes=${fileBytes(path)} path=${path}`)
+        brollInfo(logPath, `clip local provider=${c.provider} id=${c.id} bytes=${fileBytes(path)} path=${path}`)
       } else if (fixture) {
         path = join(dir, `${c.provider}-${c.id}.mp4`)
         copyFileSync(join(fixture, 'sample.mp4'), path)
-        BROLL_LOG.info(`clip fixture provider=${c.provider} id=${c.id} bytes=${fileBytes(path)} path=${path}`)
+        brollInfo(logPath, `clip fixture provider=${c.provider} id=${c.id} bytes=${fileBytes(path)} path=${path}`)
       } else {
-        path = await downloadOne(c, dir)
+        path = await downloadOne(c, dir, logPath)
       }
       out.push({ ...c, path })
-      BROLL_LOG.info(`clip ready provider=${c.provider} id=${c.id} index=${out.length}/${total} duration=${c.durationSec || 'unknown'} path=${path}`)
+      brollInfo(logPath, `clip ready provider=${c.provider} id=${c.id} index=${out.length}/${total} duration=${c.durationSec || 'unknown'} path=${path}`)
       onProgress?.(out.length, total)
     } catch (e) {
-      BROLL_LOG.warn(`clip download failed ${c.provider}:${c.id}: ${(e as Error).message}`)
+      brollWarn(logPath, `clip download failed ${c.provider}:${c.id}: ${(e as Error).message}`)
     }
   }
   return out
@@ -475,29 +499,30 @@ async function normalizeSegment(
     caps: RenderCapabilities
     shouldCancel?: () => boolean
     onProgress?: (p: FfmpegProgress) => void
+    logPath?: string
   }
 ): Promise<BrollManifestSegment> {
   const outPath = join(dir, `seg-${String(index).padStart(3, '0')}.mp4`)
   const durationSec = Math.max(0.5, segment.end - segment.start)
   if (existsSync(outPath) && probeDurationSec(outPath) >= durationSec - 0.25) {
-    BROLL_LOG.info(`normalize cache hit segment=${index} duration=${durationSec.toFixed(2)} bytes=${fileBytes(outPath)} path=${outPath}`)
+    brollInfo(opts.logPath, `normalize cache hit segment=${index} duration=${durationSec.toFixed(2)} bytes=${fileBytes(outPath)} path=${outPath}`)
     opts.onProgress?.({ outTimeSec: durationSec, pct: 100, speed: 1, etaSec: 0, etaState: 'stable' })
     return { ...segment, normalizedPath: outPath }
   }
 
   try {
     const args = buildBrollNormalizeArgs(segment, outPath, opts.dims, opts.fps, opts.settings, opts.caps)
-    BROLL_LOG.info(`normalize start segment=${index} encoder=${opts.settings.encoder ?? 'cpu'} duration=${durationSec.toFixed(2)} src=${segment.path} out=${outPath} cmd=${ffmpegPath()} ${args.join(' ')}`)
+    brollInfo(opts.logPath, `normalize start segment=${index} encoder=${opts.settings.encoder ?? 'cpu'} duration=${durationSec.toFixed(2)} src=${segment.path} out=${outPath} cmd=${ffmpegPath()} ${args.join(' ')}`)
     await spawnNormalize(args, durationSec, opts)
-    BROLL_LOG.info(`normalize done segment=${index} bytes=${fileBytes(outPath)} path=${outPath}`)
+    brollInfo(opts.logPath, `normalize done segment=${index} bytes=${fileBytes(outPath)} path=${outPath}`)
   } catch (e) {
     if (opts.shouldCancel?.() || (opts.settings.encoder ?? 'cpu') === 'cpu') throw e
-    BROLL_LOG.warn(`normalize hardware encode failed; retrying CPU for segment ${index}: ${(e as Error).message}`)
+    brollWarn(opts.logPath, `normalize hardware encode failed; retrying CPU for segment ${index}: ${(e as Error).message}`)
     const fallbackSettings = { ...opts.settings, encoder: 'cpu' as const }
     const fallbackArgs = buildBrollNormalizeArgs(segment, outPath, opts.dims, opts.fps, fallbackSettings, FALLBACK_CAPS)
-    BROLL_LOG.info(`normalize fallback start segment=${index} encoder=cpu duration=${durationSec.toFixed(2)} src=${segment.path} out=${outPath} cmd=${ffmpegPath()} ${fallbackArgs.join(' ')}`)
+    brollInfo(opts.logPath, `normalize fallback start segment=${index} encoder=cpu duration=${durationSec.toFixed(2)} src=${segment.path} out=${outPath} cmd=${ffmpegPath()} ${fallbackArgs.join(' ')}`)
     await spawnNormalize(fallbackArgs, durationSec, opts)
-    BROLL_LOG.info(`normalize fallback done segment=${index} bytes=${fileBytes(outPath)} path=${outPath}`)
+    brollInfo(opts.logPath, `normalize fallback done segment=${index} bytes=${fileBytes(outPath)} path=${outPath}`)
   }
   return { ...segment, normalizedPath: outPath }
 }
@@ -514,9 +539,10 @@ export async function buildBrollManifest(opts: {
   jobId?: string
   maxSegments?: number
   shouldCancel?: () => boolean
+  logPath?: string
   onProgress?: (phase: 'fetch' | 'download' | 'normalize' | 'manifest', done: number, total: number, ffmpeg?: FfmpegProgress) => void
 }): Promise<BrollManifestResult | null> {
-  BROLL_LOG.info(`manifest build start job=${opts.jobId ?? 'none'} duration=${opts.durationSec.toFixed(2)} density=${opts.density} poolSize=${opts.poolSize} dims=${opts.dims.w}x${opts.dims.h} fps=${opts.fps}`)
+  brollInfo(opts.logPath, `manifest build start job=${opts.jobId ?? 'none'} duration=${opts.durationSec.toFixed(2)} density=${opts.density} poolSize=${opts.poolSize} dims=${opts.dims.w}x${opts.dims.h} fps=${opts.fps}`)
   const planned = await buildBrollSegments({
     settings: opts.settings,
     words: opts.words,
@@ -525,10 +551,11 @@ export async function buildBrollManifest(opts: {
     poolSize: opts.poolSize,
     dims: opts.dims,
     maxSegments: opts.maxSegments,
+    logPath: opts.logPath,
     onProgress: (phase, done, total) => opts.onProgress?.(phase, done, total)
   })
   if (!planned || planned.segments.length === 0) {
-    BROLL_LOG.warn(`manifest build skipped job=${opts.jobId ?? 'none'} reason=no-segments`)
+    brollWarn(opts.logPath, `manifest build skipped job=${opts.jobId ?? 'none'} reason=no-segments`)
     return null
   }
 
@@ -544,6 +571,7 @@ export async function buildBrollManifest(opts: {
       settings: opts.settings,
       caps: opts.caps ?? FALLBACK_CAPS,
       shouldCancel: opts.shouldCancel,
+      logPath: opts.logPath,
       onProgress: (p) => opts.onProgress?.('normalize', i + (p.pct / 100), total, p)
     })
     normalized.push(seg)
@@ -567,7 +595,7 @@ export async function buildBrollManifest(opts: {
     clips: planned.clips.map((c) => ({ provider: c.provider, id: c.id, path: c.path, durationSec: c.durationSec })),
     segments: normalized
   }, null, 2))
-  BROLL_LOG.info(`manifest build done job=${opts.jobId ?? 'none'} clips=${planned.clips.length} segments=${normalized.length} manifest=${manifestPath} json=${jsonPath}`)
+  brollInfo(opts.logPath, `manifest build done job=${opts.jobId ?? 'none'} clips=${planned.clips.length} segments=${normalized.length} manifest=${manifestPath} json=${jsonPath}`)
   opts.onProgress?.('manifest', total, total)
   return { clips: planned.clips, segments: normalized, manifestPath, jsonPath }
 }
@@ -677,14 +705,17 @@ export async function buildBrollSegments(opts: {
   transition?: string
   /** hard cap for long videos; clips loop when a slot is longer than source media */
   maxSegments?: number
+  /** optional per-job render log where b-roll events are mirrored */
+  logPath?: string
   onProgress?: (phase: 'fetch' | 'download', done: number, total: number) => void
 }): Promise<BrollPlanResult | null> {
   const themes = extractThemes(opts.words)
   opts.onProgress?.('fetch', 0, opts.poolSize)
-  const cands = await fetchPool(opts.settings, themes, opts.dims, opts.poolSize)
+  const cands = await fetchPool(opts.settings, themes, opts.dims, opts.poolSize, opts.logPath)
   opts.onProgress?.('fetch', cands.length, opts.poolSize)
-  const clips = await downloadPool(cands, opts.poolSize, (done, total) => opts.onProgress?.('download', done, total))
+  const clips = await downloadPool(cands, opts.poolSize, (done, total) => opts.onProgress?.('download', done, total), opts.logPath)
   if (clips.length === 0) return null
   const segments = planCoverage(opts.durationSec, clips, { density: opts.density, maxSegments: opts.maxSegments, tailReserve: opts.transition ? BED_CF : 0 })
+  brollInfo(opts.logPath, `coverage planned duration=${opts.durationSec.toFixed(2)} clips=${clips.length} segments=${segments.length} maxSegments=${opts.maxSegments ?? DEFAULT_MAX_SEGMENTS}`)
   return { clips, segments }
 }

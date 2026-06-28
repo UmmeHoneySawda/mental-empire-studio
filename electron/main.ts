@@ -907,6 +907,9 @@ async function runSmokeBrollReal(): Promise<void> {
     }
     const assPath = join(outDir, 'broll-real.ass')
     writeFileSync(assPath, buildAss(words, { preset: 'Hormozi', aspect: '16:9', keywords: true }).ass)
+    const outPath = join(outDir, 'broll-real.mp4')
+    const logPath = join(outDir, 'broll-real.render.log')
+    writeFileSync(logPath, '')
 
     process.env['ME_BROLL_LOCAL'] = localDir
     const manifest = await buildBrollManifest({
@@ -919,14 +922,12 @@ async function runSmokeBrollReal(): Promise<void> {
       dims: dimensions(settings.quality, project.captionAspect),
       fps: 30,
       jobId: `broll-real-${Date.now()}`,
-      maxSegments: 4
+      maxSegments: 4,
+      logPath
     })
     delete process.env['ME_BROLL_LOCAL']
     if (!manifest) throw new Error('manifest missing')
 
-    const outPath = join(outDir, 'broll-real.mp4')
-    const logPath = join(outDir, 'broll-real.render.log')
-    writeFileSync(logPath, '')
     const progress: string[] = []
     await runRender({ project, images: [], assPath, outPath, settings, caps, brollManifestPath: manifest.manifestPath, jobId: 'broll-real', logPath }, (p) => {
       if (p.etaState === 'stable') progress.push(`pct=${p.pct} speed=${p.speed?.toFixed(2) ?? ''} eta=${p.etaSec ?? ''}`)
@@ -944,8 +945,9 @@ async function runSmokeBrollReal(): Promise<void> {
     const gpuArgOk = !caps.hasNvenc || (logTxt.includes('-hwaccel cuda') && logTxt.includes('scale_cuda=') && logTxt.includes('h264_nvenc') && noCpuFallback)
     const overlayArgOk = logTxt.includes('overlay=0:0') && logTxt.includes('.pam') && !logTxt.includes('drawbox=') && !logTxt.includes('geq=')
     const progressOk = progress.length > 0
-    const ok = durationOk && streamOk && frameOk && tailMotionOk && gpuArgOk && overlayArgOk && progressOk
-    console.log(`SMOKE_BROLL_REAL encoder=${settings.encoder} cudaCaps=${caps.ffmpegHasCuda} duration=${probe?.duration?.toFixed(2) ?? 'n/a'} durationOk=${durationOk} stream=${streamOk} caption=${frameOk} tailDelta=${tailDelta?.toFixed(2) ?? 'n/a'} tailMotion=${tailMotionOk} gpuArgs=${gpuArgOk} noFallback=${noCpuFallback} overlay=${overlayArgOk} progress=${progressOk} out=${outPath}`)
+    const brollLogOk = logTxt.includes('[broll] manifest build start') && logTxt.includes('[broll] provider local pool') && logTxt.includes('[broll] clip local') && logTxt.includes('[broll] normalize') && logTxt.includes('[broll] manifest build done')
+    const ok = durationOk && streamOk && frameOk && tailMotionOk && gpuArgOk && overlayArgOk && progressOk && brollLogOk
+    console.log(`SMOKE_BROLL_REAL encoder=${settings.encoder} cudaCaps=${caps.ffmpegHasCuda} duration=${probe?.duration?.toFixed(2) ?? 'n/a'} durationOk=${durationOk} stream=${streamOk} caption=${frameOk} tailDelta=${tailDelta?.toFixed(2) ?? 'n/a'} tailMotion=${tailMotionOk} gpuArgs=${gpuArgOk} noFallback=${noCpuFallback} overlay=${overlayArgOk} progress=${progressOk} brollLog=${brollLogOk} out=${outPath}`)
     app.exit(ok ? 0 : 1)
   } catch (e) {
     delete process.env['ME_BROLL_LOCAL']

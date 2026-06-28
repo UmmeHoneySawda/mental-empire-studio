@@ -243,7 +243,8 @@ async function previewProject(projectId: string): Promise<string> {
         dims: dimensions(previewSettings.quality, project.captionAspect),
         fps: 24,
         jobId: `preview-${projectId}`,
-        maxSegments: 2
+        maxSegments: 2,
+        logPath
       })
       brollManifestPath = manifest?.manifestPath
     } catch (e) {
