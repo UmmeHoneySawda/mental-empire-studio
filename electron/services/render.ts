@@ -1,5 +1,5 @@
-import { spawn, type ChildProcess } from 'node:child_process'
-import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
+import { appendFileSync, existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { AppSettings, Project, ProjectImage, RenderCapabilities } from '../../shared/types'
@@ -89,6 +89,38 @@ export function ffprobePath(): string {
   const exe = process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe'
   const vendored = join(resolveBinDir(), exe)
   return existsSync(vendored) ? vendored : exe // else rely on PATH
+}
+
+function shellQuoteArg(arg: string): string {
+  return /\s|["]/.test(arg) ? `"${arg.replace(/"/g, '\\"')}"` : arg
+}
+
+function ffmpegCommandLine(args: string[]): string {
+  return [ffmpegPath(), '-progress', 'pipe:1', '-nostats', ...args].map(shellQuoteArg).join(' ')
+}
+
+function probeOutputLine(outPath: string, expectedSec: number): string {
+  const bytes = existsSync(outPath) ? statSync(outPath).size : 0
+  const r = spawnSync(ffprobePath(), [
+    '-v', 'error',
+    '-show_entries', 'format=duration:stream=codec_type,codec_name,width,height',
+    '-of', 'json',
+    outPath
+  ], { encoding: 'utf8' })
+  if (r.status !== 0) return `[probe] output=${outPath} bytes=${bytes} expectedSec=${expectedSec.toFixed(2)} error=${(r.stderr || '').trim().slice(0, 240)}\n`
+  try {
+    const parsed = JSON.parse(r.stdout || '{}') as {
+      format?: { duration?: string }
+      streams?: Array<{ codec_type?: string; codec_name?: string; width?: number; height?: number }>
+    }
+    const durationSec = Number(parsed.format?.duration ?? 0)
+    const video = parsed.streams?.find((s) => s.codec_type === 'video')
+    const audio = parsed.streams?.find((s) => s.codec_type === 'audio')
+    const driftSec = Number.isFinite(durationSec) ? durationSec - expectedSec : 0
+    return `[probe] output=${outPath} bytes=${bytes} expectedSec=${expectedSec.toFixed(2)} durationSec=${Number.isFinite(durationSec) ? durationSec.toFixed(2) : '0.00'} driftSec=${driftSec.toFixed(2)} video=${video?.codec_name ?? 'none'}:${video?.width ?? 0}x${video?.height ?? 0} audio=${audio?.codec_name ?? 'none'}\n`
+  } catch (e) {
+    return `[probe] output=${outPath} bytes=${bytes} expectedSec=${expectedSec.toFixed(2)} error=${(e as Error).message.slice(0, 240)}\n`
+  }
 }
 
 /** Output dimensions for a quality + aspect (even numbers for yuv420p). */
@@ -434,20 +466,21 @@ export async function runRender(inp: RenderInputs, onProgress?: (p: FfmpegProgre
   // naming / ASS file are all exercised for real; the real encode runs on the user's box.
   if (process.env['ME_RENDER_FIXTURE']) {
     writeFileSync(inp.outPath, Buffer.from('\x00\x00\x00\x18ftypmp42stub-render'))
+    if (inp.logPath) appendFileSync(inp.logPath, probeOutputLine(inp.outPath, inp.project.durationSec))
     onProgress?.({ outTimeSec: inp.project.durationSec, pct: 100, speed: 1, etaSec: 0, etaState: 'stable' })
     return { outputPath: inp.outPath }
   }
 
   try {
     const args = buildRenderArgs(inp)
-    if (inp.logPath) appendFileSync(inp.logPath, `\n[ffmpeg]\n${args.join(' ')}\n`)
+    if (inp.logPath) appendFileSync(inp.logPath, `\n[ffmpeg]\n${ffmpegCommandLine(args)}\n`)
     await spawnFfmpeg(args, inp.project.durationSec, onProgress, inp.jobId)
   } catch (e) {
     if (hasCancelIntent(inp.jobId)) throw e
     if ((inp.settings.encoder ?? 'cpu') === 'cpu') throw e
     const fallbackSettings = { ...inp.settings, encoder: 'cpu' as const }
     const args = buildRenderArgs({ ...inp, settings: fallbackSettings, caps: FALLBACK_CAPS })
-    if (inp.logPath) appendFileSync(inp.logPath, `\n[ffmpeg:fallback-cpu]\n${args.join(' ')}\n`)
+    if (inp.logPath) appendFileSync(inp.logPath, `\n[ffmpeg:fallback-cpu]\n${ffmpegCommandLine(args)}\n`)
     await spawnFfmpeg(args, inp.project.durationSec, onProgress, inp.jobId)
   }
   if (inp.logPath) appendFileSync(inp.logPath, '\n[audio-master]\ntwo-pass loudnorm I=-14 TP=-1 LRA=11\n')
@@ -458,6 +491,7 @@ export async function runRender(inp: RenderInputs, onProgress?: (p: FfmpegProgre
     if (inp.logPath) appendFileSync(inp.logPath, `[audio-master:warn] ${msg}\n`)
     logger.scope('render').warn(`audio-master failed; keeping rendered MP4: ${msg}`)
   }
+  if (inp.logPath) appendFileSync(inp.logPath, probeOutputLine(inp.outPath, inp.project.durationSec))
   return { outputPath: inp.outPath }
 }
 

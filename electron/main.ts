@@ -651,11 +651,12 @@ async function runSmokeM6(): Promise<void> {
     const logFile = join(app.getPath('temp'), 'me-m6-out', 'Mental Empire - M6 Test 1.render.log')
     const logTxt = existsSync(logFile) ? readFileSync(logFile, 'utf8') : ''
     const stageTimingOk = logTxt.includes('[stage:start] preparing') && logTxt.includes('[stage:end] preparing') && logTxt.includes('[render:end] status=done')
+    const probeLogOk = logTxt.includes('[probe] output=') && logTxt.includes('expectedSec=12.00')
 
     console.log(`SMOKE_M6_ASS ok=${assOk} zoomHits=${ass169.zoomHits.length} top=${assTop.ass.includes(',8,60,60,')}`)
     console.log(`SMOKE_M6_ARGS ok=${argsOk} eta=${etaOk}`)
-    console.log(`SMOKE_M6_QUEUE status=${j1?.status} pct=${j1?.pct} maxActive=${lastMaxActive()} out=${!!j1?.outputPath} ass=${assFileOk} stageTiming=${stageTimingOk}`)
-    const ok = assOk && argsOk && etaOk && queueOk && assFileOk && stageTimingOk && betaOk && brollOk && styleOk && sfxOk
+    console.log(`SMOKE_M6_QUEUE status=${j1?.status} pct=${j1?.pct} maxActive=${lastMaxActive()} out=${!!j1?.outputPath} ass=${assFileOk} stageTiming=${stageTimingOk} probe=${probeLogOk}`)
+    const ok = assOk && argsOk && etaOk && queueOk && assFileOk && stageTimingOk && probeLogOk && betaOk && brollOk && styleOk && sfxOk
     console.log(ok ? 'SMOKE_M6_OK' : 'SMOKE_M6_FAIL')
     closeDatabase()
     app.exit(ok ? 0 : 1)
@@ -956,8 +957,9 @@ async function runSmokeBrollReal(): Promise<void> {
     const overlayArgOk = logTxt.includes('overlay=0:0') && logTxt.includes('.pam') && !logTxt.includes('drawbox=') && !logTxt.includes('geq=')
     const progressOk = progress.length > 0
     const brollLogOk = logTxt.includes('[broll] manifest build start') && logTxt.includes('[broll] provider local pool') && logTxt.includes('[broll] clip local') && logTxt.includes('[broll] normalize') && logTxt.includes('[broll] manifest build done')
-    const ok = durationOk && streamOk && frameOk && tailMotionOk && gpuArgOk && overlayArgOk && progressOk && brollLogOk
-    console.log(`SMOKE_BROLL_REAL encoder=${settings.encoder} cudaCaps=${caps.ffmpegHasCuda} duration=${probe?.duration?.toFixed(2) ?? 'n/a'} durationOk=${durationOk} stream=${streamOk} caption=${frameOk} tailDelta=${tailDelta?.toFixed(2) ?? 'n/a'} tailMotion=${tailMotionOk} gpuArgs=${gpuArgOk} noFallback=${noCpuFallback} overlay=${overlayArgOk} progress=${progressOk} brollLog=${brollLogOk} out=${outPath}`)
+    const probeLogOk = logTxt.includes('[probe] output=') && logTxt.includes('durationSec=') && logTxt.includes('video=h264')
+    const ok = durationOk && streamOk && frameOk && tailMotionOk && gpuArgOk && overlayArgOk && progressOk && brollLogOk && probeLogOk
+    console.log(`SMOKE_BROLL_REAL encoder=${settings.encoder} cudaCaps=${caps.ffmpegHasCuda} duration=${probe?.duration?.toFixed(2) ?? 'n/a'} durationOk=${durationOk} stream=${streamOk} caption=${frameOk} tailDelta=${tailDelta?.toFixed(2) ?? 'n/a'} tailMotion=${tailMotionOk} gpuArgs=${gpuArgOk} noFallback=${noCpuFallback} overlay=${overlayArgOk} progress=${progressOk} brollLog=${brollLogOk} probeLog=${probeLogOk} out=${outPath}`)
     app.exit(ok ? 0 : 1)
   } catch (e) {
     delete process.env['ME_BROLL_LOCAL']
@@ -1061,7 +1063,7 @@ async function runSmokeE2E(): Promise<void> {
       check(existsSync(job!.outputPath!.replace(/\.mp4$/, '.ass')), `${label}: .ass written`)
       const logPath = job!.outputPath!.replace(/\.mp4$/, '.render.log')
       const logTxt = existsSync(logPath) ? readFileSyncSfx(logPath).toString() : ''
-      check(logTxt.includes('[stage]') && logTxt.includes('[ffmpeg]') && logTxt.includes('[audio-master]'), `${label}: render log has stages + ffmpeg + audio-master`)
+      check(logTxt.includes('[stage]') && logTxt.includes('[ffmpeg]') && logTxt.includes('[audio-master]') && logTxt.includes('[probe] output='), `${label}: render log has stages + ffmpeg + audio-master + probe`)
     }
     probeJob(pA.id, 'J5a multi-image+xfade')
     probeJob(pB.id, 'J5b single-image')
