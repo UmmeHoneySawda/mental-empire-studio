@@ -463,9 +463,9 @@ async function runSmokeM6(): Promise<void> {
     const offArgs = buildRenderArgs({ project: betaProj, images: betaImgs, assPath: '/tmp/x.ass', outPath: '/tmp/o.mp4', settings: { ...smokeSettings, beta: { enabled: false, pexelsKey: '', pixabayKey: '', coverrKey: '' } } }).join(' ')
     const betaOk =
       assHook.ass.includes('Style: Hook') && assHook.ass.includes('Dialogue: 1,') &&
-      betaArgs.includes('drawbox') && betaArgs.includes('zoompan') &&
-      !offArgs.includes('drawbox') && !offArgs.includes('zoompan')
-    console.log(`SMOKE_M6_BETA hook=${assHook.ass.includes('Style: Hook')} overlay=${betaArgs.includes('drawbox')} startZoom=${betaArgs.includes('zoompan')} offClean=${!offArgs.includes('drawbox')}`)
+      betaArgs.includes('overlay=0:0') && betaArgs.includes('.pam') && betaArgs.includes('zoompan') &&
+      !offArgs.includes('overlay=0:0') && !offArgs.includes('zoompan')
+    console.log(`SMOKE_M6_BETA hook=${assHook.ass.includes('Style: Hook')} overlay=${betaArgs.includes('overlay=0:0')} startZoom=${betaArgs.includes('zoompan')} offClean=${!offArgs.includes('overlay=0:0')}`)
 
     // ---- Beta auto-B-roll: themes / ranking / coverage (pure) + bed assembly (fixture) ----
     const themes = extractThemes(words.concat([
@@ -903,7 +903,7 @@ async function runSmokeBrollReal(): Promise<void> {
       punchZoom: false,
       stage: 'queued',
       createdAt: new Date().toISOString(),
-      betaOpts: { ...DEFAULT_BETA_OPTS, style: 'Clean', broll: { ...DEFAULT_BETA_OPTS.broll, enabled: true, poolSize: 2, density: 'sparse' } }
+      betaOpts: { ...DEFAULT_BETA_OPTS, style: 'Clean', overlay: { ...DEFAULT_BETA_OPTS.overlay, bottom: true }, broll: { ...DEFAULT_BETA_OPTS.broll, enabled: true, poolSize: 2, density: 'sparse' } }
     }
     const assPath = join(outDir, 'broll-real.ass')
     writeFileSync(assPath, buildAss(words, { preset: 'Hormozi', aspect: '16:9', keywords: true }).ass)
@@ -926,6 +926,7 @@ async function runSmokeBrollReal(): Promise<void> {
 
     const outPath = join(outDir, 'broll-real.mp4')
     const logPath = join(outDir, 'broll-real.render.log')
+    writeFileSync(logPath, '')
     const progress: string[] = []
     await runRender({ project, images: [], assPath, outPath, settings, caps, brollManifestPath: manifest.manifestPath, jobId: 'broll-real', logPath }, (p) => {
       if (p.etaState === 'stable') progress.push(`pct=${p.pct} speed=${p.speed?.toFixed(2) ?? ''} eta=${p.etaSec ?? ''}`)
@@ -939,10 +940,12 @@ async function runSmokeBrollReal(): Promise<void> {
     const streamOk = !!probe && probe.video && probe.audio && probe.vcodec === 'h264' && probe.acodec === 'aac'
     const frameOk = !!stats && stats.activePixels > 5_000 && stats.captionPixels > 250
     const tailMotionOk = tailDelta != null && tailDelta > 2.5
-    const gpuArgOk = !caps.hasNvenc || (logTxt.includes('-hwaccel cuda') && logTxt.includes('scale_cuda=') && logTxt.includes('hwupload_cuda') && logTxt.includes('h264_nvenc'))
+    const noCpuFallback = !logTxt.includes('[ffmpeg:fallback-cpu]')
+    const gpuArgOk = !caps.hasNvenc || (logTxt.includes('-hwaccel cuda') && logTxt.includes('scale_cuda=') && logTxt.includes('h264_nvenc') && noCpuFallback)
+    const overlayArgOk = logTxt.includes('overlay=0:0') && logTxt.includes('.pam') && !logTxt.includes('drawbox=') && !logTxt.includes('geq=')
     const progressOk = progress.length > 0
-    const ok = durationOk && streamOk && frameOk && tailMotionOk && gpuArgOk && progressOk
-    console.log(`SMOKE_BROLL_REAL encoder=${settings.encoder} cudaCaps=${caps.ffmpegHasCuda} duration=${probe?.duration?.toFixed(2) ?? 'n/a'} durationOk=${durationOk} stream=${streamOk} caption=${frameOk} tailDelta=${tailDelta?.toFixed(2) ?? 'n/a'} tailMotion=${tailMotionOk} gpuArgs=${gpuArgOk} progress=${progressOk} out=${outPath}`)
+    const ok = durationOk && streamOk && frameOk && tailMotionOk && gpuArgOk && overlayArgOk && progressOk
+    console.log(`SMOKE_BROLL_REAL encoder=${settings.encoder} cudaCaps=${caps.ffmpegHasCuda} duration=${probe?.duration?.toFixed(2) ?? 'n/a'} durationOk=${durationOk} stream=${streamOk} caption=${frameOk} tailDelta=${tailDelta?.toFixed(2) ?? 'n/a'} tailMotion=${tailMotionOk} gpuArgs=${gpuArgOk} noFallback=${noCpuFallback} overlay=${overlayArgOk} progress=${progressOk} out=${outPath}`)
     app.exit(ok ? 0 : 1)
   } catch (e) {
     delete process.env['ME_BROLL_LOCAL']
@@ -1102,9 +1105,9 @@ async function runSmokeE2E(): Promise<void> {
     } catch { validatorSafe = false }
     check(validatorSafe, 'J6c validator + ASS escaping never throw on bad input')
 
-    // J6d: beta-OFF parity — disabling beta yields the pre-beta arg string (no drawbox/amix/Hook).
+    // J6d: beta-OFF parity — disabling beta yields the pre-beta arg string (no overlay/amix/Hook).
     const offArgs = buildRenderArgs({ project: { ...repos.getProject(pBeta.id)!, betaOpts: undefined }, images: setImages(createProject(dls[1].id).id, imgs), assPath: bedAss, outPath: bedOut, settings: { ...getSettings(), beta: { ...getSettings().beta, enabled: false } } }).join(' ')
-    check(!offArgs.includes('drawbox') && !offArgs.includes('amix'), 'J6d beta-off render args clean (no overlay/sfx)')
+    check(!offArgs.includes('overlay=0:0') && !offArgs.includes('amix'), 'J6d beta-off render args clean (no overlay/sfx)')
     setSettings({ beta: { enabled: false } })
 
     // ---- J4: webhook + login + scheduler ----

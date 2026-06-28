@@ -1,5 +1,6 @@
 import { spawn, type ChildProcess } from 'node:child_process'
 import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { AppSettings, Project, ProjectImage, RenderCapabilities } from '../../shared/types'
 import { asBetaOpts } from '../../shared/types'
@@ -104,31 +105,57 @@ function assForFilter(p: string): string {
   return p.replace(/\\/g, '/').replace(/:/g, '\\:').replace(/'/g, "\\'")
 }
 
-/** Beta "background overlay": a simple darkening gradient on the chosen edges,
- *  approximated by many thin drawboxes (pure-filter, no extra inputs).
- *  Returns a filter fragment ending in a comma, or '' when no edge is enabled. */
-function overlayGradient(o: { bottom: boolean; top: boolean; left: boolean; right: boolean }, w: number, h: number): string {
-  const boxes: string[] = []
-  const steps = 24
+/** Beta "background overlay": smooth alpha ramp cached as a tiny PAM image.
+ *  Using a static overlay input avoids per-frame geq math while keeping the fade smooth. */
+function overlayGradientPath(o: { bottom: boolean; top: boolean; left: boolean; right: boolean }, w: number, h: number): string | undefined {
   const edgeH = Math.max(1, Math.round(h * 0.36))
   const edgeW = Math.max(1, Math.round(w * 0.36))
-  for (let i = 0; i < steps; i++) {
-    const t0 = i / steps
-    const t1 = (i + 1) / steps
-    const alpha = 0.5 * Math.pow(t1, 1.7)
-    const c = `black@${alpha.toFixed(3)}`
-    const y0 = Math.round(h - edgeH + edgeH * t0)
-    const y1 = Math.round(h - edgeH + edgeH * t1)
-    const x0 = Math.round(w - edgeW + edgeW * t0)
-    const x1 = Math.round(w - edgeW + edgeW * t1)
-    const bandH = Math.max(1, y1 - y0)
-    const bandW = Math.max(1, x1 - x0)
-    if (o.bottom) boxes.push(`drawbox=x=0:y=${y0}:w=${w}:h=${bandH}:color=${c}:t=fill`)
-    if (o.top) boxes.push(`drawbox=x=0:y=${edgeH - y1}:w=${w}:h=${bandH}:color=${c}:t=fill`)
-    if (o.left) boxes.push(`drawbox=x=${edgeW - x1}:y=0:w=${bandW}:h=${h}:color=${c}:t=fill`)
-    if (o.right) boxes.push(`drawbox=x=${x0}:y=0:w=${bandW}:h=${h}:color=${c}:t=fill`)
+  if (!o.bottom && !o.top && !o.left && !o.right) return undefined
+  const dir = join(tmpdir(), 'me-render-overlays')
+  mkdirSync(dir, { recursive: true })
+  const key = `${w}x${h}-${o.top ? 't' : ''}${o.right ? 'r' : ''}${o.bottom ? 'b' : ''}${o.left ? 'l' : ''}` || 'none'
+  const path = join(dir, `overlay-${key}.pam`)
+  if (existsSync(path)) return path
+
+  const header = Buffer.from(`P7\nWIDTH ${w}\nHEIGHT ${h}\nDEPTH 4\nMAXVAL 255\nTUPLTYPE RGB_ALPHA\nENDHDR\n`, 'ascii')
+  const pixels = Buffer.alloc(w * h * 4)
+  for (let y = 0; y < h; y++) {
+    for (let x = 0; x < w; x++) {
+      const ramps = [
+        o.bottom ? Math.min(1, Math.max(0, (y - (h - edgeH)) / edgeH)) : 0,
+        o.top ? Math.min(1, Math.max(0, (edgeH - y) / edgeH)) : 0,
+        o.left ? Math.min(1, Math.max(0, (edgeW - x) / edgeW)) : 0,
+        o.right ? Math.min(1, Math.max(0, (x - (w - edgeW)) / edgeW)) : 0
+      ]
+      const ramp = Math.max(...ramps)
+      const alpha = Math.round(128 * Math.pow(ramp, 1.7))
+      const i = (y * w + x) * 4
+      pixels[i] = 0
+      pixels[i + 1] = 0
+      pixels[i + 2] = 0
+      pixels[i + 3] = alpha
+    }
   }
-  return boxes.length ? `${boxes.join(',')},` : ''
+  writeFileSync(path, Buffer.concat([header, pixels]))
+  return path
+}
+
+function pushFinishedVideo(
+  parts: string[],
+  source: string,
+  filters: string[],
+  opts: { overlayIdx?: number; assPath: string; punch: string; afterSubtitles?: string; prefix: string }
+): void {
+  const base = `${opts.prefix}base`
+  const activeFilters = filters.filter(Boolean)
+  parts.push(`${source}${activeFilters.length ? activeFilters.join(',') : 'null'}[${base}]`)
+  let current = base
+  if (opts.overlayIdx != null) {
+    const over = `${opts.prefix}over`
+    parts.push(`[${current}][${opts.overlayIdx}:v]overlay=0:0:format=auto[${over}]`)
+    current = over
+  }
+  parts.push(`[${current}]subtitles='${assForFilter(opts.assPath)}'${opts.punch}${opts.afterSubtitles ?? ''}[v]`)
 }
 
 export interface RenderInputs {
@@ -194,6 +221,8 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
   // demuxer manifest and enter the final graph as one continuous video input.
   if (inp.brollManifestPath) {
     const useCudaFinal = canUseCudaFinalFilters(settings, caps)
+    const overlayPath = beta ? overlayGradientPath(beta.overlay, w, h) : undefined
+    const hardwareFrameOutput = useCudaFinal && !overlayPath
     const inputs = [
       ...(useCudaFinal ? ['-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda'] : []),
       '-f', 'concat', '-safe', '0', '-i', inp.brollManifestPath,
@@ -201,16 +230,22 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
     ]
     const sfxIdx = inp.sfxPath ? 2 : null
     if (inp.sfxPath) inputs.push('-i', inp.sfxPath)
+    const overlayIdx = overlayPath ? (inp.sfxPath ? 3 : 2) : undefined
+    if (overlayPath) inputs.push('-loop', '1', '-i', overlayPath)
 
     const parts: string[] = []
-    const grad = beta ? overlayGradient(beta.overlay, w, h) : ''
-    const grade = gradeChain(beta?.style)
+    const grade = gradeChain(beta?.style).replace(/,+$/, '')
     const punchOn = project.punchZoom || !!beta?.autoZoom.atKeyPhrases
     const punch = punchOn ? `,zoompan=z='min(zoom+0.0015,1.08)':d=1:s=${w}x${h}:fps=${FPS}` : ''
-    const videoChain = useCudaFinal
-      ? `[0:v]scale_cuda=w=${w}:h=${h}:force_original_aspect_ratio=increase,hwdownload,format=nv12,crop=${w}:${h},setsar=1,fps=${FPS},${grade}${grad}subtitles='${assForFilter(assPath)}'${punch},format=nv12,hwupload_cuda[v]`
-      : `[0:v]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1,fps=${FPS},${grade}${grad}subtitles='${assForFilter(assPath)}'${punch}[v]`
-    parts.push(videoChain)
+    pushFinishedVideo(parts, '[0:v]', useCudaFinal
+      ? [`scale_cuda=w=${w}:h=${h}:force_original_aspect_ratio=increase`, 'hwdownload', 'format=nv12', `crop=${w}:${h}`, 'setsar=1', `fps=${FPS}`, grade]
+      : [`scale=${w}:${h}:force_original_aspect_ratio=increase`, `crop=${w}:${h}`, 'setsar=1', `fps=${FPS}`, grade], {
+      overlayIdx,
+      assPath,
+      punch,
+      afterSubtitles: hardwareFrameOutput ? ',format=nv12,hwupload_cuda' : '',
+      prefix: 'bm'
+    })
     const aMap = audioWithSfx(parts, 1, sfxIdx)
     const crf = settings.quality === '1440p' ? '20' : settings.quality === '720p' ? '23' : '21'
 
@@ -220,7 +255,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
       '-filter_complex', parts.join(';'),
       '-map', '[v]',
       '-map', aMap,
-      ...codecArgsForFilterOutput(settings, crf, caps, useCudaFinal),
+      ...codecArgsForFilterOutput(settings, crf, caps, hardwareFrameOutput),
       '-r', String(FPS),
       '-c:a', 'aac',
       '-b:a', '192k',
@@ -233,6 +268,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
   // in the final graph, so the job avoids a pre-encoded full-length bed.
   if (inp.brollSegments?.length) {
     const segments = inp.brollSegments
+    const overlayPath = beta ? overlayGradientPath(beta.overlay, w, h) : undefined
     const inputs: string[] = []
     const parts: string[] = []
     segments.forEach((s, i) => {
@@ -245,6 +281,8 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
     const audioIdx = segments.length
     const sfxIdx = inp.sfxPath ? segments.length + 1 : null
     if (inp.sfxPath) inputs.push('-i', inp.sfxPath)
+    const overlayIdx = overlayPath ? segments.length + 1 + (inp.sfxPath ? 1 : 0) : undefined
+    if (overlayPath) inputs.push('-loop', '1', '-i', overlayPath)
 
     let last = 'bv0'
     if (segments.length > 1) {
@@ -262,11 +300,10 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
       }
     }
 
-    const grad = beta ? overlayGradient(beta.overlay, w, h) : ''
-    const grade = gradeChain(beta?.style)
+    const grade = gradeChain(beta?.style).replace(/,+$/, '')
     const punchOn = project.punchZoom || !!beta?.autoZoom.atKeyPhrases
     const punch = punchOn ? `,zoompan=z='min(zoom+0.0015,1.08)':d=1:s=${w}x${h}:fps=${FPS}` : ''
-    parts.push(`[${last}]${grade}${grad}subtitles='${assForFilter(assPath)}'${punch}[v]`)
+    pushFinishedVideo(parts, `[${last}]`, [grade], { overlayIdx, assPath, punch, prefix: 'bd' })
     const aMap = audioWithSfx(parts, audioIdx, sfxIdx)
     const crf = settings.quality === '1440p' ? '20' : settings.quality === '720p' ? '23' : '21'
 
@@ -287,19 +324,22 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
 
   // Beta auto-B-roll fallback: a single full-length video bed replaces the still-image track.
   if (inp.videoBedPath) {
-    const grad = beta ? overlayGradient(beta.overlay, w, h) : ''
-    const grade = gradeChain(beta?.style)
+    const overlayPath = beta ? overlayGradientPath(beta.overlay, w, h) : undefined
+    const grade = gradeChain(beta?.style).replace(/,+$/, '')
     const punchOn = project.punchZoom || !!beta?.autoZoom.atKeyPhrases
     const punch = punchOn ? `,zoompan=z='min(zoom+0.0015,1.08)':d=1:s=${w}x${h}:fps=${FPS}` : ''
     const crfBed = settings.quality === '1440p' ? '20' : settings.quality === '720p' ? '23' : '21'
-    const bedParts = [`[0:v]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1,fps=${FPS},${grade}${grad}subtitles='${assForFilter(assPath)}'${punch}[v]`]
+    const bedParts: string[] = []
     const sfxIdx = inp.sfxPath ? 2 : null
+    const overlayIdx = overlayPath ? (inp.sfxPath ? 3 : 2) : undefined
+    pushFinishedVideo(bedParts, '[0:v]', [`scale=${w}:${h}:force_original_aspect_ratio=increase`, `crop=${w}:${h}`, 'setsar=1', `fps=${FPS}`, grade], { overlayIdx, assPath, punch, prefix: 'bb' })
     const aMap = audioWithSfx(bedParts, 1, sfxIdx)
     return [
       '-y',
       '-i', inp.videoBedPath,
       '-i', project.mp3Path,
       ...(inp.sfxPath ? ['-i', inp.sfxPath] : []),
+      ...(overlayPath ? ['-loop', '1', '-i', overlayPath] : []),
       '-filter_complex', bedParts.join(';'),
       '-map', '[v]', '-map', aMap,
       ...videoCodecArgs(settings, crfBed, caps), '-r', String(FPS),
@@ -310,6 +350,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
   }
 
   const inputs: string[] = []
+  const overlayPath = beta ? overlayGradientPath(beta.overlay, w, h) : undefined
   imgs.forEach((im) => {
     const dur = Math.max(0.5, im.rangeEnd - im.rangeStart) + cf
     if (im.path) {
@@ -325,6 +366,8 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
   // Beta SFX track (if any) is the next input; mixed under the voice at low gain.
   const sfxIdx = inp.sfxPath ? imgs.length + 1 : null
   if (inp.sfxPath) inputs.push('-i', inp.sfxPath)
+  const overlayIdx = overlayPath ? imgs.length + 1 + (inp.sfxPath ? 1 : 0) : undefined
+  if (overlayPath) inputs.push('-loop', '1', '-i', overlayPath)
 
   const parts: string[] = []
   imgs.forEach((im, i) => {
@@ -355,12 +398,11 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
   }
 
   // Beta darkening gradient goes under the captions (applied before the subtitles burn).
-  const grad = beta ? overlayGradient(beta.overlay, w, h) : ''
-  const grade = gradeChain(beta?.style)
+  const grade = gradeChain(beta?.style).replace(/,+$/, '')
   // Burn captions; punch-zoom adds a subtle pulse when enabled (project flag or beta key-phrases).
   const punchOn = project.punchZoom || !!beta?.autoZoom.atKeyPhrases
   const punch = punchOn ? `,zoompan=z='min(zoom+0.0015,1.08)':d=1:s=${w}x${h}:fps=${FPS}` : ''
-  parts.push(`[${last}]${grade}${grad}subtitles='${assForFilter(assPath)}'${punch}[v]`)
+  pushFinishedVideo(parts, `[${last}]`, [grade], { overlayIdx, assPath, punch, prefix: 'img' })
   const aMap = audioWithSfx(parts, audioIdx, sfxIdx)
 
   const crf = settings.quality === '1440p' ? '20' : settings.quality === '720p' ? '23' : '21'
