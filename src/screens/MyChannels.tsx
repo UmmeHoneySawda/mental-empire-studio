@@ -49,8 +49,11 @@ export function MyChannels(): JSX.Element {
       <div style={{ display: 'flex', alignItems: 'flex-end', marginBottom: 8 }}>
         <div><Eyebrow>YOUR CHANNELS</Eyebrow><Title>Channels you publish to</Title></div>
         <div style={{ flex: 1 }} />
-        <PrimaryButton onClick={connect}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><path d="M12 5v14M5 12h14" /></svg>Add channel
+        <PrimaryButton onClick={connect} style={{ opacity: connecting ? 0.68 : 1, cursor: connecting ? 'default' : 'pointer' }}>
+          {connecting
+            ? <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.5" style={{ animation: 'meSpin 1s linear infinite' }}><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" /></svg>
+            : <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><path d="M12 5v14M5 12h14" /></svg>}
+          {connecting ? 'Connecting…' : 'Add channel'}
         </PrimaryButton>
       </div>
       <div style={{ fontSize: 12.5, color: '#8a909c', marginBottom: 22, maxWidth: 720 }}>
