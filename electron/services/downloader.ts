@@ -1,4 +1,4 @@
-import { spawn } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import type { AppSettings, ScrapedVideo } from '../../shared/types'
@@ -32,11 +32,30 @@ export interface DownloadResult {
 
 export interface DownloadParams {
   video: ScrapedVideo
+  downloadId?: string
   channel: string
   outDir: string
   bitrate: number
   settings: AppSettings
   onProgress?: (pct: number) => void
+}
+
+const runningDownloads = new Map<string, ChildProcess>()
+const cancelIntents = new Set<string>()
+
+export function cancelDownload(downloadId: string): boolean {
+  cancelIntents.add(downloadId)
+  const child = runningDownloads.get(downloadId)
+  if (!child) return false
+  child.kill('SIGKILL')
+  runningDownloads.delete(downloadId)
+  return true
+}
+
+function consumeCancel(downloadId?: string): boolean {
+  if (!downloadId || !cancelIntents.has(downloadId)) return false
+  cancelIntents.delete(downloadId)
+  return true
 }
 
 export function watchUrl(videoId: string): string {
@@ -49,7 +68,7 @@ export function targetPath(outDir: string, channel: string, title: string): stri
 }
 
 export async function downloadAudio(params: DownloadParams): Promise<DownloadResult> {
-  const { video, channel, outDir, bitrate, settings, onProgress } = params
+  const { video, downloadId, channel, outDir, bitrate, settings, onProgress } = params
   mkdirSync(outDir, { recursive: true })
   const dest = targetPath(outDir, channel, video.title)
 
@@ -67,7 +86,7 @@ export async function downloadAudio(params: DownloadParams): Promise<DownloadRes
     return { filePath: dest, skipped: false }
   }
 
-  await runYtdlpDownload(video, dest, bitrate, settings, onProgress)
+  await runYtdlpDownload(video, dest, bitrate, settings, onProgress, downloadId)
   return { filePath: dest, skipped: false }
 }
 
@@ -76,7 +95,8 @@ function runYtdlpDownload(
   dest: string,
   bitrate: number,
   settings: AppSettings,
-  onProgress?: (pct: number) => void
+  onProgress?: (pct: number) => void,
+  downloadId?: string
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const a = settings.autoScrape
@@ -100,14 +120,25 @@ function runYtdlpDownload(
     L.info(`yt-dlp download: ${bin} ${args.join(' ')}`)
     if (!existsSync(bin)) L.error(`yt-dlp binary missing at ${bin} — download will fail`)
     const child = spawn(bin, args, { windowsHide: true })
+    if (downloadId) runningDownloads.set(downloadId, child)
     let err = ''
     child.stdout.on('data', (d: Buffer) => {
       const m = d.toString().match(/\[download\]\s+([\d.]+)%/)
       if (m) onProgress?.(parseFloat(m[1]))
     })
     child.stderr.on('data', (d: Buffer) => (err += d))
-    child.on('error', (e) => { L.error(`yt-dlp download spawn error: ${e.message} (bin=${bin})`); reject(e) })
+    child.on('error', (e) => {
+      if (downloadId) runningDownloads.delete(downloadId)
+      if (consumeCancel(downloadId)) reject(new Error('download cancelled'))
+      else { L.error(`yt-dlp download spawn error: ${e.message} (bin=${bin})`); reject(e) }
+    })
     child.on('close', (code) => {
+      if (downloadId) runningDownloads.delete(downloadId)
+      if (consumeCancel(downloadId)) {
+        L.warn(`download cancelled: ${video.title}`)
+        reject(new Error('download cancelled'))
+        return
+      }
       if (code === 0 && existsSync(dest)) {
         L.info(`download ok: ${dest}`)
         onProgress?.(100)

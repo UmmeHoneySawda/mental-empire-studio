@@ -1,7 +1,9 @@
 import { app, ipcMain } from 'electron'
-import { existsSync } from 'node:fs'
+import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Project, ProjectImage, TranscribeProgress, TranscriptWord } from '../../shared/types'
+import { asBetaOpts } from '../../shared/types'
+import { deriveStylePlan, EMPTY_PLAN, styleCaptionLead, styleTransition, validateEffectPlan } from '../../shared/effectPlan'
 import { getSettings } from '../store/settings'
 import { getRepos } from '../db'
 import { splitRanges } from '../services/audio'
@@ -9,6 +11,11 @@ import { importImages, seededShuffle } from '../services/images'
 import { transcribeAudio } from '../services/transcribe'
 import { emit, hhmm, pushActivity } from './events'
 import { outputDir } from '../services/queue'
+import { buildAss } from '../services/captions'
+import { dimensions, runRender } from '../services/render'
+import { buildBrollManifest } from '../services/broll'
+import { probeRenderCapabilities } from '../services/engine/caps'
+import { L } from '../services/logger'
 
 // Compose orchestration: build a project from a downloaded mp3, manage its image
 // ranges + caption recipe, run transcription (Groq), and push to the render queue.
@@ -181,6 +188,87 @@ async function runTranscribe(projectId: string): Promise<TranscriptWord[]> {
   }
 }
 
+async function previewProject(projectId: string): Promise<string> {
+  const repos = getRepos()
+  const project = repos.getProject(projectId)
+  if (!project) throw new Error(`Unknown project: ${projectId}`)
+  validateDownloadedAudio(project.downloadId, project.mp3Path, project.durationSec)
+
+  const settings = getSettings()
+  const previewSettings = { ...settings, quality: '720p' as const }
+  const caps = probeRenderCapabilities()
+  const previewSec = Math.max(1, Math.min(8, project.durationSec || 8))
+  const dir = join(outputDir(), 'previews')
+  mkdirSync(dir, { recursive: true })
+  const base = `${safeName(project.title)}-preview-${Date.now()}`
+  const assPath = join(dir, `${base}.ass`)
+  const outPath = join(dir, `${base}.mp4`)
+  const logPath = join(dir, `${base}.render.log`)
+
+  const beta = settings.beta?.enabled ? asBetaOpts(project.betaOpts) : null
+  const words = repos.getTranscript(projectId).filter((w) => w.start < previewSec)
+  const hookText = beta?.hook.enabled
+    ? (beta.hook.text.trim() || words.slice(0, 8).map((w) => w.word).join(' '))
+    : ''
+  const style = beta?.style ?? 'None'
+  const styleLead = beta ? styleCaptionLead(style) : undefined
+  const plan = beta
+    ? (beta.effectPlanJson.trim() ? validateEffectPlan(beta.effectPlanJson, previewSec).plan : deriveStylePlan(words, style, previewSec))
+    : EMPTY_PLAN
+  const { ass } = buildAss(words, {
+    preset: project.captionPreset,
+    aspect: project.captionAspect,
+    position: project.captionPosition ?? 'bottom',
+    keywords: project.keywords || !!beta?.autoHighlight,
+    hook: hookText ? { text: hookText, untilSec: Math.min(2.6, previewSec) } : undefined,
+    styleLead,
+    textEffects: beta ? plan.textEffects : undefined
+  })
+  writeFileSync(assPath, ass)
+
+  const existingImages = repos.getProjectImages(projectId)
+  const images: ProjectImage[] = existingImages[0]
+    ? [{ ...existingImages[0], rangeStart: 0, rangeEnd: previewSec }]
+    : []
+  let brollManifestPath: string | undefined
+  if (beta?.broll.enabled && (settings.beta.pexelsKey || settings.beta.pixabayKey || settings.beta.coverrKey || process.env['ME_BROLL_LOCAL'] || process.env['ME_BROLL_FIXTURE'])) {
+    try {
+      const manifest = await buildBrollManifest({
+        settings: previewSettings,
+        caps,
+        words,
+        durationSec: previewSec,
+        density: beta.broll.density,
+        poolSize: Math.min(4, beta.broll.poolSize),
+        dims: dimensions(previewSettings.quality, project.captionAspect),
+        fps: 24,
+        jobId: `preview-${projectId}`,
+        maxSegments: 2
+      })
+      brollManifestPath = manifest?.manifestPath
+    } catch (e) {
+      // Preview should remain useful even if stock footage is offline/rate-limited.
+      L.warn(`preview b-roll unavailable for ${projectId}: ${(e as Error).message}`)
+    }
+  }
+
+  await runRender({
+    project: { ...project, durationSec: previewSec },
+    images,
+    assPath,
+    outPath,
+    settings: previewSettings,
+    caps,
+    brollManifestPath,
+    transition: beta && style !== 'None' ? styleTransition(style) : undefined,
+    plan,
+    jobId: `preview-${projectId}`,
+    logPath
+  })
+  pushActivity({ t: hhmm(), icon: '▶', color: '#8b7cff', text: `Preview rendered: ${project.title.slice(0, 42)}` })
+  return outPath
+}
+
 export function registerComposeIpc(): void {
   const repos = () => getRepos()
   ipcMain.handle('compose:createProject', (_e, downloadId: string) => createProject(downloadId))
@@ -195,6 +283,7 @@ export function registerComposeIpc(): void {
   })
   ipcMain.handle('compose:setMedia', (_e, projectId: string, patch: Partial<Project>) => repos().updateProject(projectId, patch))
   ipcMain.handle('compose:setCaptions', (_e, projectId: string, patch: Partial<Project>) => repos().updateProject(projectId, patch))
+  ipcMain.handle('compose:preview', (_e, projectId: string) => previewProject(projectId))
   ipcMain.handle('compose:sendToRender', (_e, projectId: string) => sendToRender(projectId))
 
   ipcMain.handle('transcribe:run', (_e, projectId: string) => runTranscribe(projectId))

@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import type {
   ActivityRow,
+  AutomationEvent,
   DownloadProgress,
   DownloadedVideo,
   MyChannel,
@@ -41,6 +42,8 @@ interface DataState {
   rendering: boolean
   profiles: Profile[]
   runningProfileId: string | null
+  automationEvents: Record<string, AutomationEvent>
+  automationErrors: Record<string, string>
   ready: boolean
 
   init: () => Promise<void>
@@ -54,6 +57,7 @@ interface DataState {
   fetchSource: (url: string, order: ScrapeOrder, count: number) => Promise<void>
   startDownload: (videos: ScrapedVideo[], sourceUrl: string, bitrate: number) => Promise<DownloadedVideo[]>
   resumeDownload: (id: string) => Promise<void>
+  cancelDownload: (id: string) => Promise<void>
   openProject: (downloadId: string) => Promise<void>
   openProjectById: (projectId: string) => Promise<void>
   setProjectImages: (paths: string[]) => Promise<void>
@@ -101,6 +105,8 @@ export const useData = create<DataState>((set, get) => ({
   rendering: false,
   profiles: [],
   runningProfileId: null,
+  automationEvents: {},
+  automationErrors: {},
   ready: false,
 
   init: async () => {
@@ -128,6 +134,14 @@ export const useData = create<DataState>((set, get) => ({
     a.onRenderProgress((p) => {
       set((s) => ({ renderProgress: { ...s.renderProgress, [p.jobId]: p } }))
       void get().loadRenderJobs()
+    })
+    a.onAutomation((e) => {
+      set((s) => ({
+        automationEvents: { ...s.automationEvents, [e.profileId]: e },
+        automationErrors: e.phase === 'error'
+          ? { ...s.automationErrors, [e.profileId]: e.message }
+          : s.automationErrors
+      }))
     })
   },
 
@@ -204,6 +218,12 @@ export const useData = create<DataState>((set, get) => ({
     const a = api()
     if (!a) return
     await a.download.resume(id)
+    await get().loadDownloads()
+  },
+  cancelDownload: async (id) => {
+    const a = api()
+    if (!a) return
+    await a.download.cancel(id)
     await get().loadDownloads()
   },
 
@@ -346,13 +366,22 @@ export const useData = create<DataState>((set, get) => ({
   runProfile: async (id) => {
     const a = api()
     if (!a) return []
-    set({ runningProfileId: id })
+    set((s) => {
+      const errors = { ...s.automationErrors }
+      delete errors[id]
+      return { runningProfileId: id, automationErrors: errors }
+    })
     try {
       const projectIds = await a.automation.runProfile(id, false)
       // open the first new project for quick-edit, then refresh
       if (projectIds[0]) await get().openProjectById(projectIds[0])
       await Promise.all([get().loadDownloads(), get().loadProfiles(), get().loadActivity()])
       return projectIds
+    } catch (e) {
+      const msg = (e as Error).message
+      set((s) => ({ automationErrors: { ...s.automationErrors, [id]: msg } }))
+      await get().loadActivity()
+      return []
     } finally {
       set({ runningProfileId: null })
     }

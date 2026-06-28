@@ -300,7 +300,7 @@ export async function downloadPool(cands: BrollCandidate[], poolSize: number, on
 
 const BED_CF = 0.3 // bed crossfade duration (also the planCoverage tail reserve)
 
-function normalizeArgs(
+export function buildBrollNormalizeArgs(
   segment: BrollSegment,
   outPath: string,
   dims: { w: number; h: number },
@@ -311,16 +311,24 @@ function normalizeArgs(
   const { w, h } = dims
   const dur = Math.max(0.5, segment.end - segment.start)
   const crf = settings.quality === '1440p' ? '20' : settings.quality === '720p' ? '23' : '21'
+  const useCuda = settings.encoder === 'nvenc' && caps.ffmpegHasCuda
+  const inputArgs = useCuda
+    ? ['-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda']
+    : []
+  const filter = useCuda
+    ? `scale_cuda=w=${w}:h=${h}:force_original_aspect_ratio=increase,hwdownload,format=nv12,crop=${w}:${h},setsar=1,fps=${fps},format=yuv420p`
+    : `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1,fps=${fps},format=yuv420p`
   return [
     '-y',
     '-progress', 'pipe:1',
     '-nostats',
+    ...inputArgs,
     '-stream_loop', '-1',
     '-ss', segment.srcStart.toFixed(2),
     '-t', dur.toFixed(2),
     '-i', segment.path,
     '-an',
-    '-vf', `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1,fps=${fps},format=yuv420p`,
+    '-vf', filter,
     ...videoCodecArgs(settings, crf, caps),
     '-r', String(fps),
     '-movflags', '+faststart',
@@ -387,12 +395,12 @@ async function normalizeSegment(
   }
 
   try {
-    await spawnNormalize(normalizeArgs(segment, outPath, opts.dims, opts.fps, opts.settings, opts.caps), durationSec, opts)
+    await spawnNormalize(buildBrollNormalizeArgs(segment, outPath, opts.dims, opts.fps, opts.settings, opts.caps), durationSec, opts)
   } catch (e) {
     if (opts.shouldCancel?.() || (opts.settings.encoder ?? 'cpu') === 'cpu') throw e
     BROLL_LOG.warn(`normalize hardware encode failed; retrying CPU for segment ${index}: ${(e as Error).message}`)
     const fallbackSettings = { ...opts.settings, encoder: 'cpu' as const }
-    await spawnNormalize(normalizeArgs(segment, outPath, opts.dims, opts.fps, fallbackSettings, FALLBACK_CAPS), durationSec, opts)
+    await spawnNormalize(buildBrollNormalizeArgs(segment, outPath, opts.dims, opts.fps, fallbackSettings, FALLBACK_CAPS), durationSec, opts)
   }
   return { ...segment, normalizedPath: outPath }
 }

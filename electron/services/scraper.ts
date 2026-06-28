@@ -81,8 +81,9 @@ export async function scrapeChannel(
 
 /** Order a video list per the Download picker's tab and cap to `count`. */
 export function orderVideos(videos: ScrapedVideo[], order: ScrapeOrder, count: number): ScrapedVideo[] {
-  let vids = videos // yt-dlp returns newest-first
+  let vids = videos
   if (order === 'Popular') vids = [...vids].sort((a, b) => b.views - a.views)
+  else if (order === 'Latest') vids = [...vids].sort((a, b) => (b.uploadDate || '').localeCompare(a.uploadDate || ''))
   else if (order === 'Oldest') vids = [...vids].reverse()
   return vids.slice(0, Math.max(1, count))
 }

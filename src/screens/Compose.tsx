@@ -313,6 +313,23 @@ function CaptionsTab(): JSX.Element {
   const setCaptions = useData((s) => s.setCaptions)
   const images = useData((s) => s.projectImages)
   const preset = project?.captionPreset ?? 'Hormozi'
+  const [previewPath, setPreviewPath] = useState('')
+  const [previewing, setPreviewing] = useState(false)
+  const [previewError, setPreviewError] = useState('')
+
+  const renderPreview = async (): Promise<void> => {
+    if (!project || previewing) return
+    setPreviewing(true)
+    setPreviewError('')
+    try {
+      const p = await window.api.compose.preview(project.id)
+      setPreviewPath(p)
+    } catch (e) {
+      setPreviewError((e as Error).message)
+    } finally {
+      setPreviewing(false)
+    }
+  }
 
   return (
     <div style={{ display: 'flex', gap: 18 }}>
@@ -346,8 +363,14 @@ function CaptionsTab(): JSX.Element {
 
       <div style={{ flex: 'none', width: 210 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}><span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#6a7180' }}>PREVIEW</span><span style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, background: 'var(--accent-soft)', color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: 10, padding: '2px 8px' }}>{project?.captionAspect ?? '16:9'}</span></div>
-        <CaptionPreview words={transcript} aspect={project?.captionAspect ?? '16:9'} position={project?.captionPosition ?? 'bottom'} imagePath={images[0]?.thumb || images[0]?.path} />
+        {previewPath ? (
+          <video key={previewPath} controls src={mediaSrc(previewPath)} style={{ width: 210, border: '1px solid #1d2129', borderRadius: 12, background: '#0e1116', display: 'block' }} />
+        ) : (
+          <CaptionPreview words={transcript} aspect={project?.captionAspect ?? '16:9'} position={project?.captionPosition ?? 'bottom'} imagePath={images[0]?.thumb || images[0]?.path} />
+        )}
         <div style={{ fontSize: 10, color: '#6a7180', textAlign: 'center', marginTop: 9, lineHeight: 1.4 }}>Yellow active word · uniform pop ({preset})</div>
+        <button type="button" disabled={!project || previewing} onClick={() => void renderPreview()} className="me-btn" style={{ width: '100%', marginTop: 10, border: '1px solid #262b34', background: '#15181f', borderRadius: 9, padding: '8px 10px', fontSize: 11.5, color: '#c4cad3', cursor: project && !previewing ? 'pointer' : 'not-allowed', opacity: project && !previewing ? 1 : 0.55 }}>{previewing ? 'Rendering…' : 'Render preview'}</button>
+        {previewError && <div style={{ marginTop: 7, fontSize: 10.5, color: '#ff8a96', lineHeight: 1.35 }}>{previewError}</div>}
       </div>
 
       <div style={{ flex: 1, minWidth: 0 }}>

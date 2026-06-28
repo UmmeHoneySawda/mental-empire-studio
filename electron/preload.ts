@@ -82,6 +82,7 @@ const api: NativeApi = {
   download: {
     start: (videos: ScrapedVideo[], opts: DownloadOptions) => ipcRenderer.invoke('download:start', videos, opts),
     resume: (id: string) => ipcRenderer.invoke('download:resume', id),
+    cancel: (id: string) => ipcRenderer.invoke('download:cancel', id),
     openFolder: (id: string) => ipcRenderer.invoke('download:openFolder', id),
     delete: (id: string) => ipcRenderer.invoke('download:delete', id)
   },
@@ -97,6 +98,7 @@ const api: NativeApi = {
       ipcRenderer.invoke('compose:setRanges', projectId, ranges),
     setMedia: (projectId: string, patch: Partial<Project>) => ipcRenderer.invoke('compose:setMedia', projectId, patch),
     setCaptions: (projectId: string, patch: Partial<Project>) => ipcRenderer.invoke('compose:setCaptions', projectId, patch),
+    preview: (projectId: string) => ipcRenderer.invoke('compose:preview', projectId),
     sendToRender: (projectId: string) => ipcRenderer.invoke('compose:sendToRender', projectId)
   },
 

@@ -19,7 +19,7 @@ import { autoArrangeText } from '../shared/thumbnail'
 import { THUMB_W, THUMB_H, DEFAULT_BETA_OPTS, type TextLayer, type ThumbnailTemplate, type TranscriptWord } from '../shared/types'
 import { buildAss } from './services/captions'
 import { buildRenderArgs, runRender, ffmpegPath, ffprobePath } from './services/render'
-import { extractThemes, rankCandidates, planCoverage, buildBrollBed, buildBrollManifest, assembleBed, type BrollCandidate } from './services/broll'
+import { extractThemes, rankCandidates, planCoverage, buildBrollBed, buildBrollManifest, buildBrollNormalizeArgs, assembleBed, type BrollCandidate } from './services/broll'
 import { createProgressSmoother } from './services/engine/progress'
 import { validateEffectPlan, deriveStylePlan, styleCaptionLead, textPresetTag, type EffectPlan } from '../shared/effectPlan'
 import { buildSfxTrack } from './services/sfx'
@@ -515,8 +515,17 @@ async function runSmokeM6(): Promise<void> {
       settings: smokeSettings
     }).join(' ') : ''
     const manifestOk = !!manifest && existsSync(manifest.manifestPath) && existsSync(manifest.jsonPath) && manifest.segments.every((s) => existsSync(s.normalizedPath)) && manifestArgs.includes('-f concat -safe 0 -i') && manifestArgs.includes(manifest.manifestPath)
-    const brollOk = themes.includes('discipline') && ranked[0].id === 'b' && Math.abs(covEnd - 12) < 0.1 && longTrimmed && longCapped && !!bed && existsSync(bed!) && directOk && manifestOk
-    console.log(`SMOKE_M6_BROLL themes=${themes.slice(0, 3).join(',')} topRank=${ranked[0].id} covEnd=${covEnd.toFixed(1)} trimmed=${longTrimmed} long=${longCov.length}/${longCovEnd.toFixed(1)} bed=${!!bed} direct=${directOk} manifest=${manifestOk}`)
+    const cudaNormalizeArgs = buildBrollNormalizeArgs(
+      { path: '/x/clip.mp4', start: 0, end: 4, srcStart: 0 },
+      '/tmp/seg.mp4',
+      { w: 1920, h: 1080 },
+      30,
+      { ...smokeSettings, encoder: 'nvenc' },
+      { hasNvenc: true, hasQsv: false, hasAmf: false, gpuVendor: 'nvidia', ffmpegHasLibass: true, ffmpegHasCuda: true }
+    ).join(' ')
+    const cudaNormalizeOk = cudaNormalizeArgs.includes('-hwaccel cuda') && cudaNormalizeArgs.includes('scale_cuda=') && cudaNormalizeArgs.includes('hwdownload,format=nv12') && cudaNormalizeArgs.includes('h264_nvenc')
+    const brollOk = themes.includes('discipline') && ranked[0].id === 'b' && Math.abs(covEnd - 12) < 0.1 && longTrimmed && longCapped && !!bed && existsSync(bed!) && directOk && manifestOk && cudaNormalizeOk
+    console.log(`SMOKE_M6_BROLL themes=${themes.slice(0, 3).join(',')} topRank=${ranked[0].id} covEnd=${covEnd.toFixed(1)} trimmed=${longTrimmed} long=${longCov.length}/${longCovEnd.toFixed(1)} bed=${!!bed} direct=${directOk} manifest=${manifestOk} cuda=${cudaNormalizeOk}`)
 
     // ---- Beta style + effect plan: validator guardrails, rule engine, render wiring ----
     const vp = validateEffectPlan({
@@ -606,6 +615,8 @@ async function runSmokeM7(): Promise<void> {
   const repos = getRepos()
   const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
   try {
+    repos.resetAll()
+    seedDemoForSmoke()
     // pure: frequency map + cursor
     const freqOk =
       scheduler.frequencyToMs('Every 6 hours') === 6 * 3_600_000 &&
@@ -657,7 +668,7 @@ async function runSmokeM7(): Promise<void> {
     const runOk =
       projectIds.length === 5 &&
       repos.queuedJobs().length >= 5 &&
-      cursor === 's1' &&
+      cursor === 's5' &&
       firstProj?.captionPreset === 'Hormozi'
     // second run: nothing new
     const second = await runProfile('me', true)

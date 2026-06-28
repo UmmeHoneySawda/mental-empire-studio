@@ -358,6 +358,14 @@ function installMock(): void {
         createProjectForDownload(id)
         return d
       },
+      cancel: async (id: string) => {
+        const d = downloads.find((x) => x.id === id)
+        if (d) {
+          d.stage = 'Cancelled'
+          d.pct = '0%'
+          d.action = 'Resume'
+        }
+      },
       openFolder: async () => {}
     }),
     compose: ns({
@@ -387,6 +395,7 @@ function installMock(): void {
       },
       setMedia: async (projectId: string, patch: Partial<Project>) => patchProject(projectId, patch),
       setCaptions: async (projectId: string, patch: Partial<Project>) => patchProject(projectId, patch),
+      preview: async (projectId: string) => `/Browser/MentalEmpire_out/${slug(projectId)}-preview.mp4`,
       sendToRender: async (projectId: string) => queueProject(projectId)
     }),
     transcribe: ns({

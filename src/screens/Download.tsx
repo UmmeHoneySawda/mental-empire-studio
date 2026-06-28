@@ -26,6 +26,7 @@ export function Download(): JSX.Element {
   const fetchSource = useData((s) => s.fetchSource)
   const startDownload = useData((s) => s.startDownload)
   const resumeDownload = useData((s) => s.resumeDownload)
+  const cancelDownload = useData((s) => s.cancelDownload)
   const deleteDownload = useData((s) => s.deleteDownload)
   const openProject = useData((s) => s.openProject)
   const setActive = useStore((s) => s.setActive)
@@ -169,7 +170,7 @@ export function Download(): JSX.Element {
                 <div style={{ width: 140 }}><div style={{ height: 6, borderRadius: 4, background: '#1a1e26', overflow: 'hidden' }}><div style={{ width: pct, height: '100%', background: barColor }} /></div></div>
                 <div style={{ width: 100, display: 'flex', justifyContent: 'flex-end', gap: 5 }}>
                   {(() => {
-                    if (currentStage === 'Downloading') return <span style={{ fontSize: 11, color: '#f5b323', fontFamily: 'var(--font-mono)' }}>Downloading…</span>
+                    if (currentStage === 'Downloading') return <span onClick={() => void cancelDownload(d.id)} className="me-btn" style={{ display: 'inline-block', border: '1px solid #4a3540', background: '#1b1217', borderRadius: 7, padding: '6px 10px', fontSize: 11, color: '#ff8a96', cursor: 'pointer' }}>Cancel</span>
                     if (currentStage === 'Downloaded only') return <span onClick={() => window.api?.download?.openFolder?.(d.id)} className="me-btn" style={{ display: 'inline-block', border: '1px solid #262b34', background: '#15181f', borderRadius: 7, padding: '6px 12px', fontSize: 11, color: '#dde0e5', cursor: 'pointer' }}>Open</span>
                     return <span onClick={() => void resumeDownload(d.id)} className="me-btn" style={{ display: 'inline-block', border: '1px solid #262b34', background: '#15181f', borderRadius: 7, padding: '6px 12px', fontSize: 11, color: '#dde0e5', cursor: 'pointer' }}>Resume</span>
                   })()}

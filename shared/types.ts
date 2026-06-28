@@ -588,6 +588,8 @@ export interface NativeApi {
     start(videos: ScrapedVideo[], opts: DownloadOptions): Promise<DownloadedVideo[]>
     /** resume an unfinished download (skips if the file already exists) */
     resume(id: string): Promise<DownloadedVideo>
+    /** stop an active download and leave it resumable */
+    cancel(id: string): Promise<void>
     /** reveal a downloaded file in the OS file manager */
     openFolder(id: string): Promise<void>
     /** remove a download row from history */
@@ -603,6 +605,7 @@ export interface NativeApi {
     setRanges(projectId: string, ranges: { id: string; rangeStart: number; rangeEnd: number }[]): Promise<ProjectImage[]>
     setMedia(projectId: string, patch: Partial<Project>): Promise<Project>
     setCaptions(projectId: string, patch: Partial<Project>): Promise<Project>
+    preview(projectId: string): Promise<string>
     sendToRender(projectId: string): Promise<void>
   }
   transcribe: {

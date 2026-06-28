@@ -4,7 +4,7 @@ import { join } from 'node:path'
 import type { DownloadOptions, DownloadProgress, DownloadedVideo, ScrapedVideo } from '../../shared/types'
 import { getSettings } from '../store/settings'
 import { getRepos } from '../db'
-import { downloadAudio } from '../services/downloader'
+import { cancelDownload, downloadAudio } from '../services/downloader'
 import { channelUrl } from '../services/scraper'
 import { probeDuration } from '../services/audio'
 import { emit, hhmm, pushActivity } from './events'
@@ -53,6 +53,7 @@ async function runOne(video: ScrapedVideo, sourceId: string, channel: string, bi
   try {
     const res = await downloadAudio({
       video,
+      downloadId: id,
       channel,
       outDir: resolveOutputDir(),
       bitrate,
@@ -76,6 +77,12 @@ async function runOne(video: ScrapedVideo, sourceId: string, channel: string, bi
     return repos.download(id) as DownloadedVideo
   } catch (e) {
     const msg = (e as Error).message
+    if (msg === 'download cancelled') {
+      repos.setDownloadProgress(id, { pct: '0%', stage: 'Cancelled', action: 'Resume' })
+      pushActivity({ t: hhmm(), icon: '⊘', color: '#8a909c', text: `Download cancelled: ${video.title.slice(0, 42)}` })
+      emitProgress({ downloadId: id, title: video.title, pct: 0, stage: 'Cancelled', done: true })
+      return repos.download(id) as DownloadedVideo
+    }
     L.error(`download FAILED "${video.title}": ${msg}`)
     repos.setDownloadProgress(id, { stage: 'Failed' })
     // Surface the reason in the in-app activity feed (not just a silent "Failed").
@@ -113,8 +120,15 @@ function openFolder(id: string): void {
 export function registerDownloadIpc(): void {
   ipcMain.handle('download:start', (_e, videos: ScrapedVideo[], opts: DownloadOptions) => startDownloads(videos, opts))
   ipcMain.handle('download:resume', (_e, id: string) => resume(id))
+  ipcMain.handle('download:cancel', (_e, id: string) => {
+    cancelDownload(id)
+    getRepos().setDownloadProgress(id, { pct: '0%', stage: 'Cancelled', action: 'Resume' })
+  })
   ipcMain.handle('download:openFolder', (_e, id: string) => openFolder(id))
-  ipcMain.handle('download:delete', (_e, id: string) => getRepos().deleteDownload(id))
+  ipcMain.handle('download:delete', (_e, id: string) => {
+    cancelDownload(id)
+    getRepos().deleteDownload(id)
+  })
 }
 
 // Exported for the headless M4 smoke harness.

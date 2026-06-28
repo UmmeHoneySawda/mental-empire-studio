@@ -97,6 +97,8 @@ export function Profiles(): JSX.Element {
   const loadProfiles = useData((s) => s.loadProfiles)
   const runProfile = useData((s) => s.runProfile)
   const runningProfileId = useData((s) => s.runningProfileId)
+  const automationEvents = useData((s) => s.automationEvents)
+  const automationErrors = useData((s) => s.automationErrors)
   const activeProfile = useStore((s) => s.profile)
   const setProfile = useStore((s) => s.setProfile)
   const setActive = useStore((s) => s.setActive)
@@ -126,6 +128,8 @@ export function Profiles(): JSX.Element {
           if (editing?.id === p.id) return <ProfileEditor key={p.id} profile={editing} onClose={() => setEditing(null)} />
           const on = p.name === activeProfile
           const running = runningProfileId === p.id
+          const event = automationEvents[p.id]
+          const error = automationErrors[p.id]
           return (
             <div key={p.id} onClick={() => setProfile(p.name)} className="me-card" style={{ border: on ? '1.5px solid var(--accent)' : '1px solid #1d2129', borderRadius: 15, padding: 18, background: on ? 'linear-gradient(165deg,var(--accent-soft),#0f1217)' : '#12151b', cursor: 'pointer' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 15 }}>
@@ -141,6 +145,11 @@ export function Profiles(): JSX.Element {
                   </div>
                 ))}
               </div>
+              {(running || event || error) && (
+                <div style={{ border: `1px solid ${error ? '#4a2530' : '#262b34'}`, background: error ? 'rgba(255,90,110,.08)' : '#0e1116', borderRadius: 9, padding: '8px 10px', marginBottom: 12, fontSize: 11, color: error ? '#ff8a96' : '#aab0bb', lineHeight: 1.35 }}>
+                  {error ?? event?.message ?? 'Starting...'}
+                </div>
+              )}
               <div style={{ display: 'flex', gap: 9 }}>
                 <div onClick={(e) => { e.stopPropagation(); if (!running) void run(p) }} className="me-btn" style={{ flex: 1, textAlign: 'center', background: on ? 'linear-gradient(180deg,var(--accent),var(--accent-deep))' : '#15181f', color: on ? 'var(--accent-ink)' : '#c4cad3', border: on ? 'none' : '1px solid #262b34', borderRadius: 9, padding: 9, fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: running ? 0.6 : 1 }}>{running ? 'Running…' : '▶ Run'}</div>
                 <div onClick={(e) => { e.stopPropagation(); setEditing(p) }} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 9, padding: '9px 14px', fontSize: 12, color: '#c4cad3', cursor: 'pointer' }}>Edit</div>

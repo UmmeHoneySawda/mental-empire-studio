@@ -46,23 +46,39 @@ export async function runProfile(profileId: string, headless = false): Promise<s
 
     emitA({ profileId, profileName: profile.name, phase: 'composing', message: 'Building projects' })
     const projectIds: string[] = []
-    for (const dl of dls) {
-      const proj = createProject(dl.id)
-      repos.updateProject(proj.id, {
-        imageMode: profile.imageMode,
-        poolSize: profile.poolSize,
-        kenBurns: profile.kenBurns,
-        captionPreset: profile.captionPreset,
-        captionAspect: profile.captionAspect,
-        // Inherit the profile's beta-feature defaults (hook/highlight/overlay/zoom/b-roll/style).
-        ...(profile.betaOpts ? { betaOpts: profile.betaOpts } : {})
-      })
-      projectIds.push(proj.id)
-      if (headless) sendToRender(proj.id)
+    const succeeded = new Set<string>()
+    for (let i = 0; i < dls.length; i++) {
+      const dl = dls[i]
+      const sourceVideo = list[i]
+      try {
+        if (!dl.filePath || !dl.durationSec || dl.stage === 'Failed') {
+          throw new Error(dl.stage === 'Failed' ? 'download failed' : 'download did not produce a usable MP3')
+        }
+        const proj = createProject(dl.id)
+        repos.updateProject(proj.id, {
+          imageMode: profile.imageMode,
+          poolSize: profile.poolSize,
+          kenBurns: profile.kenBurns,
+          captionPreset: profile.captionPreset,
+          captionAspect: profile.captionAspect,
+          // Inherit the profile's beta-feature defaults (hook/highlight/overlay/zoom/b-roll/style).
+          ...(profile.betaOpts ? { betaOpts: profile.betaOpts } : {})
+        })
+        projectIds.push(proj.id)
+        succeeded.add(sourceVideo.id)
+        if (headless) sendToRender(proj.id)
+      } catch (e) {
+        const msg = (e as Error).message
+        emitA({ profileId, profileName: profile.name, phase: 'error', message: `${sourceVideo.title}: ${msg}` })
+        pushActivity({ t: hhmm(), icon: '!', color: '#ff5a6e', text: `${profile.name}: skipped ${sourceVideo.title.slice(0, 34)} — ${msg.slice(0, 70)}` })
+      }
     }
+    if (projectIds.length === 0) throw new Error('No videos completed successfully')
 
-    // advance the auto-watch cursor to the newest video seen this run
-    repos.setProfileCursor(profileId, { lastSeenVideoId: scraped[0]?.id, lastRunAt: new Date().toISOString() })
+    // Advance only on a fully successful batch. With YouTube's newest-first cursor,
+    // moving past a partial failure can hide older failed uploads forever.
+    const cursor = succeeded.size === list.length ? list[0]?.id : profile.lastSeenVideoId
+    repos.setProfileCursor(profileId, { lastSeenVideoId: cursor, lastRunAt: new Date().toISOString() })
     pushActivity({ t: hhmm(), icon: '▶', color: '#f5b323', text: `${profile.name}: ${dls.length} ${headless ? 'queued for render' : 'staged for edit'}` })
     await postWebhook('profile_run', { profile: profile.name, count: dls.length, headless })
     if (headless) notifyMessage('Auto-watch', `${profile.name}: ${dls.length} new video(s) queued`)
