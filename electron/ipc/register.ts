@@ -24,7 +24,7 @@ export function registerIpc(): void {
     if (patch.autoScrape !== undefined) schedulerStart()
     return next
   })
-  ipcMain.handle('caps:get', () => probeRenderCapabilities())
+  ipcMain.handle('caps:get', (_e, force?: boolean) => probeRenderCapabilities(!!force))
   // Factory reset: settings back to defaults + wipe all projects/profiles/channels/jobs.
   ipcMain.handle('app:reset', () => {
     const next = resetSettings()

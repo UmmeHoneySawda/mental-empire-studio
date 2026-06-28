@@ -4,12 +4,17 @@ import { ffmpegPath } from '../render'
 
 let cached: RenderCapabilities | null = null
 
+interface ProbeResult {
+  ok: boolean
+  error?: string
+}
+
 function run(args: string[]): string {
   const r = spawnSync(ffmpegPath(), args, { encoding: 'utf8', windowsHide: true })
   return `${r.stdout ?? ''}\n${r.stderr ?? ''}`
 }
 
-function probeEncoder(args: string[]): boolean {
+function probeEncoder(args: string[]): ProbeResult {
   const test = spawnSync(ffmpegPath(), [
     '-hide_banner',
     '-v', 'error',
@@ -21,13 +26,19 @@ function probeEncoder(args: string[]): boolean {
     '-f', 'null',
     '-'
   ], { encoding: 'utf8', windowsHide: true })
-  return test.status === 0
+  return {
+    ok: test.status === 0,
+    error: test.status === 0
+      ? undefined
+      : `${test.stderr ?? ''}${test.stdout ?? ''}`.trim().slice(-500) || `ffmpeg exited ${test.status ?? 'unknown'}`
+  }
 }
 
-function hasNvidiaGpu(): boolean {
-  if (process.platform !== 'win32') return false
+function nvidiaGpuName(): string {
+  if (process.platform !== 'win32') return ''
   const r = spawnSync('nvidia-smi', ['--query-gpu=name', '--format=csv,noheader'], { encoding: 'utf8', windowsHide: true })
-  return r.status === 0 && /nvidia|geforce|rtx|gtx/i.test(`${r.stdout ?? ''}${r.stderr ?? ''}`)
+  const out = `${r.stdout ?? ''}`.trim()
+  return r.status === 0 && /nvidia|geforce|rtx|gtx/i.test(`${out}${r.stderr ?? ''}`) ? out.split(/\r?\n/)[0] ?? '' : ''
 }
 
 export function probeRenderCapabilities(force = false): RenderCapabilities {
@@ -46,10 +57,14 @@ export function probeRenderCapabilities(force = false): RenderCapabilities {
   const hasNvencListed = /\bh264_nvenc\b/.test(encoders)
   const hasQsvListed = /\bh264_qsv\b/.test(encoders)
   const hasAmfListed = /\bh264_amf\b/.test(encoders)
-  const hasNvenc = hasNvencListed && probeEncoder(['-c:v', 'h264_nvenc', '-preset', 'p5', '-tune', 'hq', '-rc', 'vbr', '-cq', '28', '-b:v', '0'])
-  const hasQsv = hasQsvListed && probeEncoder(['-c:v', 'h264_qsv', '-preset', 'medium', '-global_quality', '28'])
-  const hasAmf = hasAmfListed && probeEncoder(['-c:v', 'h264_amf', '-quality', 'quality', '-rc', 'cqp', '-qp_i', '28', '-qp_p', '28'])
-  const nvidiaGpu = hasNvenc || hasNvidiaGpu()
+  const nvencProbe = hasNvencListed ? probeEncoder(['-c:v', 'h264_nvenc', '-preset', 'p5', '-tune', 'hq', '-rc', 'vbr', '-cq', '28', '-b:v', '0']) : { ok: false }
+  const qsvProbe = hasQsvListed ? probeEncoder(['-c:v', 'h264_qsv', '-preset', 'medium', '-global_quality', '28']) : { ok: false }
+  const amfProbe = hasAmfListed ? probeEncoder(['-c:v', 'h264_amf', '-quality', 'quality', '-rc', 'cqp', '-qp_i', '28', '-qp_p', '28']) : { ok: false }
+  const hasNvenc = hasNvencListed && nvencProbe.ok
+  const hasQsv = hasQsvListed && qsvProbe.ok
+  const hasAmf = hasAmfListed && amfProbe.ok
+  const nvidiaName = nvidiaGpuName()
+  const nvidiaGpu = hasNvenc || !!nvidiaName
 
   cached = {
     hasNvenc,
@@ -57,7 +72,15 @@ export function probeRenderCapabilities(force = false): RenderCapabilities {
     hasAmf,
     gpuVendor: nvidiaGpu ? 'nvidia' : hasQsv ? 'intel' : hasAmf ? 'amd' : 'unknown',
     ffmpegHasLibass: /\bass\b/.test(filters),
-    ffmpegHasCuda: /cuda/i.test(hwaccels) || /scale_cuda|hwupload_cuda/.test(filters)
+    ffmpegHasCuda: /cuda/i.test(hwaccels) || /scale_cuda|hwupload_cuda/.test(filters),
+    ffmpegPath: ffmpegPath(),
+    hasNvencListed,
+    hasQsvListed,
+    hasAmfListed,
+    nvencProbeError: hasNvencListed && !nvencProbe.ok ? nvencProbe.error : undefined,
+    qsvProbeError: hasQsvListed && !qsvProbe.ok ? qsvProbe.error : undefined,
+    amfProbeError: hasAmfListed && !amfProbe.ok ? amfProbe.error : undefined,
+    nvidiaGpuName: nvidiaName
   }
   return cached
 }

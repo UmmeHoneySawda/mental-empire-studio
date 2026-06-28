@@ -502,6 +502,14 @@ export interface RenderCapabilities {
   gpuVendor: 'nvidia' | 'intel' | 'amd' | 'unknown'
   ffmpegHasLibass: boolean
   ffmpegHasCuda: boolean
+  ffmpegPath?: string
+  hasNvencListed?: boolean
+  hasQsvListed?: boolean
+  hasAmfListed?: boolean
+  nvencProbeError?: string
+  qsvProbeError?: string
+  amfProbeError?: string
+  nvidiaGpuName?: string
 }
 
 /** Canonical defaults — shared by the main-process store and the renderer's initial state. */
@@ -547,7 +555,7 @@ export interface NativeApi {
     softReset(): Promise<void>
   }
   caps: {
-    get(): Promise<RenderCapabilities>
+    get(force?: boolean): Promise<RenderCapabilities>
   }
   effects: {
     /** beta: generate a validated effect-plan JSON for a project via Groq */

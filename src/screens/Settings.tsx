@@ -60,10 +60,22 @@ export function Settings(): JSX.Element {
   const activity = useData((s) => s.activity)
   const { quality, autoScrape, background } = settings
   const [caps, setCaps] = useState<RenderCapabilities | null>(null)
+  const [checkingCaps, setCheckingCaps] = useState(true)
 
   useEffect(() => {
-    void window.api?.caps?.get?.().then(setCaps).catch(() => setCaps(null))
+    void refreshCaps()
   }, [])
+
+  const refreshCaps = async (force = false): Promise<void> => {
+    setCheckingCaps(true)
+    try {
+      setCaps(await window.api?.caps?.get?.(force) ?? null)
+    } catch {
+      setCaps(null)
+    } finally {
+      setCheckingCaps(false)
+    }
+  }
 
   const onReset = (): void => {
     const ok = window.confirm(
@@ -84,11 +96,27 @@ export function Settings(): JSX.Element {
   const qualities: AppSettings['quality'][] = ['720p', '1080p', '1440p']
   const encoders: Array<{ value: AppSettings['encoder']; label: string; enabled: boolean; note: string }> = [
     { value: 'cpu', label: 'CPU', enabled: true, note: 'Works on any machine.' },
-    { value: 'nvenc', label: 'NVENC', enabled: caps?.hasNvenc ?? false, note: caps?.hasNvenc ? 'NVIDIA NVENC encode available. Some filters and captions may still use CPU.' : caps?.gpuVendor === 'nvidia' ? 'NVIDIA GPU detected, but the NVENC encode probe failed; renders fall back to CPU.' : 'No working NVIDIA NVENC encoder detected.' },
+    { value: 'nvenc', label: 'NVENC', enabled: caps?.hasNvenc ?? false, note: caps?.hasNvenc ? `NVIDIA NVENC encode available${caps.ffmpegHasCuda ? ' · CUDA scale available' : ''}.` : caps?.gpuVendor === 'nvidia' ? `NVIDIA GPU${caps.nvidiaGpuName ? ` (${caps.nvidiaGpuName})` : ''} detected, but the NVENC self-test failed. Click Recheck after closing other render apps or updating the NVIDIA driver.` : 'No working NVIDIA NVENC encoder detected.' },
     { value: 'qsv', label: 'QSV', enabled: caps?.hasQsv ?? false, note: caps?.hasQsv ? 'Intel Quick Sync encode probe passed.' : 'No working Intel QSV encoder detected.' },
     { value: 'amf', label: 'AMF', enabled: caps?.hasAmf ?? false, note: caps?.hasAmf ? 'AMD AMF encode probe passed.' : 'No working AMD AMF encoder detected.' }
   ]
   const selectedEncoder = encoders.find((e) => e.value === (settings.encoder ?? 'cpu')) ?? encoders[0]
+  const capsDetail = caps
+    ? [
+      caps.ffmpegPath ? `ffmpeg: ${caps.ffmpegPath}` : '',
+      caps.gpuVendor !== 'unknown' ? `GPU: ${caps.gpuVendor}${caps.nvidiaGpuName ? ` (${caps.nvidiaGpuName})` : ''}` : 'GPU: not detected',
+      `NVENC listed: ${caps.hasNvencListed ? 'yes' : 'no'}`,
+      `CUDA filters: ${caps.ffmpegHasCuda ? 'yes' : 'no'}`,
+      !caps.hasNvenc && caps.nvencProbeError ? `NVENC self-test: ${caps.nvencProbeError}` : ''
+    ].filter(Boolean).join(' · ')
+    : ''
+  const chooseEncoder = (enc: (typeof encoders)[number]): void => {
+    if (!enc.enabled && enc.value !== 'cpu') {
+      void refreshCaps(true)
+      return
+    }
+    updateSettings({ encoder: enc.value })
+  }
 
   return (
     <ScreenPad>
@@ -113,7 +141,15 @@ export function Settings(): JSX.Element {
             <div style={{ display: 'flex', gap: 26, flexWrap: 'wrap' }}>
               <div><div style={{ fontSize: 12, color: '#8a909c', marginBottom: 7 }}>Parallel renders</div><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><input type="number" min={1} max={8} value={settings.concurrency} onChange={(e) => updateSettings({ concurrency: Math.max(1, Number(e.target.value)) })} style={{ width: 56, border: '1px solid #23272f', borderRadius: 8, padding: '8px 12px', fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 15, color: '#eef0f3', background: '#0e1116', outline: 'none' }} /><span style={{ fontSize: 11, color: '#6a7180' }}>at a time</span></div></div>
               <div><div style={{ fontSize: 12, color: '#8a909c', marginBottom: 7 }}>Quality</div><div style={{ display: 'flex', border: '1px solid #23272f', borderRadius: 8, overflow: 'hidden', fontSize: 11.5 }}>{qualities.map((q) => { const on = q === quality; return <div key={q} onClick={() => updateSettings({ quality: q })} style={{ padding: '8px 12px', cursor: 'pointer', background: on ? 'var(--accent)' : undefined, color: on ? 'var(--accent-ink)' : '#8a909c', fontWeight: on ? 600 : undefined }}>{q}</div> })}</div></div>
-              <div><div style={{ fontSize: 12, color: '#8a909c', marginBottom: 7 }}>Encoder</div><div style={{ display: 'flex', border: '1px solid #23272f', borderRadius: 8, overflow: 'hidden', fontSize: 11.5 }}>{encoders.map((enc) => { const on = (settings.encoder ?? 'cpu') === enc.value; return <div key={enc.value} title={enc.note} onClick={() => updateSettings({ encoder: enc.value })} style={{ padding: '8px 12px', cursor: 'pointer', background: on ? 'var(--accent)' : undefined, color: on ? 'var(--accent-ink)' : enc.enabled ? '#8a909c' : '#555b66', fontWeight: on ? 600 : undefined }}>{enc.label}</div> })}</div><div style={{ fontSize: 10, color: selectedEncoder.enabled || selectedEncoder.value === 'cpu' ? '#6a7180' : '#f5b323', marginTop: 5 }}>{caps ? selectedEncoder.note : 'Checking ffmpeg GPU capabilities...'}</div></div>
+              <div style={{ minWidth: 280 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 7 }}>
+                  <div style={{ fontSize: 12, color: '#8a909c' }}>Encoder</div>
+                  <button type="button" onClick={() => void refreshCaps(true)} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 7, padding: '3px 7px', fontSize: 10, color: '#8a909c', cursor: 'pointer' }}>{checkingCaps ? 'Checking...' : 'Recheck'}</button>
+                </div>
+                <div style={{ display: 'flex', border: '1px solid #23272f', borderRadius: 8, overflow: 'hidden', fontSize: 11.5 }}>{encoders.map((enc) => { const on = (settings.encoder ?? 'cpu') === enc.value; return <div key={enc.value} title={enc.note} onClick={() => chooseEncoder(enc)} style={{ padding: '8px 12px', cursor: enc.enabled || enc.value === 'cpu' ? 'pointer' : 'help', background: on ? 'var(--accent)' : undefined, color: on ? 'var(--accent-ink)' : enc.enabled ? '#8a909c' : '#555b66', fontWeight: on ? 600 : undefined }}>{enc.label}</div> })}</div>
+                <div style={{ fontSize: 10, color: selectedEncoder.enabled || selectedEncoder.value === 'cpu' ? '#6a7180' : '#f5b323', marginTop: 5 }}>{checkingCaps ? 'Checking ffmpeg GPU capabilities...' : caps ? selectedEncoder.note : 'Could not check ffmpeg GPU capabilities.'}</div>
+                {capsDetail && <div title={capsDetail} style={{ marginTop: 4, maxWidth: 420, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 9.5, color: '#5b616f', fontFamily: 'var(--font-mono)' }}>{capsDetail}</div>}
+              </div>
             </div>
           </Card>
 

@@ -44,7 +44,7 @@ const api: NativeApi = {
   },
 
   caps: {
-    get: () => ipcRenderer.invoke('caps:get')
+    get: (force?: boolean) => ipcRenderer.invoke('caps:get', !!force)
   },
 
   effects: {
