@@ -9,8 +9,8 @@ import { getRepos } from '../db'
 import { getSettings } from '../store/settings'
 import { formatOutputName, probeDuration } from './audio'
 import { buildAss } from './captions'
-import { runRender, dimensions, consumeCancelIntent } from './render'
-import { buildBrollBed, buildBrollSegments, type BrollSegment } from './broll'
+import { runRender, dimensions, consumeCancelIntent, hasCancelIntent } from './render'
+import { buildBrollManifest } from './broll'
 import { probeRenderCapabilities } from './engine/caps'
 import { selectEncoder } from './engine/encoder'
 import type { FfmpegProgress } from './engine/progress'
@@ -76,6 +76,8 @@ export async function runJob(job: RenderJob): Promise<void> {
   const settings = getSettings()
   const caps = probeRenderCapabilities()
   const enc = selectEncoder(settings, caps)
+  const filterDevice: RenderProgress['filterDevice'] = 'cpu'
+  const encoderDetail = enc.device === 'gpu' ? `${enc.label} encode · CPU filters` : `${enc.label} encode`
   let renderLogPath = ''
   const emitStage = (stage: RenderStage, localPct: number, stageDetail?: string, ffmpeg?: FfmpegProgress): void => {
     const pct = stagePct(stage, localPct)
@@ -87,10 +89,12 @@ export async function runJob(job: RenderJob): Promise<void> {
       stageDetail,
       done: false,
       etaSec: ffmpeg?.etaSec,
+      etaState: ffmpeg?.etaState,
       speed: ffmpeg?.speed,
       fps: ffmpeg?.fps,
       bitrate: ffmpeg?.bitrate,
       device: enc.device,
+      filterDevice,
       encoder: enc.label
     })
     if (renderLogPath) appendFileSync(renderLogPath, `[stage] ${stage} ${pct}% ${stageDetail ?? ''}${ffmpeg?.speed ? ` speed=${ffmpeg.speed}` : ''}${ffmpeg?.etaSec != null ? ` eta=${ffmpeg.etaSec}` : ''}\n`)
@@ -110,7 +114,7 @@ export async function runJob(job: RenderJob): Promise<void> {
   }
 
   repos.setRenderStatus(job.id, { status: 'rendering', pct: 0 })
-  emitStage('preparing', 0, `Checking audio duration · ${enc.label}`)
+  emitStage('preparing', 0, `Checking audio duration · ${encoderDetail}`)
 
   const probedDuration = await probeDuration(project.mp3Path).catch(() => project.durationSec)
   const trueDuration = probedDuration > 0 ? probedDuration : project.durationSec
@@ -126,7 +130,7 @@ export async function runJob(job: RenderJob): Promise<void> {
     : project
   if (renderProject !== project) repos.updateProject(project.id, { durationSec: trueDuration })
   images = alignImagesToDuration(images, renderProject.durationSec)
-  emitStage('preparing', 100, `Audio duration ${Math.round(renderProject.durationSec)}s · ${enc.label}`)
+  emitStage('preparing', 100, `Audio duration ${Math.round(renderProject.durationSec)}s · ${encoderDetail}`)
 
   const dir = outputDir()
   mkdirSync(dir, { recursive: true })
@@ -157,6 +161,7 @@ export async function runJob(job: RenderJob): Promise<void> {
   const { ass } = buildAss(words, {
     preset: renderProject.captionPreset,
     aspect: renderProject.captionAspect,
+    position: renderProject.captionPosition ?? 'bottom',
     keywords: renderProject.keywords || !!beta?.autoHighlight,
     hook: hookText ? { text: hookText, untilSec: 2.6 } : undefined,
     styleLead,
@@ -165,53 +170,60 @@ export async function runJob(job: RenderJob): Promise<void> {
   writeFileSync(assPath, ass)
   emitStage('captioning', 100, 'Caption file ready')
 
-  // Beta auto-B-roll: assemble a themed stock-footage bed; fall back to stills on failure.
-  let videoBedPath: string | undefined
-  let brollSegments: BrollSegment[] | undefined
-  let brollTransition = transition
+  // Beta auto-B-roll v2: normalize selected stock segments to a resumable concat
+  // manifest, then feed that manifest into the final render as one continuous input.
+  let brollManifestPath: string | undefined
   if (beta?.broll.enabled) {
-    try {
+    const hasStockSource = !!(settings.beta.pexelsKey || settings.beta.pixabayKey || settings.beta.coverrKey || process.env['ME_BROLL_LOCAL'] || process.env['ME_BROLL_FIXTURE'])
+    if (!hasStockSource) {
+      const msg = 'Stock B-roll unavailable: add a Pexels, Pixabay, or Coverr key in Settings'
+      if (renderLogPath) appendFileSync(renderLogPath, `[broll:warn] ${msg}\n`)
+      emitStage('fetching-broll', 100, 'B-roll unavailable: missing stock API key')
+      emitStage('assembling', 100, 'Using image track')
+      pushActivity({ t: hhmm(), icon: '!', color: '#f5b323', text: `B-roll skipped: add a stock-footage API key for ${project.title.slice(0, 36)}` })
+    } else try {
       const dims = dimensions(settings.quality, renderProject.captionAspect)
-      const maxSegments = renderProject.durationSec > 600 ? 32 : 40
-      const planned = await buildBrollSegments({
+      const maxSegments = renderProject.durationSec > 600 ? 36 : 48
+      const planned = await buildBrollManifest({
         settings,
+        caps,
         words,
         durationSec: renderProject.durationSec,
         density: beta.broll.density,
         poolSize: beta.broll.poolSize,
         dims,
-        transition,
+        fps: 30,
+        jobId: job.id,
         maxSegments,
-        onProgress: (phase, done, total) => {
-          emitStage('fetching-broll', total > 0 ? (done / total) * 100 : 0, `${phase === 'download' ? 'Downloading' : 'Fetching'} B-roll ${done}/${total}`)
+        shouldCancel: () => hasCancelIntent(job.id),
+        onProgress: (phase, done, total, ffmpeg) => {
+          if (phase === 'normalize') {
+            const pct = total > 0 ? (done / total) * 100 : 0
+            emitStage('assembling', ffmpeg?.pct ?? pct, `Normalizing B-roll ${Math.min(total, Math.floor(done) + 1)}/${total}`, ffmpeg)
+          } else if (phase === 'manifest') {
+            emitStage('assembling', 100, 'B-roll manifest ready')
+          } else {
+            emitStage('fetching-broll', total > 0 ? (done / total) * 100 : 0, `${phase === 'download' ? 'Downloading' : 'Fetching'} B-roll ${done}/${total}`)
+          }
         }
       })
       if (planned?.segments.length) {
-        if (planned.segments.length <= 45) {
-          brollSegments = planned.segments
-          brollTransition = planned.segments.length > 24 ? undefined : transition
-          emitStage('assembling', 100, `Using single-pass B-roll (${planned.segments.length} clips${brollTransition ? ', crossfades' : ', hard cuts'})`)
-        } else {
-          const bed = await buildBrollBed({
-            settings,
-            caps,
-            words,
-            durationSec: renderProject.durationSec,
-            density: beta.broll.density,
-            poolSize: beta.broll.poolSize,
-            dims,
-            fps: 30,
-            maxSegments,
-            transition: undefined,
-            onProgress: (phase, done, total, ffmpeg) => {
-              if (phase === 'assemble') emitStage('assembling', ffmpeg?.pct ?? done, `Encoding B-roll fallback ${Math.round(ffmpeg?.pct ?? done)}%`, ffmpeg)
-            }
-          })
-          videoBedPath = bed ?? undefined
-        }
+        brollManifestPath = planned.manifestPath
+        if (renderLogPath) appendFileSync(renderLogPath, `[broll]\nmanifest=${planned.manifestPath}\njson=${planned.jsonPath}\nsegments=${planned.segments.length}\n`)
+        emitStage('assembling', 100, `Using B-roll manifest (${planned.segments.length} clips)`)
+      } else {
+        const msg = 'No downloadable B-roll clips found'
+        if (renderLogPath) appendFileSync(renderLogPath, `[broll:warn] ${msg}\n`)
+        emitStage('fetching-broll', 100, 'B-roll unavailable: no clips found')
+        emitStage('assembling', 100, 'Using image track')
+        pushActivity({ t: hhmm(), icon: '!', color: '#f5b323', text: `B-roll skipped: no stock clips found for ${project.title.slice(0, 36)}` })
       }
-    } catch {
-      /* b-roll unavailable (no keys / network) → render with the existing image track */
+    } catch (e) {
+      const msg = (e as Error).message
+      if (renderLogPath) appendFileSync(renderLogPath, `[broll:warn] ${msg}\n`)
+      emitStage('fetching-broll', 100, 'B-roll unavailable; using image track')
+      emitStage('assembling', 100, 'Using image track')
+      pushActivity({ t: hhmm(), icon: '!', color: '#f5b323', text: `B-roll skipped: ${msg.slice(0, 90)}` })
     }
   } else {
     emitStage('fetching-broll', 100, 'B-roll disabled')
@@ -219,13 +231,14 @@ export async function runJob(job: RenderJob): Promise<void> {
   }
 
   try {
-    await runRender({ project: renderProject, images, assPath, outPath, settings, caps, videoBedPath, brollSegments, transition: brollSegments ? brollTransition : transition, plan, sfxPath, jobId: job.id, logPath }, (p) => {
-      emitStage('encoding', p.pct, `Encoding with ${enc.label}`, p)
+    if (hasCancelIntent(job.id)) throw new Error('render cancelled')
+    await runRender({ project: renderProject, images, assPath, outPath, settings, caps, brollManifestPath, transition, plan, sfxPath, jobId: job.id, logPath }, (p) => {
+      emitStage('encoding', p.pct, `Encoding with ${encoderDetail}`, p)
     })
     emitStage('finalizing', 90, 'Writing output')
     repos.setRenderStatus(job.id, { status: 'done', pct: 100, outputPath: outPath })
     repos.updateProject(job.projectId, { stage: 'rendered' })
-    emitR({ jobId: job.id, pct: 100, stage: 'done', stageDetail: 'Done', done: true, outputPath: outPath, device: enc.device, encoder: enc.label, etaSec: 0 })
+    emitR({ jobId: job.id, pct: 100, stage: 'done', stageDetail: 'Done', done: true, outputPath: outPath, device: enc.device, filterDevice, encoder: enc.label, etaSec: 0, etaState: 'stable' })
     pushActivity({ t: hhmm(), icon: '✓', color: '#36c98e', text: `Rendered ${project.title} → ${base}.mp4` })
   } catch (e) {
     // A ffmpeg failure caused by the user cancelling/deleting the job isn't an error:

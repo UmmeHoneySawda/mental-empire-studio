@@ -183,6 +183,7 @@ function installMock(): void {
       captionFont: 'Anton',
       captionAnim: 'Pop-in',
       captionAspect: '16:9',
+      captionPosition: 'bottom',
       emphasis: true,
       keywords: true,
       punchZoom: true,
@@ -441,7 +442,9 @@ function installMock(): void {
       cancel: async (jobId: string) => {
         const row = renderRows.find((r) => r.job.id === jobId)
         if (row) row.job.status = 'error'
-      }
+      },
+      openFile: async () => {},
+      openFolder: async () => {}
     }),
     effects: ns({
       generate: async () => JSON.stringify({

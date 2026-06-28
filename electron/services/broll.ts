@@ -6,7 +6,8 @@ import type { AppSettings, BrollDensity, TranscriptWord } from '../../shared/typ
 import { ffmpegPath, ffprobePath, videoCodecArgs } from './render'
 import type { RenderCapabilities } from '../../shared/types'
 import { FALLBACK_CAPS } from './engine/encoder'
-import { parseFfmpegProgressBlock, type FfmpegProgress } from './engine/progress'
+import { createProgressSmoother, parseFfmpegProgressBlock, type FfmpegProgress } from './engine/progress'
+import { logger } from './logger'
 
 // Auto B-roll: themed stock-footage pool driven by the transcript. We pick the
 // video's dominant themes, fetch a small pool of clips (Pexels → Pixabay → Coverr),
@@ -17,6 +18,7 @@ import { parseFfmpegProgressBlock, type FfmpegProgress } from './engine/progress
 
 const STOPWORDS = new Set(['the', 'a', 'an', 'and', 'or', 'but', 'of', 'to', 'in', 'on', 'is', 'are', 'was', 'it', 'you', 'your', 'i', 'we', 'they', 'he', 'she', 'for', 'with', 'as', 'at', 'by', 'be', 'this', 'that', 'have', 'has', 'will', 'would', 'can', 'just', 'not', 'so', 'do', 'if', 'how', 'what', 'when', 'all', 'one', 'about', 'from', 'they', 'their', 'them'])
 const DEFAULT_MAX_SEGMENTS = 40
+const BROLL_LOG = logger.scope('broll')
 
 export interface BrollCandidate {
   provider: 'pexels' | 'pixabay' | 'coverr'
@@ -36,10 +38,19 @@ export interface BrollSegment {
   end: number
   srcStart: number
 }
+export interface BrollManifestSegment extends BrollSegment {
+  normalizedPath: string
+}
 
 export interface BrollPlanResult {
   clips: BrollClip[]
   segments: BrollSegment[]
+}
+export interface BrollManifestResult {
+  clips: BrollClip[]
+  segments: BrollManifestSegment[]
+  manifestPath: string
+  jsonPath: string
 }
 
 // ---------- pure core (offline, unit-tested) ----------
@@ -115,8 +126,15 @@ export function planCoverage(
 
 async function getJson(url: string, headers: Record<string, string> = {}): Promise<unknown> {
   const res = await fetch(url, { headers })
-  if (!res.ok) throw new Error(`${url} → HTTP ${res.status}`)
+  if (!res.ok) throw new Error(`${redactUrl(url)} -> HTTP ${res.status}`)
   return res.json()
+}
+
+function redactUrl(url: string): string {
+  return url
+    .replace(/([?&]key=)[^&]+/gi, '$1[redacted]')
+    .replace(/([?&]api_key=)[^&]+/gi, '$1[redacted]')
+    .replace(/([?&]token=)[^&]+/gi, '$1[redacted]')
 }
 
 async function searchPexels(key: string, q: string, target: { w: number; h: number }): Promise<BrollCandidate[]> {
@@ -209,8 +227,8 @@ export async function fetchPool(settings: AppSettings, themes: string[], target:
           seen.add(`${c.provider}:${c.id}`)
           out.push(c)
         }
-      } catch {
-        /* provider/query failed → try the next */
+      } catch (e) {
+        BROLL_LOG.warn(`provider search failed query="${q}": ${(e as Error).message}`)
       }
     }
   }
@@ -223,11 +241,19 @@ function brollDir(): string {
   return d
 }
 
+function safeId(id: string): string {
+  return (id.replace(/[^a-z0-9_.-]/gi, '_').trim() || 'broll').slice(0, 120)
+}
+
+function concatPath(p: string): string {
+  return p.replace(/\\/g, '/').replace(/'/g, "\\'")
+}
+
 async function downloadOne(c: BrollCandidate, dir: string): Promise<string> {
   const path = join(dir, `${c.provider}-${c.id}.mp4`)
   if (existsSync(path)) return path // cache hit
   const res = await fetch(c.url)
-  if (!res.ok || !res.body) throw new Error(`download ${c.url} → ${res.status}`)
+  if (!res.ok || !res.body) throw new Error(`download ${redactUrl(c.url)} -> ${res.status}`)
   await new Promise<void>((resolve, reject) => {
     const file = createWriteStream(path)
     // @ts-expect-error - web stream → node stream is supported at runtime
@@ -265,14 +291,176 @@ export async function downloadPool(cands: BrollCandidate[], poolSize: number, on
       }
       out.push({ ...c, path })
       onProgress?.(out.length, total)
-    } catch {
-      /* failed → fall through to the next candidate */
+    } catch (e) {
+      BROLL_LOG.warn(`clip download failed ${c.provider}:${c.id}: ${(e as Error).message}`)
     }
   }
   return out
 }
 
 const BED_CF = 0.3 // bed crossfade duration (also the planCoverage tail reserve)
+
+function normalizeArgs(
+  segment: BrollSegment,
+  outPath: string,
+  dims: { w: number; h: number },
+  fps: number,
+  settings: AppSettings,
+  caps: RenderCapabilities
+): string[] {
+  const { w, h } = dims
+  const dur = Math.max(0.5, segment.end - segment.start)
+  const crf = settings.quality === '1440p' ? '20' : settings.quality === '720p' ? '23' : '21'
+  return [
+    '-y',
+    '-progress', 'pipe:1',
+    '-nostats',
+    '-stream_loop', '-1',
+    '-ss', segment.srcStart.toFixed(2),
+    '-t', dur.toFixed(2),
+    '-i', segment.path,
+    '-an',
+    '-vf', `scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1,fps=${fps},format=yuv420p`,
+    ...videoCodecArgs(settings, crf, caps),
+    '-r', String(fps),
+    '-movflags', '+faststart',
+    outPath
+  ]
+}
+
+function spawnNormalize(
+  args: string[],
+  durationSec: number,
+  opts: { shouldCancel?: () => boolean; onProgress?: (p: FfmpegProgress) => void }
+): Promise<void> {
+  return new Promise((resolve, reject) => {
+    const child = spawn(ffmpegPath(), args, { windowsHide: true })
+    const smooth = createProgressSmoother(durationSec)
+    let err = ''
+    let settled = false
+    let cancelTimer: ReturnType<typeof setInterval> | undefined
+    const done = (e?: Error): void => {
+      if (settled) return
+      settled = true
+      if (cancelTimer) clearInterval(cancelTimer)
+      if (e) reject(e)
+      else resolve()
+    }
+    cancelTimer = setInterval(() => {
+      if (!opts.shouldCancel?.()) return
+      child.kill('SIGKILL')
+      done(new Error('render cancelled'))
+    }, 250)
+
+    child.stdout.on('data', (d: Buffer) => {
+      const p = parseFfmpegProgressBlock(d.toString(), durationSec)
+      if (p) opts.onProgress?.(smooth(p))
+    })
+    child.stderr.on('data', (d: Buffer) => (err += d))
+    child.on('error', (e) => done(e))
+    child.on('close', (code) => {
+      if (settled) return
+      if (code === 0) done()
+      else done(new Error(`broll normalize ffmpeg ${code}: ${err.slice(-240)}`))
+    })
+  })
+}
+
+async function normalizeSegment(
+  segment: BrollSegment,
+  index: number,
+  dir: string,
+  opts: {
+    dims: { w: number; h: number }
+    fps: number
+    settings: AppSettings
+    caps: RenderCapabilities
+    shouldCancel?: () => boolean
+    onProgress?: (p: FfmpegProgress) => void
+  }
+): Promise<BrollManifestSegment> {
+  const outPath = join(dir, `seg-${String(index).padStart(3, '0')}.mp4`)
+  const durationSec = Math.max(0.5, segment.end - segment.start)
+  if (existsSync(outPath) && probeDurationSec(outPath) >= durationSec - 0.25) {
+    opts.onProgress?.({ outTimeSec: durationSec, pct: 100, speed: 1, etaSec: 0, etaState: 'stable' })
+    return { ...segment, normalizedPath: outPath }
+  }
+
+  try {
+    await spawnNormalize(normalizeArgs(segment, outPath, opts.dims, opts.fps, opts.settings, opts.caps), durationSec, opts)
+  } catch (e) {
+    if (opts.shouldCancel?.() || (opts.settings.encoder ?? 'cpu') === 'cpu') throw e
+    BROLL_LOG.warn(`normalize hardware encode failed; retrying CPU for segment ${index}: ${(e as Error).message}`)
+    const fallbackSettings = { ...opts.settings, encoder: 'cpu' as const }
+    await spawnNormalize(normalizeArgs(segment, outPath, opts.dims, opts.fps, fallbackSettings, FALLBACK_CAPS), durationSec, opts)
+  }
+  return { ...segment, normalizedPath: outPath }
+}
+
+export async function buildBrollManifest(opts: {
+  settings: AppSettings
+  caps?: RenderCapabilities
+  words: TranscriptWord[]
+  durationSec: number
+  density: BrollDensity
+  poolSize: number
+  dims: { w: number; h: number }
+  fps: number
+  jobId?: string
+  maxSegments?: number
+  shouldCancel?: () => boolean
+  onProgress?: (phase: 'fetch' | 'download' | 'normalize' | 'manifest', done: number, total: number, ffmpeg?: FfmpegProgress) => void
+}): Promise<BrollManifestResult | null> {
+  const planned = await buildBrollSegments({
+    settings: opts.settings,
+    words: opts.words,
+    durationSec: opts.durationSec,
+    density: opts.density,
+    poolSize: opts.poolSize,
+    dims: opts.dims,
+    maxSegments: opts.maxSegments,
+    onProgress: (phase, done, total) => opts.onProgress?.(phase, done, total)
+  })
+  if (!planned || planned.segments.length === 0) return null
+
+  const dir = join(brollDir(), safeId(opts.jobId ?? `manifest-${Math.round(opts.durationSec)}-${opts.density}`))
+  mkdirSync(dir, { recursive: true })
+  const total = planned.segments.length
+  const normalized: BrollManifestSegment[] = []
+  for (let i = 0; i < planned.segments.length; i++) {
+    if (opts.shouldCancel?.()) throw new Error('render cancelled')
+    const seg = await normalizeSegment(planned.segments[i], i, dir, {
+      dims: opts.dims,
+      fps: opts.fps,
+      settings: opts.settings,
+      caps: opts.caps ?? FALLBACK_CAPS,
+      shouldCancel: opts.shouldCancel,
+      onProgress: (p) => opts.onProgress?.('normalize', i + (p.pct / 100), total, p)
+    })
+    normalized.push(seg)
+    opts.onProgress?.('normalize', i + 1, total)
+  }
+
+  const manifestPath = join(dir, 'concat.txt')
+  const jsonPath = join(dir, 'manifest.json')
+  const concat = normalized.map((s) => {
+    const durationSec = Math.max(0.5, s.end - s.start)
+    return `file '${concatPath(s.normalizedPath)}'\nduration ${durationSec.toFixed(3)}`
+  }).join('\n') + '\n'
+  writeFileSync(manifestPath, concat)
+  writeFileSync(jsonPath, JSON.stringify({
+    version: 2,
+    createdAt: new Date().toISOString(),
+    durationSec: opts.durationSec,
+    density: opts.density,
+    fps: opts.fps,
+    dims: opts.dims,
+    clips: planned.clips.map((c) => ({ provider: c.provider, id: c.id, path: c.path, durationSec: c.durationSec })),
+    segments: normalized
+  }, null, 2))
+  opts.onProgress?.('manifest', total, total)
+  return { clips: planned.clips, segments: normalized, manifestPath, jsonPath }
+}
 
 /** Assemble the planned segments into one bed.mp4 (scaled to WxH). With a transition,
  *  consecutive clips crossfade; otherwise they hard-cut (concat). Dry-run seam
@@ -328,10 +516,11 @@ export async function assembleBed(
   const args = ['-y', '-progress', 'pipe:1', '-nostats', ...inputs, '-filter_complex', parts.join(';'), '-map', mapLabel, '-t', total.toFixed(2), ...videoCodecArgs(settings, crf, caps), '-r', String(fps), bed]
   await new Promise<void>((resolve, reject) => {
     const child = spawn(ffmpegPath(), args, { windowsHide: true })
+    const smooth = createProgressSmoother(total)
     let err = ''
     child.stdout.on('data', (d: Buffer) => {
       const p = parseFfmpegProgressBlock(d.toString(), total)
-      if (p) opts.onProgress?.(p)
+      if (p) opts.onProgress?.(smooth(p))
     })
     child.stderr.on('data', (d: Buffer) => (err += d))
     child.on('error', reject)

@@ -67,8 +67,11 @@ export function RenderQueue(): JSX.Element {
   const rendering = useData((s) => s.rendering)
   const loadRenderJobs = useData((s) => s.loadRenderJobs)
   const renderAll = useData((s) => s.renderAll)
+  const cancelJob = useData((s) => s.cancelJob)
   const deleteJob = useData((s) => s.deleteJob)
   const requeueJob = useData((s) => s.requeueJob)
+  const openRenderFile = useData((s) => s.openRenderFile)
+  const openRenderFolder = useData((s) => s.openRenderFolder)
   const settings = useStore((s) => s.settings)
   const updateSettings = useStore((s) => s.updateSettings)
   const setActive = useStore((s) => s.setActive)
@@ -104,7 +107,7 @@ export function RenderQueue(): JSX.Element {
 
       <div style={{ border: '1px solid #1d2129', borderRadius: 14, overflow: 'hidden', background: '#12151b', marginBottom: 20 }}>
         <div style={{ display: 'flex', padding: '12px 18px', borderBottom: '1px solid #1d2129', fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '.6px', color: '#5b616f' }}>
-          <div style={{ flex: 2.2 }}>VIDEO</div><div style={{ width: 60, textAlign: 'center' }}>MP3</div><div style={{ width: 64, textAlign: 'center' }}>IMAGES</div><div style={{ width: 60, textAlign: 'center' }}>THUMB</div><div style={{ width: 72, textAlign: 'center' }}>CAPTIONS</div><div style={{ flex: 1 }}>STATUS</div><div style={{ width: 60, textAlign: 'right' }}>ACTIONS</div>
+          <div style={{ flex: 2.2 }}>VIDEO</div><div style={{ width: 60, textAlign: 'center' }}>MP3</div><div style={{ width: 64, textAlign: 'center' }}>IMAGES</div><div style={{ width: 60, textAlign: 'center' }}>THUMB</div><div style={{ width: 72, textAlign: 'center' }}>CAPTIONS</div><div style={{ flex: 1 }}>STATUS</div><div style={{ width: 132, textAlign: 'right' }}>ACTIONS</div>
         </div>
         {rows.length === 0 && (
           <div style={{ padding: '28px 18px', textAlign: 'center', fontSize: 12.5, color: '#6a7180' }}>Nothing queued yet — compose a video and hit "Save &amp; send to render".</div>
@@ -118,8 +121,10 @@ export function RenderQueue(): JSX.Element {
           const statusLabel = isBlocked ? 'blocked' : status === 'rendering' ? `${pct}%` : st.text
           const statusColor = isBlocked ? '#ff8a96' : st.color
           const detail = p?.stageDetail || (p?.stage ? STAGE_LABEL[p.stage] : '')
-          const eta = fmtEta(p?.etaSec)
+          const eta = p?.etaState === 'estimating' ? 'estimating...' : fmtEta(p?.etaSec)
           const speed = p?.speed ? `${p.speed.toFixed(1)}x` : ''
+          const encoderChip = p?.encoder ? (p.device === 'gpu' ? `${p.encoder} encode` : p.encoder) : ''
+          const filterChip = p?.filterDevice === 'cpu' && p?.device === 'gpu' ? 'CPU filters' : ''
           return (
             <div key={r.job.id} className="me-row" style={{ display: 'flex', alignItems: 'center', padding: '12px 18px', borderBottom: '1px solid #14171d' }}>
               <div style={{ flex: 2.2, display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
@@ -159,13 +164,23 @@ export function RenderQueue(): JSX.Element {
                     <StageStepper p={p} />
                     <div style={{ marginTop: 5, display: 'flex', alignItems: 'center', gap: 6, minWidth: 0 }}>
                       <span style={{ fontSize: 10, color: '#8a909c', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{detail}</span>
-                      {p?.encoder && <span style={{ flex: 'none', border: '1px solid #262b34', borderRadius: 999, padding: '1px 6px', fontSize: 9.5, color: p.device === 'gpu' ? '#4fd6a0' : '#aab0bb', fontFamily: 'var(--font-mono)' }}>{p.encoder}</span>}
+                      {encoderChip && <span style={{ flex: 'none', border: '1px solid #262b34', borderRadius: 999, padding: '1px 6px', fontSize: 9.5, color: p?.device === 'gpu' ? '#4fd6a0' : '#aab0bb', fontFamily: 'var(--font-mono)' }}>{encoderChip}</span>}
+                      {filterChip && <span title="Current render filters, captions, and scaling still run on CPU" style={{ flex: 'none', border: '1px solid #2d2534', borderRadius: 999, padding: '1px 6px', fontSize: 9.5, color: '#f5b323', fontFamily: 'var(--font-mono)' }}>{filterChip}</span>}
                       {(eta || speed) && <span style={{ flex: 'none', fontSize: 9.5, color: '#6a7180', fontFamily: 'var(--font-mono)' }}>{[eta, speed].filter(Boolean).join(' · ')}</span>}
                     </div>
                   </>
                 )}
               </div>
-              <div style={{ width: 60, display: 'flex', justifyContent: 'flex-end', gap: 5 }}>
+              <div style={{ width: 132, display: 'flex', justifyContent: 'flex-end', gap: 5, flexWrap: 'wrap' }}>
+                {status === 'rendering' && (
+                  <button type="button" onClick={() => void cancelJob(r.job.id)} title="Stop rendering and keep this job queued" className="me-btn" style={{ border: '1px solid #4a3540', background: '#1b1217', borderRadius: 6, padding: '4px 7px', fontSize: 10, color: '#ff8a96', cursor: 'pointer' }}>Stop</button>
+                )}
+                {status === 'done' && (
+                  <>
+                    <button type="button" onClick={() => void openRenderFile(r.job.id)} title="Open finished MP4" className="me-btn" style={{ border: '1px solid #26352f', background: '#101b16', borderRadius: 6, padding: '4px 7px', fontSize: 10, color: '#4fd6a0', cursor: 'pointer' }}>Open</button>
+                    <button type="button" onClick={() => void openRenderFolder(r.job.id)} title="Show finished MP4 in folder" className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 6, padding: '4px 7px', fontSize: 10, color: '#c4cad3', cursor: 'pointer' }}>Folder</button>
+                  </>
+                )}
                 {(status === 'error' || isBlocked) && (
                   <button type="button" onClick={() => void requeueJob(r.job.id)} title="Reset to queued and retry" className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 6, padding: '4px 7px', fontSize: 10, color: '#c4cad3', cursor: 'pointer' }}>↻</button>
                 )}

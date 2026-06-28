@@ -19,7 +19,8 @@ import { autoArrangeText } from '../shared/thumbnail'
 import { THUMB_W, THUMB_H, DEFAULT_BETA_OPTS, type TextLayer, type ThumbnailTemplate, type TranscriptWord } from '../shared/types'
 import { buildAss } from './services/captions'
 import { buildRenderArgs, runRender, ffmpegPath, ffprobePath } from './services/render'
-import { extractThemes, rankCandidates, planCoverage, buildBrollBed, assembleBed, type BrollCandidate } from './services/broll'
+import { extractThemes, rankCandidates, planCoverage, buildBrollBed, buildBrollManifest, assembleBed, type BrollCandidate } from './services/broll'
+import { createProgressSmoother } from './services/engine/progress'
 import { validateEffectPlan, deriveStylePlan, styleCaptionLead, textPresetTag, type EffectPlan } from '../shared/effectPlan'
 import { buildSfxTrack } from './services/sfx'
 import { buildMasterLoudnormFilter, buildSecondPassLoudnormFilter } from './services/engine/audio-master'
@@ -409,11 +410,13 @@ async function runSmokeM6(): Promise<void> {
     const ass169 = buildAss(words, { preset: 'Hormozi', aspect: '16:9', keywords: false })
     const ass916 = buildAss(words, { preset: 'Hormozi', aspect: '9:16', keywords: false })
     const assPop = buildAss(words, { preset: 'Pop', aspect: '16:9', keywords: false })
+    const assTop = buildAss(words, { preset: 'Hormozi', aspect: '16:9', keywords: false, position: 'top' })
     const assOk =
       ass169.ass.includes('PlayResX: 1920') && ass916.ass.includes('PlayResX: 1080') &&
-      ass169.ass.includes('\\kf') && ass169.ass.includes('\\fscx112') && ass169.ass.includes('&H003DD9FF') &&
+      !ass169.ass.includes('\\kf') && ass169.ass.includes('\\fscx112') && ass169.ass.includes('&H003DD9FF') &&
       ass169.zoomHits.length === 1 &&
-      ass169.ass.includes('Anton') && assPop.ass.includes('Anton')
+      ass169.ass.includes('Anton') && assPop.ass.includes('Anton') &&
+      assTop.ass.includes(',8,60,60,')
 
     const proj = (id: string, title: string): Parameters<typeof repos.createProject>[0] => ({
       id, downloadId: id, title, channel: 'Mental Empire', mp3Path: join(process.cwd(), 'test', 'fixtures', 'audio', 'sample.mp3'),
@@ -434,6 +437,11 @@ async function runSmokeM6(): Promise<void> {
     const loudnorm2 = buildSecondPassLoudnormFilter({ input_i: '-20.0', input_tp: '-3.0', input_lra: '7.0', input_thresh: '-30.0', target_offset: '1.2' })
     const loudnormFallback = buildMasterLoudnormFilter({ input_i: '-inf', input_tp: '-inf', input_lra: '0.0', input_thresh: '-70.0', target_offset: 'inf' })
     const argsOk = g.includes('zoompan') && g.includes('xfade') && g.includes('subtitles=') && g.includes('libx264') && g.includes('scale=1920:1080') && loudnorm2.includes('measured_I=-20.0') && loudnorm2.includes('linear=true') && loudnormFallback === 'loudnorm=I=-14:TP=-1:LRA=11' && !g.includes('-shortest')
+    const smooth = createProgressSmoother(120)
+    const etaA = smooth({ outTimeSec: 1, pct: 1, speed: 0.1 })
+    const etaB = smooth({ outTimeSec: 2, pct: 2, speed: 0.2 })
+    const etaC = smooth({ outTimeSec: 3, pct: 3, speed: 0.3 })
+    const etaOk = etaA.etaState === 'estimating' && etaB.etaState === 'estimating' && etaC.etaState === 'stable' && (etaC.etaSec ?? 9999) <= 300
 
     // ---- Beta features (hook / overlay gradient / auto-zoom at start) ----
     const assHook = buildAss(words, { preset: 'Hormozi', aspect: '16:9', keywords: false, hook: { text: 'wait for it', untilSec: 2.5 } })
@@ -485,8 +493,30 @@ async function runSmokeM6(): Promise<void> {
       settings: smokeSettings
     }).join(' ')
     const directOk = directBrollArgs.includes('concat=n=') && directBrollArgs.includes('-stream_loop -1') && directBrollArgs.includes('/x/clip.mp4') && !directBrollArgs.includes('bed-')
-    const brollOk = themes.includes('discipline') && ranked[0].id === 'b' && Math.abs(covEnd - 12) < 0.1 && longTrimmed && longCapped && !!bed && existsSync(bed!) && directOk
-    console.log(`SMOKE_M6_BROLL themes=${themes.slice(0, 3).join(',')} topRank=${ranked[0].id} covEnd=${covEnd.toFixed(1)} trimmed=${longTrimmed} long=${longCov.length}/${longCovEnd.toFixed(1)} bed=${!!bed} direct=${directOk}`)
+    process.env['ME_BROLL_LOCAL'] = join(process.cwd(), 'test', 'fixtures', 'broll', 'local')
+    const manifest = await buildBrollManifest({
+      settings: smokeSettings,
+      words,
+      durationSec: 4,
+      density: 'sparse',
+      poolSize: 2,
+      dims: { w: 320, h: 180 },
+      fps: 15,
+      jobId: `smoke-m6-${Date.now()}`,
+      maxSegments: 2
+    })
+    delete process.env['ME_BROLL_LOCAL']
+    const manifestArgs = manifest ? buildRenderArgs({
+      project: proj('p-broll-manifest', 'Broll manifest'),
+      images: [],
+      brollManifestPath: manifest.manifestPath,
+      assPath: '/tmp/x.ass',
+      outPath: '/tmp/o.mp4',
+      settings: smokeSettings
+    }).join(' ') : ''
+    const manifestOk = !!manifest && existsSync(manifest.manifestPath) && existsSync(manifest.jsonPath) && manifest.segments.every((s) => existsSync(s.normalizedPath)) && manifestArgs.includes('-f concat -safe 0 -i') && manifestArgs.includes(manifest.manifestPath)
+    const brollOk = themes.includes('discipline') && ranked[0].id === 'b' && Math.abs(covEnd - 12) < 0.1 && longTrimmed && longCapped && !!bed && existsSync(bed!) && directOk && manifestOk
+    console.log(`SMOKE_M6_BROLL themes=${themes.slice(0, 3).join(',')} topRank=${ranked[0].id} covEnd=${covEnd.toFixed(1)} trimmed=${longTrimmed} long=${longCov.length}/${longCovEnd.toFixed(1)} bed=${!!bed} direct=${directOk} manifest=${manifestOk}`)
 
     // ---- Beta style + effect plan: validator guardrails, rule engine, render wiring ----
     const vp = validateEffectPlan({
@@ -552,10 +582,10 @@ async function runSmokeM6(): Promise<void> {
     const queueOk = j1?.status === 'done' && !!j1.outputPath && existsSync(j1.outputPath) && j1.pct === 100 && lastMaxActive() === 2
     const assFileOk = existsSync(join(app.getPath('temp'), 'me-m6-out', 'Mental Empire - M6 Test 1.ass'))
 
-    console.log(`SMOKE_M6_ASS ok=${assOk} zoomHits=${ass169.zoomHits.length}`)
-    console.log(`SMOKE_M6_ARGS ok=${argsOk}`)
+    console.log(`SMOKE_M6_ASS ok=${assOk} zoomHits=${ass169.zoomHits.length} top=${assTop.ass.includes(',8,60,60,')}`)
+    console.log(`SMOKE_M6_ARGS ok=${argsOk} eta=${etaOk}`)
     console.log(`SMOKE_M6_QUEUE status=${j1?.status} pct=${j1?.pct} maxActive=${lastMaxActive()} out=${!!j1?.outputPath} ass=${assFileOk}`)
-    const ok = assOk && argsOk && queueOk && assFileOk && betaOk && brollOk && styleOk && sfxOk
+    const ok = assOk && argsOk && etaOk && queueOk && assFileOk && betaOk && brollOk && styleOk && sfxOk
     console.log(ok ? 'SMOKE_M6_OK' : 'SMOKE_M6_FAIL')
     closeDatabase()
     app.exit(ok ? 0 : 1)

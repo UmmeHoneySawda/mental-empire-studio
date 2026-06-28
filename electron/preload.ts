@@ -122,7 +122,9 @@ const api: NativeApi = {
     all: () => ipcRenderer.invoke('render:all'),
     cancel: (jobId: string) => ipcRenderer.invoke('render:cancel', jobId),
     delete: (jobId: string) => ipcRenderer.invoke('render:delete', jobId),
-    requeue: (jobId: string) => ipcRenderer.invoke('render:requeue', jobId)
+    requeue: (jobId: string) => ipcRenderer.invoke('render:requeue', jobId),
+    openFile: (jobId: string) => ipcRenderer.invoke('render:openFile', jobId),
+    openFolder: (jobId: string) => ipcRenderer.invoke('render:openFolder', jobId)
   },
 
   automation: {

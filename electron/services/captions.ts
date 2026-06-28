@@ -1,4 +1,4 @@
-import type { TranscriptWord } from '../../shared/types'
+import type { Project, TranscriptWord } from '../../shared/types'
 import { textPresetTag, type PlanTextEffect } from '../../shared/effectPlan'
 
 // Pure ASS (Advanced SubStation Alpha) generation for CapCut-style burned captions.
@@ -20,6 +20,8 @@ export interface CaptionOptions {
   styleLead?: string
   /** beta: per-word / hook text-effect presets from the validated effect plan */
   textEffects?: PlanTextEffect[]
+  /** vertical caption placement */
+  position?: Project['captionPosition']
 }
 
 export interface AssResult {
@@ -100,10 +102,10 @@ export function groupWords(words: TranscriptWord[], perGroup: number): CaptionGr
   return groups
 }
 
-function styleLine(p: PresetStyle, marginV: number): string {
+function styleLine(p: PresetStyle, marginV: number, alignment: 2 | 5 | 8): string {
   // Format: Name,Font,Size,Primary,Secondary,Outline,Back,Bold,Italic,Underline,StrikeOut,
   // ScaleX,ScaleY,Spacing,Angle,BorderStyle,Outline,Shadow,Alignment,MarginL,MarginR,MarginV,Encoding
-  return `Style: Default,${p.font},${p.size},${p.primary},${p.secondary},${p.outline},${p.back},${p.bold},0,0,0,100,100,0,0,${p.borderStyle},${p.outlineW},${p.shadow},2,60,60,${marginV},1`
+  return `Style: Default,${p.font},${p.size},${p.primary},${p.secondary},${p.outline},${p.back},${p.bold},0,0,0,100,100,0,0,${p.borderStyle},${p.outlineW},${p.shadow},${alignment},60,60,${marginV},1`
 }
 
 export function buildAss(words: TranscriptWord[], opts: CaptionOptions): AssResult {
@@ -113,7 +115,11 @@ export function buildAss(words: TranscriptWord[], opts: CaptionOptions): AssResu
   const preset = { ...rawPreset, size: opts.preset === 'Word' ? Math.round(fontPx * 1.12) : fontPx }
   const defaultGroup = opts.aspect === '9:16' ? 4 : opts.aspect === '1:1' ? 3 : 2
   const perGroup = opts.preset === 'Word' ? 1 : Math.max(1, opts.perGroup ?? defaultGroup)
-  const marginV = Math.round(h * (opts.aspect === '9:16' ? 0.28 : 0.26))
+  const position = opts.position ?? 'bottom'
+  const alignment: 2 | 5 | 8 = position === 'top' ? 8 : position === 'middle' ? 5 : 2
+  const marginV = position === 'middle'
+    ? 0
+    : Math.round(h * (position === 'top' ? (opts.aspect === '9:16' ? 0.16 : 0.13) : (opts.aspect === '9:16' ? 0.28 : 0.26)))
   const groups = groupWords(words, perGroup)
   const zoomHits: number[] = []
   // Per-word text-effect presets from the plan → ASS tag, keyed by normalized word.
@@ -133,7 +139,7 @@ export function buildAss(words: TranscriptWord[], opts: CaptionOptions): AssResu
     '',
     '[V4+ Styles]',
     'Format: Name, Fontname, Fontsize, PrimaryColour, SecondaryColour, OutlineColour, BackColour, Bold, Italic, Underline, StrikeOut, ScaleX, ScaleY, Spacing, Angle, BorderStyle, Outline, Shadow, Alignment, MarginL, MarginR, MarginV, Encoding',
-    styleLine(preset, marginV),
+    styleLine(preset, marginV, alignment),
     // Hook style: big, centered on screen, heavy outline (alignment 5 = middle-centre).
     `Style: Hook,Anton,${Math.round(h * 0.12)},&H00FFFFFF,&H00FFFFFF,&H00000000,&H64000000,1,0,0,0,100,100,0,0,1,8,0,5,80,80,80,1`,
     '',
@@ -141,24 +147,28 @@ export function buildAss(words: TranscriptWord[], opts: CaptionOptions): AssResu
     'Format: Layer, Start, End, Style, Name, MarginL, MarginR, MarginV, Effect, Text'
   ].join('\n')
 
-  const dialogues = groups.map((g) => {
-    const text = g.words
-      .map((word) => {
-        const durCs = Math.max(1, Math.round((word.end - word.start) * 100))
+  const seenZoomHits = new Set<number>()
+  const wordText = (word: TranscriptWord, active: boolean): string => {
         const key = isKeyword(word, opts.keywords)
-        if (key) zoomHits.push(word.start)
+        if (key && !seenZoomHits.has(word.start)) {
+          seenZoomHits.add(word.start)
+          zoomHits.push(word.start)
+        }
         const body = escapeAss(word.word.toUpperCase())
-        // A plan text-effect preset for this exact word is prepended as its own block.
         const fx = wordFx.get(word.word.toLowerCase().replace(/[^a-z0-9]/g, '')) ?? ''
-        // \kf sweeps white text to the yellow active fill; keywords use the same
-        // uniform pop treatment so no word appears randomly larger than another.
-        return key
-          ? `${fx}{\\kf${durCs}\\t(0,120,\\fscx112\\fscy112)\\1c${preset.emphasis}}${body}{\\fscx100\\fscy100\\1c${preset.primary}}`
-          : `${fx}{\\kf${durCs}\\t(0,120,\\fscx112\\fscy112)}${body}{\\fscx100\\fscy100}`
-      })
-      .join(' ')
-    return `Dialogue: 0,${secToAss(g.start)},${secToAss(g.end)},Default,,0,0,0,,${opts.styleLead ?? ''}{\\fad(40,40)}${text}`
-  })
+        const color = active || key ? preset.emphasis : '&H00FFFFFF'
+        const pop = active ? '\\t(0,120,\\fscx112\\fscy112)' : ''
+        return `${fx}{\\1c${color}${pop}}${body}{\\fscx100\\fscy100}`
+  }
+
+  const dialogues = groups.flatMap((g) =>
+    g.words.map((activeWord, activeIdx) => {
+      const lineStart = activeWord.start
+      const lineEnd = Math.max(lineStart + 0.05, g.words[activeIdx + 1]?.start ?? g.end)
+      const text = g.words.map((word, idx) => wordText(word, idx === activeIdx)).join(' ')
+      return `Dialogue: 0,${secToAss(lineStart)},${secToAss(lineEnd)},Default,,0,0,0,,${opts.styleLead ?? ''}{\\fad(20,20)}${text}`
+    })
+  )
 
   // Beta hook: a centered intro card on its own style, fading in/out, on top (layer 1).
   if (opts.hook && opts.hook.text.trim() && opts.hook.untilSec > 0) {

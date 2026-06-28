@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS projects (
   id TEXT PRIMARY KEY, downloadId TEXT, title TEXT, channel TEXT,
   mp3Path TEXT, durationSec INTEGER,
   imageMode TEXT, poolSize INTEGER, kenBurns INTEGER, seed INTEGER, crossfade INTEGER,
-  captionPreset TEXT, captionFont TEXT, captionAnim TEXT, captionAspect TEXT,
+  captionPreset TEXT, captionFont TEXT, captionAnim TEXT, captionAspect TEXT, captionPosition TEXT,
   emphasis INTEGER, keywords INTEGER, punchZoom INTEGER,
   stage TEXT, createdAt TEXT
 );
@@ -131,6 +131,7 @@ function migrate(d: Database.Database): void {
   ensureColumn(d, 'uploads', 'thumb', 'TEXT')
   // M8: per-project saved thumbnail path
   ensureColumn(d, 'projects', 'thumbPath', 'TEXT')
+  ensureColumn(d, 'projects', 'captionPosition', 'TEXT')
 
   purgeLegacyDemoSeed(d)
 }
@@ -473,8 +474,8 @@ function buildRepositories(d: Database.Database): Repositories {
 
     createProject: (p) => {
       d.prepare(
-        `INSERT INTO projects (id,downloadId,title,channel,mp3Path,durationSec,imageMode,poolSize,kenBurns,seed,crossfade,captionPreset,captionFont,captionAnim,captionAspect,emphasis,keywords,punchZoom,stage,createdAt,betaOpts)
-         VALUES (@id,@downloadId,@title,@channel,@mp3Path,@durationSec,@imageMode,@poolSize,@kenBurns,@seed,@crossfade,@captionPreset,@captionFont,@captionAnim,@captionAspect,@emphasis,@keywords,@punchZoom,@stage,@createdAt,@betaOpts)`
+        `INSERT INTO projects (id,downloadId,title,channel,mp3Path,durationSec,imageMode,poolSize,kenBurns,seed,crossfade,captionPreset,captionFont,captionAnim,captionAspect,captionPosition,emphasis,keywords,punchZoom,stage,createdAt,betaOpts)
+         VALUES (@id,@downloadId,@title,@channel,@mp3Path,@durationSec,@imageMode,@poolSize,@kenBurns,@seed,@crossfade,@captionPreset,@captionFont,@captionAnim,@captionAspect,@captionPosition,@emphasis,@keywords,@punchZoom,@stage,@createdAt,@betaOpts)`
       ).run(projectToRow(p))
     },
     getProject: (id) => {
@@ -584,7 +585,7 @@ function buildRepositories(d: Database.Database): Repositories {
 const PROJECT_BOOL_KEYS = new Set(['kenBurns', 'emphasis', 'keywords', 'punchZoom'])
 
 function projectToRow(p: Project): Record<string, unknown> {
-  return { ...p, kenBurns: p.kenBurns ? 1 : 0, crossfade: p.crossfade ?? 0.8, emphasis: p.emphasis ? 1 : 0, keywords: p.keywords ? 1 : 0, punchZoom: p.punchZoom ? 1 : 0, betaOpts: JSON.stringify(p.betaOpts ?? DEFAULT_BETA_OPTS) }
+  return { ...p, captionPosition: p.captionPosition ?? 'bottom', kenBurns: p.kenBurns ? 1 : 0, crossfade: p.crossfade ?? 0.8, emphasis: p.emphasis ? 1 : 0, keywords: p.keywords ? 1 : 0, punchZoom: p.punchZoom ? 1 : 0, betaOpts: JSON.stringify(p.betaOpts ?? DEFAULT_BETA_OPTS) }
 }
 function projectPatchToRow(patch: Partial<Project>): Record<string, unknown> {
   const out: Record<string, unknown> = {}
@@ -596,7 +597,7 @@ function projectPatchToRow(patch: Partial<Project>): Record<string, unknown> {
   return out
 }
 function rowToProject(r: Record<string, unknown>): Project {
-  return { ...(r as unknown as Project), kenBurns: !!r.kenBurns, crossfade: Number(r.crossfade) || 0.8, emphasis: !!r.emphasis, keywords: !!r.keywords, punchZoom: !!r.punchZoom, betaOpts: parseBetaOpts(r) }
+  return { ...(r as unknown as Project), captionPosition: (r.captionPosition as Project['captionPosition']) ?? 'bottom', kenBurns: !!r.kenBurns, crossfade: Number(r.crossfade) || 0.8, emphasis: !!r.emphasis, keywords: !!r.keywords, punchZoom: !!r.punchZoom, betaOpts: parseBetaOpts(r) }
 }
 function rowToImage(r: Record<string, unknown>): ProjectImage {
   return { ...(r as unknown as ProjectImage), manual: !!r.manual }

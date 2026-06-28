@@ -378,6 +378,7 @@ export interface Project {
   captionFont: string
   captionAnim: string
   captionAspect: '16:9' | '1:1' | '9:16'
+  captionPosition?: 'top' | 'middle' | 'bottom'
   emphasis: boolean
   keywords: boolean
   punchZoom: boolean
@@ -448,11 +449,14 @@ export interface RenderProgress {
   done: boolean
   stageDetail?: string
   etaSec?: number
+  etaState?: 'estimating' | 'stable'
   speed?: number
   fps?: number
   bitrate?: string
   device?: 'cpu' | 'gpu'
+  filterDevice?: 'cpu' | 'gpu'
   encoder?: string
+  warning?: string
   error?: string
   outputPath?: string
 }
@@ -632,6 +636,10 @@ export interface NativeApi {
     delete(jobId: string): Promise<void>
     /** reset an error/blocked job back to queued so it can be retried */
     requeue(jobId: string): Promise<void>
+    /** open the finished render in the OS default player */
+    openFile(jobId: string): Promise<void>
+    /** reveal the finished render in the OS file manager */
+    openFolder(jobId: string): Promise<void>
   }
   automation: {
     /** run a profile's pipeline; interactive returns new project ids for quick-edit */

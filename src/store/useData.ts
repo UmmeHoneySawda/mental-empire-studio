@@ -69,6 +69,8 @@ interface DataState {
   cancelJob: (id: string) => Promise<void>
   deleteJob: (id: string) => Promise<void>
   requeueJob: (id: string) => Promise<void>
+  openRenderFile: (id: string) => Promise<void>
+  openRenderFolder: (id: string) => Promise<void>
   deleteDownload: (id: string) => Promise<void>
   loadProfiles: () => Promise<void>
   runProfile: (id: string) => Promise<string[]>
@@ -319,6 +321,16 @@ export const useData = create<DataState>((set, get) => ({
     await a.render.requeue(id)
     get().clearProgress(id)
     await get().loadRenderJobs()
+  },
+  openRenderFile: async (id) => {
+    const a = api()
+    if (!a) return
+    await a.render.openFile(id)
+  },
+  openRenderFolder: async (id) => {
+    const a = api()
+    if (!a) return
+    await a.render.openFolder(id)
   },
   deleteDownload: async (id) => {
     const a = api()

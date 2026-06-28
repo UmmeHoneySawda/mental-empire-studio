@@ -1,7 +1,7 @@
 import { useEffect, useState } from 'react'
 import { ScreenPad } from '../components/primitives'
 import { Toggle } from '../components/primitives'
-import { activity } from '../data/mock'
+import { useData } from '../store/useData'
 import { useStore } from '../store/useStore'
 import type { AccentName, AppSettings, RenderCapabilities } from '@shared/types'
 
@@ -57,6 +57,7 @@ export function Settings(): JSX.Element {
   const settings = useStore((s) => s.settings)
   const updateSettings = useStore((s) => s.updateSettings)
   const resetAll = useStore((s) => s.resetAll)
+  const activity = useData((s) => s.activity)
   const { quality, autoScrape, background } = settings
   const [caps, setCaps] = useState<RenderCapabilities | null>(null)
 
@@ -204,6 +205,9 @@ export function Settings(): JSX.Element {
         <div style={{ width: 300, flex: 'none', border: '1px solid #1d2129', borderRadius: 14, padding: 18, background: '#12151b' }}>
           <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}><span style={{ width: 7, height: 7, borderRadius: '50%', background: '#36c98e', boxShadow: '0 0 8px #36c98e' }} /><span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 13, color: '#e9ebef' }}>Activity log</span></div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
+            {activity.length === 0 && (
+              <div style={{ fontSize: 11.5, color: '#6a7180', lineHeight: 1.4 }}>No activity yet.</div>
+            )}
             {activity.map((a, i) => (
               <div key={i} style={{ display: 'flex', gap: 10 }}><span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#4f5662', flex: 'none', width: 32, paddingTop: 1 }}>{a.t}</span><span style={{ color: a.color, flex: 'none' }}>{a.icon}</span><span style={{ fontSize: 11.5, color: '#aab0bb', lineHeight: 1.4 }}>{a.text}</span></div>
             ))}

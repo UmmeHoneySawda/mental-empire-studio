@@ -38,6 +38,7 @@ function defaultProject(downloadId: string, title: string, channel: string, mp3P
     captionFont: 'Montserrat',
     captionAnim: 'Pop-in',
     captionAspect: '16:9',
+    captionPosition: 'bottom',
     emphasis: true,
     keywords: true,
     punchZoom: true,

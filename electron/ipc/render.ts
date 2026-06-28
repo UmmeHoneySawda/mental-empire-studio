@@ -1,10 +1,10 @@
-import { BrowserWindow, dialog, ipcMain } from 'electron'
+import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import type { RenderQueueRow } from '../../shared/types'
 import { getRepos } from '../db'
 import { runAll, outputDir } from '../services/queue'
-import { cancelRender } from '../services/render'
+import { cancelRender, markCancelIntent } from '../services/render'
 
 // Render queue IPC (M6): the joined queue view, run-all, cancel, and an output
 // folder picker for the Render Queue screen.
@@ -42,19 +42,36 @@ function jobsView(): RenderQueueRow[] {
   })
 }
 
+function outputPathForJob(id: string): string {
+  return getRepos().renderJob(id)?.outputPath ?? ''
+}
+
 export function registerRenderIpc(): void {
   ipcMain.handle('render:jobs', () => jobsView())
   ipcMain.handle('render:all', () => runAll())
   ipcMain.handle('render:cancel', (_e, id: string) => {
     // Kill the running encode if any; if it was mid-render the queue runner restores
     // it to 'queued', otherwise set it here for an already-idle job.
-    if (!cancelRender(id, 'cancel')) getRepos().setRenderStatus(id, { status: 'queued', pct: 0, error: '' })
+    const job = getRepos().renderJob(id)
+    if (!cancelRender(id, 'cancel')) {
+      if (job?.status === 'rendering') markCancelIntent(id, 'cancel')
+      else getRepos().setRenderStatus(id, { status: 'queued', pct: 0, error: '' })
+    }
   })
   ipcMain.handle('render:delete', (_e, id: string) => {
-    cancelRender(id, 'delete') // stop ffmpeg before the row disappears
+    if (!cancelRender(id, 'delete')) markCancelIntent(id, 'delete') // stop work before the row disappears
     getRepos().deleteRenderJob(id)
   })
   ipcMain.handle('render:requeue', (_e, id: string) => getRepos().setRenderStatus(id, { status: 'queued', pct: 0, error: '' }))
+  ipcMain.handle('render:openFile', async (_e, id: string) => {
+    const p = outputPathForJob(id)
+    if (p) await shell.openPath(p)
+  })
+  ipcMain.handle('render:openFolder', async (_e, id: string) => {
+    const p = outputPathForJob(id)
+    if (p) shell.showItemInFolder(p)
+    else await shell.openPath(outputDir())
+  })
   ipcMain.handle('fs:chooseFolder', async () => {
     const win = BrowserWindow.getAllWindows()[0]
     const res = win

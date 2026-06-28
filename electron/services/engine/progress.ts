@@ -2,6 +2,7 @@ export interface FfmpegProgress {
   outTimeSec: number
   pct: number
   etaSec?: number
+  etaState?: 'estimating' | 'stable'
   speed?: number
   fps?: number
   bitrate?: string
@@ -40,9 +41,55 @@ export function parseFfmpegProgressBlock(block: string, durationSec: number): Ff
     outTimeSec,
     pct,
     etaSec,
+    etaState: etaSec == null ? 'estimating' : 'stable',
     speed: speed && Number.isFinite(speed) ? speed : undefined,
     fps: values.get('fps') ? Number.parseFloat(values.get('fps') as string) : undefined,
     bitrate: values.get('bitrate')?.trim()
   }
 }
 
+export interface ProgressSmootherOptions {
+  alpha?: number
+  minSamples?: number
+  minSpeed?: number
+  etaClampFactor?: number
+  etaClampMinSec?: number
+}
+
+/**
+ * FFmpeg reports instantaneous `speed`, which can swing wildly during the first
+ * few packets. Smooth it and hide ETA until it is based on enough samples.
+ */
+export function createProgressSmoother(durationSec: number, opts: ProgressSmootherOptions = {}): (p: FfmpegProgress) => FfmpegProgress {
+  const alpha = opts.alpha ?? 0.2
+  const minSamples = opts.minSamples ?? 3
+  const minSpeed = opts.minSpeed ?? 0.05
+  const etaClampFactor = opts.etaClampFactor ?? 2.5
+  const etaClampMinSec = opts.etaClampMinSec ?? 300
+  let emaSpeed: number | undefined
+  let samples = 0
+
+  return (p) => {
+    const rawSpeed = p.speed && Number.isFinite(p.speed) && p.speed > 0 ? p.speed : undefined
+    if (!rawSpeed || durationSec <= 0) {
+      return { ...p, etaSec: undefined, etaState: 'estimating' }
+    }
+
+    emaSpeed = emaSpeed == null ? rawSpeed : (alpha * rawSpeed) + ((1 - alpha) * emaSpeed)
+    samples += 1
+
+    if (samples < minSamples || emaSpeed < minSpeed) {
+      return { ...p, speed: emaSpeed, etaSec: undefined, etaState: 'estimating' }
+    }
+
+    const remaining = Math.max(0, durationSec - p.outTimeSec)
+    const rawEta = Math.round(remaining / emaSpeed)
+    const cap = Math.max(etaClampMinSec, Math.round(durationSec * etaClampFactor))
+    return {
+      ...p,
+      speed: emaSpeed,
+      etaSec: Math.max(0, Math.min(rawEta, cap)),
+      etaState: 'stable'
+    }
+  }
+}

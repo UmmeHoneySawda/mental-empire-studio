@@ -7,10 +7,11 @@ import type { EffectPlan } from '../../shared/effectPlan'
 import { resolveBinDir } from './ytdlp'
 import { resolutionFor, type CaptionAspect } from './captions'
 import { FALLBACK_CAPS, selectEncoder } from './engine/encoder'
-import { parseFfmpegProgressBlock, type FfmpegProgress } from './engine/progress'
+import { createProgressSmoother, parseFfmpegProgressBlock, type FfmpegProgress } from './engine/progress'
 import { gradeChain } from './engine/grade'
 import { masterAudioTwoPass } from './engine/audio-master'
 import type { BrollSegment } from './broll'
+import { logger } from './logger'
 
 // ffmpeg render: image(s) over the mp3 with Ken Burns + crossfades, burned ASS
 // captions, optional punch-zoom, encoded H.264 at the chosen quality. The graph is
@@ -42,11 +43,21 @@ export function cancelRender(jobId: string, mode: 'cancel' | 'delete'): boolean 
   return true
 }
 
+/** Record a cancel/delete request while the job is between ffmpeg children. */
+export function markCancelIntent(jobId: string, mode: 'cancel' | 'delete'): void {
+  intents.set(jobId, mode)
+}
+
 /** Whether a job's last failure was an intentional cancel/delete (consumes the flag). */
 export function consumeCancelIntent(jobId: string): 'cancel' | 'delete' | undefined {
   const m = intents.get(jobId)
   if (m) intents.delete(jobId)
   return m
+}
+
+/** Non-consuming check used before hardware fallback retries. */
+export function hasCancelIntent(jobId?: string): boolean {
+  return !!jobId && intents.has(jobId)
 }
 
 export function ffmpegPath(): string {
@@ -76,23 +87,28 @@ function assForFilter(p: string): string {
 }
 
 /** Beta "background overlay": a simple darkening gradient on the chosen edges,
- *  approximated by 3 stacked drawboxes (smooth enough, pure-filter, no extra inputs).
+ *  approximated by many thin drawboxes (pure-filter, no extra inputs).
  *  Returns a filter fragment ending in a comma, or '' when no edge is enabled. */
 function overlayGradient(o: { bottom: boolean; top: boolean; left: boolean; right: boolean }, w: number, h: number): string {
-  const steps = [
-    { frac: 0.34, a: 0.22 },
-    { frac: 0.22, a: 0.34 },
-    { frac: 0.11, a: 0.5 }
-  ]
   const boxes: string[] = []
-  for (const s of steps) {
-    const bh = Math.round(h * s.frac)
-    const bw = Math.round(w * s.frac)
-    const c = `black@${s.a}`
-    if (o.bottom) boxes.push(`drawbox=x=0:y=${h - bh}:w=${w}:h=${bh}:color=${c}:t=fill`)
-    if (o.top) boxes.push(`drawbox=x=0:y=0:w=${w}:h=${bh}:color=${c}:t=fill`)
-    if (o.left) boxes.push(`drawbox=x=0:y=0:w=${bw}:h=${h}:color=${c}:t=fill`)
-    if (o.right) boxes.push(`drawbox=x=${w - bw}:y=0:w=${bw}:h=${h}:color=${c}:t=fill`)
+  const steps = 24
+  const edgeH = Math.max(1, Math.round(h * 0.36))
+  const edgeW = Math.max(1, Math.round(w * 0.36))
+  for (let i = 0; i < steps; i++) {
+    const t0 = i / steps
+    const t1 = (i + 1) / steps
+    const alpha = 0.5 * Math.pow(t1, 1.7)
+    const c = `black@${alpha.toFixed(3)}`
+    const y0 = Math.round(h - edgeH + edgeH * t0)
+    const y1 = Math.round(h - edgeH + edgeH * t1)
+    const x0 = Math.round(w - edgeW + edgeW * t0)
+    const x1 = Math.round(w - edgeW + edgeW * t1)
+    const bandH = Math.max(1, y1 - y0)
+    const bandW = Math.max(1, x1 - x0)
+    if (o.bottom) boxes.push(`drawbox=x=0:y=${y0}:w=${w}:h=${bandH}:color=${c}:t=fill`)
+    if (o.top) boxes.push(`drawbox=x=0:y=${edgeH - y1}:w=${w}:h=${bandH}:color=${c}:t=fill`)
+    if (o.left) boxes.push(`drawbox=x=${edgeW - x1}:y=0:w=${bandW}:h=${h}:color=${c}:t=fill`)
+    if (o.right) boxes.push(`drawbox=x=${x0}:y=0:w=${bandW}:h=${h}:color=${c}:t=fill`)
   }
   return boxes.length ? `${boxes.join(',')},` : ''
 }
@@ -108,6 +124,8 @@ export interface RenderInputs {
   jobId?: string
   /** beta auto-B-roll: a pre-assembled full-length video bed used instead of stills */
   videoBedPath?: string
+  /** beta auto-B-roll v2: concat-demuxer manifest of normalized segments */
+  brollManifestPath?: string
   /** beta auto-B-roll segments composed directly in the final graph (single-pass path) */
   brollSegments?: BrollSegment[]
   /** beta style: fallback xfade transition type between image segments (default 'fade') */
@@ -153,6 +171,37 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
     images.length > 0
       ? images
       : [{ id: 'x', projectId: project.id, ord: 0, path: '', thumb: '', rangeStart: 0, rangeEnd: project.durationSec, manual: false }]
+
+  // Beta auto-B-roll v2 path: normalized segment files are listed in a concat
+  // demuxer manifest and enter the final graph as one continuous video input.
+  if (inp.brollManifestPath) {
+    const inputs = ['-f', 'concat', '-safe', '0', '-i', inp.brollManifestPath, '-i', project.mp3Path]
+    const sfxIdx = inp.sfxPath ? 2 : null
+    if (inp.sfxPath) inputs.push('-i', inp.sfxPath)
+
+    const parts: string[] = []
+    const grad = beta ? overlayGradient(beta.overlay, w, h) : ''
+    const grade = gradeChain(beta?.style)
+    const punchOn = project.punchZoom || !!beta?.autoZoom.atKeyPhrases
+    const punch = punchOn ? `,zoompan=z='min(zoom+0.0015,1.08)':d=1:s=${w}x${h}:fps=${FPS}` : ''
+    parts.push(`[0:v]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1,fps=${FPS},${grade}${grad}subtitles='${assForFilter(assPath)}'${punch}[v]`)
+    const aMap = audioWithSfx(parts, 1, sfxIdx)
+    const crf = settings.quality === '1440p' ? '20' : settings.quality === '720p' ? '23' : '21'
+
+    return [
+      '-y',
+      ...inputs,
+      '-filter_complex', parts.join(';'),
+      '-map', '[v]',
+      '-map', aMap,
+      ...videoCodecArgs(settings, crf, caps),
+      '-r', String(FPS),
+      '-c:a', 'aac',
+      '-b:a', '192k',
+      '-t', project.durationSec > 0 ? project.durationSec.toFixed(2) : '1',
+      outPath
+    ]
+  }
 
   // Beta auto-B-roll single-pass path: planned stock clips become direct video inputs
   // in the final graph, so the job avoids a pre-encoded full-length bed.
@@ -317,7 +366,7 @@ export async function runRender(inp: RenderInputs, onProgress?: (p: FfmpegProgre
   // naming / ASS file are all exercised for real; the real encode runs on the user's box.
   if (process.env['ME_RENDER_FIXTURE']) {
     writeFileSync(inp.outPath, Buffer.from('\x00\x00\x00\x18ftypmp42stub-render'))
-    onProgress?.({ outTimeSec: inp.project.durationSec, pct: 100, speed: 1, etaSec: 0 })
+    onProgress?.({ outTimeSec: inp.project.durationSec, pct: 100, speed: 1, etaSec: 0, etaState: 'stable' })
     return { outputPath: inp.outPath }
   }
 
@@ -326,6 +375,7 @@ export async function runRender(inp: RenderInputs, onProgress?: (p: FfmpegProgre
     if (inp.logPath) appendFileSync(inp.logPath, `\n[ffmpeg]\n${args.join(' ')}\n`)
     await spawnFfmpeg(args, inp.project.durationSec, onProgress, inp.jobId)
   } catch (e) {
+    if (hasCancelIntent(inp.jobId)) throw e
     if ((inp.settings.encoder ?? 'cpu') === 'cpu') throw e
     const fallbackSettings = { ...inp.settings, encoder: 'cpu' as const }
     const args = buildRenderArgs({ ...inp, settings: fallbackSettings, caps: FALLBACK_CAPS })
@@ -333,18 +383,25 @@ export async function runRender(inp: RenderInputs, onProgress?: (p: FfmpegProgre
     await spawnFfmpeg(args, inp.project.durationSec, onProgress, inp.jobId)
   }
   if (inp.logPath) appendFileSync(inp.logPath, '\n[audio-master]\ntwo-pass loudnorm I=-14 TP=-1 LRA=11\n')
-  await masterAudioTwoPass(inp.outPath)
+  try {
+    await masterAudioTwoPass(inp.outPath)
+  } catch (e) {
+    const msg = (e as Error).message
+    if (inp.logPath) appendFileSync(inp.logPath, `[audio-master:warn] ${msg}\n`)
+    logger.scope('render').warn(`audio-master failed; keeping rendered MP4: ${msg}`)
+  }
   return { outputPath: inp.outPath }
 }
 
 function spawnFfmpeg(args: string[], durationSec: number, onProgress?: (p: FfmpegProgress) => void, jobId?: string): Promise<void> {
   return new Promise((resolve, reject) => {
     const child = spawn(ffmpegPath(), ['-progress', 'pipe:1', '-nostats', ...args], { windowsHide: true })
+    const smooth = createProgressSmoother(durationSec)
     if (jobId) running.set(jobId, child)
     let err = ''
     child.stdout.on('data', (d: Buffer) => {
       const p = parseFfmpegProgressBlock(d.toString(), durationSec)
-      if (p) onProgress?.(p)
+      if (p) onProgress?.(smooth(p))
     })
     child.stderr.on('data', (d: Buffer) => (err += d))
     child.on('error', (e) => {
@@ -354,7 +411,7 @@ function spawnFfmpeg(args: string[], durationSec: number, onProgress?: (p: Ffmpe
     child.on('close', (code) => {
       if (jobId) running.delete(jobId)
       if (code === 0) {
-        onProgress?.({ outTimeSec: durationSec, pct: 100, speed: 1, etaSec: 0 })
+        onProgress?.({ outTimeSec: durationSec, pct: 100, speed: 1, etaSec: 0, etaState: 'stable' })
         resolve()
       } else {
         reject(new Error(`ffmpeg exited ${code}: ${err.slice(-300)}`))
