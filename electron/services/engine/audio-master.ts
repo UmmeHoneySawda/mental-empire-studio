@@ -1,7 +1,7 @@
 import { spawn } from 'node:child_process'
 import { dirname, join } from 'node:path'
-import { existsSync, renameSync, rmSync } from 'node:fs'
-import { resolveBinDir } from '../ytdlp'
+import { renameSync, rmSync } from 'node:fs'
+import { ffmpegPath } from '../bin'
 
 export const LOUDNORM_TARGET = 'I=-14:TP=-1:LRA=11'
 
@@ -15,9 +15,7 @@ export interface LoudnormMeasurement {
 
 function spawnFfmpeg(args: string[]): Promise<string> {
   return new Promise((resolve, reject) => {
-    const exe = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
-    const vendored = join(resolveBinDir(), exe)
-    const child = spawn(existsSync(vendored) ? vendored : exe, args, { windowsHide: true })
+    const child = spawn(ffmpegPath(), args, { windowsHide: true })
     let err = ''
     child.stderr.on('data', (d: Buffer) => (err += d))
     child.on('error', reject)

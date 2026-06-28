@@ -45,6 +45,7 @@ function defaultProject(downloadId: string, title: string, channel: string, mp3P
     captionFont: 'Montserrat',
     captionAnim: 'Pop-in',
     captionAspect: '16:9',
+    captionLines: 1,
     captionPosition: 'bottom',
     emphasis: true,
     keywords: true,
@@ -218,7 +219,9 @@ async function previewProject(projectId: string): Promise<string> {
   const { ass } = buildAss(words, {
     preset: project.captionPreset,
     font: project.captionFont,
+    animation: project.captionAnim,
     aspect: project.captionAspect,
+    lines: project.captionLines ?? 1,
     position: project.captionPosition ?? 'bottom',
     keywords: project.keywords || !!beta?.autoHighlight,
     hook: hookText ? { text: hookText, untilSec: Math.min(2.6, previewSec) } : undefined,

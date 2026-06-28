@@ -69,7 +69,8 @@ async function runOne(video: ScrapedVideo, sourceId: string, channel: string, bi
       stage: 'Downloaded only',
       action: 'Open',
       filePath: res.filePath,
-      durationSec
+      durationSec,
+      error: ''
     })
     repos.upsertDownload({ ...(repos.download(id) as DownloadedVideo), size: sizeLabel(res.filePath) })
     pushActivity({ t: hhmm(), icon: '✓', color: '#36c98e', text: `Downloaded ${video.title}` })
@@ -78,13 +79,13 @@ async function runOne(video: ScrapedVideo, sourceId: string, channel: string, bi
   } catch (e) {
     const msg = (e as Error).message
     if (msg === 'download cancelled') {
-      repos.setDownloadProgress(id, { pct: '0%', stage: 'Cancelled', action: 'Resume' })
+      repos.setDownloadProgress(id, { pct: '0%', stage: 'Cancelled', action: 'Resume', error: '' })
       pushActivity({ t: hhmm(), icon: '⊘', color: '#8a909c', text: `Download cancelled: ${video.title.slice(0, 42)}` })
       emitProgress({ downloadId: id, title: video.title, pct: 0, stage: 'Cancelled', done: true })
       return repos.download(id) as DownloadedVideo
     }
     L.error(`download FAILED "${video.title}": ${msg}`)
-    repos.setDownloadProgress(id, { stage: 'Failed' })
+    repos.setDownloadProgress(id, { stage: 'Failed', error: msg })
     // Surface the reason in the in-app activity feed (not just a silent "Failed").
     pushActivity({ t: hhmm(), icon: '✕', color: '#ff5a6e', text: `Download failed: ${video.title.slice(0, 40)} — ${msg.slice(0, 80)}` })
     emitProgress({ downloadId: id, title: video.title, pct: 0, stage: 'Failed', done: true, error: msg })

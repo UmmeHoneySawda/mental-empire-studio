@@ -1,28 +1,14 @@
 import { spawn } from 'node:child_process'
-import { dirname, join } from 'node:path'
+import { join } from 'node:path'
 import { existsSync, readFileSync } from 'node:fs'
 import type { AppSettings } from '../../shared/types'
 import { L } from './logger'
+import { resolveBinDir, resolveYtdlpPath } from './bin'
 
 // Low-level yt-dlp runner. yt-dlp is the no-API way to read public channel/video
 // metadata: we spawn the standalone binary, ask for a single JSON dump of the
 // (flat) playlist, and parse it. All scraping flows through here so proxy / cookies
 // / request-delay / retries live in one place.
-
-/** Locate the bundled yt-dlp binary (override via ME_YTDLP_PATH; packaged under resources/bin). */
-export function resolveYtdlpPath(): string {
-  const override = process.env['ME_YTDLP_PATH']
-  if (override) return override
-  const exe = process.platform === 'win32' ? 'yt-dlp.exe' : 'yt-dlp'
-  const packaged = process.resourcesPath ? join(process.resourcesPath, 'bin', exe) : ''
-  if (packaged && existsSync(packaged)) return packaged
-  return join(process.cwd(), 'resources', 'bin', exe)
-}
-
-/** Directory holding the vendored sidecars (yt-dlp, ffmpeg) — used for --ffmpeg-location. */
-export function resolveBinDir(): string {
-  return dirname(resolveYtdlpPath())
-}
 
 export interface YtdlpEntry {
   id?: string

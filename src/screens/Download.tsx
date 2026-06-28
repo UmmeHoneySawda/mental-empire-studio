@@ -101,7 +101,7 @@ export function Download(): JSX.Element {
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 13, border: '1px solid #1d2129', borderRadius: 13, padding: '13px 16px', marginBottom: 18, background: '#12151b' }}>
         <div style={{ width: 44, height: 44, borderRadius: 11, background: 'linear-gradient(135deg,#2d3340,#1a1e26)', display: 'grid', placeItems: 'center', fontFamily: 'var(--font-display)', fontWeight: 700, color: '#aab1bf' }}>▶</div>
-        <div><div style={{ fontWeight: 600, fontSize: 14, color: '#eef0f3' }}>{url || 'Paste a channel and Fetch'}</div><div style={{ fontSize: 11, color: '#6a7180', fontFamily: 'var(--font-mono)' }}>{sourceVideos.length} videos found</div></div>
+        <div style={{ minWidth: 0 }}><div title={url || undefined} style={{ fontWeight: 600, fontSize: 14, color: '#eef0f3', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', maxWidth: 560 }}>{url || 'Paste a channel and Fetch'}</div><div style={{ fontSize: 11, color: '#6a7180', fontFamily: 'var(--font-mono)' }}>{sourceVideos.length} videos found</div></div>
         <div style={{ flex: 1 }} />
         <div style={{ display: 'flex', gap: 9, alignItems: 'center' }}>
           <div style={{ display: 'flex', background: '#0e1116', border: '1px solid #23272f', borderRadius: 9, overflow: 'hidden', fontSize: 12 }}>
@@ -127,7 +127,7 @@ export function Download(): JSX.Element {
                 <div style={{ position: 'absolute', bottom: 7, right: 7, fontFamily: 'var(--font-mono)', fontSize: 10, background: 'rgba(0,0,0,.7)', color: '#dde0e5', padding: '2px 6px', borderRadius: 5 }}>{fmtDur(v.durationSec)}</div>
               </div>
               <div style={{ padding: '11px 12px' }}>
-                <div style={{ fontSize: 12, color: '#dde0e5', lineHeight: 1.35, height: 33, overflow: 'hidden' }}>{v.title}</div>
+                <div title={v.title} style={{ fontSize: 12, color: '#dde0e5', lineHeight: 1.35, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{v.title}</div>
                 <div style={{ fontSize: 10.5, color: '#5b616f', fontFamily: 'var(--font-mono)', marginTop: 6 }}>{v.views > 0 ? `${v.views.toLocaleString()} views` : ''}</div>
               </div>
             </div>
@@ -168,8 +168,8 @@ export function Download(): JSX.Element {
                   <div style={{ width: 48, height: 27, borderRadius: 6, background: d.thumb, flex: 'none' }} />
                   <div style={{ minWidth: 0 }}><div style={{ fontSize: 12.5, color: '#dde0e5', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.title}</div><div style={{ fontSize: 10, color: '#5b616f', fontFamily: 'var(--font-mono)' }}>{d.size} · {d.when}</div></div>
                 </div>
-                <div style={{ width: 120, fontSize: 11, color: '#8a909c', fontFamily: 'var(--font-mono)' }}>{d.channel}</div>
-                <div style={{ width: 130, fontSize: 11.5, color: stageColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{currentStage}</div>
+                <div title={d.channel} style={{ width: 120, fontSize: 11, color: '#8a909c', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.channel}</div>
+                <div title={d.error || currentStage} style={{ width: 130, fontSize: 11.5, color: stageColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{currentStage === 'Failed' && d.error ? `Failed: ${d.error}` : currentStage}</div>
                 <div style={{ width: 140 }}><div style={{ height: 6, borderRadius: 4, background: '#1a1e26', overflow: 'hidden' }}><div style={{ width: pct, height: '100%', background: barColor }} /></div></div>
                 <div style={{ width: 100, display: 'flex', justifyContent: 'flex-end', gap: 5 }}>
                   {(() => {

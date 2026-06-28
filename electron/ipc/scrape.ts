@@ -12,6 +12,8 @@ import { getRepos } from '../db'
 import { channelUrl, humanizeCount, orderVideos, scrapeChannel } from '../services/scraper'
 import { matchDownloadsToUploads } from '../services/mapping'
 import { notify, reminderHit } from '../services/notify'
+import { warmBrollLibraryFromTitles } from '../services/broll'
+import { L } from '../services/logger'
 import { emit, hhmm, pushActivity } from './events'
 
 // Orchestration layer: the services are pure; here we wire scrape → DB → mapping →
@@ -176,6 +178,18 @@ export async function sourceVideos(url: string, order: ScrapeOrder, count: numbe
   const sourceId = existing?.id ?? `src-${ch.handle.replace(/^@/, '')}`
   repos.upsertSourceChannel({ id: sourceId, url: channelUrl(url), handle: ch.handle, name: ch.name })
   repos.replaceSourceVideos(sourceId, ordered)
+  if (settings.beta.pexelsKey || settings.beta.pixabayKey || settings.beta.coverrKey || process.env['ME_BROLL_LOCAL'] || process.env['ME_BROLL_FIXTURE']) {
+    void warmBrollLibraryFromTitles(settings, ordered.map((v) => v.title), {
+      sourceKey: sourceId,
+      targetClips: 60,
+      dims: { w: 1920, h: 1080 }
+    }).then((res) => {
+      if (!res) return
+      pushActivity({ t: hhmm(), icon: '▣', color: '#8b7cff', text: `B-roll library warmed: ${res.clips} clips for ${ch.name}` })
+    }).catch((e) => {
+      L.warn(`B-roll library warm failed for ${sourceId}: ${(e as Error).message}`)
+    })
+  }
   return ordered
 }
 

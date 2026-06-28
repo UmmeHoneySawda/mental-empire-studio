@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process'
 import type { RenderCapabilities } from '../../../shared/types'
-import { ffmpegPath } from '../render'
+import { ffmpegPath } from '../bin'
 import { logger } from '../logger'
 
 let cached: RenderCapabilities | null = null

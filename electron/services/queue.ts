@@ -187,7 +187,9 @@ export async function runJob(job: RenderJob): Promise<void> {
   const { ass } = buildAss(words, {
     preset: renderProject.captionPreset,
     font: renderProject.captionFont,
+    animation: renderProject.captionAnim,
     aspect: renderProject.captionAspect,
+    lines: renderProject.captionLines ?? 1,
     position: renderProject.captionPosition ?? 'bottom',
     keywords: renderProject.keywords || !!beta?.autoHighlight,
     hook: hookText ? { text: hookText, untilSec: 2.6 } : undefined,
@@ -219,7 +221,7 @@ export async function runJob(job: RenderJob): Promise<void> {
         density: beta.broll.density,
         poolSize: beta.broll.poolSize,
         dims,
-        fps: 30,
+        fps: 24,
         jobId: job.id,
         maxSegments,
         shouldCancel: () => hasCancelIntent(job.id),

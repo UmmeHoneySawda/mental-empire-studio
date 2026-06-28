@@ -11,11 +11,15 @@ export interface CaptionOptions {
   preset: string
   /** renderer-selected font family; falls back to the preset's default */
   font?: string
+  /** renderer-selected animation preset */
+  animation?: string
   aspect: CaptionAspect
   /** auto-emphasize detected keywords in addition to per-word emphasis flags */
   keywords: boolean
   /** words per on-screen caption group (Word preset forces 1) */
   perGroup?: number
+  /** number of stacked caption lines the user wants on screen */
+  lines?: 1 | 2 | 3
   /** beta: intro "hook" text card shown centered for the first untilSec seconds */
   hook?: { text: string; untilSec: number }
   /** beta: a leading ASS override tag applied to every caption line (the style "feel") */
@@ -115,13 +119,49 @@ function styleLine(p: PresetStyle, marginV: number, alignment: 2 | 5 | 8): strin
   return `Style: Default,${p.font},${p.size},${p.primary},${p.secondary},${p.outline},${p.back},${p.bold},0,0,0,100,100,0,0,${p.borderStyle},${p.outlineW},${p.shadow},${alignment},60,60,${marginV},1`
 }
 
+function clampLines(v: unknown): 1 | 2 | 3 {
+  return v === 2 || v === 3 ? v : 1
+}
+
+function animationWordTag(animation: string | undefined, active: boolean): string {
+  if (!active) return ''
+  switch (animation) {
+    case 'Bounce':
+      return '\\t(0,80,\\fscx120\\fscy120)\\t(80,150,\\fscx96\\fscy96)\\t(150,230,\\fscx108\\fscy108)'
+    case 'Slide':
+      return '\\t(0,140,\\fscx108\\fscy108)'
+    case 'Type':
+      return '\\t(0,80,\\fscx106\\fscy106)'
+    case 'Pop-in':
+    default:
+      return '\\t(0,120,\\fscx112\\fscy112)'
+  }
+}
+
+function animationLineLead(animation: string | undefined, w: number, h: number, marginV: number, alignment: 2 | 5 | 8): string {
+  if (animation !== 'Slide') return '{\\fad(20,20)}'
+  const x = Math.round(w / 2)
+  const y = alignment === 8 ? marginV : alignment === 5 ? Math.round(h / 2) : h - marginV
+  return `{\\fad(20,20)\\move(${x},${y + 34},${x},${y},0,150)}`
+}
+
+function wordsWithLineBreaks(words: string[], lines: 1 | 2 | 3): string {
+  if (lines <= 1 || words.length <= 2) return words.join(' ')
+  const perLine = Math.ceil(words.length / lines)
+  const out: string[] = []
+  for (let i = 0; i < words.length; i += perLine) out.push(words.slice(i, i + perLine).join(' '))
+  return out.join('\\N')
+}
+
 export function buildAss(words: TranscriptWord[], opts: CaptionOptions): AssResult {
   const rawPreset = PRESETS[opts.preset] ?? PRESETS.Hormozi
   const { w, h } = resolutionFor(opts.aspect)
   const fontPx = Math.round(Math.max(64, Math.min(opts.aspect === '9:16' ? h * 0.11 : h * 0.085, opts.aspect === '9:16' ? 150 : 108)))
   const preset = { ...rawPreset, font: safeFontName(opts.font, rawPreset.font), size: opts.preset === 'Word' ? Math.round(fontPx * 1.12) : fontPx }
-  const defaultGroup = opts.aspect === '9:16' ? 4 : opts.aspect === '1:1' ? 3 : 2
-  const perGroup = opts.preset === 'Word' ? 1 : Math.max(1, opts.perGroup ?? defaultGroup)
+  const lines = clampLines(opts.lines)
+  const wordsPerLine = opts.aspect === '9:16' ? 3 : opts.aspect === '1:1' ? 3 : 4
+  const defaultGroup = wordsPerLine * lines
+  const perGroup = opts.preset === 'Word' && lines === 1 ? 1 : Math.max(1, opts.perGroup ?? defaultGroup)
   const position = opts.position ?? 'bottom'
   const alignment: 2 | 5 | 8 = position === 'top' ? 8 : position === 'middle' ? 5 : 2
   const marginV = position === 'middle'
@@ -164,7 +204,7 @@ export function buildAss(words: TranscriptWord[], opts: CaptionOptions): AssResu
         const body = escapeAss(word.word.toUpperCase())
         const fx = wordFx.get(word.word.toLowerCase().replace(/[^a-z0-9]/g, '')) ?? ''
         const color = active || key ? preset.emphasis : '&H00FFFFFF'
-        const pop = active ? '\\t(0,120,\\fscx112\\fscy112)' : ''
+        const pop = animationWordTag(opts.animation, active)
         return `${fx}{\\1c${color}${pop}}${body}{\\fscx100\\fscy100}`
   }
 
@@ -172,8 +212,9 @@ export function buildAss(words: TranscriptWord[], opts: CaptionOptions): AssResu
     g.words.map((activeWord, activeIdx) => {
       const lineStart = activeWord.start
       const lineEnd = Math.max(lineStart + 0.05, g.words[activeIdx + 1]?.start ?? g.end)
-      const text = g.words.map((word, idx) => wordText(word, idx === activeIdx)).join(' ')
-      return `Dialogue: 0,${secToAss(lineStart)},${secToAss(lineEnd)},Default,,0,0,0,,${opts.styleLead ?? ''}{\\fad(20,20)}${text}`
+      const visibleWords = opts.animation === 'Type' ? g.words.slice(0, activeIdx + 1) : g.words
+      const text = wordsWithLineBreaks(visibleWords.map((word) => wordText(word, word.id === activeWord.id)), lines)
+      return `Dialogue: 0,${secToAss(lineStart)},${secToAss(lineEnd)},Default,,0,0,0,,${opts.styleLead ?? ''}${animationLineLead(opts.animation, w, h, marginV, alignment)}${text}`
     })
   )
 

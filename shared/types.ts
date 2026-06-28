@@ -65,6 +65,8 @@ export interface DownloadedVideo {
   filePath?: string
   /** probed audio duration in seconds (M4) */
   durationSec?: number
+  /** last download failure, shown inline in Download */
+  error?: string
 }
 
 /** A video published on one of my own channels (scraped from its uploads tab). */
@@ -378,6 +380,7 @@ export interface Project {
   captionFont: string
   captionAnim: string
   captionAspect: '16:9' | '1:1' | '9:16'
+  captionLines?: 1 | 2 | 3
   captionPosition?: 'top' | 'middle' | 'bottom'
   emphasis: boolean
   keywords: boolean

@@ -1,6 +1,6 @@
 import { spawnSync } from 'node:child_process'
 import { parseFile } from 'music-metadata'
-import { ffprobePath } from './render'
+import { ffprobePath } from './bin'
 import { logger } from './logger'
 
 // Audio helpers: duration probing and the even-split image range math that drives

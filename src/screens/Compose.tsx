@@ -26,6 +26,7 @@ function fmt(sec: number): string {
 const IMG_GRADS = ['linear-gradient(135deg,#2a2540,#46243a)', 'linear-gradient(135deg,#1a2e3a,#0f3a32)', 'linear-gradient(135deg,#23304a,#1a2438)', 'linear-gradient(135deg,#2e2440,#3a1f2e)']
 const CAPTION_PRESETS = ['Hormozi', 'Pop', 'Bold', 'Word', 'Neon', 'Minimal']
 const CAPTION_ASPECTS: Project['captionAspect'][] = ['16:9', '1:1', '9:16']
+const CAPTION_LINES: Array<NonNullable<Project['captionLines']>> = [1, 2, 3]
 const CAPTION_POSITIONS: Array<NonNullable<Project['captionPosition']>> = ['bottom', 'middle', 'top']
 
 function mediaSrc(path: string): string {
@@ -155,13 +156,13 @@ function MiniToggle({ on, onClick }: { on: boolean; onClick: () => void }): JSX.
   return <div onClick={onClick} style={{ width: 32, height: 18, borderRadius: 11, background: on ? 'var(--accent)' : '#2b303b', position: 'relative', cursor: 'pointer', flex: 'none' }}><span style={{ position: 'absolute', top: 2, right: on ? 2 : 16, width: 14, height: 14, borderRadius: '50%', background: '#fff' }} /></div>
 }
 
-function CaptionPreview({ words, aspect, position, font, imagePath }: { words: TranscriptWord[]; aspect: string; position: NonNullable<Project['captionPosition']>; font: string; imagePath?: string }): JSX.Element {
+function CaptionPreview({ words, aspect, lines, position, font, animation, imagePath }: { words: TranscriptWord[]; aspect: string; lines: 1 | 2 | 3; position: NonNullable<Project['captionPosition']>; font: string; animation: string; imagePath?: string }): JSX.Element {
   const sample = (words.length ? words : [
     { id: 'p1', projectId: '', ord: 0, word: 'you', start: 0, end: 0.25, emphasis: false },
     { id: 'p2', projectId: '', ord: 1, word: 'are', start: 0.25, end: 0.45, emphasis: false },
     { id: 'p3', projectId: '', ord: 2, word: 'not', start: 0.45, end: 0.8, emphasis: true },
     { id: 'p4', projectId: '', ord: 3, word: 'crazy', start: 0.8, end: 1.1, emphasis: false }
-  ]).slice(0, aspect === '9:16' ? 4 : 2)
+  ]).slice(0, Math.max(3, lines * (aspect === '9:16' ? 3 : 4)))
   const activeIndex = Math.min(1, sample.length - 1)
   const ratio = aspect === '9:16' ? '9/16' : aspect === '1:1' ? '1/1' : '16/9'
   const fontSize = aspect === '9:16' ? 18 : 20
@@ -169,12 +170,29 @@ function CaptionPreview({ words, aspect, position, font, imagePath }: { words: T
   const padding = aspect === '9:16'
     ? position === 'bottom' ? '0 14px 66px' : position === 'top' ? '66px 14px 0' : '0 14px'
     : position === 'bottom' ? '0 16px 34px' : position === 'top' ? '34px 16px 0' : '0 16px'
+  const perLine = Math.max(1, Math.ceil(sample.length / lines))
+  const rows = Array.from({ length: lines }, (_, i) => sample.slice(i * perLine, (i + 1) * perLine)).filter((r) => r.length > 0)
   return (
     <div style={{ width: 210, border: '1px solid #1d2129', borderRadius: 12, aspectRatio: ratio, background: 'linear-gradient(135deg,#23262e,#15171d)', position: 'relative', display: 'flex', alignItems, justifyContent: 'center', padding, overflow: 'hidden' }}>
       {imagePath ? <img src={mediaSrc(imagePath)} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: 0.72 }} /> : <div style={{ position: 'absolute', left: '14%', bottom: 0, width: '34%', height: '80%', background: 'linear-gradient(180deg,#3a4150,#23262e)', borderRadius: '50px 50px 0 0' }} />}
       <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.48))' }} />
       <div style={{ position: 'relative', textAlign: 'center', fontFamily: `${font}, Anton, var(--font-poster)`, fontSize, lineHeight: 1.04, color: '#fff', textTransform: 'uppercase', WebkitTextStroke: '1.4px #000', textShadow: '0 2px 0 #000, 0 4px 12px rgba(0,0,0,.5)' }}>
-        {sample.map((w, i) => <span key={w.id} style={{ display: 'inline-block', color: i === activeIndex || w.emphasis ? '#FFD93D' : '#fff', transform: i === activeIndex ? 'scale(1.12)' : undefined, margin: '0 3px' }}>{w.word}</span>)}
+        {rows.map((row, rowIdx) => (
+          <div key={rowIdx} style={{ whiteSpace: 'nowrap' }}>
+            {row.map((w) => {
+              const i = sample.findIndex((s) => s.id === w.id)
+              const active = i === activeIndex
+              const transform = active
+                ? animation === 'Bounce'
+                  ? 'scale(1.16)'
+                  : animation === 'Slide'
+                    ? 'translateY(-2px)'
+                    : 'scale(1.12)'
+                : undefined
+              return <span key={w.id} style={{ display: 'inline-block', color: active || w.emphasis ? '#FFD93D' : '#fff', transform, margin: '0 3px' }}>{w.word}</span>
+            })}
+          </div>
+        ))}
       </div>
     </div>
   )
@@ -352,6 +370,7 @@ function CaptionsTab(): JSX.Element {
           </div>
           <div><div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 7 }}>Animation</div><div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, fontSize: 10.5 }}>{(['Pop-in', 'Bounce', 'Slide', 'Type'] as const).map((a) => chip(a, project?.captionAnim === a, () => void setCaptions({ captionAnim: a }), a))}</div></div>
           <div><div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 7 }}>Aspect</div><div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, fontSize: 10.5 }}>{CAPTION_ASPECTS.map((a) => chip(a, (project?.captionAspect ?? '16:9') === a, () => void setCaptions({ captionAspect: a }), a))}</div></div>
+          <div><div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 7 }}>Lines</div><div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, fontSize: 10.5 }}>{CAPTION_LINES.map((n) => chip(`${n} line${n > 1 ? 's' : ''}`, (project?.captionLines ?? 1) === n, () => void setCaptions({ captionLines: n }), String(n)))}</div></div>
           <div><div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 7 }}>Position</div><div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, fontSize: 10.5 }}>{CAPTION_POSITIONS.map((p) => chip(p[0].toUpperCase() + p.slice(1), (project?.captionPosition ?? 'bottom') === p, () => void setCaptions({ captionPosition: p }), p))}</div></div>
           <div style={{ display: 'flex', gap: 9 }}>
             <div onClick={() => void setCaptions({ keywords: !project?.keywords })} style={{ flex: 1, border: '1px solid #1d2129', borderRadius: 9, padding: 9, background: '#0e1116', cursor: 'pointer' }}><div style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ fontSize: 11, fontWeight: 600, color: '#dde0e5' }}>Keywords</span><span style={{ marginLeft: 'auto', fontSize: 8.5, fontWeight: 700, background: project?.keywords ? '#1f9c6b' : '#2b303b', color: '#fff', borderRadius: 9, padding: '1px 6px' }}>{project?.keywords ? 'ON' : 'OFF'}</span></div><div style={{ fontSize: 9, color: '#6a7180', marginTop: 4 }}>Auto-highlight</div></div>
@@ -366,7 +385,7 @@ function CaptionsTab(): JSX.Element {
         {previewPath ? (
           <video key={previewPath} controls src={mediaSrc(previewPath)} style={{ width: 210, border: '1px solid #1d2129', borderRadius: 12, background: '#0e1116', display: 'block' }} />
         ) : (
-          <CaptionPreview words={transcript} aspect={project?.captionAspect ?? '16:9'} position={project?.captionPosition ?? 'bottom'} font={project?.captionFont ?? 'Anton'} imagePath={images[0]?.thumb || images[0]?.path} />
+          <CaptionPreview words={transcript} aspect={project?.captionAspect ?? '16:9'} lines={project?.captionLines ?? 1} position={project?.captionPosition ?? 'bottom'} font={project?.captionFont ?? 'Anton'} animation={project?.captionAnim ?? 'Pop-in'} imagePath={images[0]?.thumb || images[0]?.path} />
         )}
         <div style={{ fontSize: 10, color: '#6a7180', textAlign: 'center', marginTop: 9, lineHeight: 1.4 }}>Yellow active word · uniform pop ({preset})</div>
         <button type="button" disabled={!project || previewing} onClick={() => void renderPreview()} className="me-btn" style={{ width: '100%', marginTop: 10, border: '1px solid #262b34', background: '#15181f', borderRadius: 9, padding: '8px 10px', fontSize: 11.5, color: '#c4cad3', cursor: project && !previewing ? 'pointer' : 'not-allowed', opacity: project && !previewing ? 1 : 0.55 }}>{previewing ? 'Rendering…' : 'Render preview'}</button>

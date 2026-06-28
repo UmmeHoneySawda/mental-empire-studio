@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS projects (
   id TEXT PRIMARY KEY, downloadId TEXT, title TEXT, channel TEXT,
   mp3Path TEXT, durationSec INTEGER,
   imageMode TEXT, poolSize INTEGER, kenBurns INTEGER, seed INTEGER, crossfade INTEGER,
-  captionPreset TEXT, captionFont TEXT, captionAnim TEXT, captionAspect TEXT, captionPosition TEXT,
+  captionPreset TEXT, captionFont TEXT, captionAnim TEXT, captionAspect TEXT, captionLines INTEGER, captionPosition TEXT,
   emphasis INTEGER, keywords INTEGER, punchZoom INTEGER,
   stage TEXT, createdAt TEXT
 );
@@ -131,7 +131,9 @@ function migrate(d: Database.Database): void {
   ensureColumn(d, 'uploads', 'thumb', 'TEXT')
   // M8: per-project saved thumbnail path
   ensureColumn(d, 'projects', 'thumbPath', 'TEXT')
+  ensureColumn(d, 'projects', 'captionLines', 'INTEGER')
   ensureColumn(d, 'projects', 'captionPosition', 'TEXT')
+  ensureColumn(d, 'downloaded_videos', 'error', 'TEXT')
 
   purgeLegacyDemoSeed(d)
 }
@@ -227,7 +229,7 @@ export interface Repositories {
   // ---- M4 download + compose writes ----
   download(id: string): DownloadedVideo | undefined
   upsertDownload(d: DownloadedVideo): void
-  setDownloadProgress(id: string, patch: { pct?: string; stage?: string; filePath?: string; durationSec?: number; action?: 'Resume' | 'Open' }): void
+  setDownloadProgress(id: string, patch: { pct?: string; stage?: string; filePath?: string; durationSec?: number; action?: 'Resume' | 'Open'; error?: string }): void
   createProject(p: Project): void
   getProject(id: string): Project | undefined
   listProjects(): Project[]
@@ -454,11 +456,11 @@ function buildRepositories(d: Database.Database): Repositories {
     download: (id) => d.prepare('SELECT * FROM downloaded_videos WHERE id=?').get(id) as DownloadedVideo | undefined,
     upsertDownload: (dl) => {
       d.prepare(
-        `INSERT INTO downloaded_videos (id,sourceId,title,channel,size,"when",stage,pct,action,thumb,matchedUploadId,filePath,durationSec)
-         VALUES (@id,@sourceId,@title,@channel,@size,@when,@stage,@pct,@action,@thumb,@matchedUploadId,@filePath,@durationSec)
+        `INSERT INTO downloaded_videos (id,sourceId,title,channel,size,"when",stage,pct,action,thumb,matchedUploadId,filePath,durationSec,error)
+         VALUES (@id,@sourceId,@title,@channel,@size,@when,@stage,@pct,@action,@thumb,@matchedUploadId,@filePath,@durationSec,@error)
          ON CONFLICT(id) DO UPDATE SET sourceId=@sourceId, title=@title, channel=@channel, size=@size,
-           "when"=@when, stage=@stage, pct=@pct, action=@action, thumb=@thumb, filePath=@filePath, durationSec=@durationSec`
-      ).run({ matchedUploadId: null, filePath: null, durationSec: null, ...dl })
+            "when"=@when, stage=@stage, pct=@pct, action=@action, thumb=@thumb, filePath=@filePath, durationSec=@durationSec, error=@error`
+      ).run({ matchedUploadId: null, filePath: null, durationSec: null, error: null, ...dl })
     },
     setDownloadProgress: (id, patch) => {
       const sets: string[] = []
@@ -474,8 +476,8 @@ function buildRepositories(d: Database.Database): Repositories {
 
     createProject: (p) => {
       d.prepare(
-        `INSERT INTO projects (id,downloadId,title,channel,mp3Path,durationSec,imageMode,poolSize,kenBurns,seed,crossfade,captionPreset,captionFont,captionAnim,captionAspect,captionPosition,emphasis,keywords,punchZoom,stage,createdAt,betaOpts)
-         VALUES (@id,@downloadId,@title,@channel,@mp3Path,@durationSec,@imageMode,@poolSize,@kenBurns,@seed,@crossfade,@captionPreset,@captionFont,@captionAnim,@captionAspect,@captionPosition,@emphasis,@keywords,@punchZoom,@stage,@createdAt,@betaOpts)`
+        `INSERT INTO projects (id,downloadId,title,channel,mp3Path,durationSec,imageMode,poolSize,kenBurns,seed,crossfade,captionPreset,captionFont,captionAnim,captionAspect,captionLines,captionPosition,emphasis,keywords,punchZoom,stage,createdAt,betaOpts)
+         VALUES (@id,@downloadId,@title,@channel,@mp3Path,@durationSec,@imageMode,@poolSize,@kenBurns,@seed,@crossfade,@captionPreset,@captionFont,@captionAnim,@captionAspect,@captionLines,@captionPosition,@emphasis,@keywords,@punchZoom,@stage,@createdAt,@betaOpts)`
       ).run(projectToRow(p))
     },
     getProject: (id) => {
@@ -585,7 +587,7 @@ function buildRepositories(d: Database.Database): Repositories {
 const PROJECT_BOOL_KEYS = new Set(['kenBurns', 'emphasis', 'keywords', 'punchZoom'])
 
 function projectToRow(p: Project): Record<string, unknown> {
-  return { ...p, captionPosition: p.captionPosition ?? 'bottom', kenBurns: p.kenBurns ? 1 : 0, crossfade: p.crossfade ?? 0.8, emphasis: p.emphasis ? 1 : 0, keywords: p.keywords ? 1 : 0, punchZoom: p.punchZoom ? 1 : 0, betaOpts: JSON.stringify(p.betaOpts ?? DEFAULT_BETA_OPTS) }
+  return { ...p, captionLines: p.captionLines ?? 1, captionPosition: p.captionPosition ?? 'bottom', kenBurns: p.kenBurns ? 1 : 0, crossfade: p.crossfade ?? 0.8, emphasis: p.emphasis ? 1 : 0, keywords: p.keywords ? 1 : 0, punchZoom: p.punchZoom ? 1 : 0, betaOpts: JSON.stringify(p.betaOpts ?? DEFAULT_BETA_OPTS) }
 }
 function projectPatchToRow(patch: Partial<Project>): Record<string, unknown> {
   const out: Record<string, unknown> = {}
@@ -597,7 +599,9 @@ function projectPatchToRow(patch: Partial<Project>): Record<string, unknown> {
   return out
 }
 function rowToProject(r: Record<string, unknown>): Project {
-  return { ...(r as unknown as Project), captionPosition: (r.captionPosition as Project['captionPosition']) ?? 'bottom', kenBurns: !!r.kenBurns, crossfade: Number(r.crossfade) || 0.8, emphasis: !!r.emphasis, keywords: !!r.keywords, punchZoom: !!r.punchZoom, betaOpts: parseBetaOpts(r) }
+  const rawLines = Number(r.captionLines ?? 1)
+  const captionLines = rawLines === 2 || rawLines === 3 ? rawLines : 1
+  return { ...(r as unknown as Project), captionLines, captionPosition: (r.captionPosition as Project['captionPosition']) ?? 'bottom', kenBurns: !!r.kenBurns, crossfade: Number(r.crossfade) || 0.8, emphasis: !!r.emphasis, keywords: !!r.keywords, punchZoom: !!r.punchZoom, betaOpts: parseBetaOpts(r) }
 }
 function rowToImage(r: Record<string, unknown>): ProjectImage {
   return { ...(r as unknown as ProjectImage), manual: !!r.manual }

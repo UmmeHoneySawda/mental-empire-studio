@@ -3,8 +3,8 @@ import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } fr
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { AppSettings } from '../../shared/types'
-import { resolveBinDir } from './ytdlp'
 import { L } from './logger'
+import { ffmpegPath } from './bin'
 
 // Word-level transcription via Groq's free Whisper API (OpenAI-compatible). We
 // upload the mp3 and ask for word timestamps. Offline seam: ME_WHISPER_FIXTURE
@@ -33,12 +33,6 @@ function mb(bytes: number): string {
 
 function sanitizeError(e: unknown): string {
   return (e as Error).message.replace(/Bearer\s+[A-Za-z0-9_.-]+/g, 'Bearer [redacted]').slice(0, 500)
-}
-
-function ffmpegPath(): string {
-  const exe = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
-  const vendored = join(resolveBinDir(), exe)
-  return existsSync(vendored) ? vendored : exe
 }
 
 function runFfmpeg(args: string[]): Promise<void> {

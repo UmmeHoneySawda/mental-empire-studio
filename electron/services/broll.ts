@@ -3,7 +3,8 @@ import { appendFileSync, createWriteStream, existsSync, mkdirSync, readdirSync, 
 import { join } from 'node:path'
 import { app } from 'electron'
 import type { AppSettings, BrollDensity, TranscriptWord } from '../../shared/types'
-import { ffmpegPath, ffprobePath, videoCodecArgs } from './render'
+import { videoCodecArgs } from './render'
+import { ffmpegPath, ffprobePath } from './bin'
 import type { RenderCapabilities } from '../../shared/types'
 import { FALLBACK_CAPS } from './engine/encoder'
 import { createProgressSmoother, parseFfmpegProgressBlock, type FfmpegProgress } from './engine/progress'
@@ -84,6 +85,34 @@ export interface BrollManifestResult {
   jsonPath: string
 }
 
+interface BrollLibraryClip {
+  provider: ProviderName
+  id: string
+  path: string
+  durationSec: number
+  width: number
+  height: number
+  tags: string[]
+}
+
+export interface BrollLibraryIndex {
+  version: 1
+  sourceKey: string
+  createdAt: string
+  updatedAt: string
+  keywords: Array<{
+    keyword: string
+    clips: BrollLibraryClip[]
+  }>
+}
+
+export interface BrollLibraryWarmResult {
+  indexPath: string
+  sourceKey: string
+  keywords: string[]
+  clips: number
+}
+
 // ---------- pure core (offline, unit-tested) ----------
 
 /** Top recurring content words across the transcript — the video's themes. */
@@ -95,6 +124,57 @@ export function extractThemes(words: TranscriptWord[], n = 4): string[] {
     freq.set(norm, (freq.get(norm) ?? 0) + 1 + (w.emphasis ? 2 : 0))
   }
   return [...freq.entries()].sort((a, b) => b[1] - a[1]).slice(0, n).map((e) => e[0])
+}
+
+/** Source-channel titles → stock-footage search themes. Used for background library warming. */
+export function keywordThemesFromTitles(titles: string[], n = 12): string[] {
+  const freq = new Map<string, number>()
+  const add = (theme: string, weight: number): void => {
+    const key = theme.toLowerCase().trim()
+    if (!key) return
+    freq.set(key, (freq.get(key) ?? 0) + weight)
+  }
+  for (const title of titles) {
+    const lower = title.toLowerCase()
+    if (/narciss|gaslight|toxic|abuse|manipulat/.test(lower)) {
+      add('toxic relationship', 8)
+      add('emotional abuse', 6)
+      add('therapy session', 4)
+    }
+    if (/no contact|break.?up|relationship|ex\b|avoidant|attachment/.test(lower)) {
+      add('lonely person', 7)
+      add('relationship conflict', 6)
+      add('person thinking', 5)
+    }
+    if (/discipline|motivat|success|mindset|focus|productive|habit/.test(lower)) {
+      add('focused work', 7)
+      add('success mindset', 6)
+      add('city ambition', 4)
+    }
+    if (/anxiety|depress|trauma|healing|mental|stress|overthink/.test(lower)) {
+      add('mental health', 7)
+      add('calm nature', 4)
+      add('person thinking', 4)
+    }
+    if (/money|business|wealth|rich|finance|entrepreneur/.test(lower)) {
+      add('business success', 7)
+      add('office work', 5)
+    }
+    if (/sleep|peace|meditat|calm|relax/.test(lower)) {
+      add('peaceful nature', 7)
+      add('night city', 3)
+    }
+
+    for (const raw of lower.split(/[^a-z]+/)) {
+      const word = raw.replace(/[^a-z]/g, '')
+      if (word.length < 4 || STOPWORDS.has(word)) continue
+      add(word, 1)
+    }
+  }
+  const ranked = [...freq.entries()]
+    .sort((a, b) => b[1] - a[1] || a[0].localeCompare(b[0]))
+    .map(([theme]) => theme)
+  return ranked.slice(0, Math.max(1, n))
 }
 
 /** Rank candidates for a keyword + target frame: tag match, orientation, resolution, duration. */
@@ -276,8 +356,15 @@ function localCandidates(themes: string[], target: { w: number; h: number }): Br
   })
 }
 
-/** Fetch a ranked candidate pool across providers in priority order until poolSize. */
-export async function fetchPool(settings: AppSettings, themes: string[], target: { w: number; h: number }, poolSize: number, logPath?: string): Promise<BrollCandidate[]> {
+/** Fetch a ranked candidate pool across the local library + providers in priority order until poolSize. */
+export async function fetchPool(
+  settings: AppSettings,
+  themes: string[],
+  target: { w: number; h: number },
+  poolSize: number,
+  logPath?: string,
+  opts: { skipLibrary?: boolean } = {}
+): Promise<BrollCandidate[]> {
   brollInfo(logPath, `themes selected=${themes.join(',') || 'cinematic background'} target=${target.w}x${target.h} requested=${poolSize}`)
   // Local real-clip seam (genuine assembly, offline).
   if (process.env['ME_BROLL_LOCAL']) {
@@ -293,15 +380,17 @@ export async function fetchPool(settings: AppSettings, themes: string[], target:
     brollInfo(logPath, `provider fixture pool count=${fixturePool.length} requested=${poolSize} dir=${fixture}`)
     return fixturePool
   }
-  const out: BrollCandidate[] = []
-  const seen = new Set<string>()
+  const cached = opts.skipLibrary ? [] : libraryCandidates(themes, target, poolSize, logPath)
+  const out: BrollCandidate[] = [...cached]
+  const seen = new Set<string>(out.map((c) => `${c.provider}:${c.id}`))
+  if (out.length >= poolSize) return out.slice(0, poolSize)
   const providers: Array<{ name: ProviderName; search: (q: string) => Promise<BrollCandidate[]> }> = []
   if (settings.beta.pexelsKey) providers.push({ name: 'pexels', search: (q) => searchPexels(settings.beta.pexelsKey, q, target, logPath) })
   if (settings.beta.pixabayKey) providers.push({ name: 'pixabay', search: (q) => searchPixabay(settings.beta.pixabayKey, q, logPath) })
   if (settings.beta.coverrKey) providers.push({ name: 'coverr', search: (q) => searchCoverr(settings.beta.coverrKey, q, logPath) })
   if (providers.length === 0) {
-    brollWarn(logPath, 'provider pool skipped: no stock provider keys configured')
-    return []
+    brollWarn(logPath, out.length ? `provider pool skipped: no stock provider keys configured; using ${out.length} cached clips` : 'provider pool skipped: no stock provider keys configured')
+    return out.slice(0, poolSize)
   }
   const queries = themes.length ? themes : ['cinematic background']
   const rateLimited = new Set<ProviderName>()
@@ -343,6 +432,103 @@ function brollDir(): string {
 
 function safeId(id: string): string {
   return (id.replace(/[^a-z0-9_.-]/gi, '_').trim() || 'broll').slice(0, 120)
+}
+
+function brollLibraryDir(): string {
+  const d = join(app.getPath('userData'), 'broll-library')
+  mkdirSync(d, { recursive: true })
+  return d
+}
+
+function libraryIndexPath(sourceKey: string): string {
+  return join(brollLibraryDir(), `${safeId(sourceKey)}.json`)
+}
+
+function emptyLibraryIndex(sourceKey: string): BrollLibraryIndex {
+  const now = new Date().toISOString()
+  return { version: 1, sourceKey, createdAt: now, updatedAt: now, keywords: [] }
+}
+
+function readLibraryIndex(sourceKey: string): BrollLibraryIndex {
+  const path = libraryIndexPath(sourceKey)
+  if (!existsSync(path)) return emptyLibraryIndex(sourceKey)
+  try {
+    const parsed = JSON.parse(readFileSync(path, 'utf8')) as BrollLibraryIndex
+    return { ...emptyLibraryIndex(sourceKey), ...parsed, keywords: parsed.keywords ?? [] }
+  } catch (e) {
+    BROLL_LOG.warn(`library index unreadable path=${path}: ${(e as Error).message}`)
+    return emptyLibraryIndex(sourceKey)
+  }
+}
+
+function writeLibraryIndex(index: BrollLibraryIndex): string {
+  const path = libraryIndexPath(index.sourceKey)
+  index.updatedAt = new Date().toISOString()
+  writeFileSync(path, JSON.stringify(index, null, 2))
+  return path
+}
+
+function readLibraryIndexes(): BrollLibraryIndex[] {
+  const dir = brollLibraryDir()
+  const out: BrollLibraryIndex[] = []
+  for (const file of readdirSync(dir).filter((f) => f.toLowerCase().endsWith('.json'))) {
+    try {
+      const index = JSON.parse(readFileSync(join(dir, file), 'utf8')) as BrollLibraryIndex
+      if (index?.version === 1 && Array.isArray(index.keywords)) out.push(index)
+    } catch (e) {
+      BROLL_LOG.warn(`library index unreadable file=${file}: ${(e as Error).message}`)
+    }
+  }
+  return out
+}
+
+function themeTokens(themes: string[]): string[] {
+  return themes
+    .flatMap((t) => t.toLowerCase().split(/[^a-z]+/))
+    .map((t) => t.trim())
+    .filter((t) => t.length >= 3 && !STOPWORDS.has(t))
+}
+
+function libraryCandidates(themes: string[], target: { w: number; h: number }, poolSize: number, logPath?: string): BrollCandidate[] {
+  const tokens = themeTokens(themes)
+  const wanted = new Set(tokens)
+  const landscape = target.w >= target.h
+  const scored: Array<{ score: number; candidate: BrollCandidate }> = []
+  for (const index of readLibraryIndexes()) {
+    for (const group of index.keywords) {
+      const groupTokens = themeTokens([group.keyword])
+      for (const clip of group.clips) {
+        if (!clip.path || !existsSync(clip.path)) continue
+        const clipTokens = themeTokens([...clip.tags, group.keyword])
+        const matchScore = [...new Set([...groupTokens, ...clipTokens])].reduce((sum, token) => {
+          if (wanted.has(token)) return sum + 6
+          if (tokens.some((t) => token.includes(t) || t.includes(token))) return sum + 3
+          return sum
+        }, 0)
+        if (tokens.length && matchScore <= 0) continue
+        let score = matchScore
+        if ((clip.width >= clip.height) === landscape) score += 3
+        if (clip.width >= target.w && clip.height >= target.h) score += 2
+        if (clip.durationSec >= 4) score += 1
+        score += Math.random() * 0.5
+        scored.push({
+          score,
+          candidate: {
+            provider: clip.provider,
+            id: `${index.sourceKey}-${clip.id}`,
+            url: clip.path,
+            width: clip.width,
+            height: clip.height,
+            durationSec: clip.durationSec,
+            tags: [...new Set([...clip.tags, group.keyword])]
+          }
+        })
+      }
+    }
+  }
+  const out = scored.sort((a, b) => b.score - a.score).slice(0, poolSize).map((s) => s.candidate)
+  if (out.length) brollInfo(logPath, `library pool hit count=${out.length} requested=${poolSize} themes=${themes.join(',')}`)
+  return out
 }
 
 function concatPath(p: string): string {
@@ -392,8 +578,8 @@ export async function downloadPool(cands: BrollCandidate[], poolSize: number, on
     if (out.length >= poolSize) break
     try {
       let path: string
-      if (local) {
-        path = c.url // localCandidates already carries the real on-disk path
+      if (local || existsSync(c.url)) {
+        path = c.url // local/library candidates already carry the real on-disk path
         brollInfo(logPath, `clip local provider=${c.provider} id=${c.id} bytes=${fileBytes(path)} path=${path}`)
       } else if (fixture) {
         path = join(dir, `${c.provider}-${c.id}.mp4`)
@@ -410,6 +596,109 @@ export async function downloadPool(cands: BrollCandidate[], poolSize: number, on
     }
   }
   return out
+}
+
+function keywordGroup(index: BrollLibraryIndex, keyword: string): BrollLibraryIndex['keywords'][number] {
+  let group = index.keywords.find((k) => k.keyword === keyword)
+  if (!group) {
+    group = { keyword, clips: [] }
+    index.keywords.push(group)
+  }
+  return group
+}
+
+async function cacheCandidateForLibrary(c: BrollCandidate, sourceKey: string, keyword: string, logPath?: string): Promise<BrollLibraryClip> {
+  const dir = join(brollLibraryDir(), safeId(sourceKey), safeId(keyword))
+  mkdirSync(dir, { recursive: true })
+  let path: string
+  if (existsSync(c.url)) {
+    path = join(dir, `${c.provider}-${safeId(c.id)}.mp4`)
+    if (!existsSync(path)) copyFileSync(c.url, path)
+    brollInfo(logPath, `library clip copied provider=${c.provider} id=${c.id} keyword=${keyword} bytes=${fileBytes(path)} path=${path}`)
+  } else {
+    path = await downloadOne(c, dir, logPath)
+    brollInfo(logPath, `library clip downloaded provider=${c.provider} id=${c.id} keyword=${keyword} bytes=${fileBytes(path)} path=${path}`)
+  }
+  return {
+    provider: c.provider,
+    id: c.id,
+    path,
+    durationSec: c.durationSec || probeDurationSec(path),
+    width: c.width,
+    height: c.height,
+    tags: [...new Set([...c.tags, keyword])]
+  }
+}
+
+/**
+ * Background prefetch for a source/profile: scrape titles once, save reusable stock
+ * clips by keyword, then future renders choose local files before external providers.
+ */
+export async function warmBrollLibraryFromTitles(
+  settings: AppSettings,
+  titles: string[],
+  opts: {
+    sourceKey?: string
+    targetClips?: number
+    dims?: { w: number; h: number }
+    logPath?: string
+    onProgress?: (done: number, total: number) => void
+  } = {}
+): Promise<BrollLibraryWarmResult | null> {
+  const themes = keywordThemesFromTitles(titles, 12)
+  if (!themes.length) return null
+  const hasProvider = !!(settings.beta.pexelsKey || settings.beta.pixabayKey || settings.beta.coverrKey || process.env['ME_BROLL_LOCAL'] || process.env['ME_BROLL_FIXTURE'])
+  const sourceKey = opts.sourceKey ?? themes.slice(0, 4).join('-')
+  const targetClips = Math.max(1, Math.min(100, opts.targetClips ?? 60))
+  const dims = opts.dims ?? { w: 1920, h: 1080 }
+  if (!hasProvider) {
+    brollWarn(opts.logPath, `library warm skipped source=${sourceKey}: no stock provider keys configured`)
+    return null
+  }
+
+  const index = readLibraryIndex(sourceKey)
+  const perTheme = Math.max(4, Math.ceil(targetClips / themes.length))
+  let clipCount = index.keywords.reduce((sum, k) => sum + k.clips.filter((c) => existsSync(c.path)).length, 0)
+  brollInfo(opts.logPath, `library warm start source=${sourceKey} target=${targetClips} existing=${clipCount} themes=${themes.join(',')}`)
+  opts.onProgress?.(Math.min(clipCount, targetClips), targetClips)
+
+  for (const keyword of themes) {
+    if (clipCount >= targetClips) break
+    const group = keywordGroup(index, keyword)
+    group.clips = group.clips.filter((c) => existsSync(c.path))
+    const needed = Math.max(0, Math.min(perTheme - group.clips.length, targetClips - clipCount))
+    if (needed <= 0) continue
+
+    try {
+      const cands = await fetchPool(settings, [keyword], dims, Math.max(needed * 2, needed), opts.logPath, { skipLibrary: true })
+      const seen = new Set(group.clips.map((c) => `${c.provider}:${c.id}`))
+      for (const cand of cands) {
+        if (group.clips.length >= perTheme || clipCount >= targetClips) break
+        if (seen.has(`${cand.provider}:${cand.id}`)) continue
+        try {
+          const clip = await cacheCandidateForLibrary(cand, sourceKey, keyword, opts.logPath)
+          if (clip.durationSec <= 0) {
+            brollWarn(opts.logPath, `library clip skipped provider=${clip.provider} id=${clip.id} reason=duration-missing`)
+            continue
+          }
+          group.clips.push(clip)
+          seen.add(`${clip.provider}:${clip.id}`)
+          clipCount++
+          writeLibraryIndex(index)
+          opts.onProgress?.(Math.min(clipCount, targetClips), targetClips)
+        } catch (e) {
+          brollWarn(opts.logPath, `library clip cache failed keyword=${keyword} id=${cand.provider}:${cand.id}: ${(e as Error).message}`)
+        }
+      }
+    } catch (e) {
+      brollWarn(opts.logPath, `library keyword warm failed source=${sourceKey} keyword=${keyword}: ${(e as Error).message}`)
+    }
+  }
+
+  const indexPath = writeLibraryIndex(index)
+  const finalClips = index.keywords.reduce((sum, k) => sum + k.clips.filter((c) => existsSync(c.path)).length, 0)
+  brollInfo(opts.logPath, `library warm done source=${sourceKey} clips=${finalClips} index=${indexPath}`)
+  return { indexPath, sourceKey, keywords: themes, clips: finalClips }
 }
 
 const BED_CF = 0.3 // bed crossfade duration (also the planCoverage tail reserve)

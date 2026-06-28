@@ -2,7 +2,7 @@ import { spawn, type ChildProcess } from 'node:child_process'
 import { copyFileSync, existsSync, mkdirSync, statSync } from 'node:fs'
 import { join } from 'node:path'
 import type { AppSettings, ScrapedVideo } from '../../shared/types'
-import { resolveBinDir, resolveYtdlpPath } from './ytdlp'
+import { resolveBinDir, resolveYtdlpPath } from './bin'
 import { formatOutputName } from './audio'
 import { L } from './logger'
 

@@ -5,7 +5,6 @@ import { dirname, join } from 'node:path'
 import type { AppSettings, Project, ProjectImage, RenderCapabilities } from '../../shared/types'
 import { asBetaOpts } from '../../shared/types'
 import type { EffectPlan } from '../../shared/effectPlan'
-import { resolveBinDir } from './ytdlp'
 import { resolutionFor, type CaptionAspect } from './captions'
 import { FALLBACK_CAPS, selectEncoder } from './engine/encoder'
 import { createProgressSmoother, parseFfmpegProgressBlock, type FfmpegProgress } from './engine/progress'
@@ -13,13 +12,14 @@ import { gradeChain } from './engine/grade'
 import { masterAudioTwoPass } from './engine/audio-master'
 import type { BrollSegment } from './broll'
 import { logger } from './logger'
+import { ffmpegPath, ffprobePath } from './bin'
 
 // ffmpeg render: image(s) over the mp3 with Ken Burns + crossfades, burned ASS
 // captions, optional punch-zoom, encoded H.264 at the chosen quality. The graph is
 // built purely (buildRenderArgs) so it's assertable; ME_RENDER_FIXTURE swaps the
 // real encode for a stub so the runner is testable without ffmpeg.
 
-const FPS = 30
+const FPS = 24
 
 /** Video codec args for the chosen encoder. CPU = libx264 (CRF); NVIDIA = h264_nvenc
  *  (constant-quality VBR). Both target visually-equivalent quality at the given level. */
@@ -77,18 +77,6 @@ export function consumeCancelIntent(jobId: string): 'cancel' | 'delete' | undefi
 /** Non-consuming check used before hardware fallback retries. */
 export function hasCancelIntent(jobId?: string): boolean {
   return !!jobId && intents.has(jobId)
-}
-
-export function ffmpegPath(): string {
-  const exe = process.platform === 'win32' ? 'ffmpeg.exe' : 'ffmpeg'
-  const vendored = join(resolveBinDir(), exe)
-  return existsSync(vendored) ? vendored : exe // else rely on PATH
-}
-
-export function ffprobePath(): string {
-  const exe = process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe'
-  const vendored = join(resolveBinDir(), exe)
-  return existsSync(vendored) ? vendored : exe // else rely on PATH
 }
 
 function shellQuoteArg(arg: string): string {

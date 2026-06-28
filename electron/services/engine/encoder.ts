@@ -27,7 +27,7 @@ export function selectEncoder(settings: Pick<AppSettings, 'encoder'>, caps: Rend
       label: 'GPU-NVENC',
       device: 'gpu',
       codec: 'h264_nvenc',
-      args: ['-c:v', 'h264_nvenc', '-preset', 'p5', '-tune', 'hq', '-rc', 'vbr', '-cq', crfOrCq, '-b:v', '0', '-pix_fmt', 'yuv420p']
+      args: ['-c:v', 'h264_nvenc', '-preset', 'p4', '-tune', 'hq', '-rc', 'vbr', '-cq', crfOrCq, '-b:v', '0', '-pix_fmt', 'yuv420p']
     }
   }
   if (requested === 'qsv' && caps.hasQsv) {
@@ -53,7 +53,6 @@ export function selectEncoder(settings: Pick<AppSettings, 'encoder'>, caps: Rend
     label: requested === 'cpu' ? 'CPU-libx264' : `CPU-libx264 fallback from ${requested.toUpperCase()}`,
     device: 'cpu',
     codec: 'libx264',
-    args: ['-c:v', 'libx264', '-preset', 'medium', '-crf', crfOrCq, '-pix_fmt', 'yuv420p']
+    args: ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', crfOrCq, '-pix_fmt', 'yuv420p']
   }
 }
-

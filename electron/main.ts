@@ -18,15 +18,15 @@ import { splitRanges } from './services/audio'
 import { autoArrangeText } from '../shared/thumbnail'
 import { THUMB_W, THUMB_H, DEFAULT_BETA_OPTS, type Project, type TextLayer, type ThumbnailTemplate, type TranscriptWord } from '../shared/types'
 import { buildAss } from './services/captions'
-import { buildRenderArgs, runRender, ffmpegPath, ffprobePath, dimensions } from './services/render'
-import { extractThemes, rankCandidates, planCoverage, buildBrollBed, buildBrollManifest, buildBrollNormalizeArgs, assembleBed, fetchPool, type BrollCandidate } from './services/broll'
+import { buildRenderArgs, runRender, dimensions } from './services/render'
+import { ffmpegPath, ffprobePath, resolveYtdlpPath } from './services/bin'
+import { extractThemes, keywordThemesFromTitles, rankCandidates, planCoverage, buildBrollBed, buildBrollManifest, buildBrollNormalizeArgs, assembleBed, fetchPool, warmBrollLibraryFromTitles, type BrollCandidate } from './services/broll'
 import { createProgressSmoother } from './services/engine/progress'
 import { probeRenderCapabilities } from './services/engine/caps'
 import { validateEffectPlan, deriveStylePlan, styleCaptionLead, textPresetTag, type EffectPlan } from '../shared/effectPlan'
 import { buildSfxTrack } from './services/sfx'
 import { buildMasterLoudnormFilter, buildSecondPassLoudnormFilter } from './services/engine/audio-master'
 import { readFileSync as readFileSyncSfx } from 'node:fs'
-import { resolveBinDir, resolveYtdlpPath } from './services/ytdlp'
 import { L, installGlobalLogging, logStartupDiagnostics, logFilePath } from './services/logger'
 import { runAll, lastMaxActive } from './services/queue'
 import { runProfile, newVideos } from './ipc/automation'
@@ -525,6 +525,21 @@ async function runSmokeM6(): Promise<void> {
     const manifestAgain = await buildBrollManifest(manifestOpts)
     const manifestMtimesAfter = manifestAgain?.segments.map((s) => statSync(s.normalizedPath).mtimeMs) ?? []
     delete process.env['ME_BROLL_LOCAL']
+    const titleThemes = keywordThemesFromTitles(['How Narcissists React After Long No Contact | Dr Ramani'], 6)
+    const librarySourceKey = `smoke-library-${Date.now()}`
+    process.env['ME_BROLL_LOCAL'] = join(process.cwd(), 'test', 'fixtures', 'broll', 'local')
+    const warmed = await warmBrollLibraryFromTitles(
+      { ...smokeSettings, beta: { enabled: true, pexelsKey: 'local', pixabayKey: '', coverrKey: '' } },
+      ['How Narcissists React After Long No Contact | Dr Ramani'],
+      { sourceKey: librarySourceKey, targetClips: 2, dims: { w: 320, h: 180 } }
+    )
+    delete process.env['ME_BROLL_LOCAL']
+    const cachedPool = await fetchPool({ ...smokeSettings, beta: { enabled: true, pexelsKey: '', pixabayKey: '', coverrKey: '' } }, ['toxic relationship'], { w: 320, h: 180 }, 1)
+    const libraryOk =
+      titleThemes.includes('toxic relationship') &&
+      titleThemes.includes('lonely person') &&
+      !!warmed && existsSync(warmed.indexPath) && warmed.clips > 0 &&
+      cachedPool.some((c) => existsSync(c.url))
     const manifestArgs = manifest ? buildRenderArgs({
       project: proj('p-broll-manifest', 'Broll manifest'),
       images: [],
@@ -570,20 +585,20 @@ async function runSmokeM6(): Promise<void> {
         }
         return new Response(JSON.stringify({}), { status: 200, headers: { 'content-type': 'application/json' } })
       }) as typeof fetch
-      const fallbackPool = await fetchPool({ ...smokeSettings, beta: { enabled: true, pexelsKey: 'p', pixabayKey: 'x', coverrKey: '' } }, ['discipline'], { w: 1920, h: 1080 }, 1)
+      const fallbackPool = await fetchPool({ ...smokeSettings, beta: { enabled: true, pexelsKey: 'p', pixabayKey: 'x', coverrKey: '' } }, ['discipline'], { w: 1920, h: 1080 }, 1, undefined, { skipLibrary: true })
       rateFallbackOk = requestedUrls.some((u) => u.includes('pexels.com')) && requestedUrls.some((u) => u.includes('pixabay.com')) && fallbackPool[0]?.provider === 'pixabay'
 
       globalThis.fetch = (async () => new Response('', { status: 429 })) as typeof fetch
       try {
-        await fetchPool({ ...smokeSettings, beta: { enabled: true, pexelsKey: 'p', pixabayKey: 'x', coverrKey: '' } }, ['discipline'], { w: 1920, h: 1080 }, 1)
+        await fetchPool({ ...smokeSettings, beta: { enabled: true, pexelsKey: 'p', pixabayKey: 'x', coverrKey: '' } }, ['discipline'], { w: 1920, h: 1080 }, 1, undefined, { skipLibrary: true })
       } catch (e) {
         allLimitedOk = /all configured providers are rate-limited/i.test((e as Error).message)
       }
     } finally {
       globalThis.fetch = originalFetch
     }
-    const brollOk = sourceOrderOk && themes.includes('discipline') && ranked[0].id === 'b' && Math.abs(covEnd - 12) < 0.1 && longTrimmed && longCapped && !!bed && existsSync(bed!) && directOk && manifestOk && manifestResumeOk && cudaNormalizeOk && finalCudaOk && rateFallbackOk && allLimitedOk
-    console.log(`SMOKE_M6_BROLL sourceOrder=${sourceOrderOk} themes=${themes.slice(0, 3).join(',')} topRank=${ranked[0].id} covEnd=${covEnd.toFixed(1)} trimmed=${longTrimmed} long=${longCov.length}/${longCovEnd.toFixed(1)} bed=${!!bed} direct=${directOk} manifest=${manifestOk} resume=${manifestResumeOk} cudaNormalize=${cudaNormalizeOk} cudaFinal=${finalCudaOk} rateFallback=${rateFallbackOk} allLimited=${allLimitedOk}`)
+    const brollOk = sourceOrderOk && themes.includes('discipline') && ranked[0].id === 'b' && Math.abs(covEnd - 12) < 0.1 && longTrimmed && longCapped && !!bed && existsSync(bed!) && directOk && manifestOk && manifestResumeOk && libraryOk && cudaNormalizeOk && finalCudaOk && rateFallbackOk && allLimitedOk
+    console.log(`SMOKE_M6_BROLL sourceOrder=${sourceOrderOk} themes=${themes.slice(0, 3).join(',')} titleThemes=${titleThemes.slice(0, 2).join(',')} topRank=${ranked[0].id} covEnd=${covEnd.toFixed(1)} trimmed=${longTrimmed} long=${longCov.length}/${longCovEnd.toFixed(1)} bed=${!!bed} direct=${directOk} manifest=${manifestOk} resume=${manifestResumeOk} library=${libraryOk} cudaNormalize=${cudaNormalizeOk} cudaFinal=${finalCudaOk} rateFallback=${rateFallbackOk} allLimited=${allLimitedOk}`)
 
     // ---- Beta style + effect plan: validator guardrails, rule engine, render wiring ----
     const vp = validateEffectPlan({
@@ -762,8 +777,7 @@ interface Probe {
 
 function ffprobe(file: string): Probe | null {
   try {
-    const exe = process.platform === 'win32' ? 'ffprobe.exe' : 'ffprobe'
-    const out = execFileSync(join(resolveBinDir(), exe), [
+    const out = execFileSync(ffprobePath(), [
       '-v', 'quiet', '-print_format', 'json', '-show_format', '-show_streams', file
     ]).toString()
     const j = JSON.parse(out) as { streams: Array<Record<string, unknown>>; format: { duration?: string } }
