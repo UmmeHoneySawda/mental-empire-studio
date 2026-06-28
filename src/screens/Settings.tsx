@@ -84,7 +84,7 @@ export function Settings(): JSX.Element {
   const qualities: AppSettings['quality'][] = ['720p', '1080p', '1440p']
   const encoders: Array<{ value: AppSettings['encoder']; label: string; enabled: boolean; note: string }> = [
     { value: 'cpu', label: 'CPU', enabled: true, note: 'Works on any machine.' },
-    { value: 'nvenc', label: 'NVENC', enabled: caps?.hasNvenc ?? false, note: caps?.hasNvenc ? 'NVIDIA NVENC available. Renders will use the GPU.' : caps?.gpuVendor === 'nvidia' ? 'NVIDIA GPU detected, but the NVENC encode probe failed; renders fall back to CPU.' : 'No working NVIDIA NVENC encoder detected.' },
+    { value: 'nvenc', label: 'NVENC', enabled: caps?.hasNvenc ?? false, note: caps?.hasNvenc ? 'NVIDIA NVENC encode available. Some filters and captions may still use CPU.' : caps?.gpuVendor === 'nvidia' ? 'NVIDIA GPU detected, but the NVENC encode probe failed; renders fall back to CPU.' : 'No working NVIDIA NVENC encoder detected.' },
     { value: 'qsv', label: 'QSV', enabled: caps?.hasQsv ?? false, note: caps?.hasQsv ? 'Intel Quick Sync encode probe passed.' : 'No working Intel QSV encoder detected.' },
     { value: 'amf', label: 'AMF', enabled: caps?.hasAmf ?? false, note: caps?.hasAmf ? 'AMD AMF encode probe passed.' : 'No working AMD AMF encoder detected.' }
   ]

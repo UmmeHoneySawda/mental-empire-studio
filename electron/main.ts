@@ -13,13 +13,13 @@ import { refreshChannel, sourceVideos, checkReminders } from './ipc/scrape'
 import { startDownloads, resume as resumeDownload } from './ipc/download'
 import { createProject, setImages, runTranscribe, sendToRender } from './ipc/compose'
 import { firedNotifications } from './services/notify'
-import { channelUrl } from './services/scraper'
+import { channelUrl, orderVideos } from './services/scraper'
 import { splitRanges } from './services/audio'
 import { autoArrangeText } from '../shared/thumbnail'
 import { THUMB_W, THUMB_H, DEFAULT_BETA_OPTS, type TextLayer, type ThumbnailTemplate, type TranscriptWord } from '../shared/types'
 import { buildAss } from './services/captions'
 import { buildRenderArgs, runRender, ffmpegPath, ffprobePath } from './services/render'
-import { extractThemes, rankCandidates, planCoverage, buildBrollBed, buildBrollManifest, buildBrollNormalizeArgs, assembleBed, type BrollCandidate } from './services/broll'
+import { extractThemes, rankCandidates, planCoverage, buildBrollBed, buildBrollManifest, buildBrollNormalizeArgs, assembleBed, fetchPool, type BrollCandidate } from './services/broll'
 import { createProgressSmoother } from './services/engine/progress'
 import { validateEffectPlan, deriveStylePlan, styleCaptionLead, textPresetTag, type EffectPlan } from '../shared/effectPlan'
 import { buildSfxTrack } from './services/sfx'
@@ -442,6 +442,12 @@ async function runSmokeM6(): Promise<void> {
     const etaB = smooth({ outTimeSec: 2, pct: 2, speed: 0.2 })
     const etaC = smooth({ outTimeSec: 3, pct: 3, speed: 0.3 })
     const etaOk = etaA.etaState === 'estimating' && etaB.etaState === 'estimating' && etaC.etaState === 'stable' && (etaC.etaSec ?? 9999) <= 300
+    const oldestOrder = orderVideos([
+      { id: 'new', title: 'new', durationSec: 0, thumb: '', views: 0, uploadDate: '20240601' },
+      { id: 'old', title: 'old', durationSec: 0, thumb: '', views: 0, uploadDate: '20240101' },
+      { id: 'mid', title: 'mid', durationSec: 0, thumb: '', views: 0, uploadDate: '20240301' }
+    ], 'Oldest', 3).map((v) => v.id).join(',')
+    const sourceOrderOk = oldestOrder === 'old,mid,new'
 
     // ---- Beta features (hook / overlay gradient / auto-zoom at start) ----
     const assHook = buildAss(words, { preset: 'Hormozi', aspect: '16:9', keywords: false, hook: { text: 'wait for it', untilSec: 2.5 } })
@@ -494,17 +500,22 @@ async function runSmokeM6(): Promise<void> {
     }).join(' ')
     const directOk = directBrollArgs.includes('concat=n=') && directBrollArgs.includes('-stream_loop -1') && directBrollArgs.includes('/x/clip.mp4') && !directBrollArgs.includes('bed-')
     process.env['ME_BROLL_LOCAL'] = join(process.cwd(), 'test', 'fixtures', 'broll', 'local')
-    const manifest = await buildBrollManifest({
+    const manifestJobId = `smoke-m6-${Date.now()}`
+    const manifestOpts = {
       settings: smokeSettings,
       words,
       durationSec: 4,
-      density: 'sparse',
+      density: 'sparse' as const,
       poolSize: 2,
       dims: { w: 320, h: 180 },
       fps: 15,
-      jobId: `smoke-m6-${Date.now()}`,
+      jobId: manifestJobId,
       maxSegments: 2
-    })
+    }
+    const manifest = await buildBrollManifest(manifestOpts)
+    const manifestMtimesBefore = manifest?.segments.map((s) => statSync(s.normalizedPath).mtimeMs) ?? []
+    const manifestAgain = await buildBrollManifest(manifestOpts)
+    const manifestMtimesAfter = manifestAgain?.segments.map((s) => statSync(s.normalizedPath).mtimeMs) ?? []
     delete process.env['ME_BROLL_LOCAL']
     const manifestArgs = manifest ? buildRenderArgs({
       project: proj('p-broll-manifest', 'Broll manifest'),
@@ -515,6 +526,7 @@ async function runSmokeM6(): Promise<void> {
       settings: smokeSettings
     }).join(' ') : ''
     const manifestOk = !!manifest && existsSync(manifest.manifestPath) && existsSync(manifest.jsonPath) && manifest.segments.every((s) => existsSync(s.normalizedPath)) && manifestArgs.includes('-f concat -safe 0 -i') && manifestArgs.includes(manifest.manifestPath)
+    const manifestResumeOk = !!manifestAgain && manifestAgain.segments.length === manifestMtimesBefore.length && manifestMtimesAfter.every((m, i) => m === manifestMtimesBefore[i])
     const cudaNormalizeArgs = buildBrollNormalizeArgs(
       { path: '/x/clip.mp4', start: 0, end: 4, srcStart: 0 },
       '/tmp/seg.mp4',
@@ -524,8 +536,36 @@ async function runSmokeM6(): Promise<void> {
       { hasNvenc: true, hasQsv: false, hasAmf: false, gpuVendor: 'nvidia', ffmpegHasLibass: true, ffmpegHasCuda: true }
     ).join(' ')
     const cudaNormalizeOk = cudaNormalizeArgs.includes('-hwaccel cuda') && cudaNormalizeArgs.includes('scale_cuda=') && cudaNormalizeArgs.includes('hwdownload,format=nv12') && cudaNormalizeArgs.includes('h264_nvenc')
-    const brollOk = themes.includes('discipline') && ranked[0].id === 'b' && Math.abs(covEnd - 12) < 0.1 && longTrimmed && longCapped && !!bed && existsSync(bed!) && directOk && manifestOk && cudaNormalizeOk
-    console.log(`SMOKE_M6_BROLL themes=${themes.slice(0, 3).join(',')} topRank=${ranked[0].id} covEnd=${covEnd.toFixed(1)} trimmed=${longTrimmed} long=${longCov.length}/${longCovEnd.toFixed(1)} bed=${!!bed} direct=${directOk} manifest=${manifestOk} cuda=${cudaNormalizeOk}`)
+    const originalFetch = globalThis.fetch
+    let rateFallbackOk = false
+    let allLimitedOk = false
+    try {
+      const requestedUrls: string[] = []
+      globalThis.fetch = (async (input: Parameters<typeof fetch>[0]) => {
+        const url = String(input)
+        requestedUrls.push(url)
+        if (url.includes('pexels.com')) return new Response('', { status: 429 })
+        if (url.includes('pixabay.com')) {
+          return new Response(JSON.stringify({
+            hits: [{ id: 9, duration: 6, tags: 'discipline,focus', videos: { large: { url: 'https://example.test/clip.mp4', width: 1920, height: 1080 } } }]
+          }), { status: 200, headers: { 'content-type': 'application/json' } })
+        }
+        return new Response(JSON.stringify({}), { status: 200, headers: { 'content-type': 'application/json' } })
+      }) as typeof fetch
+      const fallbackPool = await fetchPool({ ...smokeSettings, beta: { enabled: true, pexelsKey: 'p', pixabayKey: 'x', coverrKey: '' } }, ['discipline'], { w: 1920, h: 1080 }, 1)
+      rateFallbackOk = requestedUrls.some((u) => u.includes('pexels.com')) && requestedUrls.some((u) => u.includes('pixabay.com')) && fallbackPool[0]?.provider === 'pixabay'
+
+      globalThis.fetch = (async () => new Response('', { status: 429 })) as typeof fetch
+      try {
+        await fetchPool({ ...smokeSettings, beta: { enabled: true, pexelsKey: 'p', pixabayKey: 'x', coverrKey: '' } }, ['discipline'], { w: 1920, h: 1080 }, 1)
+      } catch (e) {
+        allLimitedOk = /all configured providers are rate-limited/i.test((e as Error).message)
+      }
+    } finally {
+      globalThis.fetch = originalFetch
+    }
+    const brollOk = sourceOrderOk && themes.includes('discipline') && ranked[0].id === 'b' && Math.abs(covEnd - 12) < 0.1 && longTrimmed && longCapped && !!bed && existsSync(bed!) && directOk && manifestOk && manifestResumeOk && cudaNormalizeOk && rateFallbackOk && allLimitedOk
+    console.log(`SMOKE_M6_BROLL sourceOrder=${sourceOrderOk} themes=${themes.slice(0, 3).join(',')} topRank=${ranked[0].id} covEnd=${covEnd.toFixed(1)} trimmed=${longTrimmed} long=${longCov.length}/${longCovEnd.toFixed(1)} bed=${!!bed} direct=${directOk} manifest=${manifestOk} resume=${manifestResumeOk} cuda=${cudaNormalizeOk} rateFallback=${rateFallbackOk} allLimited=${allLimitedOk}`)
 
     // ---- Beta style + effect plan: validator guardrails, rule engine, render wiring ----
     const vp = validateEffectPlan({

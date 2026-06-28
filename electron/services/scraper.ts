@@ -84,7 +84,12 @@ export function orderVideos(videos: ScrapedVideo[], order: ScrapeOrder, count: n
   let vids = videos
   if (order === 'Popular') vids = [...vids].sort((a, b) => b.views - a.views)
   else if (order === 'Latest') vids = [...vids].sort((a, b) => (b.uploadDate || '').localeCompare(a.uploadDate || ''))
-  else if (order === 'Oldest') vids = [...vids].reverse()
+  else if (order === 'Oldest') {
+    const hasDates = videos.some((v) => v.uploadDate)
+    vids = hasDates
+      ? [...vids].sort((a, b) => (a.uploadDate || '99999999').localeCompare(b.uploadDate || '99999999'))
+      : [...vids].reverse()
+  }
   return vids.slice(0, Math.max(1, count))
 }
 
