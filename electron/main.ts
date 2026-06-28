@@ -527,6 +527,16 @@ async function runSmokeM6(): Promise<void> {
     }).join(' ') : ''
     const manifestOk = !!manifest && existsSync(manifest.manifestPath) && existsSync(manifest.jsonPath) && manifest.segments.every((s) => existsSync(s.normalizedPath)) && manifestArgs.includes('-f concat -safe 0 -i') && manifestArgs.includes(manifest.manifestPath)
     const manifestResumeOk = !!manifestAgain && manifestAgain.segments.length === manifestMtimesBefore.length && manifestMtimesAfter.every((m, i) => m === manifestMtimesBefore[i])
+    const finalCudaArgs = manifest ? buildRenderArgs({
+      project: proj('p-broll-final-cuda', 'Broll final cuda'),
+      images: [],
+      brollManifestPath: manifest.manifestPath,
+      assPath: '/tmp/x.ass',
+      outPath: '/tmp/o.mp4',
+      settings: { ...smokeSettings, encoder: 'nvenc' },
+      caps: { hasNvenc: true, hasQsv: false, hasAmf: false, gpuVendor: 'nvidia', ffmpegHasLibass: true, ffmpegHasCuda: true }
+    }).join(' ') : ''
+    const finalCudaOk = finalCudaArgs.includes('-hwaccel cuda') && finalCudaArgs.includes('scale_cuda=') && finalCudaArgs.includes('hwdownload,format=nv12') && finalCudaArgs.includes('hwupload_cuda') && finalCudaArgs.includes('h264_nvenc') && !finalCudaArgs.includes('-pix_fmt yuv420p')
     const cudaNormalizeArgs = buildBrollNormalizeArgs(
       { path: '/x/clip.mp4', start: 0, end: 4, srcStart: 0 },
       '/tmp/seg.mp4',
@@ -564,8 +574,8 @@ async function runSmokeM6(): Promise<void> {
     } finally {
       globalThis.fetch = originalFetch
     }
-    const brollOk = sourceOrderOk && themes.includes('discipline') && ranked[0].id === 'b' && Math.abs(covEnd - 12) < 0.1 && longTrimmed && longCapped && !!bed && existsSync(bed!) && directOk && manifestOk && manifestResumeOk && cudaNormalizeOk && rateFallbackOk && allLimitedOk
-    console.log(`SMOKE_M6_BROLL sourceOrder=${sourceOrderOk} themes=${themes.slice(0, 3).join(',')} topRank=${ranked[0].id} covEnd=${covEnd.toFixed(1)} trimmed=${longTrimmed} long=${longCov.length}/${longCovEnd.toFixed(1)} bed=${!!bed} direct=${directOk} manifest=${manifestOk} resume=${manifestResumeOk} cuda=${cudaNormalizeOk} rateFallback=${rateFallbackOk} allLimited=${allLimitedOk}`)
+    const brollOk = sourceOrderOk && themes.includes('discipline') && ranked[0].id === 'b' && Math.abs(covEnd - 12) < 0.1 && longTrimmed && longCapped && !!bed && existsSync(bed!) && directOk && manifestOk && manifestResumeOk && cudaNormalizeOk && finalCudaOk && rateFallbackOk && allLimitedOk
+    console.log(`SMOKE_M6_BROLL sourceOrder=${sourceOrderOk} themes=${themes.slice(0, 3).join(',')} topRank=${ranked[0].id} covEnd=${covEnd.toFixed(1)} trimmed=${longTrimmed} long=${longCov.length}/${longCovEnd.toFixed(1)} bed=${!!bed} direct=${directOk} manifest=${manifestOk} resume=${manifestResumeOk} cudaNormalize=${cudaNormalizeOk} cudaFinal=${finalCudaOk} rateFallback=${rateFallbackOk} allLimited=${allLimitedOk}`)
 
     // ---- Beta style + effect plan: validator guardrails, rule engine, render wiring ----
     const vp = validateEffectPlan({

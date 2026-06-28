@@ -26,6 +26,24 @@ export function videoCodecArgs(settings: AppSettings, crf: string, caps: RenderC
   return selectEncoder(settings, caps, crf).args
 }
 
+export function canUseCudaFinalFilters(settings: AppSettings, caps: RenderCapabilities = FALLBACK_CAPS): boolean {
+  return settings.encoder === 'nvenc' && caps.hasNvenc && caps.ffmpegHasCuda
+}
+
+function codecArgsForFilterOutput(settings: AppSettings, crf: string, caps: RenderCapabilities, hardwareFrames: boolean): string[] {
+  const args = videoCodecArgs(settings, crf, caps)
+  if (!hardwareFrames) return args
+  const out: string[] = []
+  for (let i = 0; i < args.length; i++) {
+    if (args[i] === '-pix_fmt') {
+      i++
+      continue
+    }
+    out.push(args[i])
+  }
+  return out
+}
+
 // Live ffmpeg children keyed by render-job id, so the Render Queue's cancel/delete
 // actions can actually terminate a running encode (otherwise ffmpeg keeps pegging the
 // CPU after the row is gone). `intents` records why a child was killed so runJob can
@@ -175,7 +193,12 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
   // Beta auto-B-roll v2 path: normalized segment files are listed in a concat
   // demuxer manifest and enter the final graph as one continuous video input.
   if (inp.brollManifestPath) {
-    const inputs = ['-f', 'concat', '-safe', '0', '-i', inp.brollManifestPath, '-i', project.mp3Path]
+    const useCudaFinal = canUseCudaFinalFilters(settings, caps)
+    const inputs = [
+      ...(useCudaFinal ? ['-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda'] : []),
+      '-f', 'concat', '-safe', '0', '-i', inp.brollManifestPath,
+      '-i', project.mp3Path
+    ]
     const sfxIdx = inp.sfxPath ? 2 : null
     if (inp.sfxPath) inputs.push('-i', inp.sfxPath)
 
@@ -184,7 +207,10 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
     const grade = gradeChain(beta?.style)
     const punchOn = project.punchZoom || !!beta?.autoZoom.atKeyPhrases
     const punch = punchOn ? `,zoompan=z='min(zoom+0.0015,1.08)':d=1:s=${w}x${h}:fps=${FPS}` : ''
-    parts.push(`[0:v]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1,fps=${FPS},${grade}${grad}subtitles='${assForFilter(assPath)}'${punch}[v]`)
+    const videoChain = useCudaFinal
+      ? `[0:v]scale_cuda=w=${w}:h=${h}:force_original_aspect_ratio=increase,hwdownload,format=nv12,crop=${w}:${h},setsar=1,fps=${FPS},${grade}${grad}subtitles='${assForFilter(assPath)}'${punch},format=nv12,hwupload_cuda[v]`
+      : `[0:v]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1,fps=${FPS},${grade}${grad}subtitles='${assForFilter(assPath)}'${punch}[v]`
+    parts.push(videoChain)
     const aMap = audioWithSfx(parts, 1, sfxIdx)
     const crf = settings.quality === '1440p' ? '20' : settings.quality === '720p' ? '23' : '21'
 
@@ -194,7 +220,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
       '-filter_complex', parts.join(';'),
       '-map', '[v]',
       '-map', aMap,
-      ...videoCodecArgs(settings, crf, caps),
+      ...codecArgsForFilterOutput(settings, crf, caps, useCudaFinal),
       '-r', String(FPS),
       '-c:a', 'aac',
       '-b:a', '192k',

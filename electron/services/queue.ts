@@ -9,7 +9,7 @@ import { getRepos } from '../db'
 import { getSettings } from '../store/settings'
 import { formatOutputName, probeDuration } from './audio'
 import { buildAss } from './captions'
-import { runRender, dimensions, consumeCancelIntent, hasCancelIntent } from './render'
+import { runRender, dimensions, consumeCancelIntent, hasCancelIntent, canUseCudaFinalFilters } from './render'
 import { buildBrollManifest } from './broll'
 import { probeRenderCapabilities } from './engine/caps'
 import { selectEncoder } from './engine/encoder'
@@ -77,7 +77,7 @@ export async function runJob(job: RenderJob): Promise<void> {
   const caps = probeRenderCapabilities()
   const enc = selectEncoder(settings, caps)
   const filterDevice: RenderProgress['filterDevice'] = 'cpu'
-  const encoderDetail = enc.device === 'gpu' ? `${enc.label} encode · CPU filters` : `${enc.label} encode`
+  let encoderDetail = enc.device === 'gpu' ? `${enc.label} encode · CPU filters` : `${enc.label} encode`
   let renderLogPath = ''
   const emitStage = (stage: RenderStage, localPct: number, stageDetail?: string, ffmpeg?: FfmpegProgress): void => {
     const pct = stagePct(stage, localPct)
@@ -209,6 +209,9 @@ export async function runJob(job: RenderJob): Promise<void> {
       })
       if (planned?.segments.length) {
         brollManifestPath = planned.manifestPath
+        if (enc.device === 'gpu' && canUseCudaFinalFilters(settings, caps)) {
+          encoderDetail = `${enc.label} encode · CUDA scale · CPU captions`
+        }
         if (renderLogPath) appendFileSync(renderLogPath, `[broll]\nmanifest=${planned.manifestPath}\njson=${planned.jsonPath}\nsegments=${planned.segments.length}\n`)
         emitStage('assembling', 100, `Using B-roll manifest (${planned.segments.length} clips)`)
       } else {
