@@ -5,6 +5,7 @@
   "uploader_id": "@powerwithin",
   "channel_id": "UC_powerwithin",
   "channel_follower_count": 455,
+  "thumbnail": "https://yt3.example/mental-empire.jpg",
   "entries": [
     { "id": "v_gas", "title": "Gaslighting Explained", "duration": 1205, "view_count": 97, "upload_date": "20250601", "thumbnails": [{ "url": "https://i.ytimg.com/vi/v_gas/hq.jpg" }] },
     { "id": "v_fake", "title": "Everything Was Fake", "duration": 689, "view_count": 118, "upload_date": "20250605" },

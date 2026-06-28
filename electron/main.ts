@@ -237,6 +237,9 @@ function runSmokeTest(): void {
 async function runSmokeM3(): Promise<void> {
   const repos = getRepos()
   try {
+    const staleMe = repos.myChannel('me')
+    if (!staleMe) throw new Error('seed channel missing: me')
+    repos.upsertMyChannel({ ...staleMe, name: 'Stale Channel', mono: 'SC', avatar: 'linear-gradient(135deg,#111,#222)', weekGoal: 7 })
     const me = await refreshChannel('me') // handle @powerwithin, linked source src-pw
     const uploads = repos.getUploads('me')
     const downloads = repos.getDownloadsBySource('src-pw')
@@ -251,14 +254,17 @@ async function runSmokeM3(): Promise<void> {
     const hits = checkReminders()
     const meHit = hits.some((h) => h.channelId === 'me')
     const meNotified = firedNotifications.some((h) => h.channelId === 'me')
+    const identityOk = me.name === 'Mental Empire' && me.mono === 'ME' && me.avatar === 'https://yt3.example/mental-empire.jpg' && me.weekGoal === 7
 
     console.log(`SMOKE_M3_STATS name=${me.name} subs=${me.subs} views=${me.views} total=${me.total} uploads=${uploads.length}`)
+    console.log(`SMOKE_M3_IDENTITY nameFresh=${me.name === 'Mental Empire'} mono=${me.mono} avatarFresh=${me.avatar === 'https://yt3.example/mental-empire.jpg'} goalPreserved=${me.weekGoal === 7}`)
     console.log(`SMOKE_M3_MAP mapDone=${me.mapDone} mapTotal=${me.mapTotal} matchedDownloads=${matchedDownloads}`)
     console.log(`SMOKE_M3_SOURCE fetched=${vids.length} cached=${cached} top='${vids[0]?.title}' sortedDesc=${sortedDesc}`)
     console.log(`SMOKE_M3_REMIND meHit=${meHit} meNotified=${meNotified} hits=${hits.length}`)
 
     const ok =
       me.subs === '455' && me.total === 4 && uploads.length === 4 &&
+      identityOk &&
       me.mapTotal === 3 && me.mapDone === 2 && matchedDownloads === 2 &&
       vids.length === 3 && cached === 3 && sortedDesc &&
       meHit && meNotified
@@ -642,11 +648,14 @@ async function runSmokeM6(): Promise<void> {
     const j1 = repos.renderJob(`job-proj-m6-${ns}-1`)
     const queueOk = j1?.status === 'done' && !!j1.outputPath && existsSync(j1.outputPath) && j1.pct === 100 && lastMaxActive() === 2
     const assFileOk = existsSync(join(app.getPath('temp'), 'me-m6-out', 'Mental Empire - M6 Test 1.ass'))
+    const logFile = join(app.getPath('temp'), 'me-m6-out', 'Mental Empire - M6 Test 1.render.log')
+    const logTxt = existsSync(logFile) ? readFileSync(logFile, 'utf8') : ''
+    const stageTimingOk = logTxt.includes('[stage:start] preparing') && logTxt.includes('[stage:end] preparing') && logTxt.includes('[render:end] status=done')
 
     console.log(`SMOKE_M6_ASS ok=${assOk} zoomHits=${ass169.zoomHits.length} top=${assTop.ass.includes(',8,60,60,')}`)
     console.log(`SMOKE_M6_ARGS ok=${argsOk} eta=${etaOk}`)
-    console.log(`SMOKE_M6_QUEUE status=${j1?.status} pct=${j1?.pct} maxActive=${lastMaxActive()} out=${!!j1?.outputPath} ass=${assFileOk}`)
-    const ok = assOk && argsOk && etaOk && queueOk && assFileOk && betaOk && brollOk && styleOk && sfxOk
+    console.log(`SMOKE_M6_QUEUE status=${j1?.status} pct=${j1?.pct} maxActive=${lastMaxActive()} out=${!!j1?.outputPath} ass=${assFileOk} stageTiming=${stageTimingOk}`)
+    const ok = assOk && argsOk && etaOk && queueOk && assFileOk && stageTimingOk && betaOk && brollOk && styleOk && sfxOk
     console.log(ok ? 'SMOKE_M6_OK' : 'SMOKE_M6_FAIL')
     closeDatabase()
     app.exit(ok ? 0 : 1)

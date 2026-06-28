@@ -78,7 +78,30 @@ export async function runJob(job: RenderJob): Promise<void> {
   const enc = selectEncoder(settings, caps)
   const filterDevice: RenderProgress['filterDevice'] = 'cpu'
   let encoderDetail = enc.device === 'gpu' ? `${enc.label} encode · CPU filters` : `${enc.label} encode`
-  let renderLogPath = ''
+  const dir = outputDir()
+  mkdirSync(dir, { recursive: true })
+  const base = formatOutputName(settings.namingTemplate, { channel: project.channel, title: project.title })
+  const assPath = join(dir, `${base}.ass`)
+  const outPath = join(dir, `${base}.mp4`)
+  const logPath = join(dir, `${base}.render.log`)
+  let renderLogPath = logPath
+  let activeLogStage: RenderStage | undefined
+  let activeLogStageStartedAt = 0
+  writeFileSync(logPath, `[render]\njob=${job.id}\nproject=${project.id}\ntitle=${project.title}\nstarted=${new Date().toISOString()}\nencoder=${enc.label}\n`)
+  const finishStageLog = (status: 'done' | 'error' | 'cancelled'): void => {
+    if (!renderLogPath || !activeLogStage || !activeLogStageStartedAt) return
+    const now = Date.now()
+    appendFileSync(renderLogPath, `[stage:end] ${activeLogStage} ms=${now - activeLogStageStartedAt} status=${status}\n`)
+    appendFileSync(renderLogPath, `[render:end] status=${status} at=${new Date(now).toISOString()}\n`)
+    activeLogStage = undefined
+    activeLogStageStartedAt = 0
+  }
+  const finishCancelled = (intent: 'cancel' | 'delete'): void => {
+    finishStageLog('cancelled')
+    if (intent === 'cancel') repos.setRenderStatus(job.id, { status: 'queued', pct: 0, error: '' })
+    emitR({ jobId: job.id, pct: 0, stage: 'done', done: true })
+    pushActivity({ t: hhmm(), icon: '⊘', color: '#8a909c', text: `Render ${intent === 'cancel' ? 'cancelled' : 'removed'}: ${project.title.slice(0, 42)}` })
+  }
   const emitStage = (stage: RenderStage, localPct: number, stageDetail?: string, ffmpeg?: FfmpegProgress): void => {
     const pct = stagePct(stage, localPct)
     repos.setRenderStatus(job.id, { status: 'rendering', pct })
@@ -97,7 +120,16 @@ export async function runJob(job: RenderJob): Promise<void> {
       filterDevice,
       encoder: enc.label
     })
-    if (renderLogPath) appendFileSync(renderLogPath, `[stage] ${stage} ${pct}% ${stageDetail ?? ''}${ffmpeg?.speed ? ` speed=${ffmpeg.speed}` : ''}${ffmpeg?.etaSec != null ? ` eta=${ffmpeg.etaSec}` : ''}\n`)
+    if (renderLogPath) {
+      const now = Date.now()
+      if (activeLogStage !== stage) {
+        if (activeLogStage && activeLogStageStartedAt) appendFileSync(renderLogPath, `[stage:end] ${activeLogStage} ms=${now - activeLogStageStartedAt} status=transition\n`)
+        activeLogStage = stage
+        activeLogStageStartedAt = now
+        appendFileSync(renderLogPath, `[stage:start] ${stage} at=${new Date(now).toISOString()}\n`)
+      }
+      appendFileSync(renderLogPath, `[stage] ${stage} ${pct}% ${stageDetail ?? ''}${ffmpeg?.speed ? ` speed=${ffmpeg.speed}` : ''}${ffmpeg?.etaSec != null ? ` eta=${ffmpeg.etaSec}` : ''}\n`)
+    }
   }
   // Only the audio is truly required to produce a video: the graph falls back to a
   // solid background when there are no images, captions are optional (no subtitles),
@@ -132,14 +164,6 @@ export async function runJob(job: RenderJob): Promise<void> {
   images = alignImagesToDuration(images, renderProject.durationSec)
   emitStage('preparing', 100, `Audio duration ${Math.round(renderProject.durationSec)}s · ${encoderDetail}`)
 
-  const dir = outputDir()
-  mkdirSync(dir, { recursive: true })
-  const base = formatOutputName(settings.namingTemplate, { channel: project.channel, title: project.title })
-  const assPath = join(dir, `${base}.ass`)
-  const outPath = join(dir, `${base}.mp4`)
-  const logPath = join(dir, `${base}.render.log`)
-  renderLogPath = logPath
-  writeFileSync(logPath, `[render]\njob=${job.id}\nproject=${project.id}\ntitle=${project.title}\nstarted=${new Date().toISOString()}\nencoder=${enc.label}\n`)
   // Beta: fold hook + auto-highlight into the caption options when beta mode is on.
   const beta = settings.beta?.enabled ? asBetaOpts(project.betaOpts) : null
   const hookText = beta?.hook.enabled
@@ -224,7 +248,14 @@ export async function runJob(job: RenderJob): Promise<void> {
         pushActivity({ t: hhmm(), icon: '!', color: '#f5b323', text: `B-roll skipped: no stock clips found for ${project.title.slice(0, 36)}` })
       }
     } catch (e) {
-      if (hasCancelIntent(job.id)) throw e
+      if (hasCancelIntent(job.id)) {
+        const intent = consumeCancelIntent(job.id)
+        if (intent) {
+          finishCancelled(intent)
+          return
+        }
+        throw e
+      }
       const msg = (e as Error).message
       if (renderLogPath) appendFileSync(renderLogPath, `[broll:warn] ${msg}\n`)
       emitStage('fetching-broll', 100, 'B-roll unavailable; using image track')
@@ -242,6 +273,7 @@ export async function runJob(job: RenderJob): Promise<void> {
       emitStage('encoding', p.pct, `Encoding with ${encoderDetail}`, p)
     })
     emitStage('finalizing', 90, 'Writing output')
+    finishStageLog('done')
     repos.setRenderStatus(job.id, { status: 'done', pct: 100, outputPath: outPath })
     repos.updateProject(job.projectId, { stage: 'rendered' })
     emitR({ jobId: job.id, pct: 100, stage: 'done', stageDetail: 'Done', done: true, outputPath: outPath, device: enc.device, filterDevice, encoder: enc.label, etaSec: 0, etaState: 'stable' })
@@ -251,12 +283,11 @@ export async function runJob(job: RenderJob): Promise<void> {
     // restore it to 'queued' (cancel) or leave the now-deleted row alone (delete).
     const intent = consumeCancelIntent(job.id)
     if (intent) {
-      if (intent === 'cancel') repos.setRenderStatus(job.id, { status: 'queued', pct: 0, error: '' })
-      emitR({ jobId: job.id, pct: 0, stage: 'done', done: true })
-      pushActivity({ t: hhmm(), icon: '⊘', color: '#8a909c', text: `Render ${intent === 'cancel' ? 'cancelled' : 'removed'}: ${project.title.slice(0, 42)}` })
+      finishCancelled(intent)
       return
     }
     const msg = (e as Error).message
+    finishStageLog('error')
     repos.setRenderStatus(job.id, { status: 'error', pct: 0, error: msg })
     emitR({ jobId: job.id, pct: 0, stage: 'error', done: true, error: msg })
     pushActivity({ t: hhmm(), icon: '!', color: '#ff5a6e', text: `Render failed: ${project.title}` })

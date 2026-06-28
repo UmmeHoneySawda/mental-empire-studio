@@ -49,14 +49,28 @@ function persistScrape(channelId: string, scraped: ScrapedChannel): MyChannel {
   const repos = getRepos()
   const settings = getSettings()
   const now = new Date().toISOString()
-
-  emitProgress({ channelId, channelName: scraped.name, phase: 'stats', message: 'Saving stats' })
-  repos.setChannelStats(channelId, {
+  const current = repos.myChannel(channelId)
+  const stats = {
     views: scraped.totalViews > 0 ? humanizeCount(scraped.totalViews) : '',
     subs: humanizeCount(scraped.subs),
     total: scraped.videos.length,
     lastScrapedAt: now
-  })
+  }
+
+  emitProgress({ channelId, channelName: scraped.name, phase: 'stats', message: 'Saving stats' })
+  if (current) {
+    const name = scraped.name || current.name
+    repos.upsertMyChannel({
+      ...current,
+      name,
+      handle: scraped.handle || current.handle,
+      mono: monoFor(name),
+      avatar: scraped.avatar ?? current.avatar ?? avatarFor(channelId),
+      ...stats
+    })
+  } else {
+    repos.setChannelStats(channelId, stats)
+  }
 
   emitProgress({ channelId, channelName: scraped.name, phase: 'uploads', message: 'Saving uploads' })
   const uploads: Upload[] = scraped.videos.map((v) => ({
