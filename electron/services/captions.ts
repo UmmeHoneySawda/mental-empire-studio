@@ -9,6 +9,8 @@ export type CaptionAspect = '16:9' | '1:1' | '9:16'
 
 export interface CaptionOptions {
   preset: string
+  /** renderer-selected font family; falls back to the preset's default */
+  font?: string
   aspect: CaptionAspect
   /** auto-emphasize detected keywords in addition to per-word emphasis flags */
   keywords: boolean
@@ -77,6 +79,11 @@ function escapeAss(text: string): string {
   return text.replace(/\\/g, '\\\\').replace(/\{/g, '\\{').replace(/\}/g, '\\}').replace(/\n/g, ' ')
 }
 
+function safeFontName(font: string | undefined, fallback: string): string {
+  const cleaned = (font ?? '').replace(/[,\r\n]/g, ' ').replace(/\s+/g, ' ').trim()
+  return cleaned || fallback
+}
+
 /** Is this word a keyword worth emphasizing (explicit flag, or a long non-stopword)? */
 function isKeyword(w: TranscriptWord, autoKeywords: boolean): boolean {
   if (w.emphasis) return true
@@ -112,7 +119,7 @@ export function buildAss(words: TranscriptWord[], opts: CaptionOptions): AssResu
   const rawPreset = PRESETS[opts.preset] ?? PRESETS.Hormozi
   const { w, h } = resolutionFor(opts.aspect)
   const fontPx = Math.round(Math.max(64, Math.min(opts.aspect === '9:16' ? h * 0.11 : h * 0.085, opts.aspect === '9:16' ? 150 : 108)))
-  const preset = { ...rawPreset, size: opts.preset === 'Word' ? Math.round(fontPx * 1.12) : fontPx }
+  const preset = { ...rawPreset, font: safeFontName(opts.font, rawPreset.font), size: opts.preset === 'Word' ? Math.round(fontPx * 1.12) : fontPx }
   const defaultGroup = opts.aspect === '9:16' ? 4 : opts.aspect === '1:1' ? 3 : 2
   const perGroup = opts.preset === 'Word' ? 1 : Math.max(1, opts.perGroup ?? defaultGroup)
   const position = opts.position ?? 'bottom'

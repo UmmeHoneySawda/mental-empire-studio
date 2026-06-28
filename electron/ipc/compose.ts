@@ -217,6 +217,7 @@ async function previewProject(projectId: string): Promise<string> {
     : EMPTY_PLAN
   const { ass } = buildAss(words, {
     preset: project.captionPreset,
+    font: project.captionFont,
     aspect: project.captionAspect,
     position: project.captionPosition ?? 'bottom',
     keywords: project.keywords || !!beta?.autoHighlight,

@@ -160,6 +160,7 @@ export async function runJob(job: RenderJob): Promise<void> {
   emitStage('captioning', 20, 'Building caption file')
   const { ass } = buildAss(words, {
     preset: renderProject.captionPreset,
+    font: renderProject.captionFont,
     aspect: renderProject.captionAspect,
     position: renderProject.captionPosition ?? 'bottom',
     keywords: renderProject.keywords || !!beta?.autoHighlight,

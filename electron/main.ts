@@ -412,12 +412,13 @@ async function runSmokeM6(): Promise<void> {
     const ass916 = buildAss(words, { preset: 'Hormozi', aspect: '9:16', keywords: false })
     const assPop = buildAss(words, { preset: 'Pop', aspect: '16:9', keywords: false })
     const assTop = buildAss(words, { preset: 'Hormozi', aspect: '16:9', keywords: false, position: 'top' })
+    const assFont = buildAss(words, { preset: 'Hormozi', font: 'Impact', aspect: '16:9', keywords: false })
     const assOk =
       ass169.ass.includes('PlayResX: 1920') && ass916.ass.includes('PlayResX: 1080') &&
       !ass169.ass.includes('\\kf') && ass169.ass.includes('\\fscx112') && ass169.ass.includes('&H003DD9FF') &&
       ass169.zoomHits.length === 1 &&
       ass169.ass.includes('Anton') && assPop.ass.includes('Anton') &&
-      assTop.ass.includes(',8,60,60,')
+      assTop.ass.includes(',8,60,60,') && assFont.ass.includes('Style: Default,Impact,')
 
     const proj = (id: string, title: string): Parameters<typeof repos.createProject>[0] => ({
       id, downloadId: id, title, channel: 'Mental Empire', mp3Path: join(process.cwd(), 'test', 'fixtures', 'audio', 'sample.mp3'),

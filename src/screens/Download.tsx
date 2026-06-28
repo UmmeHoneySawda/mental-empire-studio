@@ -70,8 +70,8 @@ export function Download(): JSX.Element {
           return
         }
         if (failed.length > 0) {
-          setMessage(`${succeeded.length} downloaded, ${failed.length} failed. Opening the first completed video in Compose…`)
-          await new Promise((r) => setTimeout(r, 1200))
+          setMessage(`${succeeded.length} downloaded, ${failed.length} failed. Fix or resume failed rows before opening Compose.`)
+          return
         }
         await openProject(succeeded[0].id)
         setActive('compose')

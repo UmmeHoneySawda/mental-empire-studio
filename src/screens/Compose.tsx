@@ -155,7 +155,7 @@ function MiniToggle({ on, onClick }: { on: boolean; onClick: () => void }): JSX.
   return <div onClick={onClick} style={{ width: 32, height: 18, borderRadius: 11, background: on ? 'var(--accent)' : '#2b303b', position: 'relative', cursor: 'pointer', flex: 'none' }}><span style={{ position: 'absolute', top: 2, right: on ? 2 : 16, width: 14, height: 14, borderRadius: '50%', background: '#fff' }} /></div>
 }
 
-function CaptionPreview({ words, aspect, position, imagePath }: { words: TranscriptWord[]; aspect: string; position: NonNullable<Project['captionPosition']>; imagePath?: string }): JSX.Element {
+function CaptionPreview({ words, aspect, position, font, imagePath }: { words: TranscriptWord[]; aspect: string; position: NonNullable<Project['captionPosition']>; font: string; imagePath?: string }): JSX.Element {
   const sample = (words.length ? words : [
     { id: 'p1', projectId: '', ord: 0, word: 'you', start: 0, end: 0.25, emphasis: false },
     { id: 'p2', projectId: '', ord: 1, word: 'are', start: 0.25, end: 0.45, emphasis: false },
@@ -173,7 +173,7 @@ function CaptionPreview({ words, aspect, position, imagePath }: { words: Transcr
     <div style={{ width: 210, border: '1px solid #1d2129', borderRadius: 12, aspectRatio: ratio, background: 'linear-gradient(135deg,#23262e,#15171d)', position: 'relative', display: 'flex', alignItems, justifyContent: 'center', padding, overflow: 'hidden' }}>
       {imagePath ? <img src={mediaSrc(imagePath)} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: 0.72 }} /> : <div style={{ position: 'absolute', left: '14%', bottom: 0, width: '34%', height: '80%', background: 'linear-gradient(180deg,#3a4150,#23262e)', borderRadius: '50px 50px 0 0' }} />}
       <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.48))' }} />
-      <div style={{ position: 'relative', textAlign: 'center', fontFamily: 'Anton, var(--font-poster)', fontSize, lineHeight: 1.04, color: '#fff', textTransform: 'uppercase', WebkitTextStroke: '1.4px #000', textShadow: '0 2px 0 #000, 0 4px 12px rgba(0,0,0,.5)' }}>
+      <div style={{ position: 'relative', textAlign: 'center', fontFamily: `${font}, Anton, var(--font-poster)`, fontSize, lineHeight: 1.04, color: '#fff', textTransform: 'uppercase', WebkitTextStroke: '1.4px #000', textShadow: '0 2px 0 #000, 0 4px 12px rgba(0,0,0,.5)' }}>
         {sample.map((w, i) => <span key={w.id} style={{ display: 'inline-block', color: i === activeIndex || w.emphasis ? '#FFD93D' : '#fff', transform: i === activeIndex ? 'scale(1.12)' : undefined, margin: '0 3px' }}>{w.word}</span>)}
       </div>
     </div>
@@ -366,7 +366,7 @@ function CaptionsTab(): JSX.Element {
         {previewPath ? (
           <video key={previewPath} controls src={mediaSrc(previewPath)} style={{ width: 210, border: '1px solid #1d2129', borderRadius: 12, background: '#0e1116', display: 'block' }} />
         ) : (
-          <CaptionPreview words={transcript} aspect={project?.captionAspect ?? '16:9'} position={project?.captionPosition ?? 'bottom'} imagePath={images[0]?.thumb || images[0]?.path} />
+          <CaptionPreview words={transcript} aspect={project?.captionAspect ?? '16:9'} position={project?.captionPosition ?? 'bottom'} font={project?.captionFont ?? 'Anton'} imagePath={images[0]?.thumb || images[0]?.path} />
         )}
         <div style={{ fontSize: 10, color: '#6a7180', textAlign: 'center', marginTop: 9, lineHeight: 1.4 }}>Yellow active word · uniform pop ({preset})</div>
         <button type="button" disabled={!project || previewing} onClick={() => void renderPreview()} className="me-btn" style={{ width: '100%', marginTop: 10, border: '1px solid #262b34', background: '#15181f', borderRadius: 9, padding: '8px 10px', fontSize: 11.5, color: '#c4cad3', cursor: project && !previewing ? 'pointer' : 'not-allowed', opacity: project && !previewing ? 1 : 0.55 }}>{previewing ? 'Rendering…' : 'Render preview'}</button>
