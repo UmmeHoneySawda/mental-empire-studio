@@ -1,8 +1,5 @@
 import React from 'react'
 import ReactDOM from 'react-dom/client'
-// Installs a browser test mock for window.api ONLY when there's no Electron backend
-// (no-op inside the real app). Must run before the stores hydrate.
-import './mockApi'
 // Self-hosted fonts (offline — no Google CDN). Vite bundles the woff2.
 import '@fontsource/space-grotesk/400.css'
 import '@fontsource/space-grotesk/500.css'
@@ -30,8 +27,20 @@ import type { ThumbnailLayer } from '@shared/types'
   withHeadline
 }
 
-ReactDOM.createRoot(document.getElementById('root')!).render(
-  <React.StrictMode>
-    <App />
-  </React.StrictMode>
-)
+async function bootstrap(): Promise<void> {
+  // Browser-QA only: when there's no Electron preload-provided API, install the
+  // in-memory mock backend. Dynamic import keeps this ~500-line mock OUT of the
+  // packaged Electron renderer's main chunk — it's a separate lazy chunk that the
+  // real app (where window.api is set by preload) never fetches. Must run before
+  // the stores hydrate.
+  if (!window.api) {
+    await import('./mockApi')
+  }
+  ReactDOM.createRoot(document.getElementById('root')!).render(
+    <React.StrictMode>
+      <App />
+    </React.StrictMode>
+  )
+}
+
+void bootstrap()

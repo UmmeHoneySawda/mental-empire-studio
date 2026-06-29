@@ -1,4 +1,26 @@
-import type { CSSProperties, ReactNode } from 'react'
+import type { CSSProperties, KeyboardEvent, ReactNode } from 'react'
+
+/** a11y props that make a clickable <div>/<span> behave like a button: focusable,
+ *  activatable with Enter/Space, and announced as a button by screen readers. Spread
+ *  these onto the element that already has an onClick. */
+export function clickableProps(onClick: () => void, label?: string): {
+  role: 'button'
+  tabIndex: 0
+  'aria-label'?: string
+  onKeyDown: (e: KeyboardEvent) => void
+} {
+  return {
+    role: 'button',
+    tabIndex: 0,
+    'aria-label': label,
+    onKeyDown: (e: KeyboardEvent) => {
+      if (e.key === 'Enter' || e.key === ' ') {
+        e.preventDefault()
+        onClick()
+      }
+    }
+  }
+}
 
 export function Eyebrow({ children }: { children: ReactNode }): JSX.Element {
   return <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '1px', color: 'var(--accent)', marginBottom: 7 }}>{children}</div>

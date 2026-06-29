@@ -615,12 +615,22 @@ function projectPatchToRow(patch: Partial<Project>): Record<string, unknown> {
   }
   return out
 }
+// --- DB row → typed domain object boundary -------------------------------------------
+// SQLite is loosely typed (INTEGER 0/1 for booleans, TEXT for enums). These rowTo*
+// mappers are the SINGLE place untyped rows become typed domain objects, so all coercion
+// lives here instead of being trusted from the raw `{...row}` spread. New numeric/boolean
+// columns should be coerced explicitly below rather than relying on the spread.
+function coerceNum(v: unknown, fallback: number): number {
+  const n = typeof v === 'number' ? v : Number(v)
+  return Number.isFinite(n) ? n : fallback
+}
+
 function rowToProject(r: Record<string, unknown>): Project {
   const rawLines = Number(r.captionLines ?? 1)
   const captionLines = rawLines === 2 || rawLines === 3 ? rawLines : 1
   const rawPace = r.captionPace as Project['captionPace']
   const captionPace = rawPace === 'word' || rawPace === 'phrase' ? rawPace : 'auto'
-  return { ...(r as unknown as Project), captionLines, captionPosition: (r.captionPosition as Project['captionPosition']) ?? 'bottom', captionPace, kenBurns: !!r.kenBurns, crossfade: Number(r.crossfade) || 0.8, emphasis: !!r.emphasis, keywords: !!r.keywords, punchZoom: !!r.punchZoom, betaOpts: parseBetaOpts(r) }
+  return { ...(r as unknown as Project), captionLines, captionPosition: (r.captionPosition as Project['captionPosition']) ?? 'bottom', captionPace, durationSec: coerceNum(r.durationSec, 0), poolSize: coerceNum(r.poolSize, 10), kenBurns: !!r.kenBurns, crossfade: coerceNum(r.crossfade, 0.8) || 0.8, emphasis: !!r.emphasis, keywords: !!r.keywords, punchZoom: !!r.punchZoom, betaOpts: parseBetaOpts(r) }
 }
 function rowToImage(r: Record<string, unknown>): ProjectImage {
   return { ...(r as unknown as ProjectImage), manual: !!r.manual }
@@ -669,9 +679,9 @@ function rowToProfile(r: Record<string, unknown>): Profile {
     kenBurns: r.kenBurns == null ? true : !!r.kenBurns,
     sourceUrl: (r.sourceUrl as string) ?? '',
     sourceOrder: (r.sourceOrder as ScrapeOrder) ?? 'Latest',
-    sourceCount: (r.sourceCount as number) ?? 5,
+    sourceCount: coerceNum(r.sourceCount, 5),
     imageMode: (r.imageMode as ImageMode) ?? 'sequence',
-    poolSize: (r.poolSize as number) ?? 10,
+    poolSize: coerceNum(r.poolSize, 10),
     captionPreset: (r.captionPreset as string) ?? 'Hormozi',
     captionFont: (r.captionFont as string) ?? 'Montserrat',
     captionAnim: (r.captionAnim as string) ?? 'Pop-in',

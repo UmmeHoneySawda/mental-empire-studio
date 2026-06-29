@@ -9,6 +9,7 @@ import { getRepos } from '../db'
 import { getSettings } from '../store/settings'
 import { formatOutputName, probeDuration } from './audio'
 import { buildAss } from './captions'
+import { LONG_FORM_FAST_SEC, CAPTION_PHRASE_WORD_COUNT, BROLL_MAX_SEGMENTS_DEFAULT, BROLL_MAX_SEGMENTS_LONG } from './engine/render-config'
 import { runRender, dimensions, consumeCancelIntent, hasCancelIntent, canUseCudaFinalFilters } from './render'
 import { buildBrollManifest } from './broll'
 import { probeRenderCapabilities } from './engine/caps'
@@ -58,7 +59,7 @@ function captionRenderMode(project: Pick<Project, 'durationSec' | 'captionPace'>
   if (project.captionPace === 'word') return 'word'
   if (project.captionPace === 'phrase') return 'phrase'
   const durationSec = project.durationSec
-  return durationSec >= 600 || wordCount >= 1500 ? 'phrase' : 'word'
+  return durationSec >= LONG_FORM_FAST_SEC || wordCount >= CAPTION_PHRASE_WORD_COUNT ? 'phrase' : 'word'
 }
 
 let maxActive = 0
@@ -253,7 +254,7 @@ export async function runJob(job: RenderJob): Promise<void> {
       pushActivity({ t: hhmm(), icon: '!', color: '#f5b323', text: `B-roll skipped: add a stock-footage API key for ${project.title.slice(0, 36)}` })
     } else try {
       const dims = dimensions(settings.quality, renderProject.captionAspect)
-      const maxSegments = renderProject.durationSec > 600 ? 36 : 48
+      const maxSegments = renderProject.durationSec > LONG_FORM_FAST_SEC ? BROLL_MAX_SEGMENTS_LONG : BROLL_MAX_SEGMENTS_DEFAULT
       const planned = await buildBrollManifest({
         settings,
         caps,

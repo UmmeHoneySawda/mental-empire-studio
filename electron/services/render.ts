@@ -7,6 +7,7 @@ import { asBetaOpts } from '../../shared/types'
 import type { EffectPlan } from '../../shared/effectPlan'
 import { resolutionFor, type CaptionAspect } from './captions'
 import { FALLBACK_CAPS, selectEncoder } from './engine/encoder'
+import { FPS, LONG_FORM_FAST_SEC, crfFor } from './engine/render-config'
 import { createProgressSmoother, parseFfmpegProgressBlock, type FfmpegProgress } from './engine/progress'
 import { gradeChain } from './engine/grade'
 import { masterAudioTwoPass } from './engine/audio-master'
@@ -18,9 +19,6 @@ import { ffmpegPath, ffprobePath } from './bin'
 // captions, optional punch-zoom, encoded H.264 at the chosen quality. The graph is
 // built purely (buildRenderArgs) so it's assertable; ME_RENDER_FIXTURE swaps the
 // real encode for a stub so the runner is testable without ffmpeg.
-
-const FPS = 24
-const LONG_FORM_FAST_SEC = 600
 
 /** Video codec args for the chosen encoder. CPU = libx264 (CRF); NVIDIA = h264_nvenc
  *  (constant-quality VBR). Both target visually-equivalent quality at the given level. */
@@ -297,7 +295,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
       prefix: 'bm'
     })
     const aMap = audioWithSfx(parts, 1, sfxIdx)
-    const crf = settings.quality === '1440p' ? '20' : settings.quality === '720p' ? '23' : '21'
+    const crf = crfFor(settings.quality)
 
     return [
       '-y',
@@ -354,7 +352,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
     const punch = punchZoomFilter(project, beta, w, h, allowCpuMotion)
     pushFinishedVideo(parts, `[${last}]`, [grade], { overlayIdx, assPath, punch, prefix: 'bd' })
     const aMap = audioWithSfx(parts, audioIdx, sfxIdx)
-    const crf = settings.quality === '1440p' ? '20' : settings.quality === '720p' ? '23' : '21'
+    const crf = crfFor(settings.quality)
 
     return [
       '-y',
@@ -376,7 +374,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
     const overlayPath = beta ? overlayGradientPath(beta.overlay, w, h) : undefined
     const grade = gradeChain(beta?.style).replace(/,+$/, '')
     const punch = punchZoomFilter(project, beta, w, h, allowCpuMotion)
-    const crfBed = settings.quality === '1440p' ? '20' : settings.quality === '720p' ? '23' : '21'
+    const crfBed = crfFor(settings.quality)
     const bedParts: string[] = []
     const sfxIdx = inp.sfxPath ? 2 : null
     const overlayIdx = overlayPath ? (inp.sfxPath ? 3 : 2) : undefined
@@ -457,7 +455,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
   pushFinishedVideo(parts, `[${last}]`, [grade], { overlayIdx, assPath, punch, prefix: 'img' })
   const aMap = audioWithSfx(parts, audioIdx, sfxIdx)
 
-  const crf = settings.quality === '1440p' ? '20' : settings.quality === '720p' ? '23' : '21'
+  const crf = crfFor(settings.quality)
   return [
     '-y',
     ...inputs,

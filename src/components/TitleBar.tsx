@@ -1,5 +1,6 @@
 import { useStore } from '../store/useStore'
 import { useData } from '../store/useData'
+import { clickableProps } from './primitives'
 import type { ScreenKey } from '@shared/types'
 
 const LABELS: Record<ScreenKey, string> = {
@@ -39,9 +40,9 @@ export function TitleBar(): JSX.Element {
       }}
     >
       <div className="no-drag" style={{ display: 'flex', gap: 8 }}>
-        <span onClick={winCtl('close')} style={{ width: 12, height: 12, borderRadius: '50%', background: '#ff5f57', cursor: 'pointer' }} />
-        <span onClick={winCtl('minimize')} style={{ width: 12, height: 12, borderRadius: '50%', background: '#febc2e', cursor: 'pointer' }} />
-        <span onClick={winCtl('maximize')} style={{ width: 12, height: 12, borderRadius: '50%', background: '#28c840', cursor: 'pointer' }} />
+        <span onClick={winCtl('close')} {...clickableProps(winCtl('close'), 'Close window')} style={{ width: 12, height: 12, borderRadius: '50%', background: '#ff5f57', cursor: 'pointer' }} />
+        <span onClick={winCtl('minimize')} {...clickableProps(winCtl('minimize'), 'Minimize window')} style={{ width: 12, height: 12, borderRadius: '50%', background: '#febc2e', cursor: 'pointer' }} />
+        <span onClick={winCtl('maximize')} {...clickableProps(winCtl('maximize'), 'Maximize window')} style={{ width: 12, height: 12, borderRadius: '50%', background: '#28c840', cursor: 'pointer' }} />
       </div>
       <div style={{ width: 1, height: 20, background: '#23272f' }} />
       <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '.5px', color: '#6a7180', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
