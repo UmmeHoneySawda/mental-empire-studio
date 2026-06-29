@@ -43,10 +43,18 @@ export interface DownloadParams {
 const runningDownloads = new Map<string, ChildProcess>()
 const cancelIntents = new Set<string>()
 
+// A hung yt-dlp (network stall, throttling, interactive prompt) would otherwise never
+// resolve and stall the whole batch / auto-watch run. Kill it if no output arrives for
+// STALL_MS, or if the whole download exceeds HARD_MS.
+const STALL_MS = 120_000
+const HARD_MS = 30 * 60_000
+
 export function cancelDownload(downloadId: string): boolean {
-  cancelIntents.add(downloadId)
   const child = runningDownloads.get(downloadId)
   if (!child) return false
+  // Only record the intent when a child is actually running, so a stale intent can't
+  // linger and cancel a later download that reuses the same id.
+  cancelIntents.add(downloadId)
   child.kill('SIGKILL')
   runningDownloads.delete(downloadId)
   return true
@@ -107,6 +115,9 @@ function runYtdlpDownload(
       '--newline',
       '--continue',
       '--no-warnings',
+      // Self-recover from transient network stalls before our watchdog has to step in.
+      '--socket-timeout', '30',
+      '--retries', '3',
       '-o', dest.replace(/\.mp3$/, '.%(ext)s')
     ]
     const ffmpegDir = vendoredFfmpegDir()
@@ -122,21 +133,41 @@ function runYtdlpDownload(
     const child = spawn(bin, args, { windowsHide: true })
     if (downloadId) runningDownloads.set(downloadId, child)
     let err = ''
+    // Stall/hard-ceiling watchdog (A2): kill a yt-dlp that stops producing output.
+    let lastActivity = Date.now()
+    let timedOut = false
+    const startedAt = Date.now()
+    const watchdog = setInterval(() => {
+      const idle = Date.now() - lastActivity
+      const total = Date.now() - startedAt
+      if (idle > STALL_MS || total > HARD_MS) {
+        timedOut = true
+        L.error(`yt-dlp download timed out (idle=${Math.round(idle / 1000)}s total=${Math.round(total / 1000)}s) for "${video.title}"`)
+        child.kill('SIGKILL')
+      }
+    }, 15_000)
     child.stdout.on('data', (d: Buffer) => {
+      lastActivity = Date.now()
       const m = d.toString().match(/\[download\]\s+([\d.]+)%/)
       if (m) onProgress?.(parseFloat(m[1]))
     })
-    child.stderr.on('data', (d: Buffer) => (err += d))
+    child.stderr.on('data', (d: Buffer) => { lastActivity = Date.now(); err += d })
     child.on('error', (e) => {
+      clearInterval(watchdog)
       if (downloadId) runningDownloads.delete(downloadId)
       if (consumeCancel(downloadId)) reject(new Error('download cancelled'))
       else { L.error(`yt-dlp download spawn error: ${e.message} (bin=${bin})`); reject(e) }
     })
     child.on('close', (code) => {
+      clearInterval(watchdog)
       if (downloadId) runningDownloads.delete(downloadId)
       if (consumeCancel(downloadId)) {
         L.warn(`download cancelled: ${video.title}`)
         reject(new Error('download cancelled'))
+        return
+      }
+      if (timedOut) {
+        reject(new Error('download timed out — no progress; resume to retry'))
         return
       }
       if (code === 0 && existsSync(dest)) {
