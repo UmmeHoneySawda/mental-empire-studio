@@ -7,6 +7,7 @@ import { registerDownloadIpc } from './download'
 import { registerComposeIpc } from './compose'
 import { registerThumbnailsIpc } from './thumbnails'
 import { registerRenderIpc } from './render'
+import { registerLibraryIpc } from './library'
 import { registerAutomationIpc, upsertProfileAndWarm } from './automation'
 import { tick, start as schedulerStart } from '../services/scheduler'
 import { applyLoginItem } from '../services/background'
@@ -78,6 +79,9 @@ export function registerIpc(): void {
 
   // ---- render pipeline (M6) ----
   registerRenderIpc()
+
+  // ---- master library: reorganize-existing migration (P0) ----
+  registerLibraryIpc()
 
   // ---- automation: profiles + scheduler (M7) ----
   registerAutomationIpc()

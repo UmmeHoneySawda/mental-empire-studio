@@ -260,6 +260,9 @@ export interface Repositories {
   deleteDownload(id: string): void
   /** Remove a single render job from the queue. */
   deleteRenderJob(id: string): void
+  /** Rewrite asset path columns (used by the library reorganize migration). Only a fixed
+   *  allowlist of table/column pairs is permitted; unknown pairs are ignored. Transactional. */
+  rewriteAssetPaths(updates: Array<{ table: string; column: string; id: string; value: string }>): void
   /** Wipe every domain table (channels, profiles, projects, jobs, …) back to empty,
    *  and mark the DB seeded so demo content is not re-inserted on next launch. */
   resetAll(): void
@@ -593,6 +596,25 @@ function buildRepositories(d: Database.Database): Repositories {
 
     deleteDownload: (id) => d.prepare('DELETE FROM downloaded_videos WHERE id=?').run(id),
     deleteRenderJob: (id) => d.prepare('DELETE FROM render_jobs WHERE id=?').run(id),
+
+    rewriteAssetPaths: (updates) => {
+      // Allowlist: table → set of columns the reorg migration may rewrite. Guards the
+      // dynamic SQL below against any unexpected table/column reaching it.
+      const ALLOW: Record<string, Set<string>> = {
+        downloaded_videos: new Set(['filePath']),
+        projects: new Set(['mp3Path', 'thumbPath']),
+        project_images: new Set(['path', 'thumb']),
+        render_jobs: new Set(['outputPath'])
+      }
+      const valid = updates.filter((u) => ALLOW[u.table]?.has(u.column))
+      if (!valid.length) return
+      const tx = d.transaction(() => {
+        for (const u of valid) {
+          d.prepare(`UPDATE ${u.table} SET ${u.column}=@value WHERE id=@id`).run({ value: u.value, id: u.id })
+        }
+      })
+      tx()
+    },
 
     softReset: () => {
       // Wipe domain data but leave thumbnail_templates (user art) intact.

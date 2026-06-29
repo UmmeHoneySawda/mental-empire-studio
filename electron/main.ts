@@ -746,9 +746,11 @@ async function runSmokeM6(): Promise<void> {
     await runAll()
     const j1 = repos.renderJob(`job-proj-m6-${ns}-1`)
     const queueOk = j1?.status === 'done' && !!j1.outputPath && existsSync(j1.outputPath) && j1.pct === 100 && lastMaxActive() === 2
-    const assFileOk = existsSync(join(app.getPath('temp'), 'me-m6-out', 'Mental Empire - M6 Test 1.ass'))
-    const logFile = join(app.getPath('temp'), 'me-m6-out', 'Mental Empire - M6 Test 1.render.log')
-    const logTxt = existsSync(logFile) ? readFileSync(logFile, 'utf8') : ''
+    // .ass/.log are written as siblings of the .mp4 (now under the per-video output/ dir),
+    // so derive their paths from the job's outputPath rather than a fixed flat location.
+    const assFileOk = !!j1?.outputPath && existsSync(j1.outputPath.replace(/\.mp4$/, '.ass'))
+    const logFile = j1?.outputPath ? j1.outputPath.replace(/\.mp4$/, '.render.log') : ''
+    const logTxt = logFile && existsSync(logFile) ? readFileSync(logFile, 'utf8') : ''
     const stageTimingOk = logTxt.includes('[stage:start] preparing') && logTxt.includes('[stage:end] preparing') && logTxt.includes('[render:end] status=done')
     const probeLogOk = logTxt.includes('[probe] output=') && logTxt.includes('expectedSec=12.00')
     const captionPaceLogOk = logTxt.includes('mode=phrase') && logTxt.includes('pace=phrase') && logTxt.includes('lines=3')

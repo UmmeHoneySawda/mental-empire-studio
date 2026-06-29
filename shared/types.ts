@@ -508,6 +508,10 @@ export interface AppSettings {
   showActivityRail: boolean
   defaultScreen: ScreenKey
   namingTemplate: string
+  /** master library root: where all per-video folders (audio/images/captions/broll/
+   *  thumb/output) live. Empty = <Documents>/MentalEmpireStudio. Supersedes outputFolder
+   *  as the single storage root; outputFolder is kept as a back-compat fallback. */
+  libraryFolder?: string
   /** where downloads + renders are written; empty = <Downloads>/MentalEmpire_out */
   outputFolder: string
   concurrency: number
@@ -549,6 +553,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   showActivityRail: true,
   defaultScreen: 'library',
   namingTemplate: '{channel} - {title}',
+  libraryFolder: '',
   outputFolder: '',
   concurrency: 2,
   quality: '1080p',
@@ -566,6 +571,22 @@ export type DeepPartial<T> = {
 }
 
 // ---- Native bridge surface ----
+export interface LibraryReorgPreview {
+  libraryRoot: string
+  fileCount: number
+  totalBytes: number
+  missing: number
+  alreadyOrganized: number
+  sample: Array<{ from: string; to: string }>
+}
+
+export interface LibraryReorgResult {
+  moved: number
+  skippedMissing: number
+  alreadyOrganized: number
+  undoLogPath?: string
+}
+
 export interface NativeApi {
   platform: NodeJS.Platform | 'web'
   /** the running app version (from package.json / app.getVersion()) */
@@ -696,6 +717,13 @@ export interface NativeApi {
   }
   /** pick an output folder via the OS dialog; returns the chosen path or '' */
   chooseFolder(): Promise<string>
+  /** master library: reorganize existing files into the per-video layout */
+  library: {
+    /** dry-run: size the move plan for a confirmation prompt */
+    previewReorg(): Promise<LibraryReorgPreview>
+    /** execute the reorganize migration (copy-verify-delete + DB rewrite + undo log) */
+    reorganize(): Promise<LibraryReorgResult>
+  }
   /** resolve the absolute filesystem path of a picked/dropped File (Electron webUtils) */
   pathForFile(file: File): string
   /** subscribe to live scrape progress; returns an unsubscribe fn */
