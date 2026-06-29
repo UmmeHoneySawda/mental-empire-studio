@@ -1,54 +1,39 @@
-import { useEffect, useState } from 'react'
-import { ScreenPad } from '../components/primitives'
-import { Toggle } from '../components/primitives'
+import { useEffect, useState, useCallback } from 'react'
+import { ScreenPad, Toggle } from '../components/primitives'
 import { useData } from '../store/useData'
 import { useStore } from '../store/useStore'
 import type { AccentName, AppSettings, RenderCapabilities } from '@shared/types'
 
 const ACCENTS: AccentName[] = ['Amber', 'Violet', 'Emerald', 'Crimson']
-const ACCENT_SWATCH: Record<AccentName, string> = {
-  Amber: '#f5b323',
-  Violet: '#8b7cff',
-  Emerald: '#36c98e',
-  Crimson: '#ff5a6e'
-}
+const ACCENT_SWATCH: Record<AccentName, string> = { Amber: '#f5b323', Violet: '#8b7cff', Emerald: '#36c98e', Crimson: '#ff5a6e' }
 
-function Appearance(): JSX.Element {
-  const { accent, setAccent, ambientGlow, toggleAmbientGlow, showActivityRail, toggleActivityRail } = useStore()
-  return (
-    <div style={{ border: '1px solid #1d2129', borderRadius: 14, padding: 18, background: '#12151b' }}>
-      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '.6px', color: '#5b616f', marginBottom: 13 }}>APPEARANCE</div>
-      <div style={{ fontSize: 12, color: '#8a909c', marginBottom: 8 }}>Accent</div>
-      <div style={{ display: 'flex', gap: 9, marginBottom: 15 }}>
-        {ACCENTS.map((a) => (
-          <div key={a} onClick={() => setAccent(a)} className="me-btn" style={{ display: 'flex', alignItems: 'center', gap: 7, border: a === accent ? '1px solid var(--accent)' : '1px solid #23272f', background: a === accent ? 'var(--accent-soft)' : '#0e1116', borderRadius: 9, padding: '7px 12px', cursor: 'pointer' }}>
-            <span style={{ width: 14, height: 14, borderRadius: '50%', background: ACCENT_SWATCH[a] }} />
-            <span style={{ fontSize: 11.5, color: a === accent ? '#f2f4f7' : '#8a909c', fontWeight: a === accent ? 600 : 400 }}>{a}</span>
-          </div>
-        ))}
-      </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 9, fontSize: 12.5 }}>
-        <div onClick={toggleAmbientGlow} style={{ display: 'flex', alignItems: 'center', border: '1px solid #1d2129', borderRadius: 9, padding: '11px 13px', background: '#0e1116', cursor: 'pointer' }}><span style={{ flex: 1, color: '#cdd2da' }}>Ambient accent glow</span><Toggle on={ambientGlow} /></div>
-        <div onClick={toggleActivityRail} style={{ display: 'flex', alignItems: 'center', border: '1px solid #1d2129', borderRadius: 9, padding: '11px 13px', background: '#0e1116', cursor: 'pointer' }}><span style={{ flex: 1, color: '#cdd2da' }}>Show activity rail (Library)</span><Toggle on={showActivityRail} /></div>
-      </div>
-    </div>
-  )
-}
+type Section = 'looks' | 'output' | 'scraping' | 'integrations' | 'beta' | 'danger'
+const NAV: Array<{ id: Section; label: string }> = [
+  { id: 'looks', label: 'Looks' },
+  { id: 'output', label: 'Output & Quality' },
+  { id: 'scraping', label: 'Scraping' },
+  { id: 'integrations', label: 'Integrations' },
+  { id: 'beta', label: 'Beta features' },
+  { id: 'danger', label: 'Danger zone' },
+]
 
-function Card({ label, children }: { label: string; children: React.ReactNode }): JSX.Element {
+function Card({ label, children }: { label?: string; children: React.ReactNode }): JSX.Element {
   return (
-    <div style={{ border: '1px solid #1d2129', borderRadius: 14, padding: 18, background: '#12151b' }}>
-      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '.6px', color: '#5b616f', marginBottom: 13 }}>{label}</div>
+    <div style={{ border: '1px solid #1d2129', borderRadius: 14, padding: 18, background: '#12151b', marginBottom: 16 }}>
+      {label && <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '.6px', color: '#5b616f', marginBottom: 13 }}>{label}</div>}
       {children}
     </div>
   )
 }
 
-function rowToggle(label: string, on: boolean, right?: React.ReactNode, onClick?: () => void) {
+function Row({ on, label, onClick, hint }: { on: boolean; label: string; onClick?: () => void; hint?: string }): JSX.Element {
   return (
-    <div onClick={onClick} style={{ display: 'flex', alignItems: 'center', border: '1px solid #1d2129', borderRadius: 9, padding: '11px 13px', background: '#0e1116', cursor: onClick ? 'pointer' : undefined }}>
-      <span style={{ flex: 1, color: on ? '#cdd2da' : '#6a7180' }}>{label}</span>
-      {right ?? <Toggle on={on} />}
+    <div onClick={onClick} style={{ display: 'flex', alignItems: 'center', border: '1px solid #1d2129', borderRadius: 9, padding: '11px 13px', background: '#0e1116', cursor: onClick ? 'pointer' : undefined, gap: 10, marginBottom: 8 }}>
+      <div style={{ flex: 1 }}>
+        <div style={{ color: on ? '#cdd2da' : '#6a7180', fontSize: 12.5 }}>{label}</div>
+        {hint && <div style={{ fontSize: 10.5, color: '#5b616f', marginTop: 2 }}>{hint}</div>}
+      </div>
+      <Toggle on={on} />
     </div>
   )
 }
@@ -57,208 +42,248 @@ export function Settings(): JSX.Element {
   const settings = useStore((s) => s.settings)
   const updateSettings = useStore((s) => s.updateSettings)
   const resetAll = useStore((s) => s.resetAll)
-  const activity = useData((s) => s.activity)
+  const { accent, setAccent, ambientGlow, toggleAmbientGlow, showActivityRail, toggleActivityRail } = useStore()
   const renderJobs = useData((s) => s.renderJobs)
-  // Real "jobs this week": completed render jobs created in the last 7 days (no fake numbers).
   const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
   const jobsThisWeek = renderJobs.filter((r) => r.job.status === 'done' && Date.parse(r.job.createdAt || '') >= weekAgo).length
   const { quality, autoScrape, background } = settings
   const [caps, setCaps] = useState<RenderCapabilities | null>(null)
   const [checkingCaps, setCheckingCaps] = useState(true)
+  const [section, setSection] = useState<Section>('looks')
+  const [savedAt, setSavedAt] = useState(0)
 
-  useEffect(() => {
-    void refreshCaps()
-  }, [])
+  const saved = useCallback((patch: Parameters<typeof updateSettings>[0]) => {
+    updateSettings(patch)
+    setSavedAt(Date.now())
+  }, [updateSettings])
+
+  useEffect(() => { void refreshCaps() }, [])
 
   const refreshCaps = async (force = false): Promise<void> => {
     setCheckingCaps(true)
-    try {
-      setCaps(await window.api?.caps?.get?.(force) ?? null)
-    } catch {
-      setCaps(null)
-    } finally {
-      setCheckingCaps(false)
-    }
+    try { setCaps(await window.api?.caps?.get?.(force) ?? null) } catch { setCaps(null) } finally { setCheckingCaps(false) }
   }
 
   const onReset = (): void => {
-    const ok = window.confirm(
-      'Reset everything to default settings?\n\nThis deletes all channels, profiles, projects, downloads, thumbnail templates and the render queue, and restores every setting to its default. This cannot be undone.'
-    )
-    if (ok) void resetAll()
+    if (window.confirm('Reset everything to default settings?\n\nDeletes all channels, profiles, projects, downloads, thumbnail templates and the render queue. Cannot be undone.')) void resetAll()
   }
   const onSoftReset = async (): Promise<void> => {
-    const ok = window.confirm(
-      'Reset data and keep API keys?\n\nThis deletes all channels, profiles, projects, downloads and the render queue, but keeps your API keys, appearance settings, and thumbnail templates. This cannot be undone.'
-    )
-    if (!ok) return
+    if (!window.confirm('Reset data and keep API keys?\n\nDeletes channels, profiles, projects, downloads and render queue, but keeps API keys, appearance and templates. Cannot be undone.')) return
     await window.api?.settings?.softReset?.()
-    // Reload so every screen re-reads the now-empty database (the in-memory data
-    // store would otherwise keep showing the channels/uploads that were just wiped).
     window.location.reload()
   }
+
   const qualities: AppSettings['quality'][] = ['720p', '1080p', '1440p']
-  const encoders: Array<{ value: AppSettings['encoder']; label: string; enabled: boolean; note: string }> = [
-    { value: 'cpu', label: 'CPU', enabled: true, note: 'Uses libx264. Pick this only when you deliberately want CPU rendering.' },
-    { value: 'nvenc', label: 'NVENC', enabled: !!(caps?.hasNvenc || caps?.hasNvencListed), note: caps?.hasNvenc ? `NVIDIA NVENC encode available${caps.ffmpegHasCuda ? ' · CUDA scale available' : ''}.` : caps?.hasNvencListed ? `NVENC is listed by ffmpeg, but the self-test failed. Renders will try NVENC and fail visibly instead of falling back to CPU.` : caps?.gpuVendor === 'nvidia' ? `NVIDIA GPU${caps.nvidiaGpuName ? ` (${caps.nvidiaGpuName})` : ''} detected, but this ffmpeg build did not list h264_nvenc.` : 'No NVIDIA NVENC encoder listed by ffmpeg.' },
-    { value: 'qsv', label: 'QSV', enabled: !!(caps?.hasQsv || caps?.hasQsvListed), note: caps?.hasQsv ? 'Intel Quick Sync encode probe passed.' : caps?.hasQsvListed ? 'QSV is listed by ffmpeg, but the self-test failed. Renders will fail visibly instead of falling back to CPU.' : 'No Intel QSV encoder listed by ffmpeg.' },
-    { value: 'amf', label: 'AMF', enabled: !!(caps?.hasAmf || caps?.hasAmfListed), note: caps?.hasAmf ? 'AMD AMF encode probe passed.' : caps?.hasAmfListed ? 'AMF is listed by ffmpeg, but the self-test failed. Renders will fail visibly instead of falling back to CPU.' : 'No AMD AMF encoder listed by ffmpeg.' }
+  const encoders = [
+    { value: 'cpu' as const, label: 'CPU', enabled: true, note: 'libx264 — always available.' },
+    { value: 'nvenc' as const, label: 'NVENC', enabled: !!(caps?.hasNvenc || caps?.hasNvencListed), note: caps?.hasNvenc ? `NVIDIA NVENC available${caps.ffmpegHasCuda ? ' + CUDA scale' : ''}` : 'NVIDIA NVENC not confirmed by ffmpeg' },
+    { value: 'qsv' as const, label: 'QSV', enabled: !!(caps?.hasQsv || caps?.hasQsvListed), note: caps?.hasQsv ? 'Intel QSV available' : 'Intel QSV not confirmed' },
+    { value: 'amf' as const, label: 'AMF', enabled: !!(caps?.hasAmf || caps?.hasAmfListed), note: caps?.hasAmf ? 'AMD AMF available' : 'AMD AMF not confirmed' },
   ]
   const selectedEncoder = encoders.find((e) => e.value === (settings.encoder ?? 'cpu')) ?? encoders[0]
-  const capsDetail = caps
-    ? [
-      caps.ffmpegPath ? `ffmpeg: ${caps.ffmpegPath}` : '',
-      caps.gpuVendor !== 'unknown' ? `GPU: ${caps.gpuVendor}${caps.nvidiaGpuName ? ` (${caps.nvidiaGpuName})` : ''}` : 'GPU: not detected',
-      `NVENC listed: ${caps.hasNvencListed ? 'yes' : 'no'}`,
-      `CUDA filters: ${caps.ffmpegHasCuda ? 'yes' : 'no'}`,
-      !caps.hasNvenc && caps.nvencProbeError ? `NVENC self-test: ${caps.nvencProbeError}` : ''
-    ].filter(Boolean).join(' · ')
-    : ''
-  const chooseEncoder = (enc: (typeof encoders)[number]): void => {
-    // Always persist the user's choice — even if the capability probe hasn't confirmed
-    // the encoder. Previously a GPU pick was silently dropped when the probe failed, so
-    // the render kept using CPU while the user believed they'd selected GPU. With
-    // strict-GPU rendering, an unavailable GPU now fails the render *visibly* instead.
-    updateSettings({ encoder: enc.value })
-    // Refresh capabilities so the advisory note/warning under the selector updates.
+  const chooseEncoder = (enc: typeof encoders[number]): void => {
+    saved({ encoder: enc.value })
     if (!enc.enabled && enc.value !== 'cpu') void refreshCaps(true)
   }
 
-  return (
-    <ScreenPad>
-      <div style={{ marginBottom: 22 }}>
-        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '1px', color: 'var(--accent)', marginBottom: 7 }}>CONFIGURE</div>
-        <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 25, letterSpacing: '-.5px', color: '#f4f6f9' }}>Settings</div>
-      </div>
-
-      <div style={{ display: 'flex', gap: 18, alignItems: 'flex-start' }}>
-        <div style={{ flex: 1, display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <Appearance />
-          <Card label="OUTPUT">
-            <div style={{ fontSize: 12, color: '#8a909c', marginBottom: 8 }}>File naming template</div>
-            <div style={{ display: 'flex', gap: 8, marginBottom: 9 }}>
-              <span style={{ border: '1px solid var(--accent)', background: 'var(--accent-soft)', color: 'var(--accent)', borderRadius: 8, padding: '7px 12px', fontSize: 11.5, fontFamily: 'var(--font-mono)' }}>{'{channel} - {title}'}</span>
-              <span style={{ border: '1px solid #23272f', color: '#8a909c', borderRadius: 8, padding: '7px 12px', fontSize: 11.5, fontFamily: 'var(--font-mono)' }}>{'{date}_{title}'}</span>
-            </div>
-            <div style={{ fontSize: 11, color: '#6a7180' }}>e.g. <span style={{ fontFamily: 'var(--font-mono)', color: '#aab0bb' }}>Mental Empire - Gaslighting Explained.mp4</span></div>
-          </Card>
-
-          <Card label="RENDER">
-            <div style={{ display: 'flex', gap: 26, flexWrap: 'wrap' }}>
-              <div><div style={{ fontSize: 12, color: '#8a909c', marginBottom: 7 }}>Parallel renders</div><div style={{ display: 'flex', alignItems: 'center', gap: 10 }}><input type="number" min={1} max={8} value={settings.concurrency} onChange={(e) => updateSettings({ concurrency: Math.max(1, Number(e.target.value)) })} style={{ width: 56, border: '1px solid #23272f', borderRadius: 8, padding: '8px 12px', fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 15, color: '#eef0f3', background: '#0e1116', outline: 'none' }} /><span style={{ fontSize: 11, color: '#6a7180' }}>at a time</span></div></div>
-              <div><div style={{ fontSize: 12, color: '#8a909c', marginBottom: 7 }}>Quality</div><div style={{ display: 'flex', border: '1px solid #23272f', borderRadius: 8, overflow: 'hidden', fontSize: 11.5 }}>{qualities.map((q) => { const on = q === quality; return <div key={q} onClick={() => updateSettings({ quality: q })} style={{ padding: '8px 12px', cursor: 'pointer', background: on ? 'var(--accent)' : undefined, color: on ? 'var(--accent-ink)' : '#8a909c', fontWeight: on ? 600 : undefined }}>{q}</div> })}</div></div>
-              <div style={{ minWidth: 280 }}>
-                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 7 }}>
-                  <div style={{ fontSize: 12, color: '#8a909c' }}>Encoder</div>
-                  <button type="button" onClick={() => void refreshCaps(true)} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 7, padding: '3px 7px', fontSize: 10, color: '#8a909c', cursor: 'pointer' }}>{checkingCaps ? 'Checking...' : 'Recheck'}</button>
-                </div>
-                <div style={{ display: 'flex', border: '1px solid #23272f', borderRadius: 8, overflow: 'hidden', fontSize: 11.5 }}>{encoders.map((enc) => { const on = (settings.encoder ?? 'cpu') === enc.value; return <div key={enc.value} title={enc.note} onClick={() => chooseEncoder(enc)} style={{ padding: '8px 12px', cursor: 'pointer', background: on ? 'var(--accent)' : undefined, color: on ? 'var(--accent-ink)' : enc.enabled ? '#8a909c' : '#737a86', fontWeight: on ? 600 : undefined }}>{enc.label}</div> })}</div>
-                <div title={checkingCaps ? undefined : caps ? selectedEncoder.note : undefined} className="me-clamp-2" style={{ fontSize: 10, color: selectedEncoder.enabled || selectedEncoder.value === 'cpu' ? '#6a7180' : '#f5b323', marginTop: 5 }}>{checkingCaps ? 'Checking ffmpeg GPU capabilities...' : caps ? selectedEncoder.note : 'Could not check ffmpeg GPU capabilities — your encoder choice is still saved and will be used at render time.'}</div>
-                {capsDetail && <div title={capsDetail} style={{ marginTop: 4, maxWidth: 420, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 9.5, color: '#5b616f', fontFamily: 'var(--font-mono)' }}>{capsDetail}</div>}
+  const CONTENT: Record<Section, JSX.Element> = {
+    looks: (
+      <div>
+        <Card label="ACCENT COLOUR">
+          <div style={{ display: 'flex', gap: 9, marginBottom: 6 }}>
+            {ACCENTS.map((a) => (
+              <div key={a} onClick={() => { setAccent(a); setSavedAt(Date.now()) }} className="me-btn" style={{ display: 'flex', alignItems: 'center', gap: 7, border: a === accent ? '1px solid var(--accent)' : '1px solid #23272f', background: a === accent ? 'var(--accent-soft)' : '#0e1116', borderRadius: 9, padding: '7px 12px', cursor: 'pointer' }}>
+                <span style={{ width: 14, height: 14, borderRadius: '50%', background: ACCENT_SWATCH[a] }} />
+                <span style={{ fontSize: 11.5, color: a === accent ? '#f2f4f7' : '#8a909c', fontWeight: a === accent ? 600 : 400 }}>{a}</span>
               </div>
-            </div>
-          </Card>
-
-          <Card label="AUTO-SCRAPE · NO API">
-            <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 13 }}>
-              <div onClick={() => updateSettings({ autoScrape: { enabled: !autoScrape.enabled } })} style={{ display: 'flex', alignItems: 'center', gap: 9, flex: 1, cursor: 'pointer' }}><Toggle on={autoScrape.enabled} /><span style={{ fontSize: 12.5, color: autoScrape.enabled ? '#cdd2da' : '#6a7180' }}>Auto-scrape enabled</span></div>
-              <span style={{ fontSize: 11, color: '#6a7180' }}>last run 09:30</span>
-            </div>
-            <div style={{ display: 'flex', gap: 11, flexWrap: 'wrap', marginBottom: 11 }}>
-              <div><div style={{ fontSize: 11, color: '#8a909c', marginBottom: 6 }}>Frequency</div>
-                <select value={autoScrape.frequency} onChange={(e) => updateSettings({ autoScrape: { frequency: e.target.value } })} style={{ border: '1px solid #23272f', borderRadius: 8, padding: '8px 11px', fontSize: 11.5, color: '#dde0e5', background: '#0e1116', outline: 'none' }}>
-                  {['Every 15 minutes', 'Every 30 minutes', 'Every hour', 'Every 6 hours', 'Every 12 hours', 'Daily'].map((f) => <option key={f}>{f}</option>)}
-                </select>
-              </div>
-              <div><div style={{ fontSize: 11, color: '#8a909c', marginBottom: 6 }}>Request delay (s)</div><input type="number" step={0.5} min={0} value={autoScrape.delaySec} onChange={(e) => updateSettings({ autoScrape: { delaySec: Math.max(0, Number(e.target.value)) } })} style={{ width: 70, border: '1px solid #23272f', borderRadius: 8, padding: '8px 11px', fontSize: 11.5, color: '#dde0e5', background: '#0e1116', fontFamily: 'var(--font-mono)', outline: 'none' }} /></div>
-              <div><div style={{ fontSize: 11, color: '#8a909c', marginBottom: 6 }}>Retries on fail</div><input type="number" min={0} max={9} value={autoScrape.retries} onChange={(e) => updateSettings({ autoScrape: { retries: Math.max(0, Number(e.target.value)) } })} style={{ width: 64, border: '1px solid #23272f', borderRadius: 8, padding: '8px 11px', fontSize: 11.5, color: '#dde0e5', background: '#0e1116', fontFamily: 'var(--font-mono)', outline: 'none' }} /></div>
-            </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 9, fontSize: 12.5 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, border: '1px solid #1d2129', borderRadius: 9, padding: '9px 13px', background: '#0e1116' }}><span style={{ color: '#cdd2da', flex: 'none' }}>Cookies file</span><input value={autoScrape.cookiesPath} onChange={(e) => updateSettings({ autoScrape: { cookiesPath: e.target.value } })} placeholder="/path/to/cookies.txt (age-gated)" style={{ flex: 1, border: '1px solid #23272f', borderRadius: 7, padding: '6px 10px', fontSize: 11, color: '#aab0bb', fontFamily: 'var(--font-mono)', background: '#0c0d11', outline: 'none' }} /></div>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, border: '1px solid #1d2129', borderRadius: 9, padding: '9px 13px', background: '#0e1116' }}><span style={{ color: '#cdd2da', flex: 'none' }}>Proxy (optional)</span><input value={autoScrape.proxy} onChange={(e) => updateSettings({ autoScrape: { proxy: e.target.value } })} placeholder="http://user:pass@host:port" style={{ flex: 1, border: '1px solid #23272f', borderRadius: 7, padding: '6px 10px', fontSize: 11, color: '#aab0bb', fontFamily: 'var(--font-mono)', background: '#0c0d11', outline: 'none' }} /></div>
-            </div>
-          </Card>
-
-          <Card label="TRANSCRIPTION · GROQ WHISPER">
-            <div style={{ fontSize: 12, color: '#8a909c', marginBottom: 8 }}>Groq API key (free) — powers word-level captions</div>
-            <input
-              type="password"
-              value={settings.transcription.apiKey}
-              onChange={(e) => updateSettings({ transcription: { apiKey: e.target.value } })}
-              placeholder="gsk_…"
-              style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #23272f', borderRadius: 8, padding: '9px 13px', fontSize: 12, color: '#dde0e5', background: '#0e1116', fontFamily: 'var(--font-mono)', outline: 'none' }}
-            />
-            <div style={{ fontSize: 11, color: '#6a7180', marginTop: 8 }}>
-              Model <span style={{ fontFamily: 'var(--font-mono)', color: '#aab0bb' }}>{settings.transcription.model}</span> · get a free key at console.groq.com
-            </div>
-          </Card>
-
-          <Card label="BACKGROUND">
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 9, fontSize: 12.5 }}>
-              {rowToggle('Run in background (system tray)', background.tray, undefined, () => updateSettings({ background: { tray: !background.tray } }))}
-              {rowToggle('Start on Windows sign-in', background.startOnSignIn, undefined, () => updateSettings({ background: { startOnSignIn: !background.startOnSignIn } }))}
-              {rowToggle('Desktop notifications (goals & reminders)', background.notifications, undefined, () => updateSettings({ background: { notifications: !background.notifications } }))}
-              <div style={{ display: 'flex', alignItems: 'center', gap: 10, border: '1px solid #1d2129', borderRadius: 9, padding: '9px 13px', background: '#0e1116' }}><span style={{ color: '#cdd2da', flex: 'none' }}>Webhook</span><input value={background.webhook} onChange={(e) => updateSettings({ background: { webhook: e.target.value } })} placeholder="https://… (Pushover / Zapier / calendar)" style={{ flex: 1, border: '1px solid #23272f', borderRadius: 7, padding: '6px 10px', fontSize: 11, color: '#aab0bb', fontFamily: 'var(--font-mono)', background: '#0c0d11', outline: 'none' }} /></div>
-            </div>
-          </Card>
-
-          <Card label="BETA FEATURES">
-            <div onClick={() => updateSettings({ beta: { enabled: !settings.beta.enabled } })} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', marginBottom: settings.beta.enabled ? 13 : 0 }}>
-              <Toggle on={settings.beta.enabled} />
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 12.5, color: settings.beta.enabled ? '#cdd2da' : '#8a909c' }}>Enable beta features</div>
-                <div style={{ fontSize: 10.5, color: '#6a7180', marginTop: 2 }}>Hook · auto-highlight · background overlay · auto-zoom · auto B-roll · transition &amp; text-effect styles</div>
-              </div>
-            </div>
-            {settings.beta.enabled && (
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 9, fontSize: 12.5 }}>
-                <div style={{ fontSize: 10.5, color: '#6a7180' }}>Stock-footage API keys (for auto B-roll) — optional, used in priority order</div>
-                {([['pexelsKey', 'Pexels'], ['pixabayKey', 'Pixabay'], ['coverrKey', 'Coverr']] as const).map(([k, label]) => (
-                  <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 10, border: '1px solid #1d2129', borderRadius: 9, padding: '9px 13px', background: '#0e1116' }}>
-                    <span style={{ color: '#cdd2da', flex: 'none', width: 66 }}>{label}</span>
-                    <input type="password" value={settings.beta[k]} onChange={(e) => updateSettings({ beta: { [k]: e.target.value } })} placeholder={`${label} API key`} style={{ flex: 1, border: '1px solid #23272f', borderRadius: 7, padding: '6px 10px', fontSize: 11, color: '#aab0bb', fontFamily: 'var(--font-mono)', background: '#0c0d11', outline: 'none' }} />
-                  </div>
-                ))}
-                <div style={{ fontSize: 10, color: '#6a7180' }}>Footage from Pexels / Pixabay / Coverr. Get free keys at their developer pages.</div>
-              </div>
-            )}
-          </Card>
-
-          <Card label="DANGER ZONE">
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 12.5, color: '#cdd2da', marginBottom: 3 }}>Reset data (keep API keys)</div>
-                  <div style={{ fontSize: 11, color: '#6a7180', lineHeight: 1.4 }}>Clears channels, profiles, projects, downloads and the render queue. Keeps your API keys, appearance and thumbnail templates. Can't be undone.</div>
-                </div>
-                <div className="me-btn" onClick={onSoftReset} style={{ flex: 'none', border: '1px solid #f5b323', color: '#f5b323', background: 'rgba(245,179,35,.08)', borderRadius: 9, padding: '9px 15px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Reset data</div>
-              </div>
-              <div style={{ borderTop: '1px solid #1d2129', paddingTop: 11, display: 'flex', alignItems: 'center', gap: 14 }}>
-                <div style={{ flex: 1 }}>
-                  <div style={{ fontSize: 12.5, color: '#cdd2da', marginBottom: 3 }}>Reset to default settings</div>
-                  <div style={{ fontSize: 11, color: '#6a7180', lineHeight: 1.4 }}>Wipes all channels, profiles, projects, downloads, templates and the render queue, and restores every setting including API keys. Can't be undone.</div>
-                </div>
-                <div className="me-btn" onClick={onReset} style={{ flex: 'none', border: '1px solid #ff5a6e', color: '#ff8a96', background: 'rgba(255,90,110,.10)', borderRadius: 9, padding: '9px 15px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Reset everything</div>
-              </div>
-            </div>
-          </Card>
-        </div>
-
-        <div style={{ width: 300, flex: 'none', border: '1px solid #1d2129', borderRadius: 14, padding: 18, background: '#12151b' }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}><span style={{ width: 7, height: 7, borderRadius: '50%', background: '#36c98e', boxShadow: '0 0 8px #36c98e' }} /><span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 13, color: '#e9ebef' }}>Activity log</span></div>
-          <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
-            {activity.length === 0 && (
-              <div style={{ fontSize: 11.5, color: '#6a7180', lineHeight: 1.4 }}>No activity yet.</div>
-            )}
-            {activity.map((a, i) => (
-              <div key={i} style={{ display: 'flex', gap: 10 }}><span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#4f5662', flex: 'none', width: 32, paddingTop: 1 }}>{a.t}</span><span style={{ color: a.color, flex: 'none' }}>{a.icon}</span><span title={a.text} className="me-clamp-2" style={{ fontSize: 11.5, color: '#aab0bb', lineHeight: 1.4 }}>{a.text}</span></div>
             ))}
           </div>
-          <div style={{ marginTop: 16, borderTop: '1px solid #1d2129', paddingTop: 14, fontSize: 11, color: '#6a7180', display: 'flex', flexDirection: 'column', gap: 7 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Jobs this week</span><span style={{ color: '#cdd2da', fontFamily: 'var(--font-mono)' }}>{jobsThisWeek}</span></div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Version</span><span style={{ color: '#cdd2da', fontFamily: 'var(--font-mono)' }}>{window.api?.appVersion || '0.1.0'}</span></div>
-            <div onClick={() => void window.api?.openLogs?.()} className="me-btn" style={{ marginTop: 6, border: '1px solid #262b34', borderRadius: 8, padding: '8px 10px', textAlign: 'center', fontSize: 11, color: '#c4cad3', background: '#0e1116', cursor: 'pointer' }}>📄 Open logs folder (for bug reports)</div>
+        </Card>
+        <Card label="DISPLAY">
+          <Row on={ambientGlow} label="Ambient accent glow" onClick={toggleAmbientGlow} />
+          <Row on={showActivityRail} label="Show activity rail on Library" onClick={toggleActivityRail} />
+        </Card>
+      </div>
+    ),
+    output: (
+      <div>
+        <Card label="FILE NAMING">
+          <div style={{ fontSize: 12, color: '#8a909c', marginBottom: 8 }}>Template</div>
+          <div style={{ display: 'flex', gap: 8, marginBottom: 9 }}>
+            <span style={{ border: '1px solid var(--accent)', background: 'var(--accent-soft)', color: 'var(--accent)', borderRadius: 8, padding: '7px 12px', fontSize: 11.5, fontFamily: 'var(--font-mono)' }}>{'{channel} - {title}'}</span>
+            <span style={{ border: '1px solid #23272f', color: '#8a909c', borderRadius: 8, padding: '7px 12px', fontSize: 11.5, fontFamily: 'var(--font-mono)' }}>{'{date}_{title}'}</span>
           </div>
+          <div style={{ fontSize: 11, color: '#6a7180' }}>e.g. <span style={{ fontFamily: 'var(--font-mono)', color: '#aab0bb' }}>Mental Empire - Gaslighting Explained.mp4</span></div>
+        </Card>
+        <Card label="RENDER">
+          <div style={{ display: 'flex', gap: 26, flexWrap: 'wrap' }}>
+            <div>
+              <div style={{ fontSize: 12, color: '#8a909c', marginBottom: 7 }}>Parallel renders</div>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+                <input type="number" min={1} max={8} value={settings.concurrency} onChange={(e) => saved({ concurrency: Math.max(1, Number(e.target.value)) })} style={{ width: 56, border: '1px solid #23272f', borderRadius: 8, padding: '8px 12px', fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 15, color: '#eef0f3', background: '#0e1116', outline: 'none' }} />
+                <span style={{ fontSize: 11, color: '#6a7180' }}>at a time</span>
+              </div>
+            </div>
+            <div>
+              <div style={{ fontSize: 12, color: '#8a909c', marginBottom: 7 }}>Quality</div>
+              <div style={{ display: 'flex', border: '1px solid #23272f', borderRadius: 8, overflow: 'hidden', fontSize: 11.5 }}>
+                {qualities.map((q) => { const on = q === quality; return <div key={q} onClick={() => saved({ quality: q })} style={{ padding: '8px 12px', cursor: 'pointer', background: on ? 'var(--accent)' : undefined, color: on ? 'var(--accent-ink)' : '#8a909c', fontWeight: on ? 600 : undefined }}>{q}</div> })}
+              </div>
+            </div>
+            <div style={{ minWidth: 280 }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 7 }}>
+                <div style={{ fontSize: 12, color: '#8a909c' }}>Encoder</div>
+                <button type="button" onClick={() => void refreshCaps(true)} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 7, padding: '3px 7px', fontSize: 10, color: '#8a909c', cursor: 'pointer' }}>{checkingCaps ? 'Checking…' : 'Recheck'}</button>
+              </div>
+              <div style={{ display: 'flex', border: '1px solid #23272f', borderRadius: 8, overflow: 'hidden', fontSize: 11.5 }}>
+                {encoders.map((enc) => { const on = (settings.encoder ?? 'cpu') === enc.value; return <div key={enc.value} title={enc.note} onClick={() => chooseEncoder(enc)} style={{ padding: '8px 12px', cursor: 'pointer', background: on ? 'var(--accent)' : undefined, color: on ? 'var(--accent-ink)' : enc.enabled ? '#8a909c' : '#737a86', fontWeight: on ? 600 : undefined }}>{enc.label}</div> })}
+              </div>
+              <div className="me-clamp-2" style={{ fontSize: 10, color: selectedEncoder.enabled || selectedEncoder.value === 'cpu' ? '#6a7180' : '#f5b323', marginTop: 5 }}>{checkingCaps ? 'Checking ffmpeg GPU capabilities…' : caps ? selectedEncoder.note : 'Could not check capabilities — encoder choice is saved.'}</div>
+            </div>
+          </div>
+        </Card>
+      </div>
+    ),
+    scraping: (
+      <div>
+        <Card label="AUTO-SCRAPE · NO API">
+          <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 13 }}>
+            <div onClick={() => saved({ autoScrape: { enabled: !autoScrape.enabled } })} style={{ display: 'flex', alignItems: 'center', gap: 9, flex: 1, cursor: 'pointer' }}>
+              <Toggle on={autoScrape.enabled} />
+              <span style={{ fontSize: 12.5, color: autoScrape.enabled ? '#cdd2da' : '#6a7180' }}>Auto-scrape enabled</span>
+            </div>
+          </div>
+          <div style={{ display: 'flex', gap: 11, flexWrap: 'wrap', marginBottom: 13 }}>
+            <div>
+              <div style={{ fontSize: 11, color: '#8a909c', marginBottom: 6 }}>Frequency</div>
+              <select value={autoScrape.frequency} onChange={(e) => saved({ autoScrape: { frequency: e.target.value } })} style={{ border: '1px solid #23272f', borderRadius: 8, padding: '8px 11px', fontSize: 11.5, color: '#dde0e5', background: '#0e1116', outline: 'none' }}>
+                {['Every 15 minutes', 'Every 30 minutes', 'Every hour', 'Every 6 hours', 'Every 12 hours', 'Daily'].map((f) => <option key={f}>{f}</option>)}
+              </select>
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: '#8a909c', marginBottom: 6 }}>Request delay (s)</div>
+              <input type="number" step={0.5} min={0} value={autoScrape.delaySec} onChange={(e) => saved({ autoScrape: { delaySec: Math.max(0, Number(e.target.value)) } })} style={{ width: 70, border: '1px solid #23272f', borderRadius: 8, padding: '8px 11px', fontSize: 11.5, color: '#dde0e5', background: '#0e1116', fontFamily: 'var(--font-mono)', outline: 'none' }} />
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: '#8a909c', marginBottom: 6 }}>Retries on fail</div>
+              <input type="number" min={0} max={9} value={autoScrape.retries} onChange={(e) => saved({ autoScrape: { retries: Math.max(0, Number(e.target.value)) } })} style={{ width: 64, border: '1px solid #23272f', borderRadius: 8, padding: '8px 11px', fontSize: 11.5, color: '#dde0e5', background: '#0e1116', fontFamily: 'var(--font-mono)', outline: 'none' }} />
+            </div>
+          </div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, border: '1px solid #1d2129', borderRadius: 9, padding: '9px 13px', background: '#0e1116' }}>
+              <span style={{ color: '#cdd2da', flex: 'none' }}>Cookies file</span>
+              <input value={autoScrape.cookiesPath} onChange={(e) => saved({ autoScrape: { cookiesPath: e.target.value } })} placeholder="/path/to/cookies.txt" style={{ flex: 1, border: '1px solid #23272f', borderRadius: 7, padding: '6px 10px', fontSize: 11, color: '#aab0bb', fontFamily: 'var(--font-mono)', background: '#0c0d11', outline: 'none' }} />
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 10, border: '1px solid #1d2129', borderRadius: 9, padding: '9px 13px', background: '#0e1116' }}>
+              <span style={{ color: '#cdd2da', flex: 'none' }}>Proxy</span>
+              <input value={autoScrape.proxy} onChange={(e) => saved({ autoScrape: { proxy: e.target.value } })} placeholder="http://user:pass@host:port" style={{ flex: 1, border: '1px solid #23272f', borderRadius: 7, padding: '6px 10px', fontSize: 11, color: '#aab0bb', fontFamily: 'var(--font-mono)', background: '#0c0d11', outline: 'none' }} />
+            </div>
+          </div>
+        </Card>
+        <Card label="BACKGROUND">
+          <Row on={background.tray} label="Run in background (system tray)" onClick={() => saved({ background: { tray: !background.tray } })} />
+          <Row on={background.startOnSignIn} label="Start on Windows sign-in" onClick={() => saved({ background: { startOnSignIn: !background.startOnSignIn } })} />
+          <Row on={background.notifications} label="Desktop notifications" hint="Goal reminders and auto-watch events" onClick={() => saved({ background: { notifications: !background.notifications } })} />
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, border: '1px solid #1d2129', borderRadius: 9, padding: '9px 13px', background: '#0e1116' }}>
+            <span style={{ color: '#cdd2da', flex: 'none' }}>Webhook</span>
+            <input value={background.webhook} onChange={(e) => saved({ background: { webhook: e.target.value } })} placeholder="https://… (Pushover / Zapier)" style={{ flex: 1, border: '1px solid #23272f', borderRadius: 7, padding: '6px 10px', fontSize: 11, color: '#aab0bb', fontFamily: 'var(--font-mono)', background: '#0c0d11', outline: 'none' }} />
+          </div>
+        </Card>
+      </div>
+    ),
+    integrations: (
+      <div>
+        <Card label="TRANSCRIPTION · GROQ WHISPER">
+          <div style={{ fontSize: 12, color: '#8a909c', marginBottom: 8 }}>Groq API key (free) — powers word-level captions</div>
+          <input type="password" value={settings.transcription.apiKey} onChange={(e) => saved({ transcription: { apiKey: e.target.value } })} placeholder="gsk_…" style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #23272f', borderRadius: 8, padding: '9px 13px', fontSize: 12, color: '#dde0e5', background: '#0e1116', fontFamily: 'var(--font-mono)', outline: 'none', marginBottom: 8 }} />
+          <div style={{ fontSize: 11, color: '#6a7180' }}>Model <span style={{ fontFamily: 'var(--font-mono)', color: '#aab0bb' }}>{settings.transcription.model}</span> · get a free key at console.groq.com</div>
+        </Card>
+        <Card label="STOCK FOOTAGE · B-ROLL API KEYS">
+          <div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 11 }}>Optional — required for auto B-roll. Used in priority order.</div>
+          {([['pexelsKey', 'Pexels'], ['pixabayKey', 'Pixabay'], ['coverrKey', 'Coverr']] as const).map(([k, label]) => (
+            <div key={k} style={{ display: 'flex', alignItems: 'center', gap: 10, border: '1px solid #1d2129', borderRadius: 9, padding: '9px 13px', background: '#0e1116', marginBottom: 8 }}>
+              <span style={{ color: '#cdd2da', flex: 'none', width: 66 }}>{label}</span>
+              <input type="password" value={settings.beta[k]} onChange={(e) => saved({ beta: { [k]: e.target.value } })} placeholder={`${label} API key`} style={{ flex: 1, border: '1px solid #23272f', borderRadius: 7, padding: '6px 10px', fontSize: 11, color: '#aab0bb', fontFamily: 'var(--font-mono)', background: '#0c0d11', outline: 'none' }} />
+            </div>
+          ))}
+        </Card>
+      </div>
+    ),
+    beta: (
+      <Card label="BETA FEATURES">
+        <div onClick={() => saved({ beta: { enabled: !settings.beta.enabled } })} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', marginBottom: 8 }}>
+          <Toggle on={settings.beta.enabled} />
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 12.5, color: settings.beta.enabled ? '#cdd2da' : '#8a909c' }}>Enable beta features</div>
+            <div style={{ fontSize: 10.5, color: '#6a7180', marginTop: 2 }}>Hook · auto-highlight · overlay · auto-zoom · auto B-roll · style transitions</div>
+          </div>
+        </div>
+        {!settings.beta.enabled && <div style={{ fontSize: 11.5, color: '#5b616f', padding: '12px 0' }}>Toggle on to access Style and Advanced tabs in Compose. Stock footage API keys are in Integrations.</div>}
+      </Card>
+    ),
+    danger: (
+      <Card label="DANGER ZONE">
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 14 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 12.5, color: '#cdd2da', marginBottom: 3 }}>Reset data (keep API keys)</div>
+              <div style={{ fontSize: 11, color: '#6a7180', lineHeight: 1.4 }}>Clears channels, profiles, projects, downloads and render queue. Keeps API keys, appearance and templates.</div>
+            </div>
+            <div className="me-btn" onClick={onSoftReset} style={{ flex: 'none', border: '1px solid #f5b323', color: '#f5b323', background: 'rgba(245,179,35,.08)', borderRadius: 9, padding: '9px 15px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Reset data</div>
+          </div>
+          <div style={{ borderTop: '1px solid #1d2129', paddingTop: 14, display: 'flex', alignItems: 'center', gap: 14 }}>
+            <div style={{ flex: 1 }}>
+              <div style={{ fontSize: 12.5, color: '#cdd2da', marginBottom: 3 }}>Reset to default settings</div>
+              <div style={{ fontSize: 11, color: '#6a7180', lineHeight: 1.4 }}>Wipes all data and all settings including API keys. Cannot be undone.</div>
+            </div>
+            <div className="me-btn" onClick={onReset} style={{ flex: 'none', border: '1px solid #ff5a6e', color: '#ff8a96', background: 'rgba(255,90,110,.10)', borderRadius: 9, padding: '9px 15px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Reset everything</div>
+          </div>
+          <div style={{ borderTop: '1px solid #1d2129', paddingTop: 14 }}>
+            <div onClick={() => void window.api?.openLogs?.()} className="me-btn" style={{ border: '1px solid #262b34', borderRadius: 8, padding: '9px 14px', textAlign: 'center', fontSize: 12, color: '#c4cad3', background: '#0e1116', cursor: 'pointer' }}>📄 Open logs folder</div>
+            <div style={{ marginTop: 10, display: 'flex', gap: 14, fontSize: 11, color: '#6a7180' }}>
+              <span>Jobs this week: <b style={{ color: '#cdd2da' }}>{jobsThisWeek}</b></span>
+              <span>Version: <b style={{ color: '#cdd2da', fontFamily: 'var(--font-mono)' }}>{window.api?.appVersion || '0.1.0'}</b></span>
+            </div>
+          </div>
+        </div>
+      </Card>
+    )
+  }
+
+  return (
+    <ScreenPad style={{ paddingTop: 0 }}>
+      {/* Page header */}
+      <div style={{ padding: '18px 0 16px', borderBottom: '1px solid #1d2129', marginBottom: 22, display: 'flex', alignItems: 'center', gap: 14 }}>
+        <div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '1px', color: 'var(--accent)', marginBottom: 5 }}>CONFIGURE</div>
+          <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 22, letterSpacing: '-.5px', color: '#f4f6f9' }}>Settings</div>
+        </div>
+        <div style={{ flex: 1 }} />
+        {/* Auto-saved chip */}
+        {Date.now() - savedAt < 2500 && (
+          <div style={{ fontSize: 11.5, color: '#4fd6a0', border: '1px solid #1e3a2a', background: 'rgba(54,201,142,.1)', borderRadius: 9, padding: '5px 12px', fontFamily: 'var(--font-mono)' }}>Saved ✓</div>
+        )}
+      </div>
+
+      <div style={{ display: 'flex', gap: 22, alignItems: 'flex-start' }}>
+        {/* Section nav */}
+        <div style={{ width: 164, flex: 'none', display: 'flex', flexDirection: 'column', gap: 2, position: 'sticky', top: 0 }}>
+          {NAV.map((n) => (
+            <div
+              key={n.id}
+              onClick={() => setSection(n.id)}
+              className="me-btn"
+              style={{ padding: '9px 12px', borderRadius: 9, cursor: 'pointer', fontSize: 13, fontWeight: section === n.id ? 600 : 400, background: section === n.id ? 'var(--accent-soft)' : 'transparent', color: section === n.id ? '#f2f4f7' : n.id === 'danger' ? '#ff8a96' : '#8a909c', border: section === n.id ? '1px solid var(--accent)' : '1px solid transparent' }}
+            >{n.label}</div>
+          ))}
+          <div style={{ borderTop: '1px solid #1d2129', marginTop: 12, paddingTop: 12 }}>
+            <div style={{ fontSize: 10.5, color: '#5b616f', fontFamily: 'var(--font-mono)' }}>v{window.api?.appVersion || '0.1.0'}</div>
+          </div>
+        </div>
+
+        {/* Content area */}
+        <div style={{ flex: 1, minWidth: 0 }}>
+          {CONTENT[section]}
         </div>
       </div>
     </ScreenPad>

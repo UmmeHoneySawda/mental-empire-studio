@@ -23,7 +23,7 @@ const PRODUCE: NavDef[] = [
   { key: 'thumb', label: 'Thumbnails', icon: icon(<><rect x="3" y="5" width="18" height="14" rx="2.5" /><path d="M8 11h8" /><path d="M8 15h5" /></>) }
 ]
 
-const AUTOMATE: NavDef[] = [
+const OUTPUT: NavDef[] = [
   { key: 'render', label: 'Render Queue', icon: icon(<path d="M5 5l13 7-13 7z" />) },
   { key: 'profiles', label: 'Profiles', icon: icon(<path d="M12 3l8 4v5c0 5-3.5 7.5-8 9-4.5-1.5-8-4-8-9V7z" />) },
   { key: 'settings', label: 'Settings', icon: icon(<><circle cx="12" cy="12" r="3.2" /><path d="M19.4 13.5a7.8 7.8 0 000-3l1.7-1.3-1.8-3.1-2 .8a7.6 7.6 0 00-2.6-1.5l-.3-2.1H8l-.3 2.1a7.6 7.6 0 00-2.6 1.5l-2-.8L1.3 9.2 3 10.5a7.8 7.8 0 000 3l-1.7 1.3 1.8 3.1 2-.8a7.6 7.6 0 002.6 1.5l.3 2.1h4l.3-2.1a7.6 7.6 0 002.6-1.5l2 .8 1.8-3.1z" /></>) }
@@ -63,10 +63,19 @@ function Heading({ children }: { children: ReactNode }): JSX.Element {
 
 export function Sidebar(): JSX.Element {
   const renderJobs = useData((s) => s.renderJobs)
+  const renderProgress = useData((s) => s.renderProgress)
   const channels = useData((s) => s.channels)
   const profiles = useData((s) => s.profiles)
+  const setActive = useStore((s) => s.setActive)
   const queued = renderJobs.filter((j) => j.job.status === 'queued' || j.job.status === 'rendering').length
   const watching = profiles.filter((p) => p.autoWatch).length
+
+  // Find the most active rendering job for the mini status strip
+  const activeJob = renderJobs.find((j) => {
+    const p = renderProgress[j.job.id]
+    return p ? !p.done : j.job.status === 'rendering'
+  })
+  const activePct = activeJob ? Math.round(renderProgress[activeJob.job.id]?.pct ?? activeJob.job.pct) : 0
 
   return (
     <div className="me-sidebar" style={{ width: 'clamp(196px, 15vw, 236px)', flex: 'none', background: '#0a0c10', borderRight: '1px solid #1a1e26', display: 'flex', flexDirection: 'column', padding: '14px 12px', minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}>
@@ -81,12 +90,30 @@ export function Sidebar(): JSX.Element {
       <Heading>PRODUCE</Heading>
       {PRODUCE.map((d) => <NavItem key={d.key} def={d} />)}
 
-      <div style={{ paddingTop: 8 }}><Heading>AUTOMATE</Heading></div>
-      {AUTOMATE.map((d) => (
+      <div style={{ paddingTop: 8 }}><Heading>OUTPUT</Heading></div>
+      {OUTPUT.map((d) => (
         <NavItem key={d.key} def={d} badge={d.key === 'render' && queued > 0 ? String(queued) : undefined} />
       ))}
 
       <div style={{ flex: 1, minHeight: 12 }} />
+
+      {/* Mini render-status strip — only visible when a job is actively rendering */}
+      {activeJob && (
+        <div
+          onClick={() => setActive('render')}
+          className="me-btn"
+          style={{ border: '1px solid #262b34', borderRadius: 10, padding: '9px 11px', background: '#0e1116', cursor: 'pointer', marginBottom: 10 }}
+        >
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 6 }}>
+            <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', animation: 'mePulse 1.4s infinite', flex: 'none' }} />
+            <span style={{ fontSize: 10.5, color: '#cdd2da', fontWeight: 600, flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{activeJob.job.title}</span>
+            <span style={{ fontSize: 9.5, color: 'var(--accent)', fontFamily: 'var(--font-mono)', flex: 'none' }}>{activePct}%</span>
+          </div>
+          <div style={{ height: 4, borderRadius: 3, background: '#1a1e26', overflow: 'hidden' }}>
+            <div style={{ width: `${activePct}%`, height: '100%', background: 'linear-gradient(90deg,var(--accent),var(--accent-deep))', transition: 'width .4s ease' }} />
+          </div>
+        </div>
+      )}
 
       <div className="me-sidebar-status" style={{ border: '1px solid #1d2129', borderRadius: 12, padding: 12, background: 'linear-gradient(180deg,#10141a,#0c0f13)' }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 9 }}>

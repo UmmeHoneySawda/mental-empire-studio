@@ -18,7 +18,7 @@ import {
 import { autoArrangeText } from '@shared/thumbnail'
 import { initialLayers } from '@/data/mock'
 
-type ComposeTab = 'media' | 'captions'
+type ComposeTab = 'media' | 'captions' | 'style' | 'advanced'
 type MediaMode = 'sequence' | 'pool'
 
 interface AppState {

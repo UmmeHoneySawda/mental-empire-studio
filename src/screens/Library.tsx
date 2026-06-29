@@ -15,7 +15,6 @@ function mediaSrc(path: string | undefined): string {
   return `file:///${path.replace(/\\/g, '/')}`
 }
 
-/** Parse a humanized count ("12.4K" / "2.1M") back to a number for aggregation. */
 function parseHuman(s: string): number {
   const m = s.trim().match(/^([\d.]+)\s*([KM])?$/i)
   if (!m) return 0
@@ -28,30 +27,8 @@ function human(n: number): string {
   if (n >= 1e3) return `${(n / 1e3).toFixed(1).replace(/\.0$/, '')}K`
   return Math.round(n).toLocaleString()
 }
-/** Deterministic 8-bar sparkline from a string seed (no per-video data yet). */
-function barsFor(seed: string): number[] {
-  let h = 0
-  for (let i = 0; i < seed.length; i++) h = (h * 31 + seed.charCodeAt(i)) >>> 0
-  return Array.from({ length: 8 }, (_, i) => 40 + ((h >> (i * 3)) % 60))
-}
-
-function Kpi({ label, value, sub, accentCard }: { label: string; value: string; sub: JSX.Element; accentCard?: boolean }): JSX.Element {
-  return (
-    <div className="me-card" style={{ border: accentCard ? '1px solid var(--accent)' : '1px solid #1d2129', borderRadius: 15, padding: 18, background: accentCard ? 'linear-gradient(165deg,var(--accent-soft),#0f1217)' : 'linear-gradient(165deg,#14171e,#0f1217)' }}>
-      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 14 }}>
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '.8px', color: accentCard ? '#cdd2da' : '#6a7180' }}>{label}</span>
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2"><path d="M2 12s3.5-7 10-7 10 7 10 7-3.5 7-10 7-10-7-10-7z" /><circle cx="12" cy="12" r="2.6" /></svg>
-      </div>
-      <div style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 30, color: '#f4f6f9', letterSpacing: '-1px' }}>{value || '—'}</div>
-      <div style={{ marginTop: 6 }}>{sub}</div>
-    </div>
-  )
-}
-
-const muted = (txt: string) => <div style={{ fontSize: 11.5, color: '#6a7180' }}>{txt}</div>
 
 export function Library(): JSX.Element {
-  const showRail = useStore((s) => s.showActivityRail)
   const channels = useData((s) => s.channels)
   const recentUploads = useData((s) => s.recentUploads)
   const activity = useData((s) => s.activity)
@@ -59,41 +36,65 @@ export function Library(): JSX.Element {
   const renderJobs = useData((s) => s.renderJobs)
   const scraping = useData((s) => s.scraping)
   const rescrapeAll = useData((s) => s.rescrapeAll)
+  const setActive = useStore((s) => s.setActive)
   const greet = new Date().toLocaleDateString('en-US', { weekday: 'long', month: 'short', day: 'numeric' }).toUpperCase()
   const hr = new Date().getHours()
   const timeOfDay = hr < 12 ? 'morning' : hr < 18 ? 'afternoon' : 'evening'
 
   const totalViews = channels.reduce((a, c) => a + parseHuman(c.views), 0)
   const totalSubs = channels.reduce((a, c) => a + parseHuman(c.subs), 0)
-  const totalUploaded = channels.reduce((a, c) => a + (c.total || 0), 0)
   const inQueue = renderJobs.filter((r) => r.job.status === 'queued' || r.job.status === 'rendering').length
+  const lastScraped = channels[0]?.lastScrapedAt
+    ? new Date(channels[0].lastScrapedAt).toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit' })
+    : null
 
   return (
     <ScreenPad>
-      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16, marginBottom: 26 }}>
+      {/* Page header */}
+      <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16, marginBottom: 20 }}>
         <div>
           <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '1px', color: 'var(--accent)', marginBottom: 7 }}>{greet}</div>
-          <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 27, letterSpacing: '-.5px', color: '#f4f6f9', lineHeight: 1 }}>Good {timeOfDay} — {channels.length === 0 ? 'add a channel to begin' : `${channels.length} channel${channels.length === 1 ? '' : 's'} running`}</div>
+          <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 27, letterSpacing: '-.5px', color: '#f4f6f9', lineHeight: 1 }}>
+            Good {timeOfDay}
+            {channels.length > 0 && <span style={{ fontWeight: 400, color: '#6a7180', fontSize: 18, marginLeft: 10 }}>— {channels.length} channel{channels.length === 1 ? '' : 's'}</span>}
+          </div>
         </div>
         <div style={{ flex: 1 }} />
-        <div onClick={() => void rescrapeAll()} className="me-btn" style={{ display: 'flex', alignItems: 'center', gap: 8, border: '1px solid #262b34', background: '#15181f', borderRadius: 10, padding: '9px 14px', fontSize: 12.5, color: '#c4cad3', cursor: 'pointer' }}>
-          <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 11-3-6.7M21 4v5h-5" /></svg>{scraping ? 'Scraping…' : 'Re-scrape'}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
+          {lastScraped && <span style={{ fontSize: 11, color: '#5b616f', fontFamily: 'var(--font-mono)' }}>scraped {lastScraped}</span>}
+          <div onClick={() => void rescrapeAll()} className="me-btn" style={{ display: 'flex', alignItems: 'center', gap: 8, border: '1px solid #262b34', background: '#15181f', borderRadius: 10, padding: '9px 14px', fontSize: 12.5, color: '#c4cad3', cursor: 'pointer' }}>
+            <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 11-3-6.7M21 4v5h-5" /></svg>
+            {scraping ? 'Scraping…' : 'Re-scrape'}
+          </div>
         </div>
       </div>
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,1fr)', gap: 14, marginBottom: 24 }}>
-        <Kpi label="TOTAL VIEWS" value={human(totalViews)} sub={muted(channels.length ? 'across all channels' : 'no channels yet')} />
-        <Kpi label="SUBSCRIBERS" value={human(totalSubs)} sub={muted(channels.length ? `across ${channels.length} channels` : 'add a channel to start')} />
-        <Kpi label="UPLOADED" value={String(totalUploaded)} sub={<div style={{ fontSize: 11.5, color: '#6a7180' }}>across {channels.length} channels</div>} />
-        <Kpi label="IN QUEUE" value={String(inQueue)} sub={<div style={{ fontSize: 11.5, color: '#cdd2da' }}>{downloads.length} downloaded</div>} accentCard />
-      </div>
+      {/* Zero-state banner */}
+      {channels.length === 0 && (
+        <div style={{ border: '1px dashed #2c303b', borderRadius: 14, padding: '28px 32px', marginBottom: 24, background: 'linear-gradient(165deg,#14171e,#0f1217)', display: 'flex', alignItems: 'center', gap: 20 }}>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 17, color: '#eef0f3', marginBottom: 6 }}>Add your first channel to get started</div>
+            <div style={{ fontSize: 12.5, color: '#8a909c', lineHeight: 1.5 }}>Studio scrapes views, subs, and upload stats — no API key needed. Link a source channel to track which videos you've already uploaded.</div>
+          </div>
+          <button type="button" onClick={() => setActive('channels')} className="me-btn" style={{ border: 0, background: 'linear-gradient(180deg,var(--accent),var(--accent-deep))', color: 'var(--accent-ink)', fontWeight: 600, fontSize: 13, padding: '11px 22px', borderRadius: 10, cursor: 'pointer', flex: 'none' }}>+ Add channel</button>
+        </div>
+      )}
 
       <div style={{ display: 'flex', gap: 22, alignItems: 'flex-start' }}>
+        {/* Left: channels + recent uploads */}
         <div style={{ flex: 1, minWidth: 0 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 14 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
             <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 15, color: '#e9ebef' }}>Your channels</span>
             <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#5b616f', border: '1px solid #23272f', borderRadius: 5, padding: '2px 7px' }}>scraped · no API</span>
+            {channels.length > 0 && (
+              <div style={{ marginLeft: 'auto', display: 'flex', alignItems: 'center', gap: 14, fontSize: 11.5, color: '#6a7180' }}>
+                <span style={{ color: '#aab0bb' }}>{human(totalViews)}<span style={{ color: '#5b616f', marginLeft: 4 }}>views</span></span>
+                <span style={{ color: '#aab0bb' }}>{human(totalSubs)}<span style={{ color: '#5b616f', marginLeft: 4 }}>subs</span></span>
+                {inQueue > 0 && <span style={{ color: 'var(--accent)', fontWeight: 600 }}>{inQueue} rendering</span>}
+              </div>
+            )}
           </div>
+
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 13, marginBottom: 26 }}>
             {channels.map((ch) => (
               <div key={ch.id} className="me-card" style={{ border: '1px solid #1d2129', borderRadius: 14, padding: 15, background: '#12151b' }}>
@@ -104,11 +105,7 @@ export function Library(): JSX.Element {
                     <div title={ch.handle} className="me-ellipsis" style={{ fontSize: 10.5, color: '#6a7180', fontFamily: 'var(--font-mono)' }}>{ch.handle}</div>
                   </div>
                 </div>
-                <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 40, marginBottom: 12 }}>
-                  {barsFor(ch.handle).map((h, i) => (
-                    <div key={i} style={{ flex: 1, borderRadius: '3px 3px 0 0', background: 'linear-gradient(180deg,var(--accent),var(--accent-deep))', opacity: 0.85, height: `${h}%` }} />
-                  ))}
-                </div>
+                {/* No fake sparklines — real stats only */}
                 <div style={{ display: 'flex', justifyContent: 'space-between', borderTop: '1px solid #1d2129', paddingTop: 11 }}>
                   <div><div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 15, color: '#eef0f3' }}>{ch.views}</div><div style={{ fontSize: 9.5, color: '#5b616f', fontFamily: 'var(--font-mono)' }}>VIEWS</div></div>
                   <div><div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 15, color: '#eef0f3' }}>{ch.subs}</div><div style={{ fontSize: 9.5, color: '#5b616f', fontFamily: 'var(--font-mono)' }}>SUBS</div></div>
@@ -121,7 +118,7 @@ export function Library(): JSX.Element {
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 13 }}>
             <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 15, color: '#e9ebef' }}>Recent uploads</span>
             <div style={{ flex: 1 }} />
-            <span style={{ fontSize: 11.5, color: 'var(--accent)', cursor: 'pointer' }}>View all →</span>
+            <span onClick={() => setActive('download')} style={{ fontSize: 11.5, color: 'var(--accent)', cursor: 'pointer' }}>View all →</span>
           </div>
           <div style={{ border: '1px solid #1d2129', borderRadius: 14, overflow: 'hidden', background: '#12151b' }}>
             <div style={{ display: 'flex', padding: '11px 16px', borderBottom: '1px solid #1d2129', fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '.6px', color: '#5b616f' }}>
@@ -152,34 +149,44 @@ export function Library(): JSX.Element {
           </div>
         </div>
 
-        {showRail && (
-          <div style={{ width: 268, flex: 'none', display: 'flex', flexDirection: 'column', gap: 16 }}>
-            <div style={{ border: '1px solid #1d2129', borderRadius: 14, padding: 16, background: '#12151b' }}>
-              <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-                <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#36c98e', boxShadow: '0 0 8px #36c98e' }} />
-                <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 13, color: '#e9ebef' }}>Activity</span>
-                <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: 9.5, color: '#5b616f' }}>live</span>
-              </div>
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
-                {activity.length === 0 && (
-                  <div style={{ fontSize: 11, color: '#5b616f', lineHeight: 1.5 }}>No activity yet. Scrape, download, or render to see events here.</div>
-                )}
-                {activity.map((a, i) => (
-                  <div key={i} style={{ display: 'flex', gap: 10 }}>
-                    <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#4f5662', flex: 'none', width: 32, paddingTop: 1 }}>{a.t}</span>
-                    <span style={{ color: a.color, flex: 'none' }}>{a.icon}</span>
-                    <span title={a.text} className="me-clamp-2" style={{ fontSize: 11.5, color: '#aab0bb', lineHeight: 1.4 }}>{a.text}</span>
-                  </div>
-                ))}
-              </div>
+        {/* Right: activity rail — always visible */}
+        <div style={{ width: 268, flex: 'none', display: 'flex', flexDirection: 'column', gap: 16 }}>
+          <div style={{ border: '1px solid #1d2129', borderRadius: 14, padding: 16, background: '#12151b' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
+              <span style={{ width: 7, height: 7, borderRadius: '50%', background: '#36c98e', boxShadow: '0 0 8px #36c98e' }} />
+              <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 13, color: '#e9ebef' }}>Activity</span>
+              <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: 9.5, color: '#5b616f' }}>live</span>
             </div>
-            <div style={{ border: '1px solid var(--accent)', borderRadius: 14, padding: 16, background: 'linear-gradient(165deg,var(--accent-soft),#0f1217)' }}>
-              <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 13, color: '#f2f4f7', marginBottom: 6 }}>Auto-scrape</div>
-              <div style={{ fontSize: 11.5, color: '#aab0bb', lineHeight: 1.5, marginBottom: 13 }}>{channels.length ? <>Re-scrape {channels.length} channel{channels.length === 1 ? '' : 's'} for new uploads + stats.</> : <>Add a channel, then re-scrape to pull stats &amp; uploads.</>}</div>
-              <div onClick={() => void rescrapeAll()} className="me-btn" style={{ textAlign: 'center', border: '1px solid #2a2f39', background: '#15181f', borderRadius: 9, padding: 8, fontSize: 12, fontWeight: 600, color: '#dde0e5', cursor: 'pointer' }}>{scraping ? 'Scraping…' : 'Run now'}</div>
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
+              {activity.length === 0 && (
+                <div style={{ fontSize: 11, color: '#5b616f', lineHeight: 1.5 }}>No activity yet. Scrape, download, or render to see events here.</div>
+              )}
+              {activity.map((a, i) => (
+                <div key={i} style={{ display: 'flex', gap: 10 }}>
+                  <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#4f5662', flex: 'none', width: 32, paddingTop: 1 }}>{a.t}</span>
+                  <span style={{ color: a.color, flex: 'none' }}>{a.icon}</span>
+                  <span title={a.text} className="me-clamp-2" style={{ fontSize: 11.5, color: '#aab0bb', lineHeight: 1.4 }}>{a.text}</span>
+                </div>
+              ))}
             </div>
           </div>
-        )}
+          <div style={{ border: '1px solid var(--accent)', borderRadius: 14, padding: 16, background: 'linear-gradient(165deg,var(--accent-soft),#0f1217)' }}>
+            <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 13, color: '#f2f4f7', marginBottom: 6 }}>Auto-scrape</div>
+            <div style={{ fontSize: 11.5, color: '#aab0bb', lineHeight: 1.5, marginBottom: 13 }}>
+              {channels.length ? <>Re-scrape {channels.length} channel{channels.length === 1 ? '' : 's'} for new uploads + stats.</> : <>Add a channel, then re-scrape to pull stats &amp; uploads.</>}
+            </div>
+            <div onClick={() => void rescrapeAll()} className="me-btn" style={{ textAlign: 'center', border: '1px solid #2a2f39', background: '#15181f', borderRadius: 9, padding: 8, fontSize: 12, fontWeight: 600, color: '#dde0e5', cursor: 'pointer' }}>{scraping ? 'Scraping…' : 'Run now'}</div>
+          </div>
+          {downloads.length > 0 && (
+            <div style={{ border: '1px solid #1d2129', borderRadius: 14, padding: '12px 16px', background: '#12151b' }}>
+              <div style={{ fontSize: 10.5, color: '#6a7180', fontFamily: 'var(--font-mono)', marginBottom: 8 }}>QUICK STATS</div>
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 7, fontSize: 11.5 }}>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#8a909c' }}>Downloaded</span><span style={{ color: '#cdd2da', fontWeight: 600 }}>{downloads.length}</span></div>
+                <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: '#8a909c' }}>In render queue</span><span style={{ color: inQueue > 0 ? 'var(--accent)' : '#cdd2da', fontWeight: 600 }}>{inQueue}</span></div>
+              </div>
+            </div>
+          )}
+        </div>
       </div>
     </ScreenPad>
   )
