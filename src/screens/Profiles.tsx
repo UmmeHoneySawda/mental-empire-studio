@@ -73,7 +73,7 @@ function ProfileEditor({ profile, onClose }: { profile: Profile; onClose: () => 
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, height: '100%', overflowY: 'auto' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 4 }}>
         <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 15, color: '#eef0f3', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>
-          {p.id.startsWith('prof-') && p.name === 'New profile' ? 'New profile' : `Editing: ${p.name}`}
+          {p.id.startsWith('prof-') && p.name === 'New profile' ? 'New automation' : `Editing: ${p.name}`}
         </span>
         <div onClick={onClose} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 7, width: 26, height: 26, display: 'grid', placeItems: 'center', fontSize: 14, color: '#8a909c', cursor: 'pointer' }}>×</div>
       </div>
@@ -193,14 +193,14 @@ export function Profiles(): JSX.Element {
       <div style={{ marginBottom: 22 }}>
         <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '1px', color: 'var(--accent)', marginBottom: 7 }}>AUTOMATION</div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 12 }}>
-          <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 25, letterSpacing: '-.5px', color: '#f4f6f9' }}>Channel profiles</div>
+          <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 25, letterSpacing: '-.5px', color: '#f4f6f9' }}>Channel automations</div>
           <div style={{ flex: 1 }} />
           <button type="button" onClick={() => openEditor(newProfile())} className="me-btn" style={{ display: 'flex', alignItems: 'center', gap: 7, border: '1px solid var(--accent)', background: 'var(--accent-soft)', borderRadius: 10, padding: '9px 16px', fontSize: 12.5, color: 'var(--accent)', fontWeight: 600, cursor: 'pointer' }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.4"><path d="M12 5v14M5 12h14" /></svg>
-            New profile
+            New automation
           </button>
         </div>
-        <div style={{ fontSize: 13, color: '#8a909c', marginTop: 8 }}>One profile = the full pipeline. Run → quick-edit → render queue. Auto-watch runs hands-free.</div>
+        <div style={{ fontSize: 13, color: '#8a909c', marginTop: 8 }}>Each automation watches a source channel and runs the full pipeline — scrape → download → caption → (optionally) render. These settings are the <strong style={{ color: '#aab0bb', fontWeight: 600 }}>defaults</strong> applied to new videos; you can still override anything per-video in Compose. B-roll uses the source channel's assigned niche pool (see B-roll Pools).</div>
       </div>
 
       {/* Two-panel layout: card grid + slide-out editor */}
@@ -258,7 +258,7 @@ export function Profiles(): JSX.Element {
             {/* New profile card */}
             <div onClick={() => openEditor(newProfile())} className="me-btn" style={{ border: '1.5px dashed #262b34', borderRadius: 15, padding: 16, textAlign: 'center', fontSize: 13, color: '#6a7180', background: '#0e1116', cursor: 'pointer', display: 'flex', flexDirection: 'column', alignItems: 'center', justifyContent: 'center', minHeight: 140, gap: 8 }}>
               <div style={{ width: 36, height: 36, borderRadius: 9, border: '1.5px dashed #2c303b', display: 'grid', placeItems: 'center', fontSize: 20, color: '#5b616f' }}>+</div>
-              <div>New profile</div>
+              <div>New automation</div>
             </div>
           </div>
         </div>

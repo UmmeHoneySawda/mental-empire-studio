@@ -10,7 +10,7 @@ const LABELS: Record<ScreenKey, string> = {
   compose: 'Compose',
   thumb: 'Thumbnails',
   render: 'Render Queue',
-  profiles: 'Profiles',
+  profiles: 'Automations',
   settings: 'Settings'
 }
 

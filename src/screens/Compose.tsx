@@ -67,7 +67,6 @@ function MediaTab(): JSX.Element {
   const durationMissing = !project || !project.durationSec || project.durationSec <= 0
   const betaOpts = asBetaOpts(project?.betaOpts)
   const brollEnabled = betaOpts.broll.enabled
-  const setBeta = (patch: Partial<BetaVideoOpts>): void => void setCaptions({ betaOpts: { ...betaOpts, ...patch } })
 
   const pickFiles = (e: React.ChangeEvent<HTMLInputElement>): void => {
     // Electron 32 removed File.path — resolve via webUtils through the preload bridge.
@@ -94,9 +93,9 @@ function MediaTab(): JSX.Element {
     <>
       <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, marginBottom: 12 }}>
         {betaOn && (
-          <div title="When on, your images may be overlaid/replaced with stock B-roll footage during render. Requires a stock-footage API key in Settings." style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11.5, color: brollEnabled ? '#f5b323' : '#8a909c', background: brollEnabled ? 'rgba(245,179,35,.1)' : '#0e1116', border: `1px solid ${brollEnabled ? 'rgba(245,179,35,.3)' : '#23272f'}`, borderRadius: 8, padding: '5px 10px' }}>
-            <span>{brollEnabled ? '⚠ Auto B-roll ON' : 'Auto B-roll off'}</span>
-            <MiniToggle on={brollEnabled} onClick={() => setBeta({ broll: { ...betaOpts.broll, enabled: !brollEnabled } })} />
+          <div title="Auto B-roll status. Toggle it in the Style / Customize panel below — this is just an indicator so there's one source of truth." style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11.5, color: brollEnabled ? '#f5b323' : '#8a909c', background: brollEnabled ? 'rgba(245,179,35,.1)' : '#0e1116', border: `1px solid ${brollEnabled ? 'rgba(245,179,35,.3)' : '#23272f'}`, borderRadius: 8, padding: '5px 10px' }}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: brollEnabled ? '#f5b323' : '#3a3f4a', flex: 'none' }} />
+            <span>{brollEnabled ? 'Auto B-roll ON' : 'Auto B-roll off'}</span>
           </div>
         )}
         <div style={{ display: 'flex', background: '#0e1116', border: '1px solid #23272f', borderRadius: 10, overflow: 'hidden', fontSize: 12.5 }}>
