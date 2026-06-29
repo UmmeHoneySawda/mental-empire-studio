@@ -160,6 +160,9 @@ export interface Profile {
   cap: string
   out: string
   autoWatch: boolean
+  /** auto-queue every produced video for render at the end of an (interactive) run,
+   *  so a profile can go fully hands-free: scrape → download → caption → render. */
+  autoQueueRender?: boolean
   /** id of the ThumbnailTemplate locked to this profile (M5) */
   thumbnailTemplateId?: string
   // ---- structured run config (M7) ----
@@ -259,8 +262,11 @@ export interface TextLayer extends BaseLayer {
   color: string
   fontFamily: string
   align: 'left' | 'center' | 'right'
-  /** Custom gap between lines in px (0 = auto-calculated). */
+  /** Custom gap between lines in px (0 = auto-calculated). @deprecated prefer lineHeight. */
   lineGap?: number
+  /** Uniform line-height multiplier (× the largest line's size). Makes stacked lines of
+   *  mixed sizes space evenly. 0/undefined = auto (≈1.12, or derived from legacy lineGap). */
+  lineHeight?: number
   effects: { shadow: FxShadow; stroke: FxOutline; glow: FxGlow; caps: boolean }
 }
 
@@ -285,7 +291,12 @@ export interface BackgroundLayer extends BaseLayer {
   mode: 'solid' | 'gradient' | 'image'
   /** path or data URL when mode === 'image' */
   src?: string
+  /** optional darkening gradient scrim painted above the background for text legibility.
+   *  size = extent as a fraction of the stage (0–1), opacity = max alpha (0–1). */
+  scrim?: { enabled: boolean; direction: 'bottom' | 'top' | 'left' | 'right'; size: number; opacity: number }
 }
+
+export const DEFAULT_SCRIM: NonNullable<BackgroundLayer['scrim']> = { enabled: false, direction: 'bottom', size: 0.5, opacity: 0.5 }
 
 export type ThumbnailLayer = TextLayer | SubjectLayer | ShapeLayer | BackgroundLayer
 

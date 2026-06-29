@@ -14,6 +14,15 @@ import { probeRenderCapabilities } from '../services/engine/caps'
 
 // All native capability the renderer can reach is registered here as invoke
 // handlers and exposed through the typed preload bridge (window.api.*).
+
+/** Defense-in-depth: assert a renderer-supplied id is a non-empty string before it
+ *  reaches the DB/filesystem. The renderer is first-party, so this just hardens the
+ *  boundary against a future renderer compromise / malformed call. */
+function reqId(v: unknown, name = 'id'): string {
+  if (typeof v !== 'string' || v.trim() === '') throw new Error(`Invalid ${name}`)
+  return v
+}
+
 export function registerIpc(): void {
   // ---- settings (electron-store) ----
   ipcMain.handle('settings:get', () => getSettings())
@@ -49,11 +58,11 @@ export function registerIpc(): void {
   ipcMain.handle('db:saveTemplate', (_e, t: ThumbnailTemplate) => getRepos().saveTemplate(t))
   ipcMain.handle('db:recentUploads', (_e, limit?: number) => getRepos().recentUploads(limit ?? 8))
   ipcMain.handle('db:updateChannelGoals', (_e, id: string, patch: GoalsPatch) => {
-    getRepos().updateChannelGoals(id, patch)
+    getRepos().updateChannelGoals(reqId(id), patch)
     return getRepos().myChannels()
   })
   ipcMain.handle('db:deleteMyChannel', (_e, id: string) => {
-    getRepos().deleteMyChannel(id)
+    getRepos().deleteMyChannel(reqId(id))
     return getRepos().myChannels()
   })
 
@@ -76,7 +85,7 @@ export function registerIpc(): void {
 
   // ---- beta: effect-plan generation via Groq (reuses the transcription key) ----
   ipcMain.handle('effects:generate', async (_e, projectId: string, style: import('../../shared/types').VideoStyle) => {
-    const project = getRepos().getProject(projectId)
+    const project = getRepos().getProject(reqId(projectId, 'projectId'))
     if (!project) throw new Error('project missing')
     const words = getRepos().getTranscript(projectId)
     const { generatePlanViaGroq } = await import('../services/effects')

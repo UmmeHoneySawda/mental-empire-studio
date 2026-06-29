@@ -7,6 +7,7 @@ import { asBetaOpts } from '../../shared/types'
 import type { EffectPlan } from '../../shared/effectPlan'
 import { resolutionFor, type CaptionAspect } from './captions'
 import { FALLBACK_CAPS, selectEncoder } from './engine/encoder'
+import { FPS, LONG_FORM_FAST_SEC, crfFor } from './engine/render-config'
 import { createProgressSmoother, parseFfmpegProgressBlock, type FfmpegProgress } from './engine/progress'
 import { gradeChain } from './engine/grade'
 import { masterAudioTwoPass } from './engine/audio-master'
@@ -18,9 +19,6 @@ import { ffmpegPath, ffprobePath } from './bin'
 // captions, optional punch-zoom, encoded H.264 at the chosen quality. The graph is
 // built purely (buildRenderArgs) so it's assertable; ME_RENDER_FIXTURE swaps the
 // real encode for a stub so the runner is testable without ffmpeg.
-
-const FPS = 24
-const LONG_FORM_FAST_SEC = 600
 
 /** Video codec args for the chosen encoder. CPU = libx264 (CRF); NVIDIA = h264_nvenc
  *  (constant-quality VBR). Both target visually-equivalent quality at the given level. */
@@ -227,6 +225,8 @@ export interface RenderInputs {
   sfxPath?: string
   /** optional per-job render log for args/fallback diagnostics */
   logPath?: string
+  /** skip the two-pass loudness master (used for fast throwaway previews) */
+  skipAudioMaster?: boolean
 }
 
 /** The transition type/duration to use at a segment boundary: the nearest planned
@@ -295,7 +295,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
       prefix: 'bm'
     })
     const aMap = audioWithSfx(parts, 1, sfxIdx)
-    const crf = settings.quality === '1440p' ? '20' : settings.quality === '720p' ? '23' : '21'
+    const crf = crfFor(settings.quality)
 
     return [
       '-y',
@@ -352,7 +352,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
     const punch = punchZoomFilter(project, beta, w, h, allowCpuMotion)
     pushFinishedVideo(parts, `[${last}]`, [grade], { overlayIdx, assPath, punch, prefix: 'bd' })
     const aMap = audioWithSfx(parts, audioIdx, sfxIdx)
-    const crf = settings.quality === '1440p' ? '20' : settings.quality === '720p' ? '23' : '21'
+    const crf = crfFor(settings.quality)
 
     return [
       '-y',
@@ -374,7 +374,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
     const overlayPath = beta ? overlayGradientPath(beta.overlay, w, h) : undefined
     const grade = gradeChain(beta?.style).replace(/,+$/, '')
     const punch = punchZoomFilter(project, beta, w, h, allowCpuMotion)
-    const crfBed = settings.quality === '1440p' ? '20' : settings.quality === '720p' ? '23' : '21'
+    const crfBed = crfFor(settings.quality)
     const bedParts: string[] = []
     const sfxIdx = inp.sfxPath ? 2 : null
     const overlayIdx = overlayPath ? (inp.sfxPath ? 3 : 2) : undefined
@@ -455,7 +455,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
   pushFinishedVideo(parts, `[${last}]`, [grade], { overlayIdx, assPath, punch, prefix: 'img' })
   const aMap = audioWithSfx(parts, audioIdx, sfxIdx)
 
-  const crf = settings.quality === '1440p' ? '20' : settings.quality === '720p' ? '23' : '21'
+  const crf = crfFor(settings.quality)
   return [
     '-y',
     ...inputs,
@@ -491,7 +491,15 @@ export async function runRender(inp: RenderInputs, onProgress?: (p: FfmpegProgre
 
   try {
     const args = buildRenderArgs(inp)
-    if (inp.logPath) appendFileSync(inp.logPath, `\n[ffmpeg]\n${ffmpegCommandLine(args)}\n`)
+    if (inp.logPath) {
+      const enc = (inp.settings.encoder ?? 'cpu')
+      const caps = inp.caps ?? FALLBACK_CAPS
+      const gpuEncode = enc !== 'cpu'
+      const cudaScale = canUseCudaFinalFilters(inp.settings, caps)
+      const motion = (inp.settings.encoder ?? 'cpu') === 'cpu'
+      appendFileSync(inp.logPath, `\n[render] encoder=${enc} encode=${gpuEncode ? 'GPU' : 'CPU'} scale=${cudaScale ? 'GPU(cuda)' : 'CPU'} subtitles=CPU(libass) kenBurns/punch=${motion ? 'on' : 'off (disabled when a GPU encoder is selected, to keep filters light)'} quality=${inp.settings.quality} durationSec=${inp.project.durationSec.toFixed(2)}\n`)
+      appendFileSync(inp.logPath, `\n[ffmpeg]\n${ffmpegCommandLine(args)}\n`)
+    }
     await spawnFfmpeg(args, inp.project.durationSec, onProgress, inp.jobId)
   } catch (e) {
     if (hasCancelIntent(inp.jobId)) throw e
@@ -500,6 +508,10 @@ export async function runRender(inp: RenderInputs, onProgress?: (p: FfmpegProgre
     if (inp.logPath) appendFileSync(inp.logPath, `\n[ffmpeg:gpu-failed] ${gpuError}\n`)
     logger.scope('render').warn(`GPU encode failed (${inp.settings.encoder}): ${gpuError}`)
     throw new Error(`GPU encode failed for ${inp.settings.encoder.toUpperCase()}; CPU fallback is disabled. Fix the GPU encoder/driver or choose CPU in Settings. ${gpuError}`)
+  }
+  if (inp.skipAudioMaster) {
+    if (inp.logPath) appendFileSync(inp.logPath, probeOutputLine(inp.outPath, inp.project.durationSec))
+    return { outputPath: inp.outPath }
   }
   if (inp.logPath) appendFileSync(inp.logPath, '\n[audio-master]\ntwo-pass loudnorm I=-14 TP=-1 LRA=11\n')
   try {

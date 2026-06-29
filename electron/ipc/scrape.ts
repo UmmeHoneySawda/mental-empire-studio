@@ -11,6 +11,7 @@ import { getSettings } from '../store/settings'
 import { getRepos } from '../db'
 import { channelUrl, humanizeCount, orderVideos, scrapeChannel } from '../services/scraper'
 import { matchDownloadsToUploads } from '../services/mapping'
+import { goalProgressFromUploads } from '../../shared/goals'
 import { notify, reminderHit } from '../services/notify'
 import { warmBrollLibraryFromTitles } from '../services/broll'
 import { L } from '../services/logger'
@@ -124,6 +125,10 @@ function persistScrape(channelId: string, scraped: ScrapedChannel): MyChannel {
   }))
   repos.replaceUploads(channelId, uploads)
 
+  // A4: derive real weekly/monthly publishing progress from the upload dates so the
+  // "behind pace" reminder reflects actual output instead of a static seeded number.
+  repos.setChannelGoalProgress(channelId, ...goalProgressFromUploads(uploads))
+
   emitProgress({ channelId, channelName: scraped.name, phase: 'mapping', message: 'Mapping uploads' })
   const channel = repos.myChannel(channelId)
   const linkedSourceId = channel?.linkedSourceId
@@ -208,9 +213,12 @@ export async function scrapeAll(): Promise<MyChannel[]> {
 export async function sourceVideos(url: string, order: ScrapeOrder, count: number) {
   const repos = getRepos()
   const settings = getSettings()
-  // Fast flat fetch is the product choice: do not block the picker on per-video
-  // metadata. Empty views/dates are hidden cleanly in the UI.
-  const ch = await scrapeChannel(url, settings, { flat: true, limit: count })
+  // "Popular" needs real per-video view counts, which the fast flat dump omits (so it
+  // used to be a no-op that just returned latest order). Fetch a bounded non-flat pool
+  // for Popular and sort it; Latest/Oldest stay on the fast flat path.
+  const popular = order === 'Popular'
+  const poolLimit = popular ? Math.min(Math.max(count * 4, 20), 40) : count
+  const ch = await scrapeChannel(url, settings, { flat: !popular, limit: poolLimit })
   const ordered = orderVideos(ch.videos, order, count)
   const existing = repos.sourceChannelByUrl(channelUrl(url))
   const sourceId = existing?.id ?? `src-${ch.handle.replace(/^@/, '')}`

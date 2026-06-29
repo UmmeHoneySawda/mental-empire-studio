@@ -7,6 +7,7 @@ import { getRepos } from '../db'
 import { cancelDownload, downloadAudio } from '../services/downloader'
 import { channelUrl } from '../services/scraper'
 import { probeDuration } from '../services/audio'
+import { youtubeThumbUrl } from '../../shared/youtube'
 import { emit, hhmm, pushActivity } from './events'
 import { L } from '../services/logger'
 
@@ -45,7 +46,9 @@ async function runOne(video: ScrapedVideo, sourceId: string, channel: string, bi
     stage: 'Downloading',
     pct: '0%',
     action: 'Resume',
-    thumb: 'linear-gradient(135deg,#23262e,#15171d)'
+    // Real YouTube thumbnail via the deterministic i.ytimg.com URL (no yt-dlp fetch);
+    // fall back to the scraped thumb, then a gradient placeholder in the UI on error.
+    thumb: video.thumb || youtubeThumbUrl(video.id, 'hq')
   }
   repos.upsertDownload(base)
   emitProgress({ downloadId: id, title: video.title, pct: 0, stage: 'Downloading', done: false })
@@ -109,7 +112,18 @@ async function resume(id: string): Promise<DownloadedVideo> {
   const repos = getRepos()
   const row = repos.download(id)
   if (!row) throw new Error(`Unknown download: ${id}`)
-  const video: ScrapedVideo = { id: id.replace(/^dl-/, ''), title: row.title, durationSec: 0, views: 0, uploadDate: '', thumb: '' }
+  const videoId = id.replace(/^dl-/, '')
+  // Carry forward the metadata we already have (deterministic thumb + any known
+  // duration) instead of resuming with blanks; runOne re-probes the real duration
+  // once the file lands.
+  const video: ScrapedVideo = {
+    id: videoId,
+    title: row.title,
+    durationSec: row.durationSec ?? 0,
+    views: 0,
+    uploadDate: '',
+    thumb: row.thumb && !row.thumb.startsWith('linear-gradient') ? row.thumb : youtubeThumbUrl(videoId, 'hq')
+  }
   return runOne(video, row.sourceId, row.channel, 192)
 }
 

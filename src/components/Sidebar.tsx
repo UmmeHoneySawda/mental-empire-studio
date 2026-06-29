@@ -1,6 +1,7 @@
 import type { ReactNode } from 'react'
 import { useStore } from '../store/useStore'
 import { useData } from '../store/useData'
+import { clickableProps } from './primitives'
 import type { ScreenKey } from '@shared/types'
 
 interface NavDef {
@@ -36,6 +37,8 @@ function NavItem({ def, badge }: { def: NavDef; badge?: string }): JSX.Element {
   return (
     <div
       onClick={() => setActive(def.key)}
+      {...clickableProps(() => setActive(def.key), def.label)}
+      aria-current={on ? 'page' : undefined}
       className="me-nav"
       style={{
         display: 'flex', alignItems: 'center', gap: 11, padding: '9px 11px', borderRadius: 10,

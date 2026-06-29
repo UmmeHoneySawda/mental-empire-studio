@@ -108,6 +108,8 @@ function migrate(d: Database.Database): void {
   ensureColumn(d, 'render_jobs', 'projectId', 'TEXT')
   // M5: template locked to a profile
   ensureColumn(d, 'profiles', 'thumbnailTemplateId', 'TEXT')
+  // P8: optionally auto-queue produced videos for render on an interactive run
+  ensureColumn(d, 'profiles', 'autoQueueRender', 'INTEGER')
   // M6: render output bookkeeping
   ensureColumn(d, 'render_jobs', 'outputPath', 'TEXT')
   ensureColumn(d, 'render_jobs', 'error', 'TEXT')
@@ -228,6 +230,7 @@ export interface Repositories {
   getSourceVideos(sourceId: string): ScrapedVideo[]
   setChannelStats(id: string, patch: ChannelStatsPatch): void
   setChannelMapping(id: string, mapDone: number, mapTotal: number): void
+  setChannelGoalProgress(id: string, weekDone: number, monthDone: number): void
   markDownloadMatches(matches: Array<{ downloadId: string; uploadId: string }>): void
   updateChannelGoals(id: string, patch: GoalsPatch): void
   /** Remove an owned channel and its scraped uploads. */
@@ -289,8 +292,13 @@ export function seedDemoForSmoke(): void {
   seedDemoData(db)
 }
 
+/** Idempotent: safe to call from multiple lifecycle paths (window-all-closed + before-quit). */
 export function closeDatabase(): void {
-  db?.close()
+  try {
+    db?.close()
+  } catch {
+    /* already closed */
+  }
   db = null
   repos = null
 }
@@ -427,6 +435,9 @@ function buildRepositories(d: Database.Database): Repositories {
     },
     setChannelMapping: (id, mapDone, mapTotal) => {
       d.prepare('UPDATE my_channels SET mapDone=?, mapTotal=? WHERE id=?').run(mapDone, mapTotal, id)
+    },
+    setChannelGoalProgress: (id, weekDone, monthDone) => {
+      d.prepare('UPDATE my_channels SET weekDone=?, monthDone=? WHERE id=?').run(weekDone, monthDone, id)
     },
     markDownloadMatches: (matches) => {
       const tx = d.transaction(() => {
@@ -613,12 +624,22 @@ function projectPatchToRow(patch: Partial<Project>): Record<string, unknown> {
   }
   return out
 }
+// --- DB row → typed domain object boundary -------------------------------------------
+// SQLite is loosely typed (INTEGER 0/1 for booleans, TEXT for enums). These rowTo*
+// mappers are the SINGLE place untyped rows become typed domain objects, so all coercion
+// lives here instead of being trusted from the raw `{...row}` spread. New numeric/boolean
+// columns should be coerced explicitly below rather than relying on the spread.
+function coerceNum(v: unknown, fallback: number): number {
+  const n = typeof v === 'number' ? v : Number(v)
+  return Number.isFinite(n) ? n : fallback
+}
+
 function rowToProject(r: Record<string, unknown>): Project {
   const rawLines = Number(r.captionLines ?? 1)
   const captionLines = rawLines === 2 || rawLines === 3 ? rawLines : 1
   const rawPace = r.captionPace as Project['captionPace']
   const captionPace = rawPace === 'word' || rawPace === 'phrase' ? rawPace : 'auto'
-  return { ...(r as unknown as Project), captionLines, captionPosition: (r.captionPosition as Project['captionPosition']) ?? 'bottom', captionPace, kenBurns: !!r.kenBurns, crossfade: Number(r.crossfade) || 0.8, emphasis: !!r.emphasis, keywords: !!r.keywords, punchZoom: !!r.punchZoom, betaOpts: parseBetaOpts(r) }
+  return { ...(r as unknown as Project), captionLines, captionPosition: (r.captionPosition as Project['captionPosition']) ?? 'bottom', captionPace, durationSec: coerceNum(r.durationSec, 0), poolSize: coerceNum(r.poolSize, 10), kenBurns: !!r.kenBurns, crossfade: coerceNum(r.crossfade, 0.8) || 0.8, emphasis: !!r.emphasis, keywords: !!r.keywords, punchZoom: !!r.punchZoom, betaOpts: parseBetaOpts(r) }
 }
 function rowToImage(r: Record<string, unknown>): ProjectImage {
   return { ...(r as unknown as ProjectImage), manual: !!r.manual }
@@ -628,7 +649,7 @@ function rowToWord(r: Record<string, unknown>): TranscriptWord {
 }
 
 const PROFILE_COLS = [
-  'id', 'name', 'mono', 'avatar', 'rule', 'images', 'thumb', 'cap', 'out', 'autoWatch', 'thumbnailTemplateId',
+  'id', 'name', 'mono', 'avatar', 'rule', 'images', 'thumb', 'cap', 'out', 'autoWatch', 'autoQueueRender', 'thumbnailTemplateId',
   'linkedSourceId', 'sourceUrl', 'sourceOrder', 'sourceCount', 'imageMode', 'poolSize', 'kenBurns',
   'captionPreset', 'captionFont', 'captionAnim', 'captionAspect', 'captionLines', 'captionPosition', 'captionPace',
   'outputFolder', 'lastSeenVideoId', 'lastRunAt', 'betaOpts'
@@ -638,6 +659,7 @@ function profileToRow(p: Profile): Record<string, unknown> {
   return {
     ...p,
     autoWatch: p.autoWatch ? 1 : 0,
+    autoQueueRender: p.autoQueueRender ? 1 : 0,
     kenBurns: p.kenBurns ? 1 : 0,
     captionFont: p.captionFont ?? 'Montserrat',
     captionAnim: p.captionAnim ?? 'Pop-in',
@@ -662,12 +684,13 @@ function rowToProfile(r: Record<string, unknown>): Profile {
   return {
     ...(r as unknown as Profile),
     autoWatch: !!r.autoWatch,
+    autoQueueRender: !!r.autoQueueRender,
     kenBurns: r.kenBurns == null ? true : !!r.kenBurns,
     sourceUrl: (r.sourceUrl as string) ?? '',
     sourceOrder: (r.sourceOrder as ScrapeOrder) ?? 'Latest',
-    sourceCount: (r.sourceCount as number) ?? 5,
+    sourceCount: coerceNum(r.sourceCount, 5),
     imageMode: (r.imageMode as ImageMode) ?? 'sequence',
-    poolSize: (r.poolSize as number) ?? 10,
+    poolSize: coerceNum(r.poolSize, 10),
     captionPreset: (r.captionPreset as string) ?? 'Hormozi',
     captionFont: (r.captionFont as string) ?? 'Montserrat',
     captionAnim: (r.captionAnim as string) ?? 'Pop-in',

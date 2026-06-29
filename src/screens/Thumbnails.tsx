@@ -3,7 +3,7 @@ import { useStore } from '../store/useStore'
 import { useData } from '../store/useData'
 import { ScreenPad } from '../components/primitives'
 import type { BackgroundLayer, FxGlow, FxOutline, FxShadow, SubjectLayer, TextLayer, ThumbnailLayer } from '@shared/types'
-import { asGlow, asOutline, asShadow } from '@shared/types'
+import { asGlow, asOutline, asShadow, DEFAULT_SCRIM } from '@shared/types'
 import { ThumbCanvas } from '../features/thumbnail-editor/ThumbCanvas'
 import { rasterizeLayers, withHeadline } from '../features/thumbnail-editor/render'
 import { youtubeIdFromDownloadId, youtubeThumbUrl, type YoutubeThumbQuality } from '@shared/youtube'
@@ -176,6 +176,8 @@ function TextLayerEditor({ layer }: { layer: TextLayer }): JSX.Element {
   const layers = useStore((s) => s.layers)
   const textEditorFocusTrigger = useStore((s) => s.textEditorFocusTrigger)
   const subject = layers.find((l) => l.kind === 'subject') as SubjectLayer | undefined
+  const background = layers.find((l) => l.kind === 'background') as BackgroundLayer | undefined
+  const scrim = background?.scrim ?? DEFAULT_SCRIM
   const subjectFile = useRef<HTMLInputElement>(null)
   const bgFile = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
@@ -251,10 +253,11 @@ function TextLayerEditor({ layer }: { layer: TextLayer }): JSX.Element {
           </div>
         ))}
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginTop: 9 }}>
-          <span style={{ fontSize: 10.5, color: '#8a909c', width: 42 }}>Gap</span>
-          <input type="range" min={0} max={40} value={layer.lineGap ?? 0} onChange={(e) => updateLayer(layer.id, { lineGap: Number(e.target.value) } as Partial<TextLayer>)} style={{ flex: 1, accentColor: 'var(--accent)' }} />
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#8a909c', width: 40 }}>{layer.lineGap ? `${layer.lineGap}px` : 'auto'}</span>
+          <span style={{ fontSize: 10.5, color: '#8a909c', width: 64 }}>Line height</span>
+          <input type="range" min={90} max={220} value={Math.round((layer.lineHeight && layer.lineHeight > 0 ? layer.lineHeight : 1.12) * 100)} onChange={(e) => updateLayer(layer.id, { lineHeight: Number(e.target.value) / 100 } as Partial<TextLayer>)} style={{ flex: 1, accentColor: 'var(--accent)' }} />
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#8a909c', width: 52, textAlign: 'right' }}>{(layer.lineHeight && layer.lineHeight > 0 ? layer.lineHeight : 1.12).toFixed(2)}×</span>
         </div>
+        <div style={{ fontSize: 9.5, color: '#5b616f', marginTop: 6 }}>Lines now space evenly regardless of per-line size. Drag to loosen/tighten.</div>
       </CollapseSection>
 
       <CollapseSection label="Highlighted words">
@@ -316,6 +319,23 @@ function TextLayerEditor({ layer }: { layer: TextLayer }): JSX.Element {
         </div>
         <input ref={bgFile} type="file" accept="image/*" style={{ display: 'none' }} onChange={async (e) => { const f = e.target.files?.[0]; if (f) setBackground({ mode: 'image', src: await readAsDataUrl(f) } as Partial<BackgroundLayer>) }} />
         <div onClick={() => bgFile.current?.click()} className="me-btn" style={{ border: '1px solid #262b34', borderRadius: 8, padding: 8, textAlign: 'center', fontSize: 11, color: '#c4cad3', background: '#0e1116', cursor: 'pointer' }}>⇪ Use image background</div>
+        <div style={{ borderTop: '1px solid #1d2129', marginTop: 11, paddingTop: 11 }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: scrim.enabled ? 9 : 0 }}>
+            <span style={{ fontSize: 10.5, color: scrim.enabled ? '#eef0f3' : '#8a909c', flex: 1, fontWeight: scrim.enabled ? 600 : 400 }}>Gradient scrim (darken for legibility)</span>
+            <div onClick={() => setBackground({ scrim: { ...scrim, enabled: !scrim.enabled } } as Partial<BackgroundLayer>)} style={{ width: 34, height: 19, borderRadius: 11, background: scrim.enabled ? 'var(--accent)' : '#2b303b', position: 'relative', cursor: 'pointer', flex: 'none' }}><span style={{ position: 'absolute', top: 2, right: scrim.enabled ? 2 : 17, width: 15, height: 15, borderRadius: '50%', background: '#fff' }} /></div>
+          </div>
+          {scrim.enabled && (
+            <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginTop: 4 }}>
+              <div style={{ display: 'flex', gap: 5 }}>
+                {(['bottom', 'top', 'left', 'right'] as const).map((d) => (
+                  <button key={d} type="button" onClick={() => setBackground({ scrim: { ...scrim, direction: d } } as Partial<BackgroundLayer>)} style={{ flex: 1, border: scrim.direction === d ? '1px solid var(--accent)' : '1px solid #23272f', color: scrim.direction === d ? 'var(--accent)' : '#8a909c', background: scrim.direction === d ? 'var(--accent-soft)' : '#0e1116', borderRadius: 7, padding: '5px 0', fontSize: 10, cursor: 'pointer', textTransform: 'capitalize' }}>{d}</button>
+                ))}
+              </div>
+              <FxSlider label="Size" value={Math.round(scrim.size * 100)} min={5} max={100} suffix="%" onChange={(n) => setBackground({ scrim: { ...scrim, size: n / 100 } } as Partial<BackgroundLayer>)} />
+              <FxSlider label="Opacity" value={Math.round(scrim.opacity * 100)} min={0} max={100} suffix="%" onChange={(n) => setBackground({ scrim: { ...scrim, opacity: n / 100 } } as Partial<BackgroundLayer>)} />
+            </div>
+          )}
+        </div>
       </CollapseSection>
     </div>
   )

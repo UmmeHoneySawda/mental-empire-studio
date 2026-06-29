@@ -87,7 +87,10 @@ export async function runProfile(profileId: string, headless = false): Promise<s
         } else {
           emitA({ profileId, profileName: profile.name, phase: 'composing', message: 'Project ready; add Groq key to auto-transcribe' })
         }
-        if (headless) sendToRender(proj.id)
+        // Headless (auto-watch) always queues; interactive runs queue too when the
+        // profile opts into end-to-end automation. Otherwise projects are left staged
+        // for the user to quick-edit and queue manually.
+        if (headless || profile.autoQueueRender) sendToRender(proj.id)
       } catch (e) {
         const msg = (e as Error).message
         emitA({ profileId, profileName: profile.name, phase: 'error', message: `${sourceVideo.title}: ${msg}` })
@@ -100,11 +103,12 @@ export async function runProfile(profileId: string, headless = false): Promise<s
     // moving past a partial failure can hide older failed uploads forever.
     const cursor = succeeded.size === list.length ? list[0]?.id : profile.lastSeenVideoId
     repos.setProfileCursor(profileId, { lastSeenVideoId: cursor, lastRunAt: new Date().toISOString() })
-    pushActivity({ t: hhmm(), icon: '▶', color: '#f5b323', text: `${profile.name}: ${dls.length} ${headless ? 'queued for render' : 'staged for edit'}` })
+    const queued = headless || profile.autoQueueRender
+    pushActivity({ t: hhmm(), icon: '▶', color: '#f5b323', text: `${profile.name}: ${dls.length} ${queued ? 'queued for render' : 'staged for edit'}` })
     await postWebhook('profile_run', { profile: profile.name, count: dls.length, headless })
     if (headless) notifyMessage('Auto-watch', `${profile.name}: ${dls.length} new video(s) queued`)
 
-    emitA({ profileId, profileName: profile.name, phase: headless ? 'queued' : 'done', message: `${dls.length} processed`, projectIds })
+    emitA({ profileId, profileName: profile.name, phase: queued ? 'queued' : 'done', message: queued ? `${dls.length} queued for render — see Render Queue` : `${dls.length} staged — open Compose to edit, then render`, projectIds })
     return projectIds
   } catch (e) {
     emitA({ profileId, profileName: profile.name, phase: 'error', message: (e as Error).message })

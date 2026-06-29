@@ -70,19 +70,24 @@ export async function masterAudioTwoPass(filePath: string): Promise<void> {
   const pass1 = await spawnFfmpeg(['-hide_banner', '-i', filePath, '-vn', '-af', `loudnorm=${LOUDNORM_TARGET}:print_format=json`, '-f', 'null', '-'])
   const measurement = parseMeasurement(pass1)
   const tmp = join(dirname(filePath), `.${Date.now()}-${Math.random().toString(16).slice(2)}.master.mp4`)
-  await spawnFfmpeg([
-    '-y',
-    '-hide_banner',
-    '-i', filePath,
-    '-map', '0:v:0',
-    '-map', '0:a:0',
-    '-c:v', 'copy',
-    '-c:a', 'aac',
-    '-b:a', '192k',
-    '-af', buildMasterLoudnormFilter(measurement),
-    '-movflags', '+faststart',
-    tmp
-  ])
+  try {
+    await spawnFfmpeg([
+      '-y',
+      '-hide_banner',
+      '-i', filePath,
+      '-map', '0:v:0',
+      '-map', '0:a:0',
+      '-c:v', 'copy',
+      '-c:a', 'aac',
+      '-b:a', '192k',
+      '-af', buildMasterLoudnormFilter(measurement),
+      '-movflags', '+faststart',
+      tmp
+    ])
+  } catch (e) {
+    rmSync(tmp, { force: true }) // don't leak the half-written temp on failure
+    throw e
+  }
   rmSync(filePath, { force: true })
   renameSync(tmp, filePath)
 }

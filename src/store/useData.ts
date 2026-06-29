@@ -87,6 +87,24 @@ interface DataState {
 
 let subscribed = false
 
+/** Throttle trailing-edge: coalesces bursty progress-event reloads to at most one call
+ *  per `ms`, so an active download/encode streaming many events/sec doesn't hammer the DB. */
+function throttle(fn: () => void, ms: number): () => void {
+  let last = 0
+  let timer: ReturnType<typeof setTimeout> | null = null
+  return () => {
+    const now = Date.now()
+    const remaining = ms - (now - last)
+    if (remaining <= 0) {
+      if (timer) { clearTimeout(timer); timer = null }
+      last = now
+      fn()
+    } else if (!timer) {
+      timer = setTimeout(() => { last = Date.now(); timer = null; fn() }, remaining)
+    }
+  }
+}
+
 export const useData = create<DataState>((set, get) => ({
   channels: [],
   activity: [],
@@ -124,10 +142,13 @@ export const useData = create<DataState>((set, get) => ({
 
     if (subscribed) return
     subscribed = true
+    const reloadDownloads = throttle(() => void get().loadDownloads(), 400)
+    const reloadRenderJobs = throttle(() => void get().loadRenderJobs(), 400)
     a.onActivity((row) => set((s) => ({ activity: [row, ...s.activity].slice(0, 30) })))
     a.onDownloadProgress((p) => {
       set((s) => ({ dlProgress: { ...s.dlProgress, [p.downloadId]: p } }))
-      void get().loadDownloads()
+      if (p.done) void get().loadDownloads()
+      else reloadDownloads()
     })
     a.onTranscribeProgress((p) => set({
       transcribing: p.phase !== 'done' && p.phase !== 'error',
@@ -136,7 +157,8 @@ export const useData = create<DataState>((set, get) => ({
     }))
     a.onRenderProgress((p) => {
       set((s) => ({ renderProgress: { ...s.renderProgress, [p.jobId]: p } }))
-      void get().loadRenderJobs()
+      if (p.done) void get().loadRenderJobs()
+      else reloadRenderJobs()
     })
     a.onAutomation((e) => {
       set((s) => ({

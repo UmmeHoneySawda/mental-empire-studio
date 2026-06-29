@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, lazy, Suspense, type ComponentType } from 'react'
 import { useStore } from './store/useStore'
 import { useData } from './store/useData'
 import { TitleBar } from './components/TitleBar'
@@ -7,13 +7,17 @@ import { Library } from './screens/Library'
 import { MyChannels } from './screens/MyChannels'
 import { Download } from './screens/Download'
 import { Compose } from './screens/Compose'
-import { Thumbnails } from './screens/Thumbnails'
 import { RenderQueue } from './screens/RenderQueue'
 import { Profiles } from './screens/Profiles'
 import { Settings } from './screens/Settings'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import type { ScreenKey } from '@shared/types'
 
-const SCREENS: Record<ScreenKey, () => JSX.Element> = {
+// The Thumbnails editor pulls in Konva/react-konva (~heavy). Lazy-load it so it's a
+// separate chunk fetched on first navigation, keeping the initial bundle small.
+const Thumbnails = lazy(() => import('./screens/Thumbnails').then((m) => ({ default: m.Thumbnails })))
+
+const SCREENS: Record<ScreenKey, ComponentType> = {
   library: Library,
   channels: MyChannels,
   download: Download,
@@ -55,7 +59,11 @@ export function App(): JSX.Element {
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
         <Sidebar />
         <div style={{ flex: 1, minWidth: 0, background: mainBg, position: 'relative', overflowY: 'auto', overflowX: 'hidden' }}>
-          <Screen key={active} />
+          <ErrorBoundary resetKey={active}>
+            <Suspense fallback={<div style={{ padding: 40, color: 'var(--text-muted)', fontSize: 13 }}>Loading…</div>}>
+              <Screen key={active} />
+            </Suspense>
+          </ErrorBoundary>
         </div>
       </div>
     </div>

@@ -21,7 +21,9 @@
     "dist:mac": "electron-vite build && electron-builder --mac",
     "dist:linux": "electron-vite build && electron-builder --linux",
     "dev:browser": "electron-vite dev --rendererOnly",
-    "preview:browser": "vite preview --base ./ --outDir out/renderer --port 4173"
+    "preview:browser": "vite preview --base ./ --outDir out/renderer --port 4173",
+    "test": "vitest run",
+    "test:watch": "vitest"
   },
   "dependencies": {
     "@fontsource/anton": "^5.2.7",
@@ -51,6 +53,7 @@
     "electron-vite": "^2.3.0",
     "playwright": "1.49",
     "typescript": "^5.6.2",
-    "vite": "^5.4.8"
+    "vite": "^5.4.8",
+    "vitest": "^2.1.9"
   }
 }
