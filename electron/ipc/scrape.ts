@@ -11,6 +11,7 @@ import { getSettings } from '../store/settings'
 import { getRepos } from '../db'
 import { channelUrl, humanizeCount, orderVideos, scrapeChannel } from '../services/scraper'
 import { matchDownloadsToUploads } from '../services/mapping'
+import { goalProgressFromUploads } from '../../shared/goals'
 import { notify, reminderHit } from '../services/notify'
 import { warmBrollLibraryFromTitles } from '../services/broll'
 import { L } from '../services/logger'
@@ -123,6 +124,10 @@ function persistScrape(channelId: string, scraped: ScrapedChannel): MyChannel {
     thumb: v.thumb
   }))
   repos.replaceUploads(channelId, uploads)
+
+  // A4: derive real weekly/monthly publishing progress from the upload dates so the
+  // "behind pace" reminder reflects actual output instead of a static seeded number.
+  repos.setChannelGoalProgress(channelId, ...goalProgressFromUploads(uploads))
 
   emitProgress({ channelId, channelName: scraped.name, phase: 'mapping', message: 'Mapping uploads' })
   const channel = repos.myChannel(channelId)

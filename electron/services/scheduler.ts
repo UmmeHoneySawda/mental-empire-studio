@@ -23,43 +23,59 @@ export function frequencyToMs(freq: string): number {
   return 6 * 3_600_000
 }
 
-let timer: ReturnType<typeof setInterval> | null = null
+let timer: ReturnType<typeof setTimeout> | null = null
 let paused = false
+let ticking = false
 
 /** One scheduler pass: per watched profile, run on new uploads; baseline on first sight. */
 export async function tick(): Promise<void> {
   const settings = getSettings()
   if (!settings.autoScrape.enabled || paused) return
-  const repos = getRepos()
-  for (const p of repos.profiles()) {
-    if (!p.autoWatch || !p.sourceUrl) continue
-    try {
-      const scraped = await sourceVideos(p.sourceUrl, p.sourceOrder, p.sourceCount)
-      if (!p.lastSeenVideoId) {
-        // First time we see this profile: set the baseline cursor, don't backfill.
-        repos.setProfileCursor(p.id, { lastSeenVideoId: scraped[0]?.id, lastRunAt: p.lastRunAt })
-      } else if (newVideos(scraped, p.lastSeenVideoId).length > 0) {
-        await runProfile(p.id, true)
+  // Re-entrancy guard: a slow pass (many profiles × scrape/download/render) must not
+  // overlap the next, which would double scrape load and reminder work.
+  if (ticking) return
+  ticking = true
+  try {
+    const repos = getRepos()
+    for (const p of repos.profiles()) {
+      if (!p.autoWatch || !p.sourceUrl) continue
+      try {
+        const scraped = await sourceVideos(p.sourceUrl, p.sourceOrder, p.sourceCount)
+        if (!p.lastSeenVideoId) {
+          // First time we see this profile: set the baseline cursor, don't backfill.
+          repos.setProfileCursor(p.id, { lastSeenVideoId: scraped[0]?.id, lastRunAt: p.lastRunAt })
+        } else if (newVideos(scraped, p.lastSeenVideoId).length > 0) {
+          await runProfile(p.id, true)
+        }
+      } catch (e) {
+        const msg = (e as Error).message
+        SCHED_LOG.warn(`auto-watch failed profile=${p.name} source=${p.sourceUrl}: ${msg}`)
+        pushActivity({ t: hhmm(), icon: '!', color: '#ff5a6e', text: `Auto-watch failed: ${p.name} — ${msg.slice(0, 80)}` })
       }
-    } catch (e) {
-      const msg = (e as Error).message
-      SCHED_LOG.warn(`auto-watch failed profile=${p.name} source=${p.sourceUrl}: ${msg}`)
-      pushActivity({ t: hhmm(), icon: '!', color: '#ff5a6e', text: `Auto-watch failed: ${p.name} — ${msg.slice(0, 80)}` })
+      await sleep((settings.autoScrape.delaySec || 0) * 1000)
     }
-    await sleep((settings.autoScrape.delaySec || 0) * 1000)
+    checkReminders()
+  } finally {
+    ticking = false
   }
-  checkReminders()
 }
 
 export function start(): void {
   stop()
   paused = false
-  timer = setInterval(() => void tick(), frequencyToMs(getSettings().autoScrape.frequency))
+  // Self-scheduling loop: the next tick is queued only AFTER the previous finishes, so
+  // a long pass can never pile up behind a fixed setInterval cadence.
+  const loop = (): void => {
+    timer = setTimeout(() => {
+      void tick().finally(loop)
+    }, frequencyToMs(getSettings().autoScrape.frequency))
+  }
+  loop()
 }
 
 export function stop(): void {
   if (timer) {
-    clearInterval(timer)
+    clearTimeout(timer)
     timer = null
   }
 }

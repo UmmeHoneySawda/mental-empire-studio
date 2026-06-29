@@ -1,7 +1,7 @@
 import { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage } from 'electron'
 import { fileURLToPath } from 'node:url'
 import { dirname, join } from 'node:path'
-import { existsSync, mkdirSync, statSync, writeFileSync, readFileSync } from 'node:fs'
+import { existsSync, mkdirSync, statSync, writeFileSync, readFileSync, rmSync } from 'node:fs'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { applyLoginItem, trayIconPath } from './services/background'
 import * as scheduler from './services/scheduler'
@@ -18,6 +18,7 @@ import { splitRanges } from './services/audio'
 import { autoArrangeText } from '../shared/thumbnail'
 import { THUMB_W, THUMB_H, DEFAULT_BETA_OPTS, type Project, type TextLayer, type ThumbnailTemplate, type TranscriptWord } from '../shared/types'
 import { buildAss } from './services/captions'
+import { isAllowedExternalUrl } from '../shared/url'
 import { buildRenderArgs, runRender, dimensions } from './services/render'
 import { ffmpegPath, ffprobePath, resolveYtdlpPath } from './services/bin'
 import { extractThemes, keywordThemesFromTitles, rankCandidates, planCoverage, buildBrollBed, buildBrollManifest, buildBrollNormalizeArgs, assembleBed, fetchPool, warmBrollLibraryFromTitles, type BrollCandidate } from './services/broll'
@@ -158,10 +159,19 @@ function createWindow(showOnReady = true): void {
     }
   })
 
-  // Open external links in the OS browser, never in-app.
+  // Open external links in the OS browser, never in-app — and only http(s), so a
+  // stray/attacker-influenced string can't launch arbitrary protocols (file:, smb:, …).
   mainWindow.webContents.setWindowOpenHandler(({ url }) => {
-    shell.openExternal(url)
+    if (isAllowedExternalUrl(url)) void shell.openExternal(url)
     return { action: 'deny' }
+  })
+
+  // Never let the main window navigate away from the app (a stray location.href would
+  // wipe in-memory state). Allow only the dev server URL / the currently-loaded page.
+  mainWindow.webContents.on('will-navigate', (e, url) => {
+    const dev = process.env['ELECTRON_RENDERER_URL']
+    const current = mainWindow?.webContents.getURL()
+    if (url !== dev && url !== current) e.preventDefault()
   })
 
   const devUrl = process.env['ELECTRON_RENDERER_URL']
@@ -1303,9 +1313,20 @@ async function runDemoRender(): Promise<void> {
   app.exit(job?.status === 'done' ? 0 : 1)
 }
 
+/** Remove transient render artifacts (e.g. per-render SFX WAVs) left in temp by a
+ *  previous, possibly crashed, run so they don't accumulate. Crash-proof. */
+function sweepTempArtifacts(): void {
+  try {
+    rmSync(join(app.getPath('temp'), 'me-sfx'), { recursive: true, force: true })
+  } catch {
+    /* ignore */
+  }
+}
+
 app.whenReady().then(() => {
   initPersistence()
   registerIpc()
+  sweepTempArtifacts()
 
   if (process.env['ME_DEMO']) {
     void runDemoRender()
@@ -1469,6 +1490,9 @@ app.whenReady().then(() => {
 app.on('before-quit', () => {
   isQuitting = true
   scheduler.stop()
+  // Close the DB here too: with the tray enabled, the real quit comes through here
+  // (not window-all-closed), so this is the only path that checkpoints the WAL cleanly.
+  closeDatabase()
 })
 
 app.on('window-all-closed', () => {
