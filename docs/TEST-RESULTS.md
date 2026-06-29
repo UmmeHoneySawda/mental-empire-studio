@@ -34,6 +34,7 @@ ME_SMOKE=e2e ME_YTDLP_FIXTURE=test/fixtures/ytdlp \
 | P6 | `electron/services/broll.ts`, `electron/services/queue.ts`, `electron/ipc/compose.ts` | B-roll renders used the fast concat-manifest path, so the chosen style transition was not visibly represented between stock clips. | The per-clip normalize step now bakes lightweight style boundary fades into cached B-roll segments: Cinematic dips through black, Heartfelt fades through white, Intense uses a short black punch, and Clean stays hard-cut. Queue renders and preview renders pass the selected style into the B-roll manifest. | ✅ fixed |
 | P7 | `shared/types.ts`, `electron/db/index.ts`, `electron/ipc/automation.ts`, `electron/services/queue.ts`, `src/screens/Compose.tsx`, `src/screens/Profiles.tsx` | Caption controls were incomplete for the profile/automation path, and the "too fast" caption complaint only had hidden long-form auto behavior. | Added persisted `captionPace` (`auto` / `word` / `phrase`), defaulted new projects/profiles to two caption lines, added Pace controls in Compose, added font/animation/lines/position/pace controls in Profiles, and made profile-created projects inherit the full caption recipe. Render logs now record `pace=`. | ✅ fixed |
 | P8 | `src/screens/Profiles.tsx`, `shared/types.ts`, `electron/ipc/automation.ts` | Profiles could store beta options internally, but the editor did not expose B-roll/style/overlay defaults, so automated profile renders could miss the same effects available in Compose. | Added compact profile controls for style, B-roll on/off, density, pool size, auto-highlight, overlay, start zoom, and key zoom. New profiles default to Cinematic + sparse B-roll + bottom overlay + auto-highlight/zoom, and the profile card summary shows the chosen style. | ✅ fixed |
+| P9 | `electron/main.ts`, `electron/services/render.ts`, `electron/services/broll.ts` | The old long-form slowdown could regress if image/B-roll renders accidentally reintroduced `zoompan`, large `xfade` graphs, or direct looped B-roll inputs. | M6 now asserts long image renders contain no `zoompan` or `xfade`, long B-roll renders use the concat-manifest input, no direct `-stream_loop`, no `xfade`, and still pin `-t 1174.00`. | ✅ fixed |
 
 ## Render quality proof (2026-06-28)
 
@@ -55,7 +56,7 @@ Observed proof:
 - `SMOKE_M6_ARGS ok=true eta=true`.
 - `SMOKE_M6_BROLL ... manifest=true resume=true cudaNormalize=true cudaFinal=true rateFallback=true allLimited=true`.
 - `SMOKE_M6_STYLE ... wordFx=true brollFx=true`.
-- `SMOKE_M6_LONGFORM captions=true wordEvents=1600 phraseEvents=200 motion=true`.
+- `SMOKE_M6_LONGFORM captions=true wordEvents=1600 phraseEvents=200 motion=true brollFast=true`.
 - `SMOKE_M6_QUEUE ... stageTiming=true probe=true captionPace=true`.
 - `SMOKE_BROLL_REAL encoder=nvenc cudaCaps=true durationOk=true stream=true caption=true tailMotion=true gpuArgs=true noFallback=true overlay=true progress=true brollLog=true probeLog=true`.
 - Current GPU probe: `NVIDIA GeForce GTX 1660 Ti, 610.62`; NVENC one-frame encode exits successfully.

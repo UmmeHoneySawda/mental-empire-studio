@@ -464,10 +464,32 @@ async function runSmokeM6(): Promise<void> {
       outPath: '/tmp/o.mp4',
       settings: smokeSettings
     }).join(' ')
+    const longBrollManifestArgs = buildRenderArgs({
+      project: {
+        ...proj('p-long-broll', 'Long Broll'),
+        durationSec: 1174,
+        kenBurns: true,
+        punchZoom: true,
+        betaOpts: { ...DEFAULT_BETA_OPTS, autoZoom: { atStart: true, atKeyPhrases: true }, broll: { ...DEFAULT_BETA_OPTS.broll, enabled: true, density: 'sparse' } }
+      },
+      images: [],
+      brollManifestPath: '/tmp/long-broll-concat.txt',
+      assPath: '/tmp/x.ass',
+      outPath: '/tmp/o.mp4',
+      settings: { ...smokeSettings, beta: { enabled: true, pexelsKey: '', pixabayKey: '', coverrKey: '' } }
+    }).join(' ')
     const loudnorm2 = buildSecondPassLoudnormFilter({ input_i: '-20.0', input_tp: '-3.0', input_lra: '7.0', input_thresh: '-30.0', target_offset: '1.2' })
     const loudnormFallback = buildMasterLoudnormFilter({ input_i: '-inf', input_tp: '-inf', input_lra: '0.0', input_thresh: '-70.0', target_offset: 'inf' })
     const argsOk = g.includes('zoompan') && g.includes('xfade') && g.includes('subtitles=') && g.includes('libx264') && g.includes('scale=1920:1080') && loudnorm2.includes('measured_I=-20.0') && loudnorm2.includes('linear=true') && loudnormFallback === 'loudnorm=I=-14:TP=-1:LRA=11' && !g.includes('-shortest')
-    const longMotionOk = !longImageArgs.includes('zoompan') && longImageArgs.includes('subtitles=') && longImageArgs.includes('-t 1174.00')
+    const longMotionOk =
+      !longImageArgs.includes('zoompan') && !longImageArgs.includes('xfade=') &&
+      longImageArgs.includes('subtitles=') && longImageArgs.includes('-t 1174.00')
+    const longBrollFastArgsOk =
+      longBrollManifestArgs.includes('-f concat -safe 0 -i /tmp/long-broll-concat.txt') &&
+      !longBrollManifestArgs.includes('zoompan') &&
+      !longBrollManifestArgs.includes('xfade=') &&
+      !longBrollManifestArgs.includes('-stream_loop') &&
+      longBrollManifestArgs.includes('-t 1174.00')
     const smooth = createProgressSmoother(120)
     const etaA = smooth({ outTimeSec: 1, pct: 1, speed: 0.1 })
     const etaB = smooth({ outTimeSec: 2, pct: 2, speed: 0.2 })
@@ -709,9 +731,9 @@ async function runSmokeM6(): Promise<void> {
 
     console.log(`SMOKE_M6_ASS ok=${assOk} zoomHits=${ass169.zoomHits.length} top=${assTop.ass.includes(',8,60,60,')}`)
     console.log(`SMOKE_M6_ARGS ok=${argsOk} eta=${etaOk}`)
-    console.log(`SMOKE_M6_LONGFORM captions=${captionPerfOk} wordEvents=${longWordDialogues} phraseEvents=${longPhraseDialogues} motion=${longMotionOk}`)
+    console.log(`SMOKE_M6_LONGFORM captions=${captionPerfOk} wordEvents=${longWordDialogues} phraseEvents=${longPhraseDialogues} motion=${longMotionOk} brollFast=${longBrollFastArgsOk}`)
     console.log(`SMOKE_M6_QUEUE status=${j1?.status} pct=${j1?.pct} maxActive=${lastMaxActive()} out=${!!j1?.outputPath} ass=${assFileOk} stageTiming=${stageTimingOk} probe=${probeLogOk} captionPace=${captionPaceLogOk}`)
-    const ok = assOk && argsOk && etaOk && captionPerfOk && longMotionOk && queueOk && assFileOk && stageTimingOk && probeLogOk && captionPaceLogOk && betaOk && brollOk && styleOk && sfxOk
+    const ok = assOk && argsOk && etaOk && captionPerfOk && longMotionOk && longBrollFastArgsOk && queueOk && assFileOk && stageTimingOk && probeLogOk && captionPaceLogOk && betaOk && brollOk && styleOk && sfxOk
     console.log(ok ? 'SMOKE_M6_OK' : 'SMOKE_M6_FAIL')
     closeDatabase()
     app.exit(ok ? 0 : 1)
