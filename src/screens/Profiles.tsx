@@ -53,7 +53,8 @@ function pipelineSummary(p: Profile, groqReady: boolean): string {
     'MP3 download',
     groqReady ? 'auto captions' : 'captions manual',
     p.thumbnailTemplateId ? 'template ready' : 'thumbnail manual',
-    beta.broll.enabled ? `B-roll ${beta.broll.density}` : 'no B-roll'
+    beta.broll.enabled ? `B-roll ${beta.broll.density}` : 'no B-roll',
+    p.autoQueueRender ? 'auto-render' : 'render manual'
   ].join(' → ')
 }
 
@@ -196,6 +197,13 @@ function ProfileEditor({ profile, onClose }: { profile: Profile; onClose: () => 
         <span style={{ fontSize: 12, color: '#cdd2da', flex: 1 }}>Auto-watch (run when source posts)</span>
         <div onClick={() => set({ autoWatch: !p.autoWatch })} style={{ width: 34, height: 19, borderRadius: 11, background: p.autoWatch ? 'var(--accent)' : '#2b303b', position: 'relative', cursor: 'pointer' }}><span style={{ position: 'absolute', top: 2, right: p.autoWatch ? 2 : 17, width: 15, height: 15, borderRadius: '50%', background: '#fff' }} /></div>
       </div>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+        <div style={{ flex: 1 }}>
+          <span style={{ fontSize: 12, color: '#cdd2da' }}>Auto-queue render (end-to-end)</span>
+          <div style={{ fontSize: 10, color: '#6a7180', marginTop: 2 }}>Send produced videos straight to the render queue — no manual step.</div>
+        </div>
+        <div onClick={() => set({ autoQueueRender: !p.autoQueueRender })} style={{ width: 34, height: 19, borderRadius: 11, background: p.autoQueueRender ? 'var(--accent)' : '#2b303b', position: 'relative', cursor: 'pointer' }}><span style={{ position: 'absolute', top: 2, right: p.autoQueueRender ? 2 : 17, width: 15, height: 15, borderRadius: '50%', background: '#fff' }} /></div>
+      </div>
       <div style={{ display: 'flex', gap: 9, marginTop: 2 }}>
         <div onClick={save} className="me-btn" style={{ flex: 1, textAlign: 'center', background: 'linear-gradient(180deg,var(--accent),var(--accent-deep))', color: 'var(--accent-ink)', borderRadius: 9, padding: 9, fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Save</div>
         <div onClick={onClose} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 9, padding: '9px 14px', fontSize: 12, color: '#c4cad3', cursor: 'pointer' }}>Cancel</div>
@@ -209,18 +217,14 @@ function newProfile(): Profile {
   const id = `prof-${Date.now()}`
   return {
     id, name: 'New profile', mono: 'NP', avatar: 'linear-gradient(135deg,#8b7cff,#5b4fd6)',
-    rule: 'Latest · 5 videos', images: 'Pool of 10 · shuffle', thumb: 'None', cap: 'Hormozi · 16:9 · 2L · auto · Cinematic', out: '',
+    rule: 'Latest · 5 videos', images: 'Pool of 10 · shuffle', thumb: 'None', cap: 'Hormozi · 16:9 · 2L · auto', out: '',
     autoWatch: false, sourceUrl: '', sourceOrder: 'Latest', sourceCount: 5, imageMode: 'pool', poolSize: 10,
     kenBurns: true, captionPreset: 'Hormozi', captionFont: 'Montserrat', captionAnim: 'Pop-in',
     captionAspect: '16:9', captionLines: 2, captionPosition: 'bottom', captionPace: 'auto',
-    betaOpts: {
-      ...DEFAULT_BETA_OPTS,
-      autoHighlight: true,
-      overlay: { ...DEFAULT_BETA_OPTS.overlay, bottom: true },
-      autoZoom: { atStart: true, atKeyPhrases: true },
-      broll: { ...DEFAULT_BETA_OPTS.broll, enabled: false, density: 'sparse', poolSize: 18 },
-      style: 'Cinematic'
-    }
+    // Minimal effects by default. Cinematic transitions, auto-zoom, overlay and B-roll
+    // are heavy and were silently inherited by every video a profile produced (and only
+    // surfaced after the render). They're now explicit opt-ins in the editor below.
+    betaOpts: { ...DEFAULT_BETA_OPTS }
   }
 }
 

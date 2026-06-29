@@ -140,11 +140,17 @@ function animationWordTag(animation: string | undefined, active: boolean): strin
   }
 }
 
-function animationLineLead(animation: string | undefined, w: number, h: number, marginV: number, alignment: 2 | 5 | 8): string {
-  if (animation !== 'Slide') return '{\\fad(20,20)}'
+function animationLineLead(animation: string | undefined, w: number, h: number, marginV: number, alignment: 2 | 5 | 8, fadeIn = true, fadeOut = true): string {
+  // In word mode this lead is only attached to the first/last word of a group, so the
+  // line fades in once and out once. Applying \fad to every per-word event made libass
+  // tear down and rebuild the whole line on each word boundary -> visible flicker.
+  const inMs = fadeIn ? 20 : 0
+  const outMs = fadeOut ? 20 : 0
+  const fad = `\\fad(${inMs},${outMs})`
+  if (animation !== 'Slide' || !fadeIn) return `{${fad}}`
   const x = Math.round(w / 2)
   const y = alignment === 8 ? marginV : alignment === 5 ? Math.round(h / 2) : h - marginV
-  return `{\\fad(20,20)\\move(${x},${y + 34},${x},${y},0,150)}`
+  return `{${fad}\\move(${x},${y + 34},${x},${y},0,150)}`
 }
 
 function wordsWithLineBreaks(words: string[], lines: 1 | 2 | 3): string {
@@ -224,7 +230,15 @@ export function buildAss(words: TranscriptWord[], opts: CaptionOptions): AssResu
       const lineEnd = Math.max(lineStart + 0.05, g.words[activeIdx + 1]?.start ?? g.end)
       const visibleWords = opts.animation === 'Type' ? g.words.slice(0, activeIdx + 1) : g.words
       const text = wordsWithLineBreaks(visibleWords.map((word) => wordText(word, word.id === activeWord.id)), lines)
-      return `Dialogue: 0,${secToAss(lineStart)},${secToAss(lineEnd)},Default,,0,0,0,,${opts.styleLead ?? ''}${animationLineLead(opts.animation, w, h, marginV, alignment)}${text}`
+      // Fade the line in only on the first word and out only on the last word of the
+      // group. Mid-group word swaps carry no \fad, so libass updates the active word in
+      // place instead of fading the whole line out and back in (the flicker bug).
+      const isFirst = activeIdx === 0
+      const isLast = activeIdx === g.words.length - 1
+      const lead = isFirst || isLast
+        ? animationLineLead(opts.animation, w, h, marginV, alignment, isFirst, isLast)
+        : ''
+      return `Dialogue: 0,${secToAss(lineStart)},${secToAss(lineEnd)},Default,,0,0,0,,${opts.styleLead ?? ''}${lead}${text}`
       })
     )
 

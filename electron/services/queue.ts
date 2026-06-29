@@ -83,12 +83,17 @@ export async function runJob(job: RenderJob): Promise<void> {
   const settings = getSettings()
   const caps = probeRenderCapabilities()
   const enc = selectEncoder(settings, caps)
-  const filterDevice: RenderProgress['filterDevice'] = 'cpu'
+  let filterDevice: RenderProgress['filterDevice'] = 'cpu'
   let encoderDetail = enc.device === 'gpu' ? `${enc.label} encode · CPU filters` : `${enc.label} encode`
   let filterDetail = enc.device === 'gpu' ? 'CPU filters/captions' : undefined
   const dir = outputDir()
   mkdirSync(dir, { recursive: true })
-  const base = formatOutputName(settings.namingTemplate, { channel: project.channel, title: project.title })
+  // Base output name. If a *different* project shares the same channel+title, append the
+  // video id so the two don't overwrite each other's .mp4/.ass/.log (re-rendering the
+  // same project keeps the same name, so it overwrites itself as expected).
+  let base = formatOutputName(settings.namingTemplate, { channel: project.channel, title: project.title })
+  const dupe = repos.listProjects().some((p) => p.id !== project.id && p.channel === project.channel && p.title === project.title)
+  if (dupe) base = `${base} (${project.downloadId.replace(/^dl-/, '').slice(0, 11)})`
   const assPath = join(dir, `${base}.ass`)
   const outPath = join(dir, `${base}.mp4`)
   const logPath = join(dir, `${base}.render.log`)
@@ -175,6 +180,20 @@ export async function runJob(job: RenderJob): Promise<void> {
 
   // Beta: fold hook + auto-highlight into the caption options when beta mode is on.
   const beta = settings.beta?.enabled ? asBetaOpts(project.betaOpts) : null
+  // Surface exactly which beta effects will be applied so a render is never silently
+  // "cinematic"/"b-roll" — shown on the queue row detail and written to the log.
+  const effectsSummary = beta
+    ? [
+        beta.style !== 'None' ? beta.style : null,
+        beta.broll.enabled ? `B-roll ${beta.broll.density}` : null,
+        beta.autoZoom.atStart || beta.autoZoom.atKeyPhrases ? 'auto-zoom' : null,
+        (beta.overlay.bottom || beta.overlay.top || beta.overlay.left || beta.overlay.right) ? 'overlay' : null,
+        beta.autoHighlight ? 'highlight' : null,
+        beta.hook.enabled ? 'hook' : null
+      ].filter(Boolean).join(' · ') || 'no effects'
+    : 'plain (images + captions)'
+  if (renderLogPath) appendFileSync(renderLogPath, `effects=${effectsSummary}\n`)
+  encoderDetail = `${encoderDetail} · ${effectsSummary}`
   const hookText = beta?.hook.enabled
     ? (beta.hook.text.trim() || words.slice(0, 8).map((w) => w.word).join(' '))
     : ''
@@ -254,6 +273,7 @@ export async function runJob(job: RenderJob): Promise<void> {
         if (enc.device === 'gpu' && canUseCudaFinalFilters(settings, caps)) {
           encoderDetail = `${enc.label} encode · CUDA scale + CPU captions`
           filterDetail = 'CUDA scale + CPU captions'
+          filterDevice = 'gpu'
         }
         if (renderLogPath) appendFileSync(renderLogPath, `[broll]\nmanifest=${planned.manifestPath}\njson=${planned.jsonPath}\nsegments=${planned.segments.length}\n`)
         emitStage('assembling', 100, `Using B-roll manifest (${planned.segments.length} clips)`)

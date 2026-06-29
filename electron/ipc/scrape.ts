@@ -208,9 +208,12 @@ export async function scrapeAll(): Promise<MyChannel[]> {
 export async function sourceVideos(url: string, order: ScrapeOrder, count: number) {
   const repos = getRepos()
   const settings = getSettings()
-  // Fast flat fetch is the product choice: do not block the picker on per-video
-  // metadata. Empty views/dates are hidden cleanly in the UI.
-  const ch = await scrapeChannel(url, settings, { flat: true, limit: count })
+  // "Popular" needs real per-video view counts, which the fast flat dump omits (so it
+  // used to be a no-op that just returned latest order). Fetch a bounded non-flat pool
+  // for Popular and sort it; Latest/Oldest stay on the fast flat path.
+  const popular = order === 'Popular'
+  const poolLimit = popular ? Math.min(Math.max(count * 4, 20), 40) : count
+  const ch = await scrapeChannel(url, settings, { flat: !popular, limit: poolLimit })
   const ordered = orderVideos(ch.videos, order, count)
   const existing = repos.sourceChannelByUrl(channelUrl(url))
   const sourceId = existing?.id ?? `src-${ch.handle.replace(/^@/, '')}`
