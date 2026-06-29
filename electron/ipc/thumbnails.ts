@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import type { ThumbnailTemplate } from '../../shared/types'
 import { getRepos } from '../db'
 import { getSettings } from '../store/settings'
+import { safeName } from '../../shared/sanitize'
 
 
 // Thumbnail engine IPC (M5): template library + per-profile lock + PNG writer.
@@ -16,10 +17,6 @@ function thumbsDir(): string {
   const dir = join(base, 'thumbnails')
   mkdirSync(dir, { recursive: true })
   return dir
-}
-
-function safeName(name: string): string {
-  return (name.replace(/[^a-z0-9\-_. ]/gi, '_').trim() || 'thumbnail').slice(0, 120)
 }
 
 export function registerThumbnailsIpc(): void {

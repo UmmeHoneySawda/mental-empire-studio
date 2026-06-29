@@ -5,13 +5,10 @@ import type { RenderQueueRow } from '../../shared/types'
 import { getRepos } from '../db'
 import { runAll, outputDir } from '../services/queue'
 import { cancelRender, markCancelIntent } from '../services/render'
+import { safeName } from '../../shared/sanitize'
 
 // Render queue IPC (M6): the joined queue view, run-all, cancel, and an output
 // folder picker for the Render Queue screen.
-
-function safeName(name: string): string {
-  return (name.replace(/[^a-z0-9\-_. ]/gi, '_').trim() || 'thumbnail').slice(0, 120)
-}
 
 function jobsView(): RenderQueueRow[] {
   const repos = getRepos()
