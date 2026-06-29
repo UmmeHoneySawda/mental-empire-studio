@@ -40,6 +40,20 @@ function mediaSrc(path: string): string {
   return `file:///${path.replace(/\\/g, '/')}`
 }
 
+function overlayBackground(o?: BetaVideoOpts['overlay']): string {
+  if (!o) return 'linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.42))'
+  const intensity = Math.max(0, Math.min(100, o.intensity ?? 50))
+  if (intensity === 0 || (!o.bottom && !o.top && !o.left && !o.right)) return 'transparent'
+  const alpha = (0.08 + (intensity / 100) * 0.42).toFixed(3)
+  const stop = `${Math.round(36 + (intensity / 100) * 28)}%`
+  const edges: string[] = []
+  if (o.bottom) edges.push(`linear-gradient(180deg,rgba(0,0,0,0) ${100 - parseInt(stop, 10)}%,rgba(0,0,0,${alpha}) 100%)`)
+  if (o.top) edges.push(`linear-gradient(0deg,rgba(0,0,0,0) ${100 - parseInt(stop, 10)}%,rgba(0,0,0,${alpha}) 100%)`)
+  if (o.left) edges.push(`linear-gradient(90deg,rgba(0,0,0,${alpha}) 0%,rgba(0,0,0,0) ${stop})`)
+  if (o.right) edges.push(`linear-gradient(270deg,rgba(0,0,0,${alpha}) 0%,rgba(0,0,0,0) ${stop})`)
+  return edges.join(',')
+}
+
 function MediaTab(): JSX.Element {
   const project = useData((s) => s.activeProject)
   const images = useData((s) => s.projectImages)
@@ -161,7 +175,7 @@ function MiniToggle({ on, onClick }: { on: boolean; onClick: () => void }): JSX.
   return <div onClick={onClick} style={{ width: 32, height: 18, borderRadius: 11, background: on ? 'var(--accent)' : '#2b303b', position: 'relative', cursor: 'pointer', flex: 'none' }}><span style={{ position: 'absolute', top: 2, right: on ? 2 : 16, width: 14, height: 14, borderRadius: '50%', background: '#fff' }} /></div>
 }
 
-function CaptionPreview({ words, aspect, lines, position, font, animation, imagePath }: { words: TranscriptWord[]; aspect: string; lines: 1 | 2 | 3; position: NonNullable<Project['captionPosition']>; font: string; animation: string; imagePath?: string }): JSX.Element {
+function CaptionPreview({ words, aspect, lines, position, font, animation, imagePath, overlay }: { words: TranscriptWord[]; aspect: string; lines: 1 | 2 | 3; position: NonNullable<Project['captionPosition']>; font: string; animation: string; imagePath?: string; overlay?: BetaVideoOpts['overlay'] }): JSX.Element {
   const sample = (words.length ? words : [
     { id: 'p1', projectId: '', ord: 0, word: 'you', start: 0, end: 0.25, emphasis: false },
     { id: 'p2', projectId: '', ord: 1, word: 'are', start: 0.25, end: 0.45, emphasis: false },
@@ -178,9 +192,9 @@ function CaptionPreview({ words, aspect, lines, position, font, animation, image
   const perLine = Math.max(1, Math.ceil(sample.length / lines))
   const rows = Array.from({ length: lines }, (_, i) => sample.slice(i * perLine, (i + 1) * perLine)).filter((r) => r.length > 0)
   return (
-    <div style={{ width: 210, border: '1px solid #1d2129', borderRadius: 12, aspectRatio: ratio, background: 'linear-gradient(135deg,#23262e,#15171d)', position: 'relative', display: 'flex', alignItems, justifyContent: 'center', padding, overflow: 'hidden' }}>
+    <div style={{ width: '100%', maxWidth: 230, margin: '0 auto', border: '1px solid #1d2129', borderRadius: 12, aspectRatio: ratio, background: 'linear-gradient(135deg,#23262e,#15171d)', position: 'relative', display: 'flex', alignItems, justifyContent: 'center', padding, overflow: 'hidden' }}>
       {imagePath ? <img src={mediaSrc(imagePath)} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: 0.72 }} /> : <div style={{ position: 'absolute', left: '14%', bottom: 0, width: '34%', height: '80%', background: 'linear-gradient(180deg,#3a4150,#23262e)', borderRadius: '50px 50px 0 0' }} />}
-      <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.48))' }} />
+      <div style={{ position: 'absolute', inset: 0, background: overlayBackground(overlay) }} />
       <div style={{ position: 'relative', textAlign: 'center', fontFamily: `${font}, Anton, var(--font-poster)`, fontSize, lineHeight: 1.04, color: '#fff', textTransform: 'uppercase', WebkitTextStroke: '1.4px #000', textShadow: '0 2px 0 #000, 0 4px 12px rgba(0,0,0,.5)' }}>
         {rows.map((row, rowIdx) => (
           <div key={rowIdx} style={{ whiteSpace: 'nowrap' }}>
@@ -271,6 +285,18 @@ function BetaPanel(): JSX.Element {
             return <span key={e} onClick={() => patch({ overlay: { ...o.overlay, [e]: !on } })} style={{ border: on ? '1px solid var(--accent)' : '1px solid #23272f', color: on ? 'var(--accent)' : '#8a909c', background: on ? 'var(--accent-soft)' : 'transparent', borderRadius: 7, padding: '4px 11px', fontSize: 11, cursor: 'pointer', textTransform: 'capitalize' }}>{e}</span>
           })}
         </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginTop: 9 }}>
+          <span style={{ fontSize: 10.5, color: '#8a909c', width: 54 }}>Intensity</span>
+          <input
+            type="range"
+            min={0}
+            max={100}
+            value={o.overlay.intensity ?? 50}
+            onChange={(e) => patch({ overlay: { ...o.overlay, intensity: Number(e.target.value) } })}
+            style={{ flex: 1, accentColor: 'var(--accent)' }}
+          />
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#8a909c', width: 34, textAlign: 'right' }}>{o.overlay.intensity ?? 50}%</span>
+        </div>
       </div>
 
       <div>
@@ -333,24 +359,29 @@ function CaptionsTab(): JSX.Element {
   const transcribeError = useData((s) => s.transcribeError)
   const runTranscribe = useData((s) => s.runTranscribe)
   const toggleWordEmphasis = useData((s) => s.toggleWordEmphasis)
+  const setWordsEmphasis = useData((s) => s.setWordsEmphasis)
   const setCaptions = useData((s) => s.setCaptions)
+  const openProjectById = useData((s) => s.openProjectById)
   const images = useData((s) => s.projectImages)
   const preset = project?.captionPreset ?? 'Hormozi'
+  const betaOpts = asBetaOpts(project?.betaOpts)
   const [previewPath, setPreviewPath] = useState('')
-  const [previewing, setPreviewing] = useState(false)
+  const [previewState, setPreviewState] = useState<'idle' | 'rendering' | 'ready' | 'error'>('idle')
   const [previewError, setPreviewError] = useState('')
+  const previewing = previewState === 'rendering'
 
   const renderPreview = async (): Promise<void> => {
     if (!project || previewing) return
-    setPreviewing(true)
+    setPreviewState('rendering')
     setPreviewError('')
     try {
       const p = await window.api.compose.preview(project.id)
+      await openProjectById(project.id)
       setPreviewPath(p)
+      setPreviewState('ready')
     } catch (e) {
       setPreviewError((e as Error).message)
-    } finally {
-      setPreviewing(false)
+      setPreviewState('error')
     }
   }
 
@@ -386,15 +417,17 @@ function CaptionsTab(): JSX.Element {
         <BetaPanel />
       </div>
 
-      <div style={{ flex: 'none', width: 210 }}>
+      <div style={{ flex: 'none', width: 230 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}><span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#6a7180' }}>PREVIEW</span><span style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, background: 'var(--accent-soft)', color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: 10, padding: '2px 8px' }}>{project?.captionAspect ?? '16:9'}</span></div>
-        {previewPath ? (
-          <video key={previewPath} controls src={mediaSrc(previewPath)} style={{ width: 210, border: '1px solid #1d2129', borderRadius: 12, background: '#0e1116', display: 'block' }} />
-        ) : (
-          <CaptionPreview words={transcript} aspect={project?.captionAspect ?? '16:9'} lines={project?.captionLines ?? 1} position={project?.captionPosition ?? 'bottom'} font={project?.captionFont ?? 'Anton'} animation={project?.captionAnim ?? 'Pop-in'} imagePath={images[0]?.thumb || images[0]?.path} />
-        )}
+        <CaptionPreview words={transcript} aspect={project?.captionAspect ?? '16:9'} lines={project?.captionLines ?? 1} position={project?.captionPosition ?? 'bottom'} font={project?.captionFont ?? 'Anton'} animation={project?.captionAnim ?? 'Pop-in'} imagePath={images[0]?.thumb || images[0]?.path} overlay={betaOpts.overlay} />
         <div style={{ fontSize: 10, color: '#6a7180', textAlign: 'center', marginTop: 9, lineHeight: 1.4 }}>Yellow active word · uniform pop ({preset})</div>
         <button type="button" disabled={!project || previewing} onClick={() => void renderPreview()} className="me-btn" style={{ width: '100%', marginTop: 10, border: '1px solid #262b34', background: '#15181f', borderRadius: 9, padding: '8px 10px', fontSize: 11.5, color: '#c4cad3', cursor: project && !previewing ? 'pointer' : 'not-allowed', opacity: project && !previewing ? 1 : 0.55 }}>{previewing ? 'Rendering…' : 'Render preview'}</button>
+        {previewPath && (
+          <div style={{ marginTop: 10 }}>
+            <video controls src={mediaSrc(previewPath)} style={{ width: '100%', border: '1px solid #1d2129', borderRadius: 12, background: '#0e1116', display: 'block' }} />
+            <div title={previewPath} className="me-ellipsis" style={{ marginTop: 5, fontSize: 9.5, color: '#5b616f', fontFamily: 'var(--font-mono)' }}>{previewState === 'ready' ? 'Rendered preview ready' : 'Preview file'}</div>
+          </div>
+        )}
         {previewError && <div title={previewError} className="me-clamp-2" style={{ marginTop: 7, fontSize: 10.5, color: '#ff8a96', lineHeight: 1.35 }}>{previewError}</div>}
       </div>
 
@@ -407,7 +440,7 @@ function CaptionsTab(): JSX.Element {
             const stopWords = new Set(['that', 'this', 'with', 'from', 'they', 'have', 'were', 'been', 'will', 'your', 'when', 'then', 'than', 'what', 'also', 'just', 'like', 'more', 'some', 'into', 'their', 'there', 'about', 'which', 'would', 'could', 'should', 'these', 'those', 'being', 'after', 'over'])
             const candidates = transcript.filter((w) => w.word.length >= 4 && !stopWords.has(w.word.toLowerCase().replace(/[^a-z]/g, '')))
             const toMark = candidates.filter((_, i) => i % 3 === 0).slice(0, 30)
-            toMark.forEach((w) => { if (!w.emphasis) void toggleWordEmphasis(w.id) })
+            void setWordsEmphasis(toMark.filter((w) => !w.emphasis).map((w) => w.id), true)
           }} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 8, padding: '5px 10px', fontSize: 10.5, color: '#c4cad3', cursor: transcript.length === 0 ? 'not-allowed' : 'pointer', opacity: transcript.length === 0 ? 0.45 : 1 }}>Auto-detect emphasis</button>
           <button type="button" disabled={transcribing} onClick={() => void runTranscribe()} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 8, padding: '5px 10px', fontSize: 10.5, color: '#c4cad3', cursor: transcribing ? 'not-allowed' : 'pointer', opacity: transcribing ? 0.55 : 1 }}>{transcribing ? 'Transcribing…' : 'Re-transcribe ↻'}</button>
         </div>

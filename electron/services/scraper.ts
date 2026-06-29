@@ -1,4 +1,5 @@
 import type { AppSettings, ScrapedChannel, ScrapedVideo, ScrapeOrder } from '../../shared/types'
+import { youtubeThumbUrl, type YoutubeThumbQuality } from '../../shared/youtube'
 import { runYtdlpJson, ytdlpOptionsFromSettings, type YtdlpEntry, type YtdlpPlaylist } from './ytdlp'
 
 // High-level scraping: turn a channel URL/@handle into typed stats + a video list.
@@ -25,11 +26,14 @@ function handleOf(data: YtdlpPlaylist, fallbackUrl: string): string {
   return m ? `@${m[1]}` : data.channel ?? fallbackUrl
 }
 
+/** YouTube thumbnail URLs are deterministic from the video ID; no yt-dlp thumbnail parsing. */
+export function thumbUrl(videoId: string, quality: YoutubeThumbQuality = 'hq'): string {
+  return youtubeThumbUrl(videoId, quality)
+}
+
 function pickThumb(e: YtdlpEntry): string {
-  const list = e.thumbnails ?? []
-  if (list.length && list[list.length - 1].url) return list[list.length - 1].url as string
-  // yt-dlp --flat-playlist usually omits thumbnails; YouTube's are deterministic from the id.
-  return e.id ? `https://i.ytimg.com/vi/${e.id}/hqdefault.jpg` : ''
+  // Always use the deterministic URL — faster and more reliable than parsing yt-dlp output.
+  return e.id ? thumbUrl(e.id, 'hq') : ''
 }
 
 function toScrapedVideo(e: YtdlpEntry): ScrapedVideo {

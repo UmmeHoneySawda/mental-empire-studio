@@ -189,7 +189,7 @@ function installMock(): void {
       punchZoom: true,
       stage: 'draft',
       createdAt: new Date().toISOString(),
-      betaOpts: { ...DEFAULT_BETA_OPTS, hook: { enabled: true, text: 'Watch this before you answer' }, overlay: { bottom: true, top: false, left: false, right: false }, autoZoom: { atStart: true, atKeyPhrases: true }, broll: { ...DEFAULT_BETA_OPTS.broll, enabled: true }, style: 'Cinematic' }
+      betaOpts: { ...DEFAULT_BETA_OPTS, hook: { enabled: true, text: 'Watch this before you answer' }, overlay: { ...DEFAULT_BETA_OPTS.overlay, bottom: true }, autoZoom: { atStart: true, atKeyPhrases: true }, broll: { ...DEFAULT_BETA_OPTS.broll, enabled: true }, style: 'Cinematic' }
     }
     projects.unshift(project)
     projectImages.set(project.id, splitImages(project.id, [], project.durationSec))

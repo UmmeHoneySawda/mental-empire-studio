@@ -519,7 +519,7 @@ async function runSmokeM6(): Promise<void> {
     const assHook = buildAss(words, { preset: 'Hormozi', aspect: '16:9', keywords: false, hook: { text: 'wait for it', untilSec: 2.5 } })
     const betaProj = {
       ...proj('p-beta', 'Beta'), kenBurns: false, punchZoom: false,
-      betaOpts: { ...DEFAULT_BETA_OPTS, overlay: { bottom: true, top: false, left: false, right: false }, autoZoom: { atStart: true, atKeyPhrases: false } }
+      betaOpts: { ...DEFAULT_BETA_OPTS, overlay: { ...DEFAULT_BETA_OPTS.overlay, bottom: true }, autoZoom: { atStart: true, atKeyPhrases: false } }
     }
     const betaImgs = [{ id: 'i0', projectId: 'p-beta', ord: 0, path: '/x/a.png', thumb: '', rangeStart: 0, rangeEnd: 12, manual: false }]
     const betaSettings = { ...smokeSettings, beta: { enabled: true, pexelsKey: '', pixabayKey: '', coverrKey: '' } }
@@ -813,7 +813,7 @@ async function runSmokeM7(): Promise<void> {
     }
 
     // headless profile run (fixtures): scrape → download → projects → queued jobs
-    setSettings({ outputFolder: join(app.getPath('temp'), 'me-m7-out') })
+    setSettings({ outputFolder: join(app.getPath('temp'), 'me-m7-out'), transcription: { apiKey: '' } })
     const projectIds = await runProfile('me', true)
     const firstProj = repos.getProject(projectIds[0])
     const cursor = repos.getProfile('me')?.lastSeenVideoId
@@ -1126,7 +1126,7 @@ async function runSmokeE2E(): Promise<void> {
       betaOpts: {
         ...DEFAULT_BETA_OPTS,
         hook: { enabled: true, text: 'wait {for} it' }, // braces test ASS escaping
-        overlay: { bottom: true, top: true, left: true, right: true },
+        overlay: { ...DEFAULT_BETA_OPTS.overlay, bottom: true, top: true, left: true, right: true },
         autoZoom: { atStart: true, atKeyPhrases: true },
         style: 'Cinematic',
         effectPlanJson: JSON.stringify({ transitions: [{ atSec: 6, type: 'circleopen', durationSec: 0.5, sfx: 'whoosh_soft' }], textEffects: [{ scope: 'hook', preset: 'intense-zoom' }] })
@@ -1278,7 +1278,7 @@ async function runDemoRender(): Promise<void> {
     betaOpts: {
       hook: { enabled: true, text: 'they will never admit this' },
       autoHighlight: true,
-      overlay: { bottom: true, top: false, left: false, right: false },
+      overlay: { ...DEFAULT_BETA_OPTS.overlay, bottom: true },
       autoZoom: { atStart: true, atKeyPhrases: true },
       broll: { enabled: !!process.env['ME_BROLL_LOCAL'], density: 'full', poolSize: 6, mode: 'full' },
       style: 'Cinematic',

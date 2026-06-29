@@ -3,8 +3,9 @@ import type { AutomationEvent, Profile, ScrapedVideo } from '../../shared/types'
 import { getRepos } from '../db'
 import { sourceVideos, warmSourceBrollLibrary } from './scrape'
 import { startDownloads } from './download'
-import { createProject, sendToRender } from './compose'
+import { createProject, runTranscribe, sendToRender } from './compose'
 import { emit, hhmm, pushActivity } from './events'
+import { getSettings } from '../store/settings'
 import { postWebhook } from '../services/webhook'
 import { notifyMessage } from '../services/notify'
 import { L } from '../services/logger'
@@ -34,6 +35,8 @@ export async function runProfile(profileId: string, headless = false): Promise<s
   if (inFlight.has(profileId)) return [] // re-entrancy guard
   inFlight.add(profileId)
   try {
+    const settings = getSettings()
+    const canAutoTranscribe = !!settings.transcription.apiKey?.trim()
     emitA({ profileId, profileName: profile.name, phase: 'scraping', message: 'Checking source' })
     const scraped = await sourceVideos(profile.sourceUrl, profile.sourceOrder, profile.sourceCount)
     const list = headless ? newVideos(scraped, profile.lastSeenVideoId) : scraped
@@ -72,6 +75,18 @@ export async function runProfile(profileId: string, headless = false): Promise<s
         })
         projectIds.push(proj.id)
         succeeded.add(sourceVideo.id)
+        if (canAutoTranscribe) {
+          emitA({ profileId, profileName: profile.name, phase: 'transcribing', message: `Transcribing ${i + 1}/${dls.length}` })
+          try {
+            await runTranscribe(proj.id)
+          } catch (e) {
+            const msg = (e as Error).message
+            emitA({ profileId, profileName: profile.name, phase: 'composing', message: `Transcription skipped: ${msg.slice(0, 90)}` })
+            pushActivity({ t: hhmm(), icon: '!', color: '#f5b323', text: `${profile.name}: transcription skipped for ${sourceVideo.title.slice(0, 30)} — ${msg.slice(0, 70)}` })
+          }
+        } else {
+          emitA({ profileId, profileName: profile.name, phase: 'composing', message: 'Project ready; add Groq key to auto-transcribe' })
+        }
         if (headless) sendToRender(proj.id)
       } catch (e) {
         const msg = (e as Error).message

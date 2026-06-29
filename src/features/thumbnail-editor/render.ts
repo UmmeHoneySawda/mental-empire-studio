@@ -60,6 +60,15 @@ function blurCanvas(src: HTMLCanvasElement, blurPx: number): HTMLCanvasElement {
 
 const POSTER_FONT = 'Anton, Hanken Grotesk, sans-serif'
 
+function normWord(word: string): string {
+  return word.toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+function highlightWordsFor(l: TextLayer): Set<string> {
+  const words = l.highlightWords?.length ? l.highlightWords : l.highlightWord ? [l.highlightWord] : []
+  return new Set(words.map(normWord).filter(Boolean))
+}
+
 /** Parse a CSS linear-gradient(...) into Konva gradient stops, else treat as solid. */
 function applyFill(rect: Konva.Rect, fill: string): void {
   const m = fill.match(/linear-gradient\([^,]+,(.+)\)/)
@@ -166,11 +175,15 @@ function drawShape(l: ShapeLayer): Konva.Group {
 function drawText(l: TextLayer): Konva.Group {
   const group = new Konva.Group({ x: l.frame.x, y: l.frame.y, rotation: l.frame.rotation })
   const caps = l.effects.caps
-  const hw = (l.highlightWord ?? '').toLowerCase()
+  const highlights = highlightWordsFor(l)
   // Coerce so legacy boolean templates still render.
   const shadow: FxShadow = asShadow(l.effects.shadow)
   const stroke: FxOutline = asOutline(l.effects.stroke, '#000000')
   const glow: FxGlow = asGlow(l.effects.glow, l.highlightColor)
+  const avgSize = l.lines.length
+    ? l.lines.reduce((a, ln) => a + ln.size, 0) / l.lines.length
+    : 72
+  const lineGap = l.lineGap == null || l.lineGap <= 0 ? Math.max(8, avgSize * 0.12) : l.lineGap
   let cy = 0
   for (const line of l.lines) {
     const text = caps ? line.text.toUpperCase() : line.text
@@ -180,7 +193,7 @@ function drawText(l: TextLayer): Konva.Group {
     const words = text.split(' ')
     for (let i = 0; i < words.length; i++) {
       const w = words[i]
-      const isHi = hw.length > 0 && w.toLowerCase().replace(/[^a-z0-9]/g, '') === hw.replace(/[^a-z0-9]/g, '')
+      const isHi = highlights.has(normWord(w))
       const fill = isHi && l.highlightSquare ? '#111111' : isHi ? l.highlightColor : l.color
       const base = { x: cx, y: cy, text: w, fontFamily: POSTER_FONT, fontSize }
       const measure = new Konva.Text({ ...base })
@@ -218,7 +231,7 @@ function drawText(l: TextLayer): Konva.Group {
       group.add(node)
       cx += wWidth + fontSize * 0.28
     }
-    cy += fontSize * 1.15
+    cy += fontSize + lineGap
   }
   return group
 }
@@ -282,6 +295,8 @@ export async function rasterizeLayers(layers: ThumbnailLayer[]): Promise<string>
   klayer.draw()
   const url = stage.toDataURL({ pixelRatio: 1, mimeType: 'image/png' })
   stage.destroy()
+  container.replaceChildren()
+  for (const img of Object.values(images)) img.removeAttribute('src')
   return url
 }
 

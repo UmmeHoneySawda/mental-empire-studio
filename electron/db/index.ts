@@ -247,6 +247,7 @@ export interface Repositories {
   getTranscript(projectId: string): TranscriptWord[]
   updateWord(wordId: string, text: string): void
   toggleEmphasis(wordId: string): void
+  setEmphasis(wordIds: string[], emphasis: boolean): void
   createRenderJob(job: { id: string; title: string; channel: string; projectId: string }): void
   renderJobs(): RenderJob[]
   renderJob(id: string): RenderJob | undefined
@@ -535,6 +536,14 @@ function buildRepositories(d: Database.Database): Repositories {
     updateWord: (wordId, text) => void d.prepare('UPDATE transcript_words SET word=? WHERE id=?').run(text, wordId),
     toggleEmphasis: (wordId) =>
       void d.prepare('UPDATE transcript_words SET emphasis = CASE emphasis WHEN 1 THEN 0 ELSE 1 END WHERE id=?').run(wordId),
+    setEmphasis: (wordIds, emphasis) => {
+      if (!wordIds.length) return
+      const tx = d.transaction(() => {
+        const st = d.prepare('UPDATE transcript_words SET emphasis=? WHERE id=?')
+        wordIds.forEach((id) => st.run(emphasis ? 1 : 0, id))
+      })
+      tx()
+    },
 
     createRenderJob: (job) => {
       d.prepare(

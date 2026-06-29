@@ -189,7 +189,7 @@ export interface Profile {
 export interface AutomationEvent {
   profileId: string
   profileName: string
-  phase: 'start' | 'scraping' | 'downloading' | 'composing' | 'queued' | 'done' | 'error'
+  phase: 'start' | 'scraping' | 'downloading' | 'composing' | 'transcribing' | 'queued' | 'done' | 'error'
   message: string
   /** project ids created this run (for the interactive quick-edit) */
   projectIds?: string[]
@@ -250,12 +250,17 @@ export interface TextLayer extends BaseLayer {
   kind: 'text'
   text: string
   lines: { text: string; size: number }[]
+  /** @deprecated Use highlightWords instead. Kept for legacy template compat. */
   highlightWord?: string
+  /** Words to highlight (multiple selection). Falls back to highlightWord for legacy. */
+  highlightWords?: string[]
   highlightColor: string
   highlightSquare: boolean
   color: string
   fontFamily: string
   align: 'left' | 'center' | 'right'
+  /** Custom gap between lines in px (0 = auto-calculated). */
+  lineGap?: number
   effects: { shadow: FxShadow; stroke: FxOutline; glow: FxGlow; caps: boolean }
 }
 
@@ -334,7 +339,7 @@ export interface BetaVideoOpts {
   /** auto-emphasize detected keywords in captions (maps to project.keywords) */
   autoHighlight: boolean
   /** simple darkening gradient on the chosen edges, for caption/subject legibility */
-  overlay: { bottom: boolean; top: boolean; left: boolean; right: boolean }
+  overlay: { bottom: boolean; top: boolean; left: boolean; right: boolean; intensity: number }
   /** automatic zoom — at the start, and/or punch-zoom on emphasized words */
   autoZoom: { atStart: boolean; atKeyPhrases: boolean }
   // ---- phase 2: themed b-roll pool ----
@@ -348,7 +353,7 @@ export interface BetaVideoOpts {
 export const DEFAULT_BETA_OPTS: BetaVideoOpts = {
   hook: { enabled: false, text: '' },
   autoHighlight: false,
-  overlay: { bottom: false, top: false, left: false, right: false },
+  overlay: { bottom: false, top: false, left: false, right: false, intensity: 50 },
   autoZoom: { atStart: false, atKeyPhrases: false },
   broll: { enabled: false, density: 'sparse', poolSize: 18, mode: 'full' },
   style: 'None',
@@ -631,6 +636,7 @@ export interface NativeApi {
     get(projectId: string): Promise<TranscriptWord[]>
     updateWord(wordId: string, text: string): Promise<void>
     toggleEmphasis(wordId: string): Promise<void>
+    setEmphasis(wordIds: string[], emphasis: boolean): Promise<void>
   }
   thumbnails: {
     /** persist a template (insert/update) and return the full library */

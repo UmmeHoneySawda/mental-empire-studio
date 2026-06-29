@@ -36,16 +36,16 @@ function longFormFastPath(project: Pick<Project, 'durationSec'>): boolean {
   return project.durationSec >= LONG_FORM_FAST_SEC
 }
 
-function punchZoomFilter(project: Project, beta: ReturnType<typeof asBetaOpts> | null, w: number, h: number): string {
+function punchZoomFilter(project: Project, beta: ReturnType<typeof asBetaOpts> | null, w: number, h: number, allowCpuMotion: boolean): string {
   const requested = project.punchZoom || !!beta?.autoZoom.atKeyPhrases
-  return requested && !longFormFastPath(project)
+  return requested && !longFormFastPath(project) && allowCpuMotion
     ? `,zoompan=z='min(zoom+0.0015,1.08)':d=1:s=${w}x${h}:fps=${FPS}`
     : ''
 }
 
-function stillMotionFilter(project: Project, beta: ReturnType<typeof asBetaOpts> | null, index: number, frames: number, w: number, h: number): string {
+function stillMotionFilter(project: Project, beta: ReturnType<typeof asBetaOpts> | null, index: number, frames: number, w: number, h: number, allowCpuMotion: boolean): string {
   const requested = project.kenBurns || (beta?.autoZoom.atStart && index === 0)
-  return requested && !longFormFastPath(project)
+  return requested && !longFormFastPath(project) && allowCpuMotion
     ? `,zoompan=z='min(zoom+0.0009,1.15)':d=${frames}:s=${w}x${h}:fps=${FPS}`
     : `,fps=${FPS}`
 }
@@ -145,14 +145,21 @@ function assForFilter(p: string): string {
 }
 
 /** Beta "background overlay": smooth alpha ramp cached as a tiny PAM image.
- *  Using a static overlay input avoids per-frame geq math while keeping the fade smooth. */
-function overlayGradientPath(o: { bottom: boolean; top: boolean; left: boolean; right: boolean }, w: number, h: number): string | undefined {
-  const edgeH = Math.max(1, Math.round(h * 0.36))
-  const edgeW = Math.max(1, Math.round(w * 0.36))
+ *  Using a static overlay input avoids per-frame geq math while keeping the fade smooth.
+ *  `intensity` (0–100) controls both the gradient extent and the max alpha:
+ *  0 = disabled, 50 = default (moderate), 100 = heavy vignette. */
+function overlayGradientPath(o: { bottom: boolean; top: boolean; left: boolean; right: boolean; intensity?: number }, w: number, h: number): string | undefined {
   if (!o.bottom && !o.top && !o.left && !o.right) return undefined
+  const intensity = Math.max(0, Math.min(100, o.intensity ?? 50))
+  if (intensity === 0) return undefined
+  // Map intensity 0–100 to extent ratio 0.12–0.60 and max alpha 0–200.
+  const extentRatio = 0.12 + (intensity / 100) * 0.48
+  const maxAlpha = Math.round((intensity / 100) * 200)
+  const edgeH = Math.max(1, Math.round(h * extentRatio))
+  const edgeW = Math.max(1, Math.round(w * extentRatio))
   const dir = join(tmpdir(), 'me-render-overlays')
   mkdirSync(dir, { recursive: true })
-  const key = `${w}x${h}-${o.top ? 't' : ''}${o.right ? 'r' : ''}${o.bottom ? 'b' : ''}${o.left ? 'l' : ''}` || 'none'
+  const key = `${w}x${h}-${o.top ? 't' : ''}${o.right ? 'r' : ''}${o.bottom ? 'b' : ''}${o.left ? 'l' : ''}-i${intensity}` || 'none'
   const path = join(dir, `overlay-${key}.pam`)
   if (existsSync(path)) return path
 
@@ -167,7 +174,7 @@ function overlayGradientPath(o: { bottom: boolean; top: boolean; left: boolean; 
         o.right ? Math.min(1, Math.max(0, (x - (w - edgeW)) / edgeW)) : 0
       ]
       const ramp = Math.max(...ramps)
-      const alpha = Math.round(128 * Math.pow(ramp, 1.7))
+      const alpha = Math.round(maxAlpha * Math.pow(ramp, 1.7))
       const i = (y * w + x) * 4
       pixels[i] = 0
       pixels[i + 1] = 0
@@ -250,6 +257,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
   const { w, h } = dimensions(settings.quality, project.captionAspect)
   const cf = typeof project.crossfade === 'number' ? project.crossfade : 0
   const longForm = longFormFastPath(project)
+  const allowCpuMotion = (settings.encoder ?? 'cpu') === 'cpu'
   const effectiveCf = longForm ? 0 : cf
   // Beta options only apply when beta mode is on; otherwise the graph is unchanged.
   const beta = settings.beta?.enabled ? asBetaOpts(project.betaOpts) : null
@@ -276,7 +284,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
 
     const parts: string[] = []
     const grade = gradeChain(beta?.style).replace(/,+$/, '')
-    const punch = punchZoomFilter(project, beta, w, h)
+    const punch = punchZoomFilter(project, beta, w, h, allowCpuMotion)
     pushFinishedVideo(parts, '[0:v]', useCudaFinal
       ? [`scale_cuda=w=${w}:h=${h}:force_original_aspect_ratio=increase`, 'hwdownload', 'format=nv12', `crop=${w}:${h}`, 'setsar=1', `fps=${FPS}`, grade]
       : [`scale=${w}:${h}:force_original_aspect_ratio=increase`, `crop=${w}:${h}`, 'setsar=1', `fps=${FPS}`, grade], {
@@ -341,7 +349,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
     }
 
     const grade = gradeChain(beta?.style).replace(/,+$/, '')
-    const punch = punchZoomFilter(project, beta, w, h)
+    const punch = punchZoomFilter(project, beta, w, h, allowCpuMotion)
     pushFinishedVideo(parts, `[${last}]`, [grade], { overlayIdx, assPath, punch, prefix: 'bd' })
     const aMap = audioWithSfx(parts, audioIdx, sfxIdx)
     const crf = settings.quality === '1440p' ? '20' : settings.quality === '720p' ? '23' : '21'
@@ -365,7 +373,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
   if (inp.videoBedPath) {
     const overlayPath = beta ? overlayGradientPath(beta.overlay, w, h) : undefined
     const grade = gradeChain(beta?.style).replace(/,+$/, '')
-    const punch = punchZoomFilter(project, beta, w, h)
+    const punch = punchZoomFilter(project, beta, w, h, allowCpuMotion)
     const crfBed = settings.quality === '1440p' ? '20' : settings.quality === '720p' ? '23' : '21'
     const bedParts: string[] = []
     const sfxIdx = inp.sfxPath ? 2 : null
@@ -416,7 +424,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
     // Ken Burns is intentionally disabled on long-form jobs: with burned captions it
     // becomes a second full-video CPU filter pass and made image-only renders as slow
     // as B-roll on the user's 19-minute tests.
-    const motion = stillMotionFilter(project, beta, i, frames, w, h)
+    const motion = stillMotionFilter(project, beta, i, frames, w, h, allowCpuMotion)
     parts.push(`${base}${motion}[v${i}]`)
   })
 
@@ -443,7 +451,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
   // Beta darkening gradient goes under the captions (applied before the subtitles burn).
   const grade = gradeChain(beta?.style).replace(/,+$/, '')
   // Burn captions; punch-zoom adds a subtle pulse when enabled (project flag or beta key-phrases).
-  const punch = punchZoomFilter(project, beta, w, h)
+  const punch = punchZoomFilter(project, beta, w, h, allowCpuMotion)
   pushFinishedVideo(parts, `[${last}]`, [grade], { overlayIdx, assPath, punch, prefix: 'img' })
   const aMap = audioWithSfx(parts, audioIdx, sfxIdx)
 
@@ -488,10 +496,10 @@ export async function runRender(inp: RenderInputs, onProgress?: (p: FfmpegProgre
   } catch (e) {
     if (hasCancelIntent(inp.jobId)) throw e
     if ((inp.settings.encoder ?? 'cpu') === 'cpu') throw e
-    const fallbackSettings = { ...inp.settings, encoder: 'cpu' as const }
-    const args = buildRenderArgs({ ...inp, settings: fallbackSettings, caps: FALLBACK_CAPS })
-    if (inp.logPath) appendFileSync(inp.logPath, `\n[ffmpeg:fallback-cpu]\n${ffmpegCommandLine(args)}\n`)
-    await spawnFfmpeg(args, inp.project.durationSec, onProgress, inp.jobId)
+    const gpuError = (e as Error).message
+    if (inp.logPath) appendFileSync(inp.logPath, `\n[ffmpeg:gpu-failed] ${gpuError}\n`)
+    logger.scope('render').warn(`GPU encode failed (${inp.settings.encoder}): ${gpuError}`)
+    throw new Error(`GPU encode failed for ${inp.settings.encoder.toUpperCase()}; CPU fallback is disabled. Fix the GPU encoder/driver or choose CPU in Settings. ${gpuError}`)
   }
   if (inp.logPath) appendFileSync(inp.logPath, '\n[audio-master]\ntwo-pass loudnorm I=-14 TP=-1 LRA=11\n')
   try {

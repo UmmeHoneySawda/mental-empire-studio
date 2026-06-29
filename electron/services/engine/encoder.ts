@@ -19,9 +19,9 @@ export const FALLBACK_CAPS: RenderCapabilities = {
   ffmpegHasCuda: false
 }
 
-export function selectEncoder(settings: Pick<AppSettings, 'encoder'>, caps: RenderCapabilities = FALLBACK_CAPS, crfOrCq = '21'): SelectedEncoder {
+export function selectEncoder(settings: Pick<AppSettings, 'encoder'>, _caps: RenderCapabilities = FALLBACK_CAPS, crfOrCq = '21'): SelectedEncoder {
   const requested = settings.encoder ?? 'cpu'
-  if (requested === 'nvenc' && caps.hasNvenc) {
+  if (requested === 'nvenc') {
     return {
       id: 'nvenc',
       label: 'GPU-NVENC',
@@ -30,7 +30,7 @@ export function selectEncoder(settings: Pick<AppSettings, 'encoder'>, caps: Rend
       args: ['-c:v', 'h264_nvenc', '-preset', 'p4', '-tune', 'hq', '-rc', 'vbr', '-cq', crfOrCq, '-b:v', '0', '-pix_fmt', 'yuv420p']
     }
   }
-  if (requested === 'qsv' && caps.hasQsv) {
+  if (requested === 'qsv') {
     return {
       id: 'qsv',
       label: 'GPU-QSV',
@@ -39,7 +39,7 @@ export function selectEncoder(settings: Pick<AppSettings, 'encoder'>, caps: Rend
       args: ['-c:v', 'h264_qsv', '-preset', 'medium', '-global_quality', crfOrCq, '-pix_fmt', 'yuv420p']
     }
   }
-  if (requested === 'amf' && caps.hasAmf) {
+  if (requested === 'amf') {
     return {
       id: 'amf',
       label: 'GPU-AMF',
@@ -50,7 +50,7 @@ export function selectEncoder(settings: Pick<AppSettings, 'encoder'>, caps: Rend
   }
   return {
     id: 'cpu',
-    label: requested === 'cpu' ? 'CPU-libx264' : `CPU-libx264 fallback from ${requested.toUpperCase()}`,
+    label: 'CPU-libx264',
     device: 'cpu',
     codec: 'libx264',
     args: ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', crfOrCq, '-pix_fmt', 'yuv420p']

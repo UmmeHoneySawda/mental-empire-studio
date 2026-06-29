@@ -23,6 +23,11 @@ function norm(s: string): string {
   return s.toLowerCase().replace(/[^a-z0-9]/g, '')
 }
 
+function highlightSet(layer: TextLayer): Set<string> {
+  const words = layer.highlightWords?.length ? layer.highlightWords : layer.highlightWord ? [layer.highlightWord] : []
+  return new Set(words.map(norm).filter(Boolean))
+}
+
 /** Split words into 1–2 lines minimizing the length difference between them. */
 export function balanceLines(words: string[]): string[][] {
   if (words.length <= 1) return [words]
@@ -58,8 +63,8 @@ export function autoArrangeText(
   const words = raw.split(/\s+/).filter(Boolean)
   const grouped = balanceLines(words)
 
-  const hw = norm(layer.highlightWord ?? '')
-  const hasHighlight = hw.length > 0 && grouped.some((g) => g.some((w) => norm(w) === hw))
+  const highlights = highlightSet(layer)
+  const hasHighlight = highlights.size > 0 && grouped.some((g) => g.some((w) => highlights.has(norm(w))))
 
   const inset = Math.round(stage.w * SAFE_INSET)
   const availW = stage.w - inset * 2
@@ -71,13 +76,15 @@ export function autoArrangeText(
 
   const lines = grouped.map((g) => {
     const text = g.join(' ')
-    const highlighted = hw.length > 0 && g.some((w) => norm(w) === hw)
+    const highlighted = g.some((w) => highlights.has(norm(w)))
     const size = highlighted ? Math.min(MAX_SIZE, Math.round(base * 1.25)) : base
     return { text, size }
   })
 
   const blockW = Math.max(...lines.map((l) => Math.round(l.text.length * CHAR_W * l.size)))
-  const blockH = lines.reduce((a, l) => a + l.size, 0)
+  const avgSize = lines.reduce((a, l) => a + l.size, 0) / lines.length
+  const lineGap = layer.lineGap == null || layer.lineGap <= 0 ? Math.max(8, avgSize * 0.12) : layer.lineGap
+  const blockH = lines.reduce((a, l) => a + l.size, 0) + Math.max(0, lines.length - 1) * lineGap
 
   // Place the block opposite the subject (largest empty region), bottom-aligned.
   const subjectCenter = subjectBounds ? subjectBounds.x + subjectBounds.width / 2 : stage.w

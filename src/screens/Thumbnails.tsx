@@ -1,4 +1,4 @@
-import React, { useEffect, useRef, useState } from 'react'
+import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store/useStore'
 import { useData } from '../store/useData'
 import { ScreenPad } from '../components/primitives'
@@ -6,6 +6,7 @@ import type { BackgroundLayer, FxGlow, FxOutline, FxShadow, SubjectLayer, TextLa
 import { asGlow, asOutline, asShadow } from '@shared/types'
 import { ThumbCanvas } from '../features/thumbnail-editor/ThumbCanvas'
 import { rasterizeLayers, withHeadline } from '../features/thumbnail-editor/render'
+import { youtubeIdFromDownloadId, youtubeThumbUrl, type YoutubeThumbQuality } from '@shared/youtube'
 
 function layerGlyph(l: ThumbnailLayer): string {
   if (l.kind === 'text') return 'T'
@@ -97,6 +98,27 @@ function LayersPanel(): JSX.Element {
 
 const FX_SWATCHES = ['#ffffff', '#000000', '#f2c200', '#e8403a', '#19c3d6', '#8b7cff', '#36c98e']
 
+function normWord(word: string): string {
+  return word.toLowerCase().replace(/[^a-z0-9]/g, '')
+}
+
+function layerHighlightWords(layer: TextLayer): string[] {
+  return layer.highlightWords?.length ? layer.highlightWords : layer.highlightWord ? [layer.highlightWord] : []
+}
+
+function wordsFromLayer(layer: TextLayer): string[] {
+  const seen = new Set<string>()
+  return layer.lines
+    .flatMap((ln) => ln.text.split(/\s+/))
+    .map((w) => w.trim())
+    .filter((w) => {
+      const key = normWord(w)
+      if (!key || seen.has(key)) return false
+      seen.add(key)
+      return true
+    })
+}
+
 function FxSlider({ label, value, min, max, suffix, onChange }: { label: string; value: number; min: number; max: number; suffix?: string; onChange: (n: number) => void }): JSX.Element {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
@@ -157,8 +179,12 @@ function TextLayerEditor({ layer }: { layer: TextLayer }): JSX.Element {
   const subjectFile = useRef<HTMLInputElement>(null)
   const bgFile = useRef<HTMLInputElement>(null)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
+  const [customHighlight, setCustomHighlight] = useState('')
   const swatches = ['#ffffff', '#f2c200', '#e8403a', '#19c3d6']
   const bgSwatches = ['linear-gradient(135deg,#2a2540,#46243a)', '#1a1a1a', '#0f3a32', '#23304a']
+  const highlightWords = useMemo(() => layerHighlightWords(layer), [layer])
+  const highlightKeys = useMemo(() => new Set(highlightWords.map(normWord).filter(Boolean)), [highlightWords])
+  const textWords = useMemo(() => wordsFromLayer(layer), [layer])
 
   // Focus the textarea when the canvas triggers dblclick on this text layer
   useEffect(() => {
@@ -170,6 +196,27 @@ function TextLayerEditor({ layer }: { layer: TextLayer }): JSX.Element {
   const setLineSize = (i: number, size: number): void => {
     const lines = layer.lines.map((ln, idx) => (idx === i ? { ...ln, size } : ln))
     updateLayer(layer.id, { lines })
+  }
+
+  const setHighlights = (words: string[]): void => {
+    const clean = words.map((w) => w.trim()).filter(Boolean)
+    updateLayer(layer.id, { highlightWords: clean, highlightWord: clean[0] ?? '' } as Partial<TextLayer>)
+  }
+
+  const toggleHighlight = (word: string): void => {
+    const key = normWord(word)
+    if (!key) return
+    const next = highlightKeys.has(key)
+      ? highlightWords.filter((w) => normWord(w) !== key)
+      : [...highlightWords, word]
+    setHighlights(next)
+  }
+
+  const addCustomHighlight = (): void => {
+    const word = customHighlight.trim()
+    if (!word || highlightKeys.has(normWord(word))) return
+    setHighlights([...highlightWords, word])
+    setCustomHighlight('')
   }
 
   const resetEffects = (): void => {
@@ -203,15 +250,35 @@ function TextLayerEditor({ layer }: { layer: TextLayer }): JSX.Element {
             <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#8a909c', width: 30 }}>{ln.size}</span>
           </div>
         ))}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginTop: 9 }}>
+          <span style={{ fontSize: 10.5, color: '#8a909c', width: 42 }}>Gap</span>
+          <input type="range" min={0} max={40} value={layer.lineGap ?? 0} onChange={(e) => updateLayer(layer.id, { lineGap: Number(e.target.value) } as Partial<TextLayer>)} style={{ flex: 1, accentColor: 'var(--accent)' }} />
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#8a909c', width: 40 }}>{layer.lineGap ? `${layer.lineGap}px` : 'auto'}</span>
+        </div>
       </CollapseSection>
 
-      <CollapseSection label="Highlighted word">
-        <input
-          value={layer.highlightWord ?? ''}
-          onChange={(e) => updateLayer(layer.id, { highlightWord: e.target.value })}
-          placeholder="e.g. FAKE"
-          style={{ width: '100%', border: '1px solid #23272f', borderRadius: 8, padding: '7px 10px', fontSize: 12, color: '#dde0e5', background: '#0e1116', marginBottom: 10, boxSizing: 'border-box' }}
-        />
+      <CollapseSection label="Highlighted words">
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, marginBottom: 10 }}>
+          {textWords.length === 0 && <span style={{ fontSize: 10.5, color: '#5b616f' }}>Type headline words above to pick highlights.</span>}
+          {textWords.map((word) => {
+            const on = highlightKeys.has(normWord(word))
+            return (
+              <button key={word} type="button" onClick={() => toggleHighlight(word)} style={{ border: on ? '1px solid var(--accent)' : '1px solid #23272f', color: on ? 'var(--accent)' : '#8a909c', background: on ? 'var(--accent-soft)' : '#0e1116', borderRadius: 7, padding: '5px 9px', fontSize: 10.5, cursor: 'pointer' }}>
+                {word}
+              </button>
+            )
+          })}
+        </div>
+        <div style={{ display: 'flex', gap: 6, marginBottom: 10 }}>
+          <input
+            value={customHighlight}
+            onChange={(e) => setCustomHighlight(e.target.value)}
+            onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); addCustomHighlight() } }}
+            placeholder="Custom word"
+            style={{ flex: 1, border: '1px solid #23272f', borderRadius: 8, padding: '7px 10px', fontSize: 12, color: '#dde0e5', background: '#0e1116', boxSizing: 'border-box' }}
+          />
+          <button type="button" onClick={addCustomHighlight} style={{ border: '1px solid #262b34', borderRadius: 8, padding: '7px 10px', fontSize: 11, color: '#c4cad3', background: '#15181f', cursor: 'pointer' }}>Add</button>
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 9 }}>
           <span style={{ fontSize: 10.5, color: '#8a909c', flex: 1 }}>Square background</span>
           <div onClick={() => updateLayer(layer.id, { highlightSquare: !layer.highlightSquare })} style={{ width: 34, height: 19, borderRadius: 11, background: layer.highlightSquare ? 'var(--accent)' : '#2b303b', position: 'relative', cursor: 'pointer' }}><span style={{ position: 'absolute', top: 2, right: layer.highlightSquare ? 2 : 17, width: 15, height: 15, borderRadius: '50%', background: '#fff' }} /></div>
@@ -250,6 +317,31 @@ function TextLayerEditor({ layer }: { layer: TextLayer }): JSX.Element {
         <input ref={bgFile} type="file" accept="image/*" style={{ display: 'none' }} onChange={async (e) => { const f = e.target.files?.[0]; if (f) setBackground({ mode: 'image', src: await readAsDataUrl(f) } as Partial<BackgroundLayer>) }} />
         <div onClick={() => bgFile.current?.click()} className="me-btn" style={{ border: '1px solid #262b34', borderRadius: 8, padding: 8, textAlign: 'center', fontSize: 11, color: '#c4cad3', background: '#0e1116', cursor: 'pointer' }}>⇪ Use image background</div>
       </CollapseSection>
+    </div>
+  )
+}
+
+function OriginalThumbnailReference(): JSX.Element | null {
+  const activeProject = useData((s) => s.activeProject)
+  const videoId = activeProject ? youtubeIdFromDownloadId(activeProject.downloadId) : ''
+  const [quality, setQuality] = useState<YoutubeThumbQuality>('max')
+  useEffect(() => setQuality('max'), [videoId])
+  if (!videoId) return null
+  const src = youtubeThumbUrl(videoId, quality)
+  return (
+    <div style={{ marginTop: 12, border: '1px solid #1d2129', borderRadius: 12, background: '#12151b', overflow: 'hidden' }}>
+      <div style={{ display: 'flex', alignItems: 'center', padding: '8px 10px', borderBottom: '1px solid #1d2129' }}>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, color: '#6a7180', letterSpacing: '.6px' }}>ORIGINAL THUMBNAIL</span>
+        <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: 9, color: '#5b616f' }}>{quality}</span>
+      </div>
+      <div style={{ aspectRatio: '16/9', background: '#0e1116' }}>
+        <img
+          src={src}
+          alt="Original YouTube thumbnail"
+          onError={() => setQuality((q) => q === 'max' ? 'hq' : q === 'hq' ? 'mq' : 'default')}
+          style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+        />
+      </div>
     </div>
   )
 }
@@ -344,6 +436,7 @@ export function Thumbnails(): JSX.Element {
             width becomes the flex min-size and pushes the inspector off the right edge. */}
         <div style={{ minWidth: 0 }}>
           <ThumbCanvas />
+          <OriginalThumbnailReference />
           <div style={{ fontSize: 11.5, color: '#6a7180', marginTop: 11, lineHeight: 1.5 }}>Drag any layer on the canvas; the selected subject/shape gets resize handles. <span style={{ color: 'var(--accent)' }}>Auto-arrange type</span> lays out the headline opposite the subject. Dashed = title-safe.</div>
         </div>
         <div className="me-thumb-inspector" style={{ minWidth: 0, border: '1px solid #1d2129', borderRadius: 14, background: '#12151b', overflow: 'hidden', display: 'flex', flexDirection: 'column', maxHeight: 'calc(100vh - 180px)' }}>

@@ -21,6 +21,41 @@ const CAPTION_PACES: Array<{ value: NonNullable<Profile['captionPace']>; label: 
 ]
 const VIDEO_STYLES: VideoStyle[] = ['None', 'Cinematic', 'Intense', 'Heartfelt', 'Clean']
 const BROLL_DENSITIES: BrollDensity[] = ['sparse', 'keywords', 'full']
+const PROFILE_STEPS: Array<{ phase: 'scraping' | 'downloading' | 'composing' | 'transcribing' | 'queued' | 'done'; label: string }> = [
+  { phase: 'scraping', label: 'Scrape' },
+  { phase: 'downloading', label: 'Download' },
+  { phase: 'composing', label: 'Project' },
+  { phase: 'transcribing', label: 'Captions' },
+  { phase: 'done', label: 'Edit' }
+]
+
+function ProfileStepper({ phase }: { phase?: ProfileRunPhase }): JSX.Element {
+  const active = phase === 'queued' ? 'done' : phase
+  const activeIdx = PROFILE_STEPS.findIndex((s) => s.phase === active)
+  return (
+    <div style={{ display: 'grid', gridTemplateColumns: `repeat(${PROFILE_STEPS.length},1fr)`, gap: 4, marginBottom: 10 }}>
+      {PROFILE_STEPS.map((s, i) => {
+        const on = activeIdx >= 0 && i <= activeIdx
+        return (
+          <span key={s.phase} title={s.label} style={{ height: 5, borderRadius: 5, background: on ? (s.phase === active ? 'var(--accent)' : '#36c98e') : '#252a34' }} />
+        )
+      })}
+    </div>
+  )
+}
+
+type ProfileRunPhase = 'start' | 'scraping' | 'downloading' | 'composing' | 'transcribing' | 'queued' | 'done' | 'error'
+
+function pipelineSummary(p: Profile, groqReady: boolean): string {
+  const beta = asBetaOpts(p.betaOpts)
+  return [
+    `${p.sourceOrder} ${p.sourceCount}`,
+    'MP3 download',
+    groqReady ? 'auto captions' : 'captions manual',
+    p.thumbnailTemplateId ? 'template ready' : 'thumbnail manual',
+    beta.broll.enabled ? `B-roll ${beta.broll.density}` : 'no B-roll'
+  ].join(' → ')
+}
 
 function ProfileEditor({ profile, onClose }: { profile: Profile; onClose: () => void }): JSX.Element {
   const saveProfile = useData((s) => s.saveProfile)
@@ -145,6 +180,11 @@ function ProfileEditor({ profile, onClose }: { profile: Profile; onClose: () => 
           {betaToggle('Start zoom', beta.autoZoom.atStart, () => setBeta({ autoZoom: { ...beta.autoZoom, atStart: !beta.autoZoom.atStart } }))}
           {betaToggle('Key zoom', beta.autoZoom.atKeyPhrases, () => setBeta({ autoZoom: { ...beta.autoZoom, atKeyPhrases: !beta.autoZoom.atKeyPhrases } }))}
         </div>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 9, pointerEvents: betaOn ? 'auto' : 'none' }}>
+          <span style={{ fontSize: 10.5, color: '#8a909c', width: 58 }}>Overlay</span>
+          <input type="range" min={0} max={100} value={beta.overlay.intensity ?? 50} onChange={(e) => setBeta({ overlay: { ...beta.overlay, intensity: Number(e.target.value) } })} style={{ flex: 1, accentColor: 'var(--accent)' }} />
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#8a909c', width: 34, textAlign: 'right' }}>{beta.overlay.intensity ?? 50}%</span>
+        </div>
       </div>
       <div><div style={label}>THUMBNAIL TEMPLATE</div>
         <select value={p.thumbnailTemplateId ?? ''} onChange={(e) => set({ thumbnailTemplateId: e.target.value || undefined })} style={field}>
@@ -178,7 +218,7 @@ function newProfile(): Profile {
       autoHighlight: true,
       overlay: { ...DEFAULT_BETA_OPTS.overlay, bottom: true },
       autoZoom: { atStart: true, atKeyPhrases: true },
-      broll: { ...DEFAULT_BETA_OPTS.broll, enabled: true, density: 'sparse', poolSize: 18 },
+      broll: { ...DEFAULT_BETA_OPTS.broll, enabled: false, density: 'sparse', poolSize: 18 },
       style: 'Cinematic'
     }
   }
@@ -191,6 +231,7 @@ export function Profiles(): JSX.Element {
   const runningProfileId = useData((s) => s.runningProfileId)
   const automationEvents = useData((s) => s.automationEvents)
   const automationErrors = useData((s) => s.automationErrors)
+  const groqReady = useStore((s) => !!s.settings.transcription.apiKey.trim())
   const activeProfile = useStore((s) => s.profile)
   const setProfile = useStore((s) => s.setProfile)
   const setActive = useStore((s) => s.setActive)
@@ -223,6 +264,7 @@ export function Profiles(): JSX.Element {
           const event = automationEvents[p.id]
           const error = automationErrors[p.id]
           const eventMessage = error ?? event?.message ?? 'Starting...'
+          const summary = pipelineSummary(p, groqReady)
           return (
             <div key={p.id} onClick={() => setProfile(p.name)} className="me-card" style={{ border: on ? '1.5px solid var(--accent)' : '1px solid #1d2129', borderRadius: 15, padding: 18, background: on ? 'linear-gradient(165deg,var(--accent-soft),#0f1217)' : '#12151b', cursor: 'pointer' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 15 }}>
@@ -238,10 +280,16 @@ export function Profiles(): JSX.Element {
                   </div>
                 ))}
               </div>
+              <div title={summary} className="me-clamp-2" style={{ border: '1px solid #1d2129', background: '#0e1116', borderRadius: 9, padding: '8px 10px', marginBottom: 12, fontSize: 10.5, color: '#8a909c', lineHeight: 1.35 }}>
+                {summary}
+              </div>
               {(running || event || error) && (
-                <div title={eventMessage} className="me-clamp-2" style={{ border: `1px solid ${error ? '#4a2530' : '#262b34'}`, background: error ? 'rgba(255,90,110,.08)' : '#0e1116', borderRadius: 9, padding: '8px 10px', marginBottom: 12, fontSize: 11, color: error ? '#ff8a96' : '#aab0bb', lineHeight: 1.35 }}>
-                  {eventMessage}
-                </div>
+                <>
+                  <ProfileStepper phase={(error ? 'error' : event?.phase) as ProfileRunPhase | undefined} />
+                  <div title={eventMessage} className="me-clamp-2" style={{ border: `1px solid ${error ? '#4a2530' : '#262b34'}`, background: error ? 'rgba(255,90,110,.08)' : '#0e1116', borderRadius: 9, padding: '8px 10px', marginBottom: 12, fontSize: 11, color: error ? '#ff8a96' : '#aab0bb', lineHeight: 1.35 }}>
+                    {eventMessage}
+                  </div>
+                </>
               )}
               <div style={{ display: 'flex', gap: 9 }}>
                 <div onClick={(e) => { e.stopPropagation(); if (!running) void run(p) }} className="me-btn" style={{ flex: 1, textAlign: 'center', background: on ? 'linear-gradient(180deg,var(--accent),var(--accent-deep))' : '#15181f', color: on ? 'var(--accent-ink)' : '#c4cad3', border: on ? 'none' : '1px solid #262b34', borderRadius: 9, padding: 9, fontSize: 12, fontWeight: 600, cursor: 'pointer', opacity: running ? 0.6 : 1 }}>{running ? 'Running…' : '▶ Run'}</div>

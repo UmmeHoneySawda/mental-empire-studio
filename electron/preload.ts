@@ -106,7 +106,8 @@ const api: NativeApi = {
     run: (projectId: string) => ipcRenderer.invoke('transcribe:run', projectId),
     get: (projectId: string) => ipcRenderer.invoke('transcribe:get', projectId),
     updateWord: (wordId: string, text: string) => ipcRenderer.invoke('transcribe:updateWord', wordId, text),
-    toggleEmphasis: (wordId: string) => ipcRenderer.invoke('transcribe:toggleEmphasis', wordId)
+    toggleEmphasis: (wordId: string) => ipcRenderer.invoke('transcribe:toggleEmphasis', wordId),
+    setEmphasis: (wordIds: string[], emphasis: boolean) => ipcRenderer.invoke('transcribe:setEmphasis', wordIds, emphasis)
   },
 
   thumbnails: {

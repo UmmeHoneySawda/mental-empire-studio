@@ -3,6 +3,7 @@ import { ScreenPad, Eyebrow, Title } from '../components/primitives'
 import { useData } from '../store/useData'
 import { useStore } from '../store/useStore'
 import type { ScrapeOrder } from '@shared/types'
+import { youtubeIdFromDownloadId, youtubeThumbUrl, type YoutubeThumbQuality } from '@shared/youtube'
 
 const GRADS = [
   'linear-gradient(135deg,#2a2540,#46243a)', 'linear-gradient(135deg,#1a2e3a,#0f3a32)',
@@ -16,6 +17,31 @@ function fmtDur(sec: number): string {
   const m = Math.floor(sec / 60)
   const s = Math.round(sec % 60)
   return `${m}:${String(s).padStart(2, '0')}`
+}
+
+function YouTubeThumb({ videoId, alt, fallback, selected }: { videoId: string; alt: string; fallback: string; selected?: boolean }): JSX.Element {
+  const [quality, setQuality] = useState<YoutubeThumbQuality>('max')
+  const [failed, setFailed] = useState(false)
+  const src = videoId && !failed ? youtubeThumbUrl(videoId, quality) : ''
+  return (
+    <div style={{ position: 'relative', width: '100%', height: '100%', background: fallback, backgroundSize: 'cover', backgroundPosition: 'center' }}>
+      {src && (
+        <img
+          src={src}
+          alt={alt}
+          onError={() => {
+            if (quality === 'max') setQuality('hq')
+            else if (quality === 'hq') setQuality('mq')
+            else setFailed(true)
+          }}
+          style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
+        />
+      )}
+      {selected != null && (
+        <div className="me-vidsel" style={{ position: 'absolute', top: 8, left: 8, width: 22, height: 22, borderRadius: 6, border: `1.5px solid ${selected ? 'var(--accent)' : 'rgba(255,255,255,.5)'}`, background: selected ? 'var(--accent)' : 'rgba(0,0,0,.45)', display: 'grid', placeItems: 'center', color: 'var(--accent-ink)' }}>{selected ? '✓' : ''}</div>
+      )}
+    </div>
+  )
 }
 
 export function Download(): JSX.Element {
@@ -122,8 +148,8 @@ export function Download(): JSX.Element {
           const on = sel.has(v.id)
           return (
             <div key={v.id} onClick={() => toggle(v.id)} className="me-vid me-card" style={{ border: `1px solid ${on ? 'var(--accent)' : '#1d2129'}`, borderRadius: 12, overflow: 'hidden', background: '#12151b', cursor: 'pointer' }}>
-              <div style={{ position: 'relative', height: 92, background: GRADS[i % GRADS.length], backgroundSize: 'cover', backgroundPosition: 'center', ...(v.thumb && v.thumb.startsWith('http') ? { backgroundImage: `url("${v.thumb}")` } : v.thumb && v.thumb.startsWith('linear-gradient') ? { background: v.thumb } : {}) }}>
-                <div className="me-vidsel" style={{ position: 'absolute', top: 8, left: 8, width: 22, height: 22, borderRadius: 6, border: `1.5px solid ${on ? 'var(--accent)' : 'rgba(255,255,255,.5)'}`, background: on ? 'var(--accent)' : 'rgba(0,0,0,.45)', display: 'grid', placeItems: 'center', color: 'var(--accent-ink)' }}>{on ? '✓' : ''}</div>
+              <div style={{ position: 'relative', height: 92, overflow: 'hidden' }}>
+                <YouTubeThumb videoId={v.id} alt={v.title} fallback={GRADS[i % GRADS.length]} selected={on} />
                 <div style={{ position: 'absolute', bottom: 7, right: 7, fontFamily: 'var(--font-mono)', fontSize: 10, background: 'rgba(0,0,0,.7)', color: '#dde0e5', padding: '2px 6px', borderRadius: 5 }}>{fmtDur(v.durationSec)}</div>
               </div>
               <div style={{ padding: '11px 12px' }}>
@@ -165,7 +191,9 @@ export function Download(): JSX.Element {
             return (
               <div key={d.id} className="me-row" style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid #14171d' }}>
                 <div style={{ flex: 2.4, display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
-                  <div style={{ width: 48, height: 27, borderRadius: 6, background: d.thumb, flex: 'none' }} />
+                  <div style={{ width: 48, height: 27, borderRadius: 6, background: d.thumb?.startsWith('linear-gradient') ? d.thumb : GRADS[0], flex: 'none', overflow: 'hidden' }}>
+                    <YouTubeThumb videoId={youtubeIdFromDownloadId(d.id)} alt={d.title} fallback={d.thumb?.startsWith('linear-gradient') ? d.thumb : GRADS[0]} />
+                  </div>
                   <div style={{ minWidth: 0, flex: 1 }}><div title={d.title} className="me-ellipsis" style={{ fontSize: 12.5, color: '#dde0e5' }}>{d.title}</div><div style={{ fontSize: 10, color: '#5b616f', fontFamily: 'var(--font-mono)' }}>{d.size} · {d.when}</div></div>
                 </div>
                 <div title={d.channel} style={{ width: 120, fontSize: 11, color: '#8a909c', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.channel}</div>

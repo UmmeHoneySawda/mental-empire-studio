@@ -67,6 +67,7 @@ interface DataState {
   setCaptions: (patch: Partial<Project>) => Promise<void>
   runTranscribe: () => Promise<void>
   toggleWordEmphasis: (wordId: string) => Promise<void>
+  setWordsEmphasis: (wordIds: string[], emphasis: boolean) => Promise<void>
   sendActiveToRender: () => Promise<void>
   loadRenderJobs: () => Promise<void>
   renderAll: () => Promise<void>
@@ -294,6 +295,13 @@ export const useData = create<DataState>((set, get) => ({
     const p = get().activeProject
     if (!a || !p) return
     await a.transcribe.toggleEmphasis(wordId)
+    set({ transcript: await a.transcribe.get(p.id) })
+  },
+  setWordsEmphasis: async (wordIds, emphasis) => {
+    const a = api()
+    const p = get().activeProject
+    if (!a || !p || wordIds.length === 0) return
+    await a.transcribe.setEmphasis(wordIds, emphasis)
     set({ transcript: await a.transcribe.get(p.id) })
   },
   sendActiveToRender: async () => {

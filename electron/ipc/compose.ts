@@ -12,10 +12,8 @@ import { transcribeAudio } from '../services/transcribe'
 import { emit, hhmm, pushActivity } from './events'
 import { outputDir } from '../services/queue'
 import { buildAss } from '../services/captions'
-import { dimensions, runRender } from '../services/render'
-import { buildBrollManifest } from '../services/broll'
+import { runRender } from '../services/render'
 import { probeRenderCapabilities } from '../services/engine/caps'
-import { L } from '../services/logger'
 
 // Compose orchestration: build a project from a downloaded mp3, manage its image
 // ranges + caption recipe, run transcription (Groq), and push to the render queue.
@@ -199,7 +197,7 @@ async function previewProject(projectId: string): Promise<string> {
   const settings = getSettings()
   const previewSettings = { ...settings, quality: '720p' as const }
   const caps = probeRenderCapabilities()
-  const previewSec = Math.max(1, Math.min(8, project.durationSec || 8))
+  const previewSec = Math.max(1, Math.min(5, project.durationSec || 5))
   const dir = join(outputDir(), 'previews')
   mkdirSync(dir, { recursive: true })
   const base = `${safeName(project.title)}-preview-${Date.now()}`
@@ -233,40 +231,23 @@ async function previewProject(projectId: string): Promise<string> {
 
   const existingImages = repos.getProjectImages(projectId)
   const images: ProjectImage[] = existingImages[0]
-    ? [{ ...existingImages[0], rangeStart: 0, rangeEnd: previewSec }]
+    ? [{
+        ...existingImages[0],
+        path: existingImages[0].thumb || existingImages[0].path,
+        thumb: existingImages[0].thumb || existingImages[0].path,
+        rangeStart: 0,
+        rangeEnd: previewSec
+      }]
     : []
-  let brollManifestPath: string | undefined
-  if (beta?.broll.enabled && (settings.beta.pexelsKey || settings.beta.pixabayKey || settings.beta.coverrKey || process.env['ME_BROLL_LOCAL'] || process.env['ME_BROLL_FIXTURE'])) {
-    try {
-      const manifest = await buildBrollManifest({
-        settings: previewSettings,
-        caps,
-        words,
-        durationSec: previewSec,
-        density: beta.broll.density,
-        poolSize: Math.min(4, beta.broll.poolSize),
-        dims: dimensions(previewSettings.quality, project.captionAspect),
-        fps: 24,
-        style,
-        jobId: `preview-${projectId}`,
-        maxSegments: 2,
-        logPath
-      })
-      brollManifestPath = manifest?.manifestPath
-    } catch (e) {
-      // Preview should remain useful even if stock footage is offline/rate-limited.
-      L.warn(`preview b-roll unavailable for ${projectId}: ${(e as Error).message}`)
-    }
-  }
+  const previewBeta = beta ? { ...beta, broll: { ...beta.broll, enabled: false } } : project.betaOpts
 
   await runRender({
-    project: { ...project, durationSec: previewSec },
+    project: { ...project, durationSec: previewSec, kenBurns: false, punchZoom: false, betaOpts: previewBeta },
     images,
     assPath,
     outPath,
     settings: previewSettings,
     caps,
-    brollManifestPath,
     transition: beta && style !== 'None' ? styleTransition(style) : undefined,
     plan,
     jobId: `preview-${projectId}`,
@@ -297,6 +278,7 @@ export function registerComposeIpc(): void {
   ipcMain.handle('transcribe:get', (_e, projectId: string) => repos().getTranscript(projectId))
   ipcMain.handle('transcribe:updateWord', (_e, wordId: string, text: string) => repos().updateWord(wordId, text))
   ipcMain.handle('transcribe:toggleEmphasis', (_e, wordId: string) => repos().toggleEmphasis(wordId))
+  ipcMain.handle('transcribe:setEmphasis', (_e, wordIds: string[], emphasis: boolean) => repos().setEmphasis(wordIds, emphasis))
 }
 
 // Exported for the headless M4 smoke harness.

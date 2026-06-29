@@ -832,12 +832,9 @@ async function normalizeSegment(
     brollInfo(opts.logPath, `normalize done segment=${index} bytes=${fileBytes(outPath)} path=${outPath}`)
   } catch (e) {
     if (opts.shouldCancel?.() || (opts.settings.encoder ?? 'cpu') === 'cpu') throw e
-    brollWarn(opts.logPath, `normalize hardware encode failed; retrying CPU for segment ${index}: ${(e as Error).message}`)
-    const fallbackSettings = { ...opts.settings, encoder: 'cpu' as const }
-    const fallbackArgs = buildBrollNormalizeArgs(segment, outPath, opts.dims, opts.fps, fallbackSettings, FALLBACK_CAPS, { style: opts.style, index, total: opts.total })
-    brollInfo(opts.logPath, `normalize fallback start segment=${index} encoder=cpu style=${opts.style ?? 'None'} duration=${durationSec.toFixed(2)} src=${segment.path} out=${outPath} cmd=${ffmpegPath()} ${fallbackArgs.join(' ')}`)
-    await spawnNormalize(fallbackArgs, durationSec, opts)
-    brollInfo(opts.logPath, `normalize fallback done segment=${index} bytes=${fileBytes(outPath)} path=${outPath}`)
+    const msg = (e as Error).message
+    brollWarn(opts.logPath, `normalize hardware encode failed; CPU fallback disabled for segment ${index}: ${msg}`)
+    throw new Error(`B-roll GPU normalize failed for ${opts.settings.encoder.toUpperCase()}; CPU fallback is disabled. ${msg}`)
   }
   return { ...segment, normalizedPath: outPath, style: opts.style }
 }

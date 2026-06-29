@@ -95,10 +95,10 @@ export function Settings(): JSX.Element {
   }
   const qualities: AppSettings['quality'][] = ['720p', '1080p', '1440p']
   const encoders: Array<{ value: AppSettings['encoder']; label: string; enabled: boolean; note: string }> = [
-    { value: 'cpu', label: 'CPU', enabled: true, note: 'Works on any machine.' },
-    { value: 'nvenc', label: 'NVENC', enabled: caps?.hasNvenc ?? false, note: caps?.hasNvenc ? `NVIDIA NVENC encode available${caps.ffmpegHasCuda ? ' · CUDA scale available' : ''}.` : caps?.gpuVendor === 'nvidia' ? `NVIDIA GPU${caps.nvidiaGpuName ? ` (${caps.nvidiaGpuName})` : ''} detected, but the NVENC self-test failed. Click Recheck after closing other render apps or updating the NVIDIA driver.` : 'No working NVIDIA NVENC encoder detected.' },
-    { value: 'qsv', label: 'QSV', enabled: caps?.hasQsv ?? false, note: caps?.hasQsv ? 'Intel Quick Sync encode probe passed.' : 'No working Intel QSV encoder detected.' },
-    { value: 'amf', label: 'AMF', enabled: caps?.hasAmf ?? false, note: caps?.hasAmf ? 'AMD AMF encode probe passed.' : 'No working AMD AMF encoder detected.' }
+    { value: 'cpu', label: 'CPU', enabled: true, note: 'Uses libx264. Pick this only when you deliberately want CPU rendering.' },
+    { value: 'nvenc', label: 'NVENC', enabled: !!(caps?.hasNvenc || caps?.hasNvencListed), note: caps?.hasNvenc ? `NVIDIA NVENC encode available${caps.ffmpegHasCuda ? ' · CUDA scale available' : ''}.` : caps?.hasNvencListed ? `NVENC is listed by ffmpeg, but the self-test failed. Renders will try NVENC and fail visibly instead of falling back to CPU.` : caps?.gpuVendor === 'nvidia' ? `NVIDIA GPU${caps.nvidiaGpuName ? ` (${caps.nvidiaGpuName})` : ''} detected, but this ffmpeg build did not list h264_nvenc.` : 'No NVIDIA NVENC encoder listed by ffmpeg.' },
+    { value: 'qsv', label: 'QSV', enabled: !!(caps?.hasQsv || caps?.hasQsvListed), note: caps?.hasQsv ? 'Intel Quick Sync encode probe passed.' : caps?.hasQsvListed ? 'QSV is listed by ffmpeg, but the self-test failed. Renders will fail visibly instead of falling back to CPU.' : 'No Intel QSV encoder listed by ffmpeg.' },
+    { value: 'amf', label: 'AMF', enabled: !!(caps?.hasAmf || caps?.hasAmfListed), note: caps?.hasAmf ? 'AMD AMF encode probe passed.' : caps?.hasAmfListed ? 'AMF is listed by ffmpeg, but the self-test failed. Renders will fail visibly instead of falling back to CPU.' : 'No AMD AMF encoder listed by ffmpeg.' }
   ]
   const selectedEncoder = encoders.find((e) => e.value === (settings.encoder ?? 'cpu')) ?? encoders[0]
   const capsDetail = caps
