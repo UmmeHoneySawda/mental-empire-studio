@@ -18,7 +18,9 @@ export function Niches(): JSX.Element {
   const deleteNiche = useData((s) => s.deleteNiche)
   const assignChannelNiche = useData((s) => s.assignChannelNiche)
   const warmNiche = useData((s) => s.warmNiche)
+  const refreshAllPools = useData((s) => s.refreshAllPools)
   const [warming, setWarming] = useState<string | null>(null)
+  const [refreshingAll, setRefreshingAll] = useState(false)
   const [editing, setEditing] = useState<Partial<Niche> | null>(null)
 
   useEffect(() => { void loadNiches() }, [loadNiches])
@@ -41,6 +43,7 @@ export function Niches(): JSX.Element {
         <h1 style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 22, color: '#f2f4f7', margin: 0 }}>B-roll Pools</h1>
         <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, color: '#5b616f', border: '1px solid #23272f', borderRadius: 6, padding: '2px 8px' }}>{niches.length} niches</span>
         <div style={{ flex: 1 }} />
+        <button type="button" disabled={refreshingAll || niches.length === 0} onClick={async () => { setRefreshingAll(true); try { await refreshAllPools() } finally { setRefreshingAll(false) } }} title="Top up every pool to its target and prune clips unused for 30 days" className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', color: refreshingAll ? '#5b616f' : '#c4cad3', borderRadius: 9, padding: '8px 14px', fontSize: 12, cursor: refreshingAll ? 'default' : 'pointer' }}>{refreshingAll ? 'Refreshing…' : 'Refresh all'}</button>
         <button type="button" onClick={() => setEditing(blank())} className="me-btn" style={{ border: '1px solid var(--accent)', background: 'var(--accent)', color: 'var(--accent-ink)', borderRadius: 9, padding: '8px 16px', fontSize: 12.5, fontWeight: 600, cursor: 'pointer' }}>+ New niche</button>
       </div>
       <p style={{ color: '#6a7180', fontSize: 12.5, margin: '0 0 18px', maxWidth: 680 }}>

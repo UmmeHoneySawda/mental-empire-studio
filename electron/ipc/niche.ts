@@ -5,6 +5,7 @@ import { getRepos } from '../db'
 import { getSettings } from '../store/settings'
 import { normalizeNiche } from '../services/niche'
 import { readNichePoolHealth, warmBrollLibraryFromNiche } from '../services/broll'
+import { refreshNichePools } from '../services/pool-refresh'
 import { hhmm, pushActivity } from './events'
 import { L } from '../services/logger'
 
@@ -19,6 +20,14 @@ function poolHealthAll(): ReturnType<typeof readNichePoolHealth>[] {
 export function registerNicheIpc(): void {
   ipcMain.handle('niche:list', () => getRepos().niches())
   ipcMain.handle('niche:poolHealth', () => poolHealthAll())
+
+  // Top up + prune every niche pool now (manual trigger; the scheduler also does this
+  // on a due-gated cadence).
+  ipcMain.handle('niche:refreshAll', async () => {
+    const n = await refreshNichePools({ force: true })
+    L.info(`manual pool refresh: ${n} niche(s)`)
+    return poolHealthAll()
+  })
 
   ipcMain.handle('niche:save', (_e, input: Partial<Niche>) => {
     const niche = normalizeNiche({ ...input, id: input.id && input.id.trim() ? input.id : `niche-${randomUUID().slice(0, 8)}` })

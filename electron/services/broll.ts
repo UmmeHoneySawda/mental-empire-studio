@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process'
-import { appendFileSync, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, copyFileSync, statSync } from 'node:fs'
+import { appendFileSync, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, copyFileSync, statSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import { app } from 'electron'
 import type { AppSettings, BrollDensity, TranscriptWord, VideoStyle, Niche, NichePoolHealth } from '../../shared/types'
@@ -9,7 +9,7 @@ import type { RenderCapabilities } from '../../shared/types'
 import { FALLBACK_CAPS } from './engine/encoder'
 import { createProgressSmoother, parseFfmpegProgressBlock, type FfmpegProgress } from './engine/progress'
 import { logger } from './logger'
-import { poolKeyForNiche, nicheSearchThemes, dimsForOrientation } from './niche'
+import { poolKeyForNiche, nicheSearchThemes, dimsForOrientation, planPoolPrune } from './niche'
 
 // Auto B-roll: themed stock-footage pool driven by the transcript. We pick the
 // video's dominant themes, fetch a small pool of clips (Pexels → Pixabay → Coverr),
@@ -95,6 +95,10 @@ interface BrollLibraryClip {
   width: number
   height: number
   tags: string[]
+  /** when this clip was first cached into a pool (P4 pruning) */
+  addedAt?: string
+  /** when this clip was last used in a render (P4 usage tracking + prune) */
+  lastUsedAt?: string
 }
 
 export interface BrollLibraryIndex {
@@ -102,6 +106,8 @@ export interface BrollLibraryIndex {
   sourceKey: string
   createdAt: string
   updatedAt: string
+  /** last time the pool was warmed/topped-up (drives periodic refresh, P4) */
+  lastWarmedAt?: string
   keywords: Array<{
     keyword: string
     clips: BrollLibraryClip[]
@@ -491,6 +497,46 @@ export function readNichePoolHealth(nicheId: string): NichePoolHealth {
   return { nicheId, clips, keywords: index.keywords.map((k) => k.keyword), updatedAt: clips > 0 ? index.updatedAt : undefined }
 }
 
+/** When a niche pool was last warmed (drives periodic refresh). */
+export function readNichePoolLastWarmed(nicheId: string): string | undefined {
+  return readLibraryIndex(poolKeyForNiche(nicheId)).lastWarmedAt
+}
+
+/** Stamp clips (by file path) as used now, across all pools — so selection can avoid
+ *  recently-used footage and pruning keeps what's actually in rotation (P4). */
+export function recordClipUsage(paths: string[]): void {
+  const want = new Set(paths.filter(Boolean))
+  if (!want.size) return
+  const now = new Date().toISOString()
+  for (const idx of readLibraryIndexes()) {
+    let changed = false
+    for (const g of idx.keywords) {
+      for (const c of g.clips) {
+        if (want.has(c.path)) { c.lastUsedAt = now; changed = true }
+      }
+    }
+    if (changed) writeLibraryIndex(idx)
+  }
+}
+
+/** Remove clips from a niche pool that haven't been used in maxAgeDays (deletes the
+ *  files too). Returns the number removed. Copies are per-pool, so this never affects
+ *  another niche's footage. */
+export function pruneNichePool(nicheId: string, maxAgeDays: number): number {
+  const index = readLibraryIndex(poolKeyForNiche(nicheId))
+  const stale = new Set(planPoolPrune(index.keywords.flatMap((g) => g.clips), { nowMs: Date.now(), maxAgeDays }).map((c) => c.path))
+  if (!stale.size) return 0
+  for (const g of index.keywords) {
+    g.clips = g.clips.filter((c) => {
+      if (!stale.has(c.path)) return true
+      try { rmSync(c.path, { force: true }) } catch { /* ignore */ }
+      return false
+    })
+  }
+  writeLibraryIndex(index)
+  return stale.size
+}
+
 function themeTokens(themes: string[]): string[] {
   return themes
     .flatMap((t) => t.toLowerCase().split(/[^a-z]+/))
@@ -622,17 +668,41 @@ function keywordGroup(index: BrollLibraryIndex, keyword: string): BrollLibraryIn
   return group
 }
 
+/** Find an already-cached local file for a provider clip in ANY pool (multi-niche dedupe).
+ *  Lets a clip shared across niches be copied locally instead of re-downloaded. */
+function findCachedClipFile(provider: string, id: string): string | undefined {
+  for (const idx of readLibraryIndexes()) {
+    for (const g of idx.keywords) {
+      for (const c of g.clips) {
+        if (c.provider === provider && c.id === id && existsSync(c.path)) return c.path
+      }
+    }
+  }
+  return undefined
+}
+
 async function cacheCandidateForLibrary(c: BrollCandidate, sourceKey: string, keyword: string, logPath?: string): Promise<BrollLibraryClip> {
   const dir = join(brollLibraryDir(), safeId(sourceKey), safeId(keyword))
   mkdirSync(dir, { recursive: true })
+  const dest = join(dir, `${c.provider}-${safeId(c.id)}.mp4`)
   let path: string
-  if (existsSync(c.url)) {
-    path = join(dir, `${c.provider}-${safeId(c.id)}.mp4`)
-    if (!existsSync(path)) copyFileSync(c.url, path)
+  if (existsSync(dest)) {
+    path = dest
+  } else if (existsSync(c.url)) {
+    path = dest
+    copyFileSync(c.url, path)
     brollInfo(logPath, `library clip copied provider=${c.provider} id=${c.id} keyword=${keyword} bytes=${fileBytes(path)} path=${path}`)
   } else {
-    path = await downloadOne(c, dir, logPath)
-    brollInfo(logPath, `library clip downloaded provider=${c.provider} id=${c.id} keyword=${keyword} bytes=${fileBytes(path)} path=${path}`)
+    // Multi-niche dedupe: reuse a copy already downloaded in another pool when available.
+    const cached = findCachedClipFile(c.provider, c.id)
+    if (cached) {
+      path = dest
+      copyFileSync(cached, path)
+      brollInfo(logPath, `library clip reused from pool provider=${c.provider} id=${c.id} keyword=${keyword} src=${cached}`)
+    } else {
+      path = await downloadOne(c, dir, logPath)
+      brollInfo(logPath, `library clip downloaded provider=${c.provider} id=${c.id} keyword=${keyword} bytes=${fileBytes(path)} path=${path}`)
+    }
   }
   return {
     provider: c.provider,
@@ -641,7 +711,8 @@ async function cacheCandidateForLibrary(c: BrollCandidate, sourceKey: string, ke
     durationSec: c.durationSec || probeDurationSec(path),
     width: c.width,
     height: c.height,
-    tags: [...new Set([...c.tags, keyword])]
+    tags: [...new Set([...c.tags, keyword])],
+    addedAt: new Date().toISOString()
   }
 }
 
@@ -745,6 +816,8 @@ export async function warmLibraryForThemes(
 
   const indexPath = writeLibraryIndex(index)
   const finalClips = index.keywords.reduce((sum, k) => sum + k.clips.filter((c) => existsSync(c.path)).length, 0)
+  index.lastWarmedAt = new Date().toISOString()
+  writeLibraryIndex(index)
   brollInfo(opts.logPath, `library warm done source=${sourceKey} clips=${finalClips} index=${indexPath}`)
   return { indexPath, sourceKey, keywords: themes, clips: finalClips }
 }

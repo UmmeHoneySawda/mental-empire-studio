@@ -94,6 +94,7 @@ interface DataState {
   deleteNiche: (id: string) => Promise<void>
   assignChannelNiche: (channelId: string, nicheId: string | null) => Promise<void>
   warmNiche: (id: string) => Promise<void>
+  refreshAllPools: () => Promise<void>
 }
 
 let subscribed = false
@@ -482,6 +483,12 @@ export const useData = create<DataState>((set, get) => ({
     const a = api()
     if (!a) return
     await a.niche.warm(id)
+    await get().loadNiches()
+  },
+  refreshAllPools: async () => {
+    const a = api()
+    if (!a) return
+    await a.niche.refreshAll()
     await get().loadNiches()
   }
 }))

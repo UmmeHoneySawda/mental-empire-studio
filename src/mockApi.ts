@@ -237,6 +237,7 @@ function installMock(): void {
     niche: ns({
       list: async () => [],
       poolHealth: async () => [],
+      refreshAll: async () => [],
       save: async () => [],
       remove: async () => [],
       assignChannel: async () => [],

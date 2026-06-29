@@ -144,6 +144,7 @@ const api: NativeApi = {
   niche: {
     list: () => ipcRenderer.invoke('niche:list'),
     poolHealth: () => ipcRenderer.invoke('niche:poolHealth'),
+    refreshAll: () => ipcRenderer.invoke('niche:refreshAll'),
     save: (n: Partial<Niche>) => ipcRenderer.invoke('niche:save', n),
     remove: (id: string) => ipcRenderer.invoke('niche:delete', id),
     assignChannel: (channelId: string, nicheId: string | null) => ipcRenderer.invoke('niche:assignChannel', channelId, nicheId),

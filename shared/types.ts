@@ -720,6 +720,7 @@ export interface NativeApi {
   niche: {
     list(): Promise<Niche[]>
     poolHealth(): Promise<NichePoolHealth[]>
+    refreshAll(): Promise<NichePoolHealth[]>
     save(n: Partial<Niche>): Promise<Niche[]>
     remove(id: string): Promise<Niche[]>
     assignChannel(channelId: string, nicheId: string | null): Promise<SourceChannel[]>
