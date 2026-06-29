@@ -2,6 +2,7 @@ import { useStore } from '../store/useStore'
 import { useData } from '../store/useData'
 import { ScreenPad } from '../components/primitives'
 import { statusStyle } from '../data/mock'
+import type { WorkItem } from '@shared/types'
 
 const GRADIENTS = [
   'linear-gradient(135deg,#2a2540,#46243a)', 'linear-gradient(135deg,#1a2e3a,#0f3a32)',
@@ -26,6 +27,90 @@ function human(n: number): string {
   if (n >= 1e6) return `${(n / 1e6).toFixed(1).replace(/\.0$/, '')}M`
   if (n >= 1e3) return `${(n / 1e3).toFixed(1).replace(/\.0$/, '')}K`
   return Math.round(n).toLocaleString()
+}
+
+const PIPELINE_STAGES: Array<{ key: keyof WorkItem; label: string }> = [
+  { key: 'downloaded', label: 'Audio' },
+  { key: 'hasImages', label: 'Images' },
+  { key: 'captioned', label: 'Captions' },
+  { key: 'hasThumbnail', label: 'Thumb' },
+  { key: 'rendered', label: 'Render' },
+  { key: 'uploaded', label: 'Upload' }
+]
+
+/** Per-video pipeline board (P1): shows what's done + what's next for each downloaded
+ *  video, grouped by source channel, with deep-links into the right step. */
+function PipelineSection(): JSX.Element | null {
+  const workItems = useData((s) => s.workItems)
+  const channels = useData((s) => s.channels)
+  const openProject = useData((s) => s.openProject)
+  const setItemUploaded = useData((s) => s.setItemUploaded)
+  const setItemArchived = useData((s) => s.setItemArchived)
+  const detectUploads = useData((s) => s.detectUploads)
+  const setActive = useStore((s) => s.setActive)
+  const openWorkspace = useStore((s) => s.openWorkspace)
+
+  const visible = workItems.filter((w) => !w.archived)
+  if (workItems.length === 0) return null
+
+  const channelName = (id: string): string => channels.find((c) => c.id === id)?.name ?? id
+  const byChannel = new Map<string, WorkItem[]>()
+  for (const w of visible) {
+    const arr = byChannel.get(w.channel) ?? []
+    arr.push(w)
+    byChannel.set(w.channel, arr)
+  }
+
+  const openNext = async (w: WorkItem): Promise<void> => {
+    if (w.rendered) { setActive('render'); return }
+    if (w.downloaded && w.downloadId) { await openProject(w.downloadId); setActive('compose'); return }
+    setActive('download')
+  }
+
+  const done = visible.filter((w) => w.uploaded).length
+  return (
+    <div style={{ marginBottom: 26 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
+        <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 15, color: '#e9ebef' }}>Pipeline</span>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#5b616f', border: '1px solid #23272f', borderRadius: 5, padding: '2px 7px' }}>{visible.length} active · {done} uploaded</span>
+        <div style={{ flex: 1 }} />
+        <span onClick={() => void detectUploads()} className="me-btn" style={{ fontSize: 11, color: 'var(--accent)', cursor: 'pointer' }} title="Match processed videos against your channels' uploaded titles">Detect uploads</span>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+        {[...byChannel.entries()].map(([chan, items]) => (
+          <div key={chan} style={{ border: '1px solid #1d2129', borderRadius: 14, overflow: 'hidden', background: '#12151b' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', borderBottom: '1px solid #1d2129' }}>
+              <span title={chan} className="me-ellipsis" style={{ fontSize: 12.5, fontWeight: 600, color: '#dde0e5' }}>{chan}</span>
+              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#5b616f' }}>{items.length}</span>
+              <div style={{ flex: 1 }} />
+              <span onClick={() => openWorkspace(chan)} className="me-btn" style={{ fontSize: 10.5, color: 'var(--accent)', cursor: 'pointer' }} title="Open this channel's workspace board">Open workspace →</span>
+            </div>
+            {items.map((w) => (
+              <div key={w.videoId} className="me-row" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: '1px solid #14171d' }}>
+                <span title={w.title} className="me-ellipsis" style={{ flex: 1.6, minWidth: 0, fontSize: 12.5, color: '#dde0e5' }}>{w.title}</span>
+                <div style={{ display: 'flex', gap: 5, flex: 'none' }}>
+                  {PIPELINE_STAGES.map((st) => {
+                    const on = !!w[st.key]
+                    return (
+                      <span key={st.label} title={`${st.label}: ${on ? 'done' : 'pending'}`} style={{ fontSize: 9.5, fontFamily: 'var(--font-mono)', letterSpacing: '.3px', padding: '3px 7px', borderRadius: 6, border: `1px solid ${on ? 'rgba(54,201,142,.4)' : '#23272f'}`, color: on ? '#36c98e' : '#5b616f', background: on ? 'rgba(54,201,142,.08)' : 'transparent' }}>{st.label}</span>
+                    )
+                  })}
+                </div>
+                {w.uploaded && w.uploadedTo.length > 0 && (
+                  <span title={`Detected on: ${w.uploadedTo.map(channelName).join(', ')}${w.uploadMatchScore ? ` (${Math.round(w.uploadMatchScore * 100)}%)` : ''}`} style={{ fontSize: 9.5, color: '#8b7cff', fontFamily: 'var(--font-mono)', flex: 'none' }}>↑{w.uploadedTo.length}</span>
+                )}
+                <div style={{ display: 'flex', gap: 6, flex: 'none' }}>
+                  <button type="button" onClick={() => void openNext(w)} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 7, padding: '4px 10px', fontSize: 10.5, color: '#c4cad3', cursor: 'pointer' }}>{w.rendered ? 'Queue' : w.downloaded ? 'Edit' : 'Download'}</button>
+                  <button type="button" onClick={() => void setItemUploaded(w.videoId, !w.uploaded)} title="Toggle uploaded" className="me-btn" style={{ border: `1px solid ${w.uploaded ? 'rgba(139,124,255,.4)' : '#262b34'}`, background: w.uploaded ? 'rgba(139,124,255,.1)' : '#15181f', borderRadius: 7, padding: '4px 9px', fontSize: 10.5, color: w.uploaded ? '#b6acff' : '#8a909c', cursor: 'pointer' }}>✓ Up</button>
+                  <button type="button" onClick={() => void setItemArchived(w.videoId, true)} title="Archive (hide from pipeline)" className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 7, padding: '4px 8px', fontSize: 10.5, color: '#6a7180', cursor: 'pointer' }}>×</button>
+                </div>
+              </div>
+            ))}
+          </div>
+        ))}
+      </div>
+    </div>
+  )
 }
 
 export function Library(): JSX.Element {
@@ -114,6 +199,8 @@ export function Library(): JSX.Element {
               </div>
             ))}
           </div>
+
+          <PipelineSection />
 
           <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 13 }}>
             <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 15, color: '#e9ebef' }}>Recent uploads</span>

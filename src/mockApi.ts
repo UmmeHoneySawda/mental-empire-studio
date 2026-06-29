@@ -273,7 +273,13 @@ function installMock(): void {
         const c = channels.find((x) => x.id === id)
         if (c) Object.assign(c, patch)
         return channels
-      }
+      },
+      workItems: async () => []
+    }),
+    workItems: ns({
+      detect: async () => 0,
+      setUploaded: async () => {},
+      setArchived: async () => {}
     }),
     scrape: ns({
       channel: async (url: string): Promise<ScrapedChannel> => {

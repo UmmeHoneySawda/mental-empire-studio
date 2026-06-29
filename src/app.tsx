@@ -4,6 +4,7 @@ import { useData } from './store/useData'
 import { TitleBar } from './components/TitleBar'
 import { Sidebar } from './components/Sidebar'
 import { Library } from './screens/Library'
+import { Workspace } from './screens/Workspace'
 import { MyChannels } from './screens/MyChannels'
 import { Download } from './screens/Download'
 import { Compose } from './screens/Compose'
@@ -19,6 +20,7 @@ const Thumbnails = lazy(() => import('./screens/Thumbnails').then((m) => ({ defa
 
 const SCREENS: Record<ScreenKey, ComponentType> = {
   library: Library,
+  workspace: Workspace,
   channels: MyChannels,
   download: Download,
   compose: Compose,

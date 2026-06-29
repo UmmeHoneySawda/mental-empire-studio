@@ -25,6 +25,11 @@ interface AppState {
   // navigation
   active: ScreenKey
   setActive: (s: ScreenKey) => void
+  /** selected channel in the Workspace board (null = all channels) */
+  workspaceChannel: string | null
+  setWorkspaceChannel: (c: string | null) => void
+  /** navigate to the Workspace, optionally focusing a channel */
+  openWorkspace: (channel?: string | null) => void
 
   // persisted settings (electron-store via window.api.settings)
   settings: AppSettings
@@ -110,12 +115,21 @@ function mirror(settings: AppSettings) {
 export const useStore = create<AppState>((set, get) => ({
   active: 'library',
   setActive: (s) => set({ active: s }),
+  workspaceChannel: null,
+  setWorkspaceChannel: (c) => {
+    pushPatch({ lastWorkspaceChannel: c ?? '' })
+    set({ workspaceChannel: c })
+  },
+  openWorkspace: (channel) => {
+    if (channel !== undefined) pushPatch({ lastWorkspaceChannel: channel ?? '' })
+    set((s) => ({ active: 'workspace', workspaceChannel: channel !== undefined ? channel : s.workspaceChannel }))
+  },
 
   settings: DEFAULT_SETTINGS,
   hydrated: false,
   hydrate: async () => {
     const persisted = await window.api?.settings?.get?.()
-    if (persisted) set({ ...mirror(persisted), active: persisted.defaultScreen, hydrated: true })
+    if (persisted) set({ ...mirror(persisted), active: persisted.defaultScreen, workspaceChannel: persisted.lastWorkspaceChannel || null, hydrated: true })
     else set({ hydrated: true })
   },
   updateSettings: (patch) => {
