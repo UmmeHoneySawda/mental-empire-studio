@@ -3,6 +3,7 @@ import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Project, ProjectImage, TranscribeProgress, TranscriptWord } from '../../shared/types'
 import { asBetaOpts } from '../../shared/types'
+import { safeName } from '../../shared/sanitize'
 import { deriveStylePlan, EMPTY_PLAN, styleCaptionLead, styleTransition, validateEffectPlan } from '../../shared/effectPlan'
 import { getSettings } from '../store/settings'
 import { getRepos } from '../db'
@@ -52,10 +53,6 @@ function defaultProject(downloadId: string, title: string, channel: string, mp3P
     stage: 'composing',
     createdAt: new Date().toISOString()
   }
-}
-
-function safeName(name: string): string {
-  return (name.replace(/[^a-z0-9\-_. ]/gi, '_').trim() || 'thumbnail').slice(0, 120)
 }
 
 function effectiveThumbnailPath(project: Project): string | null {
