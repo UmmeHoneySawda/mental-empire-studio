@@ -98,6 +98,10 @@ function LayerInspector(): JSX.Element {
   const selected = layers.find((l) => l.id === selectedLayerId)
   const background = layers.find((l) => l.kind === 'background') as BackgroundLayer | undefined
   const scrim = background?.scrim ?? DEFAULT_SCRIM
+  const textLayer = selected?.kind === 'text' ? selected as TextLayer : null
+  const highlightWords = useMemo(() => textLayer ? layerHighlightWords(textLayer) : [], [textLayer])
+  const highlightKeys = useMemo(() => new Set(highlightWords.map(normWord).filter(Boolean)), [highlightWords])
+  const textWords = useMemo(() => textLayer ? wordsFromLayer(textLayer) : [], [textLayer])
 
   useEffect(() => { if (textEditorFocusTrigger > 0) setTimeout(() => textareaRef.current?.focus(), 50) }, [textEditorFocusTrigger])
 
@@ -176,11 +180,9 @@ function LayerInspector(): JSX.Element {
   }
 
   // Text layer
-  const layer = selected as TextLayer
+  const layer = textLayer
+  if (!layer) return <div />
   const swatches = ['#ffffff', '#f2c200', '#e8403a', '#19c3d6']
-  const highlightWords = useMemo(() => layerHighlightWords(layer), [layer])
-  const highlightKeys = useMemo(() => new Set(highlightWords.map(normWord).filter(Boolean)), [highlightWords])
-  const textWords = useMemo(() => wordsFromLayer(layer), [layer])
   const setHighlights = (words: string[]): void => { const clean = words.map((w) => w.trim()).filter(Boolean); updateLayer(layer.id, { highlightWords: clean, highlightWord: clean[0] ?? '' } as Partial<TextLayer>) }
   const toggleHighlight = (word: string): void => { const key = normWord(word); if (!key) return; setHighlights(highlightKeys.has(key) ? highlightWords.filter((w) => normWord(w) !== key) : [...highlightWords, word]) }
 

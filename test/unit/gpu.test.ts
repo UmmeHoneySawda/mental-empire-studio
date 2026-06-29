@@ -51,6 +51,15 @@ describe('gradeParams', () => {
     expect(grade.sharpen).toBeGreaterThan(0)
     expect(grain.strength).toBe(0)
   })
+  it('heartfelt is warm and gentle without temporal grain', () => {
+    const { grade, grain } = gradeParams('Heartfelt')
+    expect(grade.saturation).toBeCloseTo(1.06)
+    expect(grade.brightness).toBeGreaterThan(0)
+    expect(grade.colorBalance.r).toBeGreaterThan(0)
+    expect(grade.colorBalance.b).toBeLessThan(0)
+    expect(grade.vignette).toBeGreaterThan(0)
+    expect(grain.temporal).toBe(false)
+  })
 })
 
 describe('gpuDimensions', () => {
@@ -135,6 +144,24 @@ describe('buildGpuRenderSpec', () => {
     })
     expect(spec.motion.kenBurns).toBe(false)
     expect(spec.motion.punchAtSec).toEqual([])
+  })
+  it('carries every editing style into the GPU grade model', () => {
+    const styles = ['None', 'Clean', 'Cinematic', 'Intense', 'Heartfelt'] as const
+    for (const style of styles) {
+      const spec = buildGpuRenderSpec({
+        project: project({ betaOpts: { ...DEFAULT_BETA_OPTS, style } }),
+        images,
+        words,
+        settings: settings({ beta: { ...DEFAULT_SETTINGS.beta, enabled: true } }),
+        zoomHits: [],
+        voicePath: '/x/a.mp3',
+        out: { h264Path: `/x/${style}.gpu.mp4`, finalPath: `/x/${style}.mp4` }
+      })
+      expect(spec.grade.style).toBe(style)
+      if (style === 'Intense') expect(spec.grade.sharpen).toBeGreaterThan(0)
+      if (style === 'Cinematic') expect(spec.grain.temporal).toBe(true)
+      if (style === 'Clean' || style === 'None') expect(spec.grade.vignette).toBe(0)
+    }
   })
 })
 

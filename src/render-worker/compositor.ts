@@ -36,6 +36,7 @@ uniform float u_vignette;
 uniform float u_grain;
 uniform float u_grainSeed;
 uniform float u_sharpen;
+uniform vec2  u_texel;
 uniform bool  u_hasOverlay;
 
 vec2 zoomUv(vec2 uv, vec2 scale) {
@@ -48,10 +49,25 @@ float hash(vec2 p) {
   return fract(p.x * p.y);
 }
 
+vec3 baseColor(vec2 uv) {
+  vec3 a = texture(u_imgA, zoomUv(uv, u_scaleA)).rgb;
+  vec3 b = texture(u_imgB, zoomUv(uv, u_scaleB)).rgb;
+  return mix(a, b, u_mix);
+}
+
 void main() {
-  vec3 a = texture(u_imgA, zoomUv(v_uv, u_scaleA)).rgb;
-  vec3 b = texture(u_imgB, zoomUv(v_uv, u_scaleB)).rgb;
-  vec3 col = mix(a, b, u_mix);
+  vec3 col = baseColor(v_uv);
+
+  // subtle unsharp mask for the Intense style
+  if (u_sharpen > 0.0) {
+    vec3 blur = (
+      baseColor(v_uv + vec2(u_texel.x, 0.0)) +
+      baseColor(v_uv - vec2(u_texel.x, 0.0)) +
+      baseColor(v_uv + vec2(0.0, u_texel.y)) +
+      baseColor(v_uv - vec2(0.0, u_texel.y))
+    ) * 0.25;
+    col = mix(col, col + (col - blur), clamp(u_sharpen, 0.0, 1.0));
+  }
 
   // colour balance (lift per channel)
   col += u_colorBalance;
@@ -140,7 +156,7 @@ export class Compositor {
     gl.enableVertexAttribArray(loc)
     gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0)
 
-    for (const name of ['u_imgA', 'u_imgB', 'u_overlay', 'u_caption', 'u_mix', 'u_scaleA', 'u_scaleB', 'u_saturation', 'u_contrast', 'u_brightness', 'u_colorBalance', 'u_vignette', 'u_grain', 'u_grainSeed', 'u_sharpen', 'u_hasOverlay']) {
+    for (const name of ['u_imgA', 'u_imgB', 'u_overlay', 'u_caption', 'u_mix', 'u_scaleA', 'u_scaleB', 'u_saturation', 'u_contrast', 'u_brightness', 'u_colorBalance', 'u_vignette', 'u_grain', 'u_grainSeed', 'u_sharpen', 'u_texel', 'u_hasOverlay']) {
       this.uniforms[name] = gl.getUniformLocation(program, name)
     }
 
@@ -274,6 +290,7 @@ export class Compositor {
     gl.uniform1f(this.uniforms.u_grain, this.spec.grain.strength)
     gl.uniform1f(this.uniforms.u_grainSeed, this.spec.grain.temporal ? (timeSec * this.spec.fps) % 4096 : 1)
     gl.uniform1f(this.uniforms.u_sharpen, g.sharpen)
+    gl.uniform2f(this.uniforms.u_texel, 1 / this.canvas.width, 1 / this.canvas.height)
     gl.uniform1i(this.uniforms.u_hasOverlay, this.overlayTex ? 1 : 0)
 
     gl.drawArrays(gl.TRIANGLES, 0, 6)

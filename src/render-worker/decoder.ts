@@ -13,6 +13,7 @@ export class SegmentDecoder {
   private samples: any[] = []
   private nextSampleIdx = 0
   private flushed = false
+  private decodeError: Error | null = null
 
   constructor(buffer: ArrayBuffer) {
     this.demuxer = new MP4Demuxer(buffer)
@@ -25,6 +26,7 @@ export class SegmentDecoder {
         this.frames.push(frame)
       },
       error: (e) => {
+        this.decodeError = e instanceof Error ? e : new Error(String(e))
         console.error('VideoDecoder error:', e)
       }
     })
@@ -47,6 +49,7 @@ export class SegmentDecoder {
   }
 
   async decodeUntil(timeSec: number): Promise<void> {
+    if (this.decodeError) throw this.decodeError
     const targetTimestampUs = Math.round(timeSec * 1_000_000)
     // 0.5s lookahead buffer
     const lookaheadUs = 500_000
@@ -71,6 +74,7 @@ export class SegmentDecoder {
 
       this.decoder.decode(chunk)
       this.nextSampleIdx++
+      if (this.decodeError) throw this.decodeError
     }
 
     if (this.nextSampleIdx > startIdx) {
@@ -80,10 +84,13 @@ export class SegmentDecoder {
     if (this.nextSampleIdx >= this.samples.length && !this.flushed) {
       console.log(`[decoder] end of samples reached, flushing VideoDecoder`)
       this.flushed = true
-      void this.decoder.flush()
+      void this.decoder.flush().catch((e) => {
+        this.decodeError = e instanceof Error ? e : new Error(String(e))
+      })
     }
 
     const hasNeededFrame = () => {
+      if (this.decodeError) throw this.decodeError
       if (this.frames.some((f) => f.timestamp >= targetTimestampUs)) return true
       if (this.nextSampleIdx >= this.samples.length && this.decoder.decodeQueueSize === 0) return true
       return false
@@ -92,10 +99,20 @@ export class SegmentDecoder {
     if (!hasNeededFrame()) {
       console.log(`[decoder] waiting for frame around ${targetTimestampUs}us (currently have ${this.frames.length} decoded frames in queue)`)
       const waitStart = Date.now()
-      await new Promise<void>((resolve) => {
+      const timeoutMs = 15_000
+      await new Promise<void>((resolve, reject) => {
         const check = () => {
-          if (hasNeededFrame()) {
-            resolve()
+          try {
+            if (hasNeededFrame()) {
+              resolve()
+              return
+            }
+          } catch (e) {
+            reject(e)
+            return
+          }
+          if (Date.now() - waitStart > timeoutMs) {
+            reject(new Error(`B-roll decoder timed out waiting for frame at ${(targetTimestampUs / 1_000_000).toFixed(2)}s`))
           } else {
             setTimeout(check, 4)
           }
@@ -104,6 +121,7 @@ export class SegmentDecoder {
       })
       console.log(`[decoder] wait complete in ${Date.now() - waitStart}ms (have ${this.frames.length} frames)`)
     }
+    if (this.decodeError) throw this.decodeError
   }
 
   getSamplesCount(): number {

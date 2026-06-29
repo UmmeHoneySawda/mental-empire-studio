@@ -62,6 +62,7 @@ function bindListenersOnce(): void {
 }
 
 const gpuDebug = !!process.env['ME_GPU_DEBUG']
+const GPU_PROGRESS_TIMEOUT_MS = Math.max(5_000, Number(process.env['ME_GPU_PROGRESS_TIMEOUT_MS'] ?? 60_000) || 60_000)
 
 /** Lazily create (or reuse) the hidden render-worker window. */
 function ensureWorker(): Promise<GpuReadyMsg> {
@@ -173,7 +174,48 @@ async function runGpuRenderInner(spec: GpuRenderSpec, opts: GpuRunOptions): Prom
   if (opts.logPath) appendFileSync(opts.logPath, `\n[gpu] engine=webcodecs hardware=${ready.hardware} ${spec.width}x${spec.height}@${spec.fps} frames~${Math.round(spec.durationSec * spec.fps)} electron=${electronVer} chrome=${chromeVer} muxer=streaming\n`)
 
   await new Promise<void>((resolve, reject) => {
-    pending.set(spec.jobId, { resolve, reject, onProgress: opts.onProgress })
+    let timer: NodeJS.Timeout | null = null
+    let settled = false
+    const cleanup = (): void => {
+      if (timer) clearTimeout(timer)
+      timer = null
+    }
+    const fail = (message: string): void => {
+      if (settled) return
+      settled = true
+      cleanup()
+      pending.delete(spec.jobId)
+      if (opts.logPath) appendFileSync(opts.logPath, `[gpu:timeout] ${message}\n`)
+      // A timed-out worker may still be stuck in WebCodecs. Destroy it so the ffmpeg
+      // fallback can proceed and future jobs start from a clean worker window.
+      try { worker?.destroy() } catch { /* ignore */ }
+      worker = null
+      workerReady = null
+      reject(new Error(message))
+    }
+    const resetTimer = (): void => {
+      cleanup()
+      timer = setTimeout(() => fail(`GPU worker made no progress for ${Math.round(GPU_PROGRESS_TIMEOUT_MS / 1000)}s`), GPU_PROGRESS_TIMEOUT_MS)
+    }
+    pending.set(spec.jobId, {
+      resolve: () => {
+        if (settled) return
+        settled = true
+        cleanup()
+        resolve()
+      },
+      reject: (e) => {
+        if (settled) return
+        settled = true
+        cleanup()
+        reject(e)
+      },
+      onProgress: (p) => {
+        resetTimer()
+        opts.onProgress?.(p)
+      }
+    })
+    resetTimer()
     worker!.webContents.send(GPU_CHANNELS.run, spec)
   })
 
