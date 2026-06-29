@@ -12,7 +12,7 @@ const LABELS: Record<ScreenKey, string> = {
   thumb: 'Thumbnails',
   render: 'Render Queue',
   niches: 'B-roll Pools',
-  profiles: 'Profiles',
+  profiles: 'Automations',
   settings: 'Settings'
 }
 
