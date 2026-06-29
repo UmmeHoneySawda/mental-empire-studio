@@ -30,6 +30,7 @@ import { buildMasterLoudnormFilter, buildSecondPassLoudnormFilter } from './serv
 import { readFileSync as readFileSyncSfx } from 'node:fs'
 import { L, installGlobalLogging, logStartupDiagnostics, logFilePath } from './services/logger'
 import { runAll, lastMaxActive } from './services/queue'
+import { destroyGpuWorker } from './services/engine/gpu/host'
 import { runProfile, newVideos } from './ipc/automation'
 import { postWebhook } from './services/webhook'
 import { createServer } from 'node:http'
@@ -1490,6 +1491,8 @@ app.whenReady().then(() => {
 app.on('before-quit', () => {
   isQuitting = true
   scheduler.stop()
+  // Tear down the hidden GPU render-worker window if it was created.
+  destroyGpuWorker()
   // Close the DB here too: with the tray enabled, the real quit comes through here
   // (not window-all-closed), so this is the only path that checkpoints the WAL cleanly.
   closeDatabase()

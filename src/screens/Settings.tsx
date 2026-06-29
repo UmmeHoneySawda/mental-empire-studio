@@ -7,6 +7,12 @@ import type { AccentName, AppSettings, RenderCapabilities } from '@shared/types'
 const ACCENTS: AccentName[] = ['Amber', 'Violet', 'Emerald', 'Crimson']
 const ACCENT_SWATCH: Record<AccentName, string> = { Amber: '#f5b323', Violet: '#8b7cff', Emerald: '#36c98e', Crimson: '#ff5a6e' }
 
+const RENDER_ENGINES: Array<{ value: NonNullable<AppSettings['renderEngine']>; label: string; note: string }> = [
+  { value: 'ffmpeg', label: 'ffmpeg', note: 'CPU filtergraph — the stable default. Works everywhere.' },
+  { value: 'gpu', label: 'GPU', note: 'WebGL compositor + WebCodecs hardware H.264 (beta). Image projects only; falls back to ffmpeg on any error.' },
+  { value: 'auto', label: 'Auto', note: 'Use the GPU engine when hardware H.264 encode is available, otherwise ffmpeg.' },
+]
+
 type Section = 'looks' | 'output' | 'scraping' | 'integrations' | 'beta' | 'danger'
 const NAV: Array<{ id: Section; label: string }> = [
   { id: 'looks', label: 'Looks' },
@@ -139,6 +145,13 @@ export function Settings(): JSX.Element {
                 {encoders.map((enc) => { const on = (settings.encoder ?? 'cpu') === enc.value; return <div key={enc.value} title={enc.note} onClick={() => chooseEncoder(enc)} style={{ padding: '8px 12px', cursor: 'pointer', background: on ? 'var(--accent)' : undefined, color: on ? 'var(--accent-ink)' : enc.enabled ? '#8a909c' : '#737a86', fontWeight: on ? 600 : undefined }}>{enc.label}</div> })}
               </div>
               <div className="me-clamp-2" style={{ fontSize: 10, color: selectedEncoder.enabled || selectedEncoder.value === 'cpu' ? '#6a7180' : '#f5b323', marginTop: 5 }}>{checkingCaps ? 'Checking ffmpeg GPU capabilities…' : caps ? selectedEncoder.note : 'Could not check capabilities — encoder choice is saved.'}</div>
+            </div>
+            <div style={{ minWidth: 260 }}>
+              <div style={{ fontSize: 12, color: '#8a909c', marginBottom: 7 }}>Render engine <span style={{ color: '#5b616f', fontFamily: 'var(--font-mono)', fontSize: 9.5 }}>BETA</span></div>
+              <div style={{ display: 'flex', border: '1px solid #23272f', borderRadius: 8, overflow: 'hidden', fontSize: 11.5 }}>
+                {RENDER_ENGINES.map((re) => { const on = (settings.renderEngine ?? 'ffmpeg') === re.value; return <div key={re.value} title={re.note} onClick={() => saved({ renderEngine: re.value })} style={{ padding: '8px 12px', cursor: 'pointer', background: on ? 'var(--accent)' : undefined, color: on ? 'var(--accent-ink)' : '#8a909c', fontWeight: on ? 600 : undefined }}>{re.label}</div> })}
+              </div>
+              <div className="me-clamp-2" style={{ fontSize: 10, color: '#6a7180', marginTop: 5 }}>{(RENDER_ENGINES.find((re) => re.value === (settings.renderEngine ?? 'ffmpeg')) ?? RENDER_ENGINES[0]).note}</div>
             </div>
           </div>
         </Card>

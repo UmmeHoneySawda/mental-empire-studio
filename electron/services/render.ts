@@ -146,7 +146,7 @@ function assForFilter(p: string): string {
  *  Using a static overlay input avoids per-frame geq math while keeping the fade smooth.
  *  `intensity` (0–100) controls both the gradient extent and the max alpha:
  *  0 = disabled, 50 = default (moderate), 100 = heavy vignette. */
-function overlayGradientPath(o: { bottom: boolean; top: boolean; left: boolean; right: boolean; intensity?: number }, w: number, h: number): string | undefined {
+export function overlayGradientPath(o: { bottom: boolean; top: boolean; left: boolean; right: boolean; intensity?: number }, w: number, h: number): string | undefined {
   if (!o.bottom && !o.top && !o.left && !o.right) return undefined
   const intensity = Math.max(0, Math.min(100, o.intensity ?? 50))
   if (intensity === 0) return undefined

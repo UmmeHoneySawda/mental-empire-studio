@@ -4,6 +4,21 @@ import type { AppSettings } from '../../../shared/types'
 // and queue.ts (the CRF ladder alone was duplicated four times), making them easy to
 // change inconsistently. Values are unchanged from the originals.
 
+/** The two rendering backends. 'ffmpeg' is the established CPU filtergraph path;
+ *  'gpu' is the WebGL compositor + WebCodecs hardware encoder (beta) which always
+ *  falls back to ffmpeg on any error. */
+export type RenderEngine = 'ffmpeg' | 'gpu'
+
+/** Default video bitrate (Mbps) for the WebCodecs encoder per output quality. nvenc CLI
+ *  uses constant-quality VBR; WebCodecs exposes a bitrate target, so we map quality to a
+ *  sensible H.264 bitrate that visually matches the CRF/CQ ladder. */
+export function gpuBitrateMbpsFor(quality: AppSettings['quality']): number {
+  return quality === '1440p' ? 24 : quality === '720p' ? 8 : 14
+}
+
+/** Keyframe interval (seconds) for the WebCodecs encoder — matches a ~2s GOP. */
+export const GPU_KEY_INTERVAL_SEC = 2
+
 /** Output frame rate for all renders. */
 export const FPS = 24
 

@@ -1,11 +1,43 @@
 # GPU Render Engine (Tier A) — WebGL compositor + WebCodecs encoder
 
-Status: PLAN (not yet implemented)
+Status: IMPLEMENTED (beta, behind a setting — see "Implementation status" below)
 Author: engineering
 Scope: a second, GPU-native rendering path for Mental Empire Studio that composes
 frames with WebGL and encodes with hardware H.264 via WebCodecs — keeping ffmpeg only
 for audio decode + final mux. Runs **inside the existing Electron/Chromium app**, no
 extra runtime to ship.
+
+---
+
+## Implementation status (2026-06-29)
+
+The engine is implemented and shipped behind `settings.renderEngine` (default `'ffmpeg'`),
+with a **guaranteed ffmpeg fallback on any error** so it is strictly additive and safe.
+
+What landed:
+- `shared/renderSpec.ts` — `GpuRenderSpec`, `GradeParams`, `GrainParams`, `CaptionFrameModel`
+  + pure helpers (`activeCaptionGroup`, `activeWordInGroup`, `activeImageIndex`, `totalFrames`).
+- `shared/gpuIpc.ts` — the typed host↔worker IPC contract + `window.gpuWorker` surface.
+- `electron/services/engine/grade.ts` — `gradeParams(style)` (numeric sibling of `gradeChain`).
+- `electron/services/engine/render-config.ts` — `RenderEngine`, `gpuBitrateMbpsFor`, key interval.
+- `electron/services/engine/gpu/spec.ts` — pure `buildGpuRenderSpec()` + caption/image model.
+- `electron/services/engine/gpu/host.ts` — hidden worker window lifecycle, IPC, ffmpeg mux.
+- `electron/preload-worker.ts` — worker preload (fs bridge + IPC relay).
+- `src/render-worker/` — `index.html` + `index.ts` entry, `compositor.ts` (WebGL2 single-pass
+  grade/vignette/grain/overlay + Ken Burns/punch zoom), `captions.ts` (canvas caption layer),
+  `encoder.ts` (WebCodecs `VideoEncoder` loop with backpressure + `frame.close()`), `mux.ts`
+  (`mp4-muxer`).
+- `electron/services/queue.ts` — engine branch in `runJob()`; builds the spec, runs the GPU
+  host, and falls back to ffmpeg on ANY error (B-roll jobs always use ffmpeg).
+- `electron.vite.config.ts` — second renderer HTML entry + second preload (`preload-worker.cjs`).
+- `src/screens/Settings.tsx` — "Render engine: ffmpeg / GPU (beta) / Auto" selector.
+- Unit tests in `test/unit/gpu.test.ts` (grade params, spec builder, caption/image timing).
+
+**Runtime-unverified in CI:** WebCodecs / WebGL / a real GPU can't run in the sandbox, so the
+GPU encode path is validated by typecheck + build + unit tests only. The first real-hardware
+run should confirm encode + colour parity; until then the default stays `'ffmpeg'`. Deferred:
+baked `.cube` LUTs for exact colour parity, `sharpen` shader pass, and B-roll video layers
+(`VideoDecoder`) — see phases P3–P4 below.
 
 ---
 
