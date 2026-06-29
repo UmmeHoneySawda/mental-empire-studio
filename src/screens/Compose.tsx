@@ -58,12 +58,16 @@ function MediaTab(): JSX.Element {
   const project = useData((s) => s.activeProject)
   const images = useData((s) => s.projectImages)
   const setMedia = useData((s) => s.setMedia)
+  const setCaptions = useData((s) => s.setCaptions)
   const setProjectImages = useData((s) => s.setProjectImages)
   const reorderProjectImages = useData((s) => s.reorderProjectImages)
+  const betaOn = useStore((s) => s.settings.beta.enabled)
   const mode = project?.imageMode ?? 'sequence'
   const dragId = useRef<string | null>(null)
   const durationMissing = !project || !project.durationSec || project.durationSec <= 0
-  const brollEnabled = asBetaOpts(project?.betaOpts).broll.enabled
+  const betaOpts = asBetaOpts(project?.betaOpts)
+  const brollEnabled = betaOpts.broll.enabled
+  const setBeta = (patch: Partial<BetaVideoOpts>): void => void setCaptions({ betaOpts: { ...betaOpts, ...patch } })
 
   const pickFiles = (e: React.ChangeEvent<HTMLInputElement>): void => {
     // Electron 32 removed File.path — resolve via webUtils through the preload bridge.
@@ -89,9 +93,10 @@ function MediaTab(): JSX.Element {
   return (
     <>
       <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-        {brollEnabled && (
-          <div style={{ fontSize: 11, color: '#f5b323', background: 'rgba(245,179,35,.1)', border: '1px solid rgba(245,179,35,.3)', borderRadius: 8, padding: '5px 10px' }}>
-            ⚠ Auto B-roll on — your images may be overlaid with stock footage during render
+        {betaOn && (
+          <div title="When on, your images may be overlaid/replaced with stock B-roll footage during render. Requires a stock-footage API key in Settings." style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11.5, color: brollEnabled ? '#f5b323' : '#8a909c', background: brollEnabled ? 'rgba(245,179,35,.1)' : '#0e1116', border: `1px solid ${brollEnabled ? 'rgba(245,179,35,.3)' : '#23272f'}`, borderRadius: 8, padding: '5px 10px' }}>
+            <span>{brollEnabled ? '⚠ Auto B-roll ON' : 'Auto B-roll off'}</span>
+            <MiniToggle on={brollEnabled} onClick={() => setBeta({ broll: { ...betaOpts.broll, enabled: !brollEnabled } })} />
           </div>
         )}
         <div style={{ display: 'flex', background: '#0e1116', border: '1px solid #23272f', borderRadius: 10, overflow: 'hidden', fontSize: 12.5 }}>
@@ -113,7 +118,7 @@ function MediaTab(): JSX.Element {
               <div style={{ position: 'absolute', left: '9%', bottom: 0, width: '36%', height: '88%', background: 'linear-gradient(180deg,#3a4150,#23262e)', borderRadius: '80px 80px 0 0' }} />
             )}
             <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.45))' }} />
-            <div style={{ position: 'absolute', top: 14, left: 14, border: '1px dashed rgba(255,255,255,.3)', borderRadius: 7, padding: '5px 9px', fontSize: 10, color: '#cdd2da', fontFamily: 'var(--font-mono)' }}>⤢ Ken Burns</div>
+            <div onClick={() => void setMedia({ kenBurns: !(project?.kenBurns ?? true) })} title="Slow zoom/pan across each image. On CPU this adds a full-length filter pass and slows renders — turn off for fast renders. Automatically skipped on GPU encoders and long-form (10 min+) videos." style={{ position: 'absolute', top: 14, left: 14, border: project?.kenBurns ?? true ? '1px solid var(--accent)' : '1px dashed rgba(255,255,255,.3)', borderRadius: 7, padding: '5px 9px', fontSize: 10, color: project?.kenBurns ?? true ? 'var(--accent)' : '#cdd2da', fontFamily: 'var(--font-mono)', background: project?.kenBurns ?? true ? 'var(--accent-soft)' : 'transparent', cursor: 'pointer' }}>⤢ Ken Burns {project?.kenBurns ?? true ? 'on' : 'off'}</div>
             <div style={{ position: 'absolute', bottom: 12, left: 14, right: 14, height: 6, borderRadius: 4, background: 'rgba(255,255,255,.18)', overflow: 'hidden' }}><div style={{ width: '35%', height: '100%', background: 'var(--accent)' }} /></div>
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
@@ -361,7 +366,6 @@ function CaptionsTab(): JSX.Element {
   const toggleWordEmphasis = useData((s) => s.toggleWordEmphasis)
   const setWordsEmphasis = useData((s) => s.setWordsEmphasis)
   const setCaptions = useData((s) => s.setCaptions)
-  const openProjectById = useData((s) => s.openProjectById)
   const images = useData((s) => s.projectImages)
   const preset = project?.captionPreset ?? 'Hormozi'
   const betaOpts = asBetaOpts(project?.betaOpts)
@@ -375,8 +379,10 @@ function CaptionsTab(): JSX.Element {
     setPreviewState('rendering')
     setPreviewError('')
     try {
+      // Preview is a read-only render. Do NOT reload the project here — calling
+      // openProjectById() replaced activeProject/projectImages/transcript in the
+      // store and was wiping the user's images + captions on every preview.
       const p = await window.api.compose.preview(project.id)
-      await openProjectById(project.id)
       setPreviewPath(p)
       setPreviewState('ready')
     } catch (e) {

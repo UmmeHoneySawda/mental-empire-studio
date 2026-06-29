@@ -25,9 +25,9 @@ export async function probeDuration(filePath: string): Promise<number> {
     AUDIO_LOG.debug(`metadata duration read failed path=${filePath}: ${(e as Error).message}`)
   }
   if (ffprobeSec > 0 && (!metaSec || Math.abs(ffprobeSec - metaSec) / ffprobeSec > 0.02)) {
-    return Math.round(ffprobeSec)
+    return Math.round(ffprobeSec * 100) / 100
   }
-  return Math.round(metaSec || ffprobeSec || 0)
+  return Math.round((metaSec || ffprobeSec || 0) * 100) / 100
 }
 
 export interface Range {

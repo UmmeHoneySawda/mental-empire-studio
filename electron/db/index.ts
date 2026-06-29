@@ -108,6 +108,8 @@ function migrate(d: Database.Database): void {
   ensureColumn(d, 'render_jobs', 'projectId', 'TEXT')
   // M5: template locked to a profile
   ensureColumn(d, 'profiles', 'thumbnailTemplateId', 'TEXT')
+  // P8: optionally auto-queue produced videos for render on an interactive run
+  ensureColumn(d, 'profiles', 'autoQueueRender', 'INTEGER')
   // M6: render output bookkeeping
   ensureColumn(d, 'render_jobs', 'outputPath', 'TEXT')
   ensureColumn(d, 'render_jobs', 'error', 'TEXT')
@@ -628,7 +630,7 @@ function rowToWord(r: Record<string, unknown>): TranscriptWord {
 }
 
 const PROFILE_COLS = [
-  'id', 'name', 'mono', 'avatar', 'rule', 'images', 'thumb', 'cap', 'out', 'autoWatch', 'thumbnailTemplateId',
+  'id', 'name', 'mono', 'avatar', 'rule', 'images', 'thumb', 'cap', 'out', 'autoWatch', 'autoQueueRender', 'thumbnailTemplateId',
   'linkedSourceId', 'sourceUrl', 'sourceOrder', 'sourceCount', 'imageMode', 'poolSize', 'kenBurns',
   'captionPreset', 'captionFont', 'captionAnim', 'captionAspect', 'captionLines', 'captionPosition', 'captionPace',
   'outputFolder', 'lastSeenVideoId', 'lastRunAt', 'betaOpts'
@@ -638,6 +640,7 @@ function profileToRow(p: Profile): Record<string, unknown> {
   return {
     ...p,
     autoWatch: p.autoWatch ? 1 : 0,
+    autoQueueRender: p.autoQueueRender ? 1 : 0,
     kenBurns: p.kenBurns ? 1 : 0,
     captionFont: p.captionFont ?? 'Montserrat',
     captionAnim: p.captionAnim ?? 'Pop-in',
@@ -662,6 +665,7 @@ function rowToProfile(r: Record<string, unknown>): Profile {
   return {
     ...(r as unknown as Profile),
     autoWatch: !!r.autoWatch,
+    autoQueueRender: !!r.autoQueueRender,
     kenBurns: r.kenBurns == null ? true : !!r.kenBurns,
     sourceUrl: (r.sourceUrl as string) ?? '',
     sourceOrder: (r.sourceOrder as ScrapeOrder) ?? 'Latest',

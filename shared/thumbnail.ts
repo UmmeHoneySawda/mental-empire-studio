@@ -19,15 +19,6 @@ function clamp(n: number, lo: number, hi: number): number {
   return Math.max(lo, Math.min(hi, n))
 }
 
-function norm(s: string): string {
-  return s.toLowerCase().replace(/[^a-z0-9]/g, '')
-}
-
-function highlightSet(layer: TextLayer): Set<string> {
-  const words = layer.highlightWords?.length ? layer.highlightWords : layer.highlightWord ? [layer.highlightWord] : []
-  return new Set(words.map(norm).filter(Boolean))
-}
-
 /** Split words into 1–2 lines minimizing the length difference between them. */
 export function balanceLines(words: string[]): string[][] {
   if (words.length <= 1) return [words]
@@ -63,28 +54,22 @@ export function autoArrangeText(
   const words = raw.split(/\s+/).filter(Boolean)
   const grouped = balanceLines(words)
 
-  const highlights = highlightSet(layer)
-  const hasHighlight = highlights.size > 0 && grouped.some((g) => g.some((w) => highlights.has(norm(w))))
-
   const inset = Math.round(stage.w * SAFE_INSET)
   const availW = stage.w - inset * 2
   const maxLen = Math.max(1, ...grouped.map((g) => g.join(' ').length))
-  // When a word is highlighted, leave headroom so it can scale up past the base
-  // without both lines pinning to the max size.
-  const baseCeil = hasHighlight ? Math.floor(MAX_SIZE / 1.25) : MAX_SIZE
-  const base = clamp(Math.floor(availW / (maxLen * CHAR_W)), MIN_SIZE, baseCeil)
+  // Uniform size for every line so stacked lines space evenly. The highlighted word is
+  // emphasized by colour/box at render time, not by enlarging its whole line (which made
+  // multi-line headlines look lopsided with big/small gaps).
+  const base = clamp(Math.floor(availW / (maxLen * CHAR_W)), MIN_SIZE, MAX_SIZE)
 
-  const lines = grouped.map((g) => {
-    const text = g.join(' ')
-    const highlighted = g.some((w) => highlights.has(norm(w)))
-    const size = highlighted ? Math.min(MAX_SIZE, Math.round(base * 1.25)) : base
-    return { text, size }
-  })
+  const lines = grouped.map((g) => ({ text: g.join(' '), size: base }))
 
   const blockW = Math.max(...lines.map((l) => Math.round(l.text.length * CHAR_W * l.size)))
-  const avgSize = lines.reduce((a, l) => a + l.size, 0) / lines.length
-  const lineGap = layer.lineGap == null || layer.lineGap <= 0 ? Math.max(8, avgSize * 0.12) : layer.lineGap
-  const blockH = lines.reduce((a, l) => a + l.size, 0) + Math.max(0, lines.length - 1) * lineGap
+  // Match render.ts: a uniform line box = base × factor (lineHeight, else legacy lineGap).
+  const factor = layer.lineHeight && layer.lineHeight > 0
+    ? layer.lineHeight
+    : (layer.lineGap && layer.lineGap > 0 ? 1 + layer.lineGap / base : 1.12)
+  const blockH = Math.round(lines.length * base * factor)
 
   // Place the block opposite the subject (largest empty region), bottom-aligned.
   const subjectCenter = subjectBounds ? subjectBounds.x + subjectBounds.width / 2 : stage.w

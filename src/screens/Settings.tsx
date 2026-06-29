@@ -58,6 +58,10 @@ export function Settings(): JSX.Element {
   const updateSettings = useStore((s) => s.updateSettings)
   const resetAll = useStore((s) => s.resetAll)
   const activity = useData((s) => s.activity)
+  const renderJobs = useData((s) => s.renderJobs)
+  // Real "jobs this week": completed render jobs created in the last 7 days (no fake numbers).
+  const weekAgo = Date.now() - 7 * 24 * 60 * 60 * 1000
+  const jobsThisWeek = renderJobs.filter((r) => r.job.status === 'done' && Date.parse(r.job.createdAt || '') >= weekAgo).length
   const { quality, autoScrape, background } = settings
   const [caps, setCaps] = useState<RenderCapabilities | null>(null)
   const [checkingCaps, setCheckingCaps] = useState(true)
@@ -111,11 +115,13 @@ export function Settings(): JSX.Element {
     ].filter(Boolean).join(' · ')
     : ''
   const chooseEncoder = (enc: (typeof encoders)[number]): void => {
-    if (!enc.enabled && enc.value !== 'cpu') {
-      void refreshCaps(true)
-      return
-    }
+    // Always persist the user's choice — even if the capability probe hasn't confirmed
+    // the encoder. Previously a GPU pick was silently dropped when the probe failed, so
+    // the render kept using CPU while the user believed they'd selected GPU. With
+    // strict-GPU rendering, an unavailable GPU now fails the render *visibly* instead.
     updateSettings({ encoder: enc.value })
+    // Refresh capabilities so the advisory note/warning under the selector updates.
+    if (!enc.enabled && enc.value !== 'cpu') void refreshCaps(true)
   }
 
   return (
@@ -146,8 +152,8 @@ export function Settings(): JSX.Element {
                   <div style={{ fontSize: 12, color: '#8a909c' }}>Encoder</div>
                   <button type="button" onClick={() => void refreshCaps(true)} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 7, padding: '3px 7px', fontSize: 10, color: '#8a909c', cursor: 'pointer' }}>{checkingCaps ? 'Checking...' : 'Recheck'}</button>
                 </div>
-                <div style={{ display: 'flex', border: '1px solid #23272f', borderRadius: 8, overflow: 'hidden', fontSize: 11.5 }}>{encoders.map((enc) => { const on = (settings.encoder ?? 'cpu') === enc.value; return <div key={enc.value} title={enc.note} onClick={() => chooseEncoder(enc)} style={{ padding: '8px 12px', cursor: enc.enabled || enc.value === 'cpu' ? 'pointer' : 'help', background: on ? 'var(--accent)' : undefined, color: on ? 'var(--accent-ink)' : enc.enabled ? '#8a909c' : '#555b66', fontWeight: on ? 600 : undefined }}>{enc.label}</div> })}</div>
-                <div title={checkingCaps ? undefined : caps ? selectedEncoder.note : undefined} className="me-clamp-2" style={{ fontSize: 10, color: selectedEncoder.enabled || selectedEncoder.value === 'cpu' ? '#6a7180' : '#f5b323', marginTop: 5 }}>{checkingCaps ? 'Checking ffmpeg GPU capabilities...' : caps ? selectedEncoder.note : 'Could not check ffmpeg GPU capabilities.'}</div>
+                <div style={{ display: 'flex', border: '1px solid #23272f', borderRadius: 8, overflow: 'hidden', fontSize: 11.5 }}>{encoders.map((enc) => { const on = (settings.encoder ?? 'cpu') === enc.value; return <div key={enc.value} title={enc.note} onClick={() => chooseEncoder(enc)} style={{ padding: '8px 12px', cursor: 'pointer', background: on ? 'var(--accent)' : undefined, color: on ? 'var(--accent-ink)' : enc.enabled ? '#8a909c' : '#737a86', fontWeight: on ? 600 : undefined }}>{enc.label}</div> })}</div>
+                <div title={checkingCaps ? undefined : caps ? selectedEncoder.note : undefined} className="me-clamp-2" style={{ fontSize: 10, color: selectedEncoder.enabled || selectedEncoder.value === 'cpu' ? '#6a7180' : '#f5b323', marginTop: 5 }}>{checkingCaps ? 'Checking ffmpeg GPU capabilities...' : caps ? selectedEncoder.note : 'Could not check ffmpeg GPU capabilities — your encoder choice is still saved and will be used at render time.'}</div>
                 {capsDetail && <div title={capsDetail} style={{ marginTop: 4, maxWidth: 420, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 9.5, color: '#5b616f', fontFamily: 'var(--font-mono)' }}>{capsDetail}</div>}
               </div>
             </div>
@@ -249,8 +255,7 @@ export function Settings(): JSX.Element {
             ))}
           </div>
           <div style={{ marginTop: 16, borderTop: '1px solid #1d2129', paddingTop: 14, fontSize: 11, color: '#6a7180', display: 'flex', flexDirection: 'column', gap: 7 }}>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Storage used</span><span style={{ color: '#cdd2da', fontFamily: 'var(--font-mono)' }}>14.2 GB</span></div>
-            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Jobs this week</span><span style={{ color: '#cdd2da', fontFamily: 'var(--font-mono)' }}>23</span></div>
+            <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Jobs this week</span><span style={{ color: '#cdd2da', fontFamily: 'var(--font-mono)' }}>{jobsThisWeek}</span></div>
             <div style={{ display: 'flex', justifyContent: 'space-between' }}><span>Version</span><span style={{ color: '#cdd2da', fontFamily: 'var(--font-mono)' }}>{window.api?.appVersion || '0.1.0'}</span></div>
             <div onClick={() => void window.api?.openLogs?.()} className="me-btn" style={{ marginTop: 6, border: '1px solid #262b34', borderRadius: 8, padding: '8px 10px', textAlign: 'center', fontSize: 11, color: '#c4cad3', background: '#0e1116', cursor: 'pointer' }}>📄 Open logs folder (for bug reports)</div>
           </div>

@@ -11,6 +11,7 @@ import { Thumbnails } from './screens/Thumbnails'
 import { RenderQueue } from './screens/RenderQueue'
 import { Profiles } from './screens/Profiles'
 import { Settings } from './screens/Settings'
+import { ErrorBoundary } from './components/ErrorBoundary'
 import type { ScreenKey } from '@shared/types'
 
 const SCREENS: Record<ScreenKey, () => JSX.Element> = {
@@ -55,7 +56,9 @@ export function App(): JSX.Element {
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
         <Sidebar />
         <div style={{ flex: 1, minWidth: 0, background: mainBg, position: 'relative', overflowY: 'auto', overflowX: 'hidden' }}>
-          <Screen key={active} />
+          <ErrorBoundary resetKey={active}>
+            <Screen key={active} />
+          </ErrorBoundary>
         </div>
       </div>
     </div>

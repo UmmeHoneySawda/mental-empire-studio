@@ -195,7 +195,10 @@ async function previewProject(projectId: string): Promise<string> {
   validateDownloadedAudio(project.downloadId, project.mp3Path, project.durationSec)
 
   const settings = getSettings()
-  const previewSettings = { ...settings, quality: '720p' as const }
+  // Previews are throwaway: render fast on CPU (ultrafast-ish libx264) regardless of the
+  // user's GPU encoder, so a preview never waits on GPU init or fails under strict-GPU,
+  // and skip the second loudness-master pass entirely.
+  const previewSettings = { ...settings, quality: '720p' as const, encoder: 'cpu' as const }
   const caps = probeRenderCapabilities()
   const previewSec = Math.max(1, Math.min(5, project.durationSec || 5))
   const dir = join(outputDir(), 'previews')
@@ -222,6 +225,7 @@ async function previewProject(projectId: string): Promise<string> {
     aspect: project.captionAspect,
     lines: project.captionLines ?? 1,
     position: project.captionPosition ?? 'bottom',
+    mode: 'phrase',
     keywords: project.keywords || !!beta?.autoHighlight,
     hook: hookText ? { text: hookText, untilSec: Math.min(2.6, previewSec) } : undefined,
     styleLead,
@@ -251,7 +255,8 @@ async function previewProject(projectId: string): Promise<string> {
     transition: beta && style !== 'None' ? styleTransition(style) : undefined,
     plan,
     jobId: `preview-${projectId}`,
-    logPath
+    logPath,
+    skipAudioMaster: true
   })
   pushActivity({ t: hhmm(), icon: '▶', color: '#8b7cff', text: `Preview rendered: ${project.title.slice(0, 42)}` })
   return outPath

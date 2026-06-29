@@ -80,6 +80,13 @@ export function ThumbCanvas(): JSX.Element {
         if (im) images[id] = im
       }
 
+      // Evict cached images whose src is no longer referenced by any layer, so swapping
+      // backgrounds/subjects across a session doesn't grow the cache unbounded.
+      const liveSrcs = new Set(need.map((n) => n.src))
+      for (const key of [...cache.keys()]) {
+        if (!liveSrcs.has(key)) cache.delete(key)
+      }
+
       // Build the new content first, then swap it in — destroying the old children
       // only once the replacement is ready avoids an empty (black) frame on edits.
       const group = buildLayerGroup(layers, images)
