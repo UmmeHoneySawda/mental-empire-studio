@@ -135,7 +135,7 @@ export function Download(): JSX.Element {
               <button type="button" key={o} onClick={() => setOrder(o)} style={{ border: 0, padding: '8px 14px', cursor: 'pointer', background: order === o ? 'var(--accent)' : 'transparent', color: order === o ? 'var(--accent-ink)' : '#8a909c', fontWeight: order === o ? 600 : undefined }}>{o}</button>
             ))}
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7, border: '1px solid #23272f', borderRadius: 9, padding: '7px 12px', background: '#0e1116' }}><span style={{ fontSize: 11, color: '#6a7180', fontFamily: 'var(--font-mono)' }}>QTY</span><input value={qty} onChange={(e) => setQty(Math.max(1, parseInt(e.target.value) || 1))} style={{ width: 28, border: 'none', outline: 'none', background: 'transparent', fontFamily: 'var(--font-display)', fontWeight: 600, color: '#eef0f3', fontSize: 14 }} /></div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, border: '1px solid #23272f', borderRadius: 9, padding: '7px 12px', background: '#0e1116' }}><span style={{ fontSize: 11, color: '#6a7180', fontFamily: 'var(--font-mono)' }}>QTY</span><input value={qty} onChange={(e) => setQty(Math.min(50, Math.max(1, parseInt(e.target.value) || 1)))} title="1–50 videos per fetch" style={{ width: 28, border: 'none', outline: 'none', background: 'transparent', fontFamily: 'var(--font-display)', fontWeight: 600, color: '#eef0f3', fontSize: 14 }} /></div>
           <div style={{ display: 'flex', alignItems: 'center', gap: 7, border: '1px solid #23272f', borderRadius: 9, padding: '7px 12px', background: '#0e1116', fontSize: 11.5, color: '#8a909c' }}>mp3 · {bitrate}k ▾</div>
         </div>
       </div>

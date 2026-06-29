@@ -230,6 +230,7 @@ export interface Repositories {
   getSourceVideos(sourceId: string): ScrapedVideo[]
   setChannelStats(id: string, patch: ChannelStatsPatch): void
   setChannelMapping(id: string, mapDone: number, mapTotal: number): void
+  setChannelGoalProgress(id: string, weekDone: number, monthDone: number): void
   markDownloadMatches(matches: Array<{ downloadId: string; uploadId: string }>): void
   updateChannelGoals(id: string, patch: GoalsPatch): void
   /** Remove an owned channel and its scraped uploads. */
@@ -291,8 +292,13 @@ export function seedDemoForSmoke(): void {
   seedDemoData(db)
 }
 
+/** Idempotent: safe to call from multiple lifecycle paths (window-all-closed + before-quit). */
 export function closeDatabase(): void {
-  db?.close()
+  try {
+    db?.close()
+  } catch {
+    /* already closed */
+  }
   db = null
   repos = null
 }
@@ -429,6 +435,9 @@ function buildRepositories(d: Database.Database): Repositories {
     },
     setChannelMapping: (id, mapDone, mapTotal) => {
       d.prepare('UPDATE my_channels SET mapDone=?, mapTotal=? WHERE id=?').run(mapDone, mapTotal, id)
+    },
+    setChannelGoalProgress: (id, weekDone, monthDone) => {
+      d.prepare('UPDATE my_channels SET weekDone=?, monthDone=? WHERE id=?').run(weekDone, monthDone, id)
     },
     markDownloadMatches: (matches) => {
       const tx = d.transaction(() => {

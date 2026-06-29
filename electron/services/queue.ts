@@ -1,5 +1,5 @@
 import { app } from 'electron'
-import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { appendFileSync, existsSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Project, ProjectImage, RenderJob, RenderProgress, RenderStage } from '../../shared/types'
 import { asBetaOpts } from '../../shared/types'
@@ -343,6 +343,11 @@ export async function runJob(job: RenderJob): Promise<void> {
     repos.setRenderStatus(job.id, { status: 'error', pct: 0, error: msg })
     emitR({ jobId: job.id, pct: 0, stage: 'error', done: true, error: msg })
     pushActivity({ t: hhmm(), icon: '!', color: '#ff5a6e', text: `Render failed: ${project.title}` })
+  } finally {
+    // The SFX track is a full-length WAV written per render — delete it so temp doesn't grow.
+    if (sfxPath) {
+      try { rmSync(sfxPath, { force: true }) } catch { /* ignore */ }
+    }
   }
 }
 
