@@ -17,10 +17,16 @@ export default defineConfig({
     plugins: [externalizeDepsPlugin()],
     build: {
       outDir: 'out/preload',
-      lib: { entry: resolve(__dirname, 'electron/preload.ts') },
-      // CommonJS preload (.cjs) loads under any sandbox setting — ESM preloads
-      // require sandbox:false and are far more fragile.
-      rollupOptions: { output: { format: 'cjs', entryFileNames: 'preload.cjs' } }
+      // Two preloads: the main window bridge (preload.cjs) and the hidden GPU
+      // render-worker bridge (preload-worker.cjs). CommonJS so they load under any
+      // sandbox setting.
+      rollupOptions: {
+        input: {
+          preload: resolve(__dirname, 'electron/preload.ts'),
+          'preload-worker': resolve(__dirname, 'electron/preload-worker.ts')
+        },
+        output: { format: 'cjs', entryFileNames: '[name].cjs' }
+      }
     }
   },
   renderer: {
@@ -34,7 +40,13 @@ export default defineConfig({
     },
     build: {
       outDir: 'out/renderer',
-      rollupOptions: { input: resolve(__dirname, 'index.html') }
+      // Two HTML entries: the app (index.html) and the hidden GPU render worker.
+      rollupOptions: {
+        input: {
+          index: resolve(__dirname, 'index.html'),
+          'render-worker': resolve(__dirname, 'src/render-worker/index.html')
+        }
+      }
     }
   }
 })

@@ -514,6 +514,10 @@ export interface AppSettings {
   quality: '720p' | '1080p' | '1440p'
   /** video encoder: cpu works everywhere; hardware modes are capability-gated and fall back. */
   encoder: 'cpu' | 'nvenc' | 'qsv' | 'amf'
+  /** render engine: 'ffmpeg' is the default CPU/ffmpeg filtergraph; 'gpu' uses the WebGL
+   *  compositor + WebCodecs hardware encoder (beta) with automatic ffmpeg fallback on any
+   *  error; 'auto' prefers GPU when hardware H.264 is present, else ffmpeg. */
+  renderEngine?: 'auto' | 'ffmpeg' | 'gpu'
   autoScrape: { enabled: boolean; frequency: string; delaySec: number; retries: number; proxy: string; cookiesPath: string }
   background: { tray: boolean; startOnSignIn: boolean; notifications: boolean; webhook: string }
   transcription: { apiKey: string; model: string }
@@ -549,6 +553,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   concurrency: 2,
   quality: '1080p',
   encoder: 'cpu',
+  renderEngine: 'ffmpeg',
   autoScrape: { enabled: true, frequency: 'Every 6 hours', delaySec: 1.5, retries: 3, proxy: '', cookiesPath: '' },
   background: { tray: true, startOnSignIn: false, notifications: true, webhook: '' },
   transcription: { apiKey: '', model: 'whisper-large-v3-turbo' },

@@ -1,0 +1,140 @@
+// Serializable render spec shared by both engines (ffmpeg + GPU/WebCodecs) so they
+// stay output-compatible. The GPU worker reads NUMERIC parameters (not ffmpeg filter
+// strings) — gradeParams() in electron/services/engine/grade.ts is the source of truth
+// for the values, mirroring gradeChain(). Kept dependency-free + DOM-free so it can be
+// imported from the Electron main process (Node) and the render-worker (renderer) alike.
+
+import type { VideoStyle } from './types'
+
+/** Numeric colour-grade parameters for the GPU compositor shader. Mirrors the look of
+ *  the ffmpeg gradeChain() for the same style, expressed as values a shader can apply. */
+export interface GradeParams {
+  /** style id this was derived from (for LUT selection + logging) */
+  style: VideoStyle
+  /** optional baked 3D LUT (.cube) asset id; when absent the shader uses the math below */
+  lut?: string
+  /** master saturation multiplier (1 = unchanged) */
+  saturation: number
+  /** master contrast multiplier (1 = unchanged) */
+  contrast: number
+  /** additive brightness in [-1,1] (0 = unchanged) */
+  brightness: number
+  /** per-channel lift/gain bias approximating colorbalance, each in [-1,1] */
+  colorBalance: { r: number; g: number; b: number }
+  /** vignette strength in [0,1] (0 = off). Larger = darker corners. */
+  vignette: number
+  /** unsharp/sharpen amount in [0,1] (0 = off) */
+  sharpen: number
+}
+
+/** Film-grain parameters for the GPU compositor. */
+export interface GrainParams {
+  /** 0 = off; ~0..1 normalized strength (ffmpeg noise alls=8 ≈ 0.03) */
+  strength: number
+  /** when true the grain seed advances per frame (matches ffmpeg allf=t temporal grain) */
+  temporal: boolean
+}
+
+/** One slideshow still and the time window it is on screen. */
+export interface RenderImageSpec {
+  path: string
+  startSec: number
+  endSec: number
+}
+
+/** A single caption group (phrase or word) with its on-screen window + emphasis. */
+export interface CaptionGroupModel {
+  startSec: number
+  endSec: number
+  /** the words in this group, in order */
+  words: Array<{ text: string; startSec: number; endSec: number; emphasis: boolean }>
+}
+
+/** GPU caption plan — replaces libass. Drawn to a 2D canvas, uploaded as a texture and
+ *  composited in the WebGL pass. Drive by frame index, never wall-clock. */
+export interface CaptionFrameModel {
+  groups: CaptionGroupModel[]
+  preset: string
+  font: string
+  animation: string
+  /** word | phrase rendering mode (matches the ffmpeg caption mode) */
+  mode: 'word' | 'phrase'
+  position: 'top' | 'middle' | 'bottom'
+  lines: 1 | 2 | 3
+  /** highlight colour for the active/emphasized word, as #rrggbb */
+  highlightColor: string
+  /** optional intro hook card shown for the first untilSec seconds */
+  hook?: { text: string; untilSec: number }
+}
+
+/** Optional per-frame motion (Ken Burns / punch zoom). */
+export interface MotionSpec {
+  kenBurns: boolean
+  /** times (seconds) where a punch-zoom pulse should fire (emphasized words) */
+  punchAtSec: number[]
+}
+
+/** The full GPU render job spec. Serializable across the IPC boundary to the worker. */
+export interface GpuRenderSpec {
+  jobId: string
+  width: number
+  height: number
+  fps: number
+  durationSec: number
+  images: RenderImageSpec[]
+  motion: MotionSpec
+  grade: GradeParams
+  grain: GrainParams
+  /** existing PNG/PAM darkening overlay, sampled as a texture (optional) */
+  overlayPath?: string
+  captions: CaptionFrameModel
+  audio: { voicePath: string; sfxPath?: string }
+  encoder: { codec: 'avc'; bitrateMbps: number; keyIntervalSec: number }
+  out: { h264Path: string; finalPath: string }
+}
+
+/** WebCodecs AVC config string used everywhere (High@L4). Single source of truth. */
+export const GPU_AVC_CODEC = 'avc1.640028'
+
+/**
+ * Which caption group is active at a given time (pure — unit-tested). Returns the index
+ * of the group whose [startSec,endSec) window contains t, or -1 if none. Groups are
+ * assumed sorted by startSec and non-overlapping.
+ */
+export function activeCaptionGroup(model: CaptionFrameModel, timeSec: number): number {
+  for (let i = 0; i < model.groups.length; i++) {
+    const g = model.groups[i]
+    if (timeSec >= g.startSec && timeSec < g.endSec) return i
+  }
+  return -1
+}
+
+/**
+ * Which word inside a group is active at a given time (pure — unit-tested). Returns the
+ * index of the word whose window contains t, clamped so the last word stays active until
+ * the group ends. Returns -1 when the group has no words.
+ */
+export function activeWordInGroup(group: CaptionGroupModel, timeSec: number): number {
+  if (group.words.length === 0) return -1
+  for (let i = 0; i < group.words.length; i++) {
+    const w = group.words[i]
+    const next = group.words[i + 1]
+    const end = next ? next.startSec : group.endSec
+    if (timeSec >= w.startSec && timeSec < end) return i
+  }
+  // before the first word's start (within the group window) → first word
+  return timeSec < group.words[0].startSec ? 0 : group.words.length - 1
+}
+
+/** Which slideshow image is on screen at time t (pure). Falls back to the last image. */
+export function activeImageIndex(images: RenderImageSpec[], timeSec: number): number {
+  for (let i = 0; i < images.length; i++) {
+    if (timeSec >= images[i].startSec && timeSec < images[i].endSec) return i
+  }
+  return images.length - 1
+}
+
+/** Total frame count for a spec (pure). */
+export function totalFrames(spec: Pick<GpuRenderSpec, 'durationSec' | 'fps'>): number {
+  return Math.max(1, Math.round(spec.durationSec * spec.fps))
+}
