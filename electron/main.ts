@@ -464,6 +464,17 @@ async function runSmokeM6(): Promise<void> {
       outPath: '/tmp/o.mp4',
       settings: smokeSettings
     }).join(' ')
+    const longMultiImageArgs = buildRenderArgs({
+      project: { ...proj('p-long-multi', 'Long image multi'), durationSec: 1174, kenBurns: true, punchZoom: true },
+      images: [
+        { id: 'lmi0', projectId: 'p-long-multi', ord: 0, path: '/x/a.png', thumb: '', rangeStart: 0, rangeEnd: 391, manual: false },
+        { id: 'lmi1', projectId: 'p-long-multi', ord: 1, path: '/x/b.png', thumb: '', rangeStart: 391, rangeEnd: 782, manual: false },
+        { id: 'lmi2', projectId: 'p-long-multi', ord: 2, path: '/x/c.png', thumb: '', rangeStart: 782, rangeEnd: 1174, manual: false }
+      ],
+      assPath: '/tmp/x.ass',
+      outPath: '/tmp/o.mp4',
+      settings: smokeSettings
+    }).join(' ')
     const longBrollManifestArgs = buildRenderArgs({
       project: {
         ...proj('p-long-broll', 'Long Broll'),
@@ -483,7 +494,9 @@ async function runSmokeM6(): Promise<void> {
     const argsOk = g.includes('zoompan') && g.includes('xfade') && g.includes('subtitles=') && g.includes('libx264') && g.includes('scale=1920:1080') && loudnorm2.includes('measured_I=-20.0') && loudnorm2.includes('linear=true') && loudnormFallback === 'loudnorm=I=-14:TP=-1:LRA=11' && !g.includes('-shortest')
     const longMotionOk =
       !longImageArgs.includes('zoompan') && !longImageArgs.includes('xfade=') &&
-      longImageArgs.includes('subtitles=') && longImageArgs.includes('-t 1174.00')
+      longImageArgs.includes('subtitles=') && longImageArgs.includes('-t 1174.00') &&
+      !longMultiImageArgs.includes('zoompan') && !longMultiImageArgs.includes('xfade=') &&
+      longMultiImageArgs.includes('concat=n=3:v=1:a=0') && longMultiImageArgs.includes('-t 1174.00')
     const longBrollFastArgsOk =
       longBrollManifestArgs.includes('-f concat -safe 0 -i /tmp/long-broll-concat.txt') &&
       !longBrollManifestArgs.includes('zoompan') &&

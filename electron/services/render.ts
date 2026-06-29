@@ -249,6 +249,8 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
   const caps = inp.caps ?? FALLBACK_CAPS
   const { w, h } = dimensions(settings.quality, project.captionAspect)
   const cf = typeof project.crossfade === 'number' ? project.crossfade : 0
+  const longForm = longFormFastPath(project)
+  const effectiveCf = longForm ? 0 : cf
   // Beta options only apply when beta mode is on; otherwise the graph is unchanged.
   const beta = settings.beta?.enabled ? asBetaOpts(project.betaOpts) : null
   const imgs: ProjectImage[] =
@@ -388,7 +390,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
   const inputs: string[] = []
   const overlayPath = beta ? overlayGradientPath(beta.overlay, w, h) : undefined
   imgs.forEach((im) => {
-    const dur = Math.max(0.5, im.rangeEnd - im.rangeStart) + cf
+    const dur = Math.max(0.5, im.rangeEnd - im.rangeStart) + effectiveCf
     if (im.path) {
       inputs.push('-loop', '1', '-t', dur.toFixed(2), '-i', im.path)
     } else {
@@ -407,8 +409,10 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
 
   const parts: string[] = []
   imgs.forEach((im, i) => {
-    const frames = Math.round((Math.max(0.5, im.rangeEnd - im.rangeStart) + cf) * FPS)
-    const base = `[${i}:v]scale=${w}:${h}:force_original_aspect_ratio=increase,crop=${w}:${h},setsar=1`
+    const frames = Math.round((Math.max(0.5, im.rangeEnd - im.rangeStart) + effectiveCf) * FPS)
+    const baseFilters = [`scale=${w}:${h}:force_original_aspect_ratio=increase`, `crop=${w}:${h}`, 'setsar=1']
+    if (longForm) baseFilters.push(`fps=${FPS}`, 'format=yuv420p', 'setpts=PTS-STARTPTS')
+    const base = `[${i}:v]${baseFilters.join(',')}`
     // Ken Burns is intentionally disabled on long-form jobs: with burned captions it
     // becomes a second full-video CPU filter pass and made image-only renders as slow
     // as B-roll on the user's 19-minute tests.
@@ -421,13 +425,18 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
   const fallbackType = (beta && inp.transition) ? inp.transition : 'fade'
   let last = 'v0'
   if (imgs.length > 1) {
-    let offset = Math.max(0.5, imgs[0].rangeEnd - imgs[0].rangeStart)
-    for (let i = 1; i < imgs.length; i++) {
-      const out = `x${i}`
-      const tr = beta ? transitionAt(inp.plan, offset, fallbackType, cf || 0.4) : { type: fallbackType, dur: cf || 0.4 }
-      parts.push(`[${last}][v${i}]xfade=transition=${tr.type}:duration=${tr.dur.toFixed(2)}:offset=${offset.toFixed(2)}[${out}]`)
-      offset += Math.max(0.5, imgs[i].rangeEnd - imgs[i].rangeStart)
-      last = out
+    if (longForm) {
+      parts.push(`${imgs.map((_, i) => `[v${i}]`).join('')}concat=n=${imgs.length}:v=1:a=0[vcat]`)
+      last = 'vcat'
+    } else {
+      let offset = Math.max(0.5, imgs[0].rangeEnd - imgs[0].rangeStart)
+      for (let i = 1; i < imgs.length; i++) {
+        const out = `x${i}`
+        const tr = beta ? transitionAt(inp.plan, offset, fallbackType, cf || 0.4) : { type: fallbackType, dur: cf || 0.4 }
+        parts.push(`[${last}][v${i}]xfade=transition=${tr.type}:duration=${tr.dur.toFixed(2)}:offset=${offset.toFixed(2)}[${out}]`)
+        offset += Math.max(0.5, imgs[i].rangeEnd - imgs[i].rangeStart)
+        last = out
+      }
     }
   }
 
