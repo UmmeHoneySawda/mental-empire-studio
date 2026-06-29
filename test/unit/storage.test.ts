@@ -24,6 +24,7 @@ describe('storage path helpers', () => {
 })
 
 const ROOT = '/lib'
+const posix = (p: string): string => p.replace(/\\/g, '/')
 
 function inputs(over: Partial<ReorgInputs> = {}): ReorgInputs {
   return {
@@ -40,7 +41,7 @@ describe('planReorg', () => {
   it('routes each asset into the per-video layout', () => {
     const plan = planReorg(inputs())
     const to = (sub: string, file: string) => `/lib/Chan A/v1__hello-world/${sub}/${file}`
-    const targets = Object.fromEntries(plan.moves.map((m) => [m.from, m.to]))
+    const targets = Object.fromEntries(plan.moves.map((m) => [m.from, posix(m.to)]))
     expect(targets['/old/Chan A - Hello World.mp3']).toBe(to('audio', 'Chan A - Hello World.mp3'))
     expect(targets['/old/thumbnails/Hello World.png']).toBe(to('thumb', 'Hello World.png'))
     expect(targets['/old/projects/proj-dl-v1/00_a.jpg']).toBe(to('images', '00_a.jpg'))
@@ -63,7 +64,7 @@ describe('planReorg', () => {
     const plan = planReorg(inputs())
     const mp4 = plan.moves.find((m) => m.from.endsWith('.mp4'))!
     expect(mp4.siblings.map((s) => s.from).sort()).toEqual(['/old/Chan A - Hello World.ass', '/old/Chan A - Hello World.render.log'])
-    expect(mp4.siblings[0].to).toBe('/lib/Chan A/v1__hello-world/output/Chan A - Hello World.ass')
+    expect(posix(mp4.siblings[0].to)).toBe('/lib/Chan A/v1__hello-world/output/Chan A - Hello World.ass')
   })
 
   it('counts already-organized files (from === to) and skips them', () => {

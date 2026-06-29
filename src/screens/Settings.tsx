@@ -82,7 +82,7 @@ export function Settings(): JSX.Element {
   const qualities: AppSettings['quality'][] = ['720p', '1080p', '1440p']
   const encoders = [
     { value: 'cpu' as const, label: 'CPU', enabled: true, note: 'libx264 — always available.' },
-    { value: 'nvenc' as const, label: 'NVENC', enabled: !!(caps?.hasNvenc || caps?.hasNvencListed), note: caps?.hasNvenc ? `NVIDIA NVENC available${caps.ffmpegHasCuda ? ' + CUDA scale' : ''}` : 'NVIDIA NVENC not confirmed by ffmpeg' },
+    { value: 'nvenc' as const, label: 'NVENC', enabled: !!(caps?.hasNvenc || caps?.hasNvencListed), note: caps?.hasNvenc ? `NVIDIA NVENC available${caps.ffmpegHasCuda ? ' + CUDA filters for B-roll' : ''}` : caps?.hasNvencListed ? 'NVIDIA NVENC is listed by ffmpeg, but the live probe failed; renders will still try NVENC and fail visibly if it cannot open.' : 'NVIDIA NVENC not listed by ffmpeg' },
     { value: 'qsv' as const, label: 'QSV', enabled: !!(caps?.hasQsv || caps?.hasQsvListed), note: caps?.hasQsv ? 'Intel QSV available' : 'Intel QSV not confirmed' },
     { value: 'amf' as const, label: 'AMF', enabled: !!(caps?.hasAmf || caps?.hasAmfListed), note: caps?.hasAmf ? 'AMD AMF available' : 'AMD AMF not confirmed' },
   ]

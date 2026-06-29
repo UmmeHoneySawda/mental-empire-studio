@@ -30,7 +30,7 @@ describe('videoCodecArgs', () => {
   })
 })
 
-describe('buildRenderArgs — GPU image path', () => {
+describe('buildRenderArgs — still-image ffmpeg path', () => {
   const project = {
     id: 'p1',
     title: 'GPU image path',
@@ -56,7 +56,7 @@ describe('buildRenderArgs — GPU image path', () => {
   } as unknown as Project
   const image = { id: 'im1', projectId: 'p1', ord: 0, path: 'still.png', thumb: 'still-thumb.jpg', rangeStart: 0, rangeEnd: 12, manual: false } as ProjectImage
 
-  it('uses CUDA scale and NVENC for ordinary still-image renders when available', () => {
+  it('uses CPU filters plus NVENC encode for ordinary still-image renders', () => {
     const args = buildRenderArgs({
       project,
       images: [image],
@@ -66,8 +66,10 @@ describe('buildRenderArgs — GPU image path', () => {
       caps: caps({ hasNvenc: true, ffmpegHasCuda: true })
     })
     const joined = args.join(' ')
-    expect(joined).toContain('scale_cuda')
-    expect(joined).toContain('hwupload_cuda')
+    expect(joined).toContain('scale=1920:1080:force_original_aspect_ratio=increase')
+    expect(joined).not.toContain('scale_cuda')
+    expect(joined).not.toContain('hwupload_cuda')
+    expect(joined).not.toContain('hwdownload')
     expect(joined).toContain('h264_nvenc')
     expect(joined).not.toContain('zoompan')
   })

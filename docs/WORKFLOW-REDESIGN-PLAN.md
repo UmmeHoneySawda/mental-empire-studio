@@ -1,6 +1,6 @@
 # Workflow Redesign — Channel Workspace, Master Library, Niche B-roll, Profiles
 
-Status: PLAN (nothing implemented yet — this is the design + phased rollout)
+Status: IMPLEMENTED (P0-P5 additive rollout merged; see "Implementation status" below)
 Author: engineering
 Scope: rework the day-to-day workflow so the app becomes a **resumable, channel-centric
 workspace** with an organized on-disk library, niche-based reusable B-roll, a single
@@ -8,6 +8,34 @@ B-roll control, and a clearer replacement for "Profiles". Grounded in the curren
 (`shared/types.ts`, `electron/db/index.ts`, `electron/services/broll.ts`,
 `electron/ipc/compose.ts`, `electron/services/downloader.ts`) and informed by the older
 Python app `UmmeHoneySawda/oldytauto`, which already nailed several of these ideas.
+
+---
+
+## Implementation status (2026-06-29)
+
+The P0-P5 workflow redesign has landed as an additive implementation on
+`build/mental-empire-studio`:
+
+- **P0 storage foundation:** `electron/services/storage.ts`,
+  `electron/services/storage-migrate.ts`, and `electron/ipc/library.ts` route new items
+  through the master library layout and provide an opt-in reorganize action for existing
+  files.
+- **P1 work-item read model:** `work_item_state` plus `getRepos().workItems()` surfaces
+  per-video stage chips and manual uploaded/archive state without moving old data.
+- **P2 Channel Workspace:** `src/screens/Workspace.tsx`, `src/lib/workitems.ts`, sidebar
+  navigation, and persisted last workspace channel implement the resumable board.
+- **P3 niche B-roll pools:** `Niche` types, niche DB methods, `electron/ipc/niche.ts`,
+  `electron/services/niche.ts`, and `src/screens/Niches.tsx` add named reusable pools
+  and channel assignment.
+- **P4 pool refresh/usage:** `electron/services/pool-refresh.ts`, scheduler wiring, and
+  B-roll usage stamping keep warmed pools fresh and protect recently used clips.
+- **P5 automation cleanup:** the old Profiles surface is presented as **Channel
+  automations** with clearer copy, pipeline chips, and defaults; the destructive
+  Profiles-to-channel migration remains deferred for a later version.
+
+Runtime note: Electron/stock-provider/GPU/scheduler behavior still needs real-hardware
+smoke testing. The current in-repo proof is typecheck, production build, unit tests, and
+the non-network smoke seams.
 
 ---
 
