@@ -35,6 +35,7 @@ ME_SMOKE=e2e ME_YTDLP_FIXTURE=test/fixtures/ytdlp \
 | P7 | `shared/types.ts`, `electron/db/index.ts`, `electron/ipc/automation.ts`, `electron/services/queue.ts`, `src/screens/Compose.tsx`, `src/screens/Profiles.tsx` | Caption controls were incomplete for the profile/automation path, and the "too fast" caption complaint only had hidden long-form auto behavior. | Added persisted `captionPace` (`auto` / `word` / `phrase`), defaulted new projects/profiles to two caption lines, added Pace controls in Compose, added font/animation/lines/position/pace controls in Profiles, and made profile-created projects inherit the full caption recipe. Render logs now record `pace=`. | ✅ fixed |
 | P8 | `src/screens/Profiles.tsx`, `shared/types.ts`, `electron/ipc/automation.ts` | Profiles could store beta options internally, but the editor did not expose B-roll/style/overlay defaults, so automated profile renders could miss the same effects available in Compose. | Added compact profile controls for style, B-roll on/off, density, pool size, auto-highlight, overlay, start zoom, and key zoom. New profiles default to Cinematic + sparse B-roll + bottom overlay + auto-highlight/zoom, and the profile card summary shows the chosen style. | ✅ fixed |
 | P9 | `electron/main.ts`, `electron/services/render.ts`, `electron/services/broll.ts` | The old long-form slowdown could regress if image/B-roll renders accidentally reintroduced `zoompan`, large `xfade` graphs, or direct looped B-roll inputs. | M6 now asserts long image renders contain no `zoompan` or `xfade`, long B-roll renders use the concat-manifest input, no direct `-stream_loop`, no `xfade`, and still pin `-t 1174.00`. | ✅ fixed |
+| P10 | `src/theme/global.css`, `src/screens/*` | Long source names, errors, activity rows, profile summaries, and channel reminders could still wrap awkwardly even when the backend surfaced the right failure. | Added shared one-line ellipsis and two-line clamp utilities, applied them to the remaining operational text surfaces, and kept full text in hover titles for diagnostics. | ✅ fixed |
 
 ## Render quality proof (2026-06-28)
 
@@ -62,6 +63,13 @@ Observed proof:
 - Current GPU probe: `NVIDIA GeForce GTX 1660 Ti, 610.62`; NVENC one-frame encode exits successfully.
 - AMF probe fails with `amfrt64.dll failed to open`, so AMD AMF should not be treated as the working encoder on this machine.
 - Latest real B-roll render log contains `-hwaccel cuda`, `scale_cuda=`, `h264_nvenc`, no CPU fallback block, and `[probe] ... durationSec=12.10 ... video=h264:1280x720 audio=aac`.
+
+## UI/error proof (2026-06-29)
+
+- `npm run typecheck` ✅
+- `npm run build` ✅
+- `ME_SMOKE=m6 npm run start` ✅ (`SMOKE_M6_OK`, `brollFast=true`, `captionPace=true`)
+- Long operational text surfaces now clamp/ellipsis while preserving full diagnostics in hover titles.
 
 ## Real-machine checklist (the network-gated bits — run these on your machine)
 

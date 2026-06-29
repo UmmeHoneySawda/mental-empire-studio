@@ -222,24 +222,25 @@ export function Profiles(): JSX.Element {
           const running = runningProfileId === p.id
           const event = automationEvents[p.id]
           const error = automationErrors[p.id]
+          const eventMessage = error ?? event?.message ?? 'Starting...'
           return (
             <div key={p.id} onClick={() => setProfile(p.name)} className="me-card" style={{ border: on ? '1.5px solid var(--accent)' : '1px solid #1d2129', borderRadius: 15, padding: 18, background: on ? 'linear-gradient(165deg,var(--accent-soft),#0f1217)' : '#12151b', cursor: 'pointer' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 11, marginBottom: 15 }}>
                 <div style={{ width: 38, height: 38, borderRadius: 10, background: p.avatar, display: 'grid', placeItems: 'center', fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 12, color: '#0c0d11' }}>{p.mono}</div>
-                <div style={{ fontWeight: 600, fontSize: 14, color: '#eef0f3' }}>{p.name}</div>
+                <div title={p.name} className="me-ellipsis" style={{ fontWeight: 600, fontSize: 14, color: '#eef0f3', flex: 1 }}>{p.name}</div>
                 {p.autoWatch && <span style={{ marginLeft: 'auto', fontSize: 9, fontWeight: 700, fontFamily: 'var(--font-mono)', color: '#4fd6a0', background: 'rgba(54,201,142,.14)', borderRadius: 8, padding: '2px 8px' }}>WATCHING</span>}
               </div>
               <div style={{ display: 'flex', flexDirection: 'column', gap: 9, fontSize: 11.5, marginBottom: 16 }}>
                 {ROWS.map((r) => (
                   <div key={r.k} style={{ display: 'flex', gap: 9 }}>
                     <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, color: '#5b616f', width: 62, flex: 'none', paddingTop: 1 }}>{r.label}</span>
-                    <span style={{ color: r.k === 'out' ? '#8a909c' : '#cdd2da', fontFamily: r.k === 'out' ? 'var(--font-mono)' : undefined, fontSize: r.k === 'out' ? 10.5 : undefined, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{String(p[r.k] ?? '—') || '—'}</span>
+                    <span title={String(p[r.k] ?? '—') || '—'} className="me-ellipsis" style={{ color: r.k === 'out' ? '#8a909c' : '#cdd2da', fontFamily: r.k === 'out' ? 'var(--font-mono)' : undefined, fontSize: r.k === 'out' ? 10.5 : undefined, flex: 1 }}>{String(p[r.k] ?? '—') || '—'}</span>
                   </div>
                 ))}
               </div>
               {(running || event || error) && (
-                <div style={{ border: `1px solid ${error ? '#4a2530' : '#262b34'}`, background: error ? 'rgba(255,90,110,.08)' : '#0e1116', borderRadius: 9, padding: '8px 10px', marginBottom: 12, fontSize: 11, color: error ? '#ff8a96' : '#aab0bb', lineHeight: 1.35 }}>
-                  {error ?? event?.message ?? 'Starting...'}
+                <div title={eventMessage} className="me-clamp-2" style={{ border: `1px solid ${error ? '#4a2530' : '#262b34'}`, background: error ? 'rgba(255,90,110,.08)' : '#0e1116', borderRadius: 9, padding: '8px 10px', marginBottom: 12, fontSize: 11, color: error ? '#ff8a96' : '#aab0bb', lineHeight: 1.35 }}>
+                  {eventMessage}
                 </div>
               )}
               <div style={{ display: 'flex', gap: 9 }}>

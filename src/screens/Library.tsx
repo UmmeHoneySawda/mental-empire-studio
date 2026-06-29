@@ -99,9 +99,9 @@ export function Library(): JSX.Element {
               <div key={ch.id} className="me-card" style={{ border: '1px solid #1d2129', borderRadius: 14, padding: 15, background: '#12151b' }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 13 }}>
                   <div style={{ width: 38, height: 38, borderRadius: 10, background: ch.avatar, display: 'grid', placeItems: 'center', fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 13, color: '#0c0d11' }}>{ch.mono}</div>
-                  <div style={{ minWidth: 0 }}>
-                    <div style={{ fontWeight: 600, fontSize: 13, color: '#eef0f3', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ch.name}</div>
-                    <div style={{ fontSize: 10.5, color: '#6a7180', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{ch.handle}</div>
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div title={ch.name} className="me-ellipsis" style={{ fontWeight: 600, fontSize: 13, color: '#eef0f3' }}>{ch.name}</div>
+                    <div title={ch.handle} className="me-ellipsis" style={{ fontSize: 10.5, color: '#6a7180', fontFamily: 'var(--font-mono)' }}>{ch.handle}</div>
                   </div>
                 </div>
                 <div style={{ display: 'flex', alignItems: 'flex-end', gap: 3, height: 40, marginBottom: 12 }}>
@@ -136,9 +136,9 @@ export function Library(): JSX.Element {
                 <div key={`${u.title}-${i}`} className="me-row" style={{ display: 'flex', alignItems: 'center', padding: '11px 16px', borderBottom: '1px solid #14171d' }}>
                   <div style={{ flex: 2.4, display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
                     <div style={{ width: 46, height: 26, borderRadius: 5, background: GRADIENTS[i % GRADIENTS.length], flex: 'none', overflow: 'hidden' }}>{u.thumb && <img src={mediaSrc(u.thumb)} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />}</div>
-                    <span style={{ fontSize: 12.5, color: '#dde0e5', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{u.title}</span>
+                    <span title={u.title} className="me-ellipsis" style={{ fontSize: 12.5, color: '#dde0e5', flex: 1 }}>{u.title}</span>
                   </div>
-                  <div style={{ width: 120, fontSize: 11.5, color: '#8a909c' }}>{u.channel}</div>
+                  <div title={u.channel} className="me-ellipsis" style={{ width: 120, fontSize: 11.5, color: '#8a909c' }}>{u.channel}</div>
                   <div style={{ width: 108, textAlign: 'center' }}>
                     <span style={{ display: 'inline-flex', alignItems: 'center', gap: 5, fontSize: 10.5, fontWeight: 600, borderRadius: 20, padding: '3px 10px', background: s.bg, color: s.color }}>
                       <span style={{ width: 6, height: 6, borderRadius: '50%', background: s.dot }} />Uploaded
@@ -168,7 +168,7 @@ export function Library(): JSX.Element {
                   <div key={i} style={{ display: 'flex', gap: 10 }}>
                     <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#4f5662', flex: 'none', width: 32, paddingTop: 1 }}>{a.t}</span>
                     <span style={{ color: a.color, flex: 'none' }}>{a.icon}</span>
-                    <span style={{ fontSize: 11.5, color: '#aab0bb', lineHeight: 1.4 }}>{a.text}</span>
+                    <span title={a.text} className="me-clamp-2" style={{ fontSize: 11.5, color: '#aab0bb', lineHeight: 1.4 }}>{a.text}</span>
                   </div>
                 ))}
               </div>

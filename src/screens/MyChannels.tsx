@@ -71,7 +71,7 @@ export function MyChannels(): JSX.Element {
             {connecting ? 'Connecting…' : 'Connect & scrape'}
           </div>
         </div>
-        {connectError && <div style={{ marginTop: 7, fontSize: 11.5, color: '#ff8a96', paddingLeft: 4 }}>{connectError}</div>}
+        {connectError && <div title={connectError} className="me-clamp-2" style={{ marginTop: 7, fontSize: 11.5, color: '#ff8a96', paddingLeft: 4 }}>{connectError}</div>}
       </div>
 
       <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -87,14 +87,14 @@ export function MyChannels(): JSX.Element {
                 ) : (
                   <div style={{ width: 46, height: 46, borderRadius: 12, background: c.avatar || '#2a2f3b', display: 'grid', placeItems: 'center', fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 15, color: '#0c0d11', flexShrink: 0 }}>{c.mono}</div>
                 )}
-                <div style={{ minWidth: 0 }}>
-                  <div style={{ fontWeight: 600, fontSize: 15, color: '#eef0f3' }}>{c.name}</div>
-                  <div style={{ fontSize: 11, color: '#6a7180', fontFamily: 'var(--font-mono)' }}>{c.handle}</div>
-                  <div style={{ fontSize: 10.5, color: '#5b616f', marginTop: 3 }}>{c.views ? `${c.views} views · ` : ''}{c.subs} subs · {c.total} uploaded</div>
-                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 6, border: '1px solid #23272f', borderRadius: 7, padding: '3px 8px', background: '#0e1116' }}>
-                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#6a7180" strokeWidth="2"><path d="M7 7h10l-3-3M17 17H7l3 3" /></svg>
-                    <span style={{ fontSize: 10, color: '#8a909c', fontFamily: 'var(--font-mono)' }}>{c.source}</span>
-                    <span style={{ fontSize: 10, color: mapColor, fontWeight: 600 }}>{c.mapDone} / {c.mapTotal} uploaded</span>
+                <div style={{ minWidth: 0, flex: 1 }}>
+                  <div title={c.name} className="me-ellipsis" style={{ fontWeight: 600, fontSize: 15, color: '#eef0f3' }}>{c.name}</div>
+                  <div title={c.handle} className="me-ellipsis" style={{ fontSize: 11, color: '#6a7180', fontFamily: 'var(--font-mono)' }}>{c.handle}</div>
+                  <div className="me-ellipsis" style={{ fontSize: 10.5, color: '#5b616f', marginTop: 3 }}>{c.views ? `${c.views} views · ` : ''}{c.subs} subs · {c.total} uploaded</div>
+                  <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, marginTop: 6, border: '1px solid #23272f', borderRadius: 7, padding: '3px 8px', background: '#0e1116', maxWidth: '100%' }}>
+                    <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#6a7180" strokeWidth="2" style={{ flex: 'none' }}><path d="M7 7h10l-3-3M17 17H7l3 3" /></svg>
+                    <span title={c.source} className="me-ellipsis" style={{ fontSize: 10, color: '#8a909c', fontFamily: 'var(--font-mono)', flex: 1 }}>{c.source}</span>
+                    <span style={{ fontSize: 10, color: mapColor, fontWeight: 600, flex: 'none' }}>{c.mapDone} / {c.mapTotal} uploaded</span>
                   </div>
                 </div>
               </div>
@@ -123,9 +123,9 @@ export function MyChannels(): JSX.Element {
               <div style={{ width: 200, flex: 'none', borderLeft: '1px solid #1d2129', paddingLeft: 20 }}>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 5 }}>
                   <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke={reminderColor} strokeWidth="2"><rect x="3" y="4" width="18" height="17" rx="2.5" /><path d="M3 9h18M8 2v4M16 2v4" /></svg>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: reminderColor }}>{c.reminder}</span>
+                  <span title={c.reminder} className="me-ellipsis" style={{ fontSize: 12, fontWeight: 600, color: reminderColor }}>{c.reminder}</span>
                 </div>
-                <div style={{ fontSize: 10.5, color: '#8a909c', lineHeight: 1.4 }}>{c.reminderNote}</div>
+                <div title={c.reminderNote} className="me-clamp-2" style={{ fontSize: 10.5, color: '#8a909c', lineHeight: 1.4 }}>{c.reminderNote}</div>
                 <div onClick={() => beginEdit(c)} className="me-btn" style={{ marginTop: 9, border: '1px solid #262b34', background: '#15181f', borderRadius: 8, padding: '6px 10px', fontSize: 10.5, color: '#c4cad3', cursor: 'pointer', display: 'inline-flex', alignItems: 'center', gap: 5 }}>Edit goal &amp; reminder</div>
               </div>
 

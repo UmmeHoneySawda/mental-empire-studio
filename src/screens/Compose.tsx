@@ -319,7 +319,7 @@ function BetaPanel(): JSX.Element {
         </div>
         <textarea value={o.effectPlanJson} onChange={(e) => patch({ effectPlanJson: e.target.value })} placeholder='Paste an effect-plan JSON, or auto-generate. Leave empty to use the Style defaults.' rows={4} style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #23272f', borderRadius: 7, padding: 8, fontSize: 10, color: '#dde0e5', background: '#0e1116', fontFamily: 'var(--font-mono)', resize: 'vertical' }} />
         {planSummary && <div style={{ fontSize: 9.5, color: '#36c98e', marginTop: 5 }}>{planSummary}</div>}
-        {fxStatus && <div style={{ fontSize: 9.5, color: '#8a909c', marginTop: 4 }}>{fxStatus}</div>}
+        {fxStatus && <div title={fxStatus} className="me-clamp-2" style={{ fontSize: 9.5, color: '#8a909c', marginTop: 4 }}>{fxStatus}</div>}
       </div>
     </div>
   )
@@ -395,14 +395,14 @@ function CaptionsTab(): JSX.Element {
         )}
         <div style={{ fontSize: 10, color: '#6a7180', textAlign: 'center', marginTop: 9, lineHeight: 1.4 }}>Yellow active word · uniform pop ({preset})</div>
         <button type="button" disabled={!project || previewing} onClick={() => void renderPreview()} className="me-btn" style={{ width: '100%', marginTop: 10, border: '1px solid #262b34', background: '#15181f', borderRadius: 9, padding: '8px 10px', fontSize: 11.5, color: '#c4cad3', cursor: project && !previewing ? 'pointer' : 'not-allowed', opacity: project && !previewing ? 1 : 0.55 }}>{previewing ? 'Rendering…' : 'Render preview'}</button>
-        {previewError && <div style={{ marginTop: 7, fontSize: 10.5, color: '#ff8a96', lineHeight: 1.35 }}>{previewError}</div>}
+        {previewError && <div title={previewError} className="me-clamp-2" style={{ marginTop: 7, fontSize: 10.5, color: '#ff8a96', lineHeight: 1.35 }}>{previewError}</div>}
       </div>
 
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 6 }}>
           <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#6a7180' }}>TRANSCRIPT · WORD-LEVEL</span>
           <div style={{ flex: 1 }} />
-          {transcribing && <span style={{ fontSize: 10.5, color: '#8a909c' }}>{transcribeMessage || 'Transcribing…'}</span>}
+          {transcribing && <span title={transcribeMessage || 'Transcribing…'} className="me-ellipsis" style={{ fontSize: 10.5, color: '#8a909c', maxWidth: 220 }}>{transcribeMessage || 'Transcribing…'}</span>}
           <button type="button" disabled={transcribing || transcript.length === 0} title="Mark meaningful words (≥4 chars, non-stop-words) for karaoke emphasis" onClick={() => {
             const stopWords = new Set(['that', 'this', 'with', 'from', 'they', 'have', 'were', 'been', 'will', 'your', 'when', 'then', 'than', 'what', 'also', 'just', 'like', 'more', 'some', 'into', 'their', 'there', 'about', 'which', 'would', 'could', 'should', 'these', 'those', 'being', 'after', 'over'])
             const candidates = transcript.filter((w) => w.word.length >= 4 && !stopWords.has(w.word.toLowerCase().replace(/[^a-z]/g, '')))
@@ -414,7 +414,7 @@ function CaptionsTab(): JSX.Element {
         <div style={{ fontSize: 10.5, color: '#5b616f', marginBottom: 8 }}>Click a word to toggle emphasis for karaoke highlight, or use Auto-detect to mark key words automatically.</div>
         <div style={{ border: '1px solid #1d2129', borderRadius: 12, padding: 16, background: '#12151b', fontSize: 14, lineHeight: 2.1, color: '#cdd2da', height: 178, overflow: 'auto' }}>
           {transcribeError ? (
-            <span style={{ color: '#ff8a96', fontSize: 12 }}>{transcribeError}</span>
+            <span title={transcribeError} className="me-clamp-2" style={{ color: '#ff8a96', fontSize: 12 }}>{transcribeError}</span>
           ) : transcript.length === 0 ? (
             <span style={{ color: '#4f5662', fontSize: 12 }}>— no transcript yet · click Re-transcribe to generate word-level timings —</span>
           ) : (

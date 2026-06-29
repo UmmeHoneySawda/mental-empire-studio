@@ -97,7 +97,7 @@ export function Download(): JSX.Element {
         </div>
         <button type="button" disabled={!canFetch} onClick={fetchVids} className="me-btn" style={{ display: 'flex', alignItems: 'center', gap: 8, border: 0, background: 'linear-gradient(180deg,var(--accent),var(--accent-deep))', color: 'var(--accent-ink)', fontWeight: 600, fontSize: 13, padding: '0 20px', borderRadius: 11, cursor: canFetch ? 'pointer' : 'not-allowed', boxShadow: '0 4px 16px -4px var(--accent-glow)', opacity: canFetch ? 1 : 0.5 }}>{fetching ? 'Fetching…' : 'Fetch'}</button>
       </div>
-      {sourceError && <div style={{ marginTop: -8, marginBottom: 16, border: '1px solid #4a2530', background: 'rgba(255,90,110,.08)', color: '#ff8a96', borderRadius: 10, padding: '9px 12px', fontSize: 12, lineHeight: 1.4 }}>{sourceError}</div>}
+      {sourceError && <div title={sourceError} className="me-clamp-2" style={{ marginTop: -8, marginBottom: 16, border: '1px solid #4a2530', background: 'rgba(255,90,110,.08)', color: '#ff8a96', borderRadius: 10, padding: '9px 12px', fontSize: 12, lineHeight: 1.4 }}>{sourceError}</div>}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 13, border: '1px solid #1d2129', borderRadius: 13, padding: '13px 16px', marginBottom: 18, background: '#12151b' }}>
         <div style={{ width: 44, height: 44, borderRadius: 11, background: 'linear-gradient(135deg,#2d3340,#1a1e26)', display: 'grid', placeItems: 'center', fontFamily: 'var(--font-display)', fontWeight: 700, color: '#aab1bf' }}>▶</div>
@@ -166,7 +166,7 @@ export function Download(): JSX.Element {
               <div key={d.id} className="me-row" style={{ display: 'flex', alignItems: 'center', padding: '12px 16px', borderBottom: '1px solid #14171d' }}>
                 <div style={{ flex: 2.4, display: 'flex', alignItems: 'center', gap: 12, minWidth: 0 }}>
                   <div style={{ width: 48, height: 27, borderRadius: 6, background: d.thumb, flex: 'none' }} />
-                  <div style={{ minWidth: 0 }}><div style={{ fontSize: 12.5, color: '#dde0e5', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.title}</div><div style={{ fontSize: 10, color: '#5b616f', fontFamily: 'var(--font-mono)' }}>{d.size} · {d.when}</div></div>
+                  <div style={{ minWidth: 0, flex: 1 }}><div title={d.title} className="me-ellipsis" style={{ fontSize: 12.5, color: '#dde0e5' }}>{d.title}</div><div style={{ fontSize: 10, color: '#5b616f', fontFamily: 'var(--font-mono)' }}>{d.size} · {d.when}</div></div>
                 </div>
                 <div title={d.channel} style={{ width: 120, fontSize: 11, color: '#8a909c', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{d.channel}</div>
                 <div title={d.error || currentStage} style={{ width: 130, fontSize: 11.5, color: stageColor, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{currentStage === 'Failed' && d.error ? `Failed: ${d.error}` : currentStage}</div>

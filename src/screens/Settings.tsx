@@ -147,7 +147,7 @@ export function Settings(): JSX.Element {
                   <button type="button" onClick={() => void refreshCaps(true)} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 7, padding: '3px 7px', fontSize: 10, color: '#8a909c', cursor: 'pointer' }}>{checkingCaps ? 'Checking...' : 'Recheck'}</button>
                 </div>
                 <div style={{ display: 'flex', border: '1px solid #23272f', borderRadius: 8, overflow: 'hidden', fontSize: 11.5 }}>{encoders.map((enc) => { const on = (settings.encoder ?? 'cpu') === enc.value; return <div key={enc.value} title={enc.note} onClick={() => chooseEncoder(enc)} style={{ padding: '8px 12px', cursor: enc.enabled || enc.value === 'cpu' ? 'pointer' : 'help', background: on ? 'var(--accent)' : undefined, color: on ? 'var(--accent-ink)' : enc.enabled ? '#8a909c' : '#555b66', fontWeight: on ? 600 : undefined }}>{enc.label}</div> })}</div>
-                <div style={{ fontSize: 10, color: selectedEncoder.enabled || selectedEncoder.value === 'cpu' ? '#6a7180' : '#f5b323', marginTop: 5 }}>{checkingCaps ? 'Checking ffmpeg GPU capabilities...' : caps ? selectedEncoder.note : 'Could not check ffmpeg GPU capabilities.'}</div>
+                <div title={checkingCaps ? undefined : caps ? selectedEncoder.note : undefined} className="me-clamp-2" style={{ fontSize: 10, color: selectedEncoder.enabled || selectedEncoder.value === 'cpu' ? '#6a7180' : '#f5b323', marginTop: 5 }}>{checkingCaps ? 'Checking ffmpeg GPU capabilities...' : caps ? selectedEncoder.note : 'Could not check ffmpeg GPU capabilities.'}</div>
                 {capsDetail && <div title={capsDetail} style={{ marginTop: 4, maxWidth: 420, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis', fontSize: 9.5, color: '#5b616f', fontFamily: 'var(--font-mono)' }}>{capsDetail}</div>}
               </div>
             </div>
@@ -245,7 +245,7 @@ export function Settings(): JSX.Element {
               <div style={{ fontSize: 11.5, color: '#6a7180', lineHeight: 1.4 }}>No activity yet.</div>
             )}
             {activity.map((a, i) => (
-              <div key={i} style={{ display: 'flex', gap: 10 }}><span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#4f5662', flex: 'none', width: 32, paddingTop: 1 }}>{a.t}</span><span style={{ color: a.color, flex: 'none' }}>{a.icon}</span><span style={{ fontSize: 11.5, color: '#aab0bb', lineHeight: 1.4 }}>{a.text}</span></div>
+              <div key={i} style={{ display: 'flex', gap: 10 }}><span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#4f5662', flex: 'none', width: 32, paddingTop: 1 }}>{a.t}</span><span style={{ color: a.color, flex: 'none' }}>{a.icon}</span><span title={a.text} className="me-clamp-2" style={{ fontSize: 11.5, color: '#aab0bb', lineHeight: 1.4 }}>{a.text}</span></div>
             ))}
           </div>
           <div style={{ marginTop: 16, borderTop: '1px solid #1d2129', paddingTop: 14, fontSize: 11, color: '#6a7180', display: 'flex', flexDirection: 'column', gap: 7 }}>
