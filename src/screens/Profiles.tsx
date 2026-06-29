@@ -2,7 +2,8 @@ import { useEffect, useState } from 'react'
 import { useStore } from '../store/useStore'
 import { useData } from '../store/useData'
 import { ScreenPad } from '../components/primitives'
-import type { Profile, ScrapeOrder } from '@shared/types'
+import { asBetaOpts, DEFAULT_BETA_OPTS } from '@shared/types'
+import type { BetaVideoOpts, BrollDensity, Profile, ScrapeOrder, VideoStyle } from '@shared/types'
 
 const ROWS: { k: keyof Profile; label: string }[] = [
   { k: 'rule', label: 'SOURCE' },
@@ -18,24 +19,33 @@ const CAPTION_PACES: Array<{ value: NonNullable<Profile['captionPace']>; label: 
   { value: 'word', label: 'Word' },
   { value: 'phrase', label: 'Steady' }
 ]
+const VIDEO_STYLES: VideoStyle[] = ['None', 'Cinematic', 'Intense', 'Heartfelt', 'Clean']
+const BROLL_DENSITIES: BrollDensity[] = ['sparse', 'keywords', 'full']
 
 function ProfileEditor({ profile, onClose }: { profile: Profile; onClose: () => void }): JSX.Element {
   const saveProfile = useData((s) => s.saveProfile)
   const deleteProfile = useData((s) => s.deleteProfile)
   const templates = useStore((s) => s.templates)
+  const betaOn = useStore((s) => s.settings.beta.enabled)
   const [p, setP] = useState<Profile>(profile)
   const set = (patch: Partial<Profile>): void => setP((cur) => ({ ...cur, ...patch }))
+  const beta = asBetaOpts(p.betaOpts)
+  const setBeta = (patch: Partial<BetaVideoOpts>): void => set({ betaOpts: { ...beta, ...patch } })
   const field = { width: '100%', border: '1px solid #23272f', borderRadius: 8, padding: '8px 10px', fontSize: 12, color: '#dde0e5', background: '#0e1116', boxSizing: 'border-box' as const }
   const label = { fontSize: 10, color: '#6a7180', marginBottom: 5, fontFamily: 'var(--font-mono)', letterSpacing: '.4px' }
   const smallSelect = { ...field, padding: '7px 8px' }
+  const betaToggle = (text: string, on: boolean, click: () => void): JSX.Element => (
+    <button type="button" onClick={click} style={{ border: on ? '1px solid var(--accent)' : '1px solid #23272f', color: on ? 'var(--accent)' : '#8a909c', background: on ? 'var(--accent-soft)' : '#0e1116', borderRadius: 7, padding: '6px 8px', fontSize: 10.5, cursor: 'pointer' }}>{text}</button>
+  )
 
   const save = async (): Promise<void> => {
     const pace = p.captionPace ?? 'auto'
     const lines = p.captionLines ?? 1
+    const styleLabel = beta.style !== 'None' ? ` · ${beta.style}` : ''
     await saveProfile({
       ...p,
       rule: `${p.sourceOrder} · ${p.sourceCount} videos`,
-      cap: `${p.captionPreset} · ${p.captionAspect} · ${lines}L · ${pace === 'phrase' ? 'steady' : pace}`,
+      cap: `${p.captionPreset} · ${p.captionAspect} · ${lines}L · ${pace === 'phrase' ? 'steady' : pace}${styleLabel}`,
       images: p.imageMode === 'pool' ? `Pool of ${p.poolSize} · shuffle` : 'Single image'
     })
     onClose()
@@ -102,6 +112,40 @@ function ProfileEditor({ profile, onClose }: { profile: Profile; onClose: () => 
           </select>
         </div>
       </div>
+      <div style={{ border: '1px solid #1d2129', borderRadius: 10, padding: 11, background: '#0e1116', opacity: betaOn ? 1 : 0.5 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 9 }}>
+          <span style={{ ...label, marginBottom: 0 }}>EFFECTS / B-ROLL</span>
+          {!betaOn && <span style={{ marginLeft: 'auto', fontSize: 9.5, color: '#6a7180' }}>Enable Beta in Settings</span>}
+        </div>
+        <div style={{ display: 'flex', gap: 9, marginBottom: 9, pointerEvents: betaOn ? 'auto' : 'none' }}>
+          <div style={{ flex: 1 }}><div style={label}>STYLE</div>
+            <select value={beta.style} onChange={(e) => setBeta({ style: e.target.value as VideoStyle })} style={smallSelect}>
+              {VIDEO_STYLES.map((s) => <option key={s} value={s}>{s}</option>)}
+            </select>
+          </div>
+          <div style={{ width: 88 }}><div style={label}>B-ROLL</div>
+            <select value={beta.broll.enabled ? 'on' : 'off'} onChange={(e) => setBeta({ broll: { ...beta.broll, enabled: e.target.value === 'on' } })} style={smallSelect}>
+              <option value="on">On</option><option value="off">Off</option>
+            </select>
+          </div>
+        </div>
+        <div style={{ display: 'flex', gap: 9, marginBottom: 9, pointerEvents: betaOn ? 'auto' : 'none' }}>
+          <div style={{ flex: 1 }}><div style={label}>DENSITY</div>
+            <select value={beta.broll.density} onChange={(e) => setBeta({ broll: { ...beta.broll, density: e.target.value as BrollDensity } })} style={smallSelect}>
+              {BROLL_DENSITIES.map((d) => <option key={d} value={d}>{d}</option>)}
+            </select>
+          </div>
+          <div style={{ width: 88 }}><div style={label}>POOL</div>
+            <input type="number" min={4} max={100} value={beta.broll.poolSize} onChange={(e) => setBeta({ broll: { ...beta.broll, poolSize: Math.max(4, Math.min(100, Number(e.target.value) || 18)) } })} style={smallSelect} />
+          </div>
+        </div>
+        <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, pointerEvents: betaOn ? 'auto' : 'none' }}>
+          {betaToggle('Highlight', beta.autoHighlight, () => setBeta({ autoHighlight: !beta.autoHighlight }))}
+          {betaToggle('Overlay', beta.overlay.bottom, () => setBeta({ overlay: { ...beta.overlay, bottom: !beta.overlay.bottom } }))}
+          {betaToggle('Start zoom', beta.autoZoom.atStart, () => setBeta({ autoZoom: { ...beta.autoZoom, atStart: !beta.autoZoom.atStart } }))}
+          {betaToggle('Key zoom', beta.autoZoom.atKeyPhrases, () => setBeta({ autoZoom: { ...beta.autoZoom, atKeyPhrases: !beta.autoZoom.atKeyPhrases } }))}
+        </div>
+      </div>
       <div><div style={label}>THUMBNAIL TEMPLATE</div>
         <select value={p.thumbnailTemplateId ?? ''} onChange={(e) => set({ thumbnailTemplateId: e.target.value || undefined })} style={field}>
           <option value="">None</option>
@@ -125,10 +169,18 @@ function newProfile(): Profile {
   const id = `prof-${Date.now()}`
   return {
     id, name: 'New profile', mono: 'NP', avatar: 'linear-gradient(135deg,#8b7cff,#5b4fd6)',
-    rule: 'Latest · 5 videos', images: 'Pool of 10 · shuffle', thumb: 'None', cap: 'Hormozi · 16:9 · 2L · auto', out: '',
+    rule: 'Latest · 5 videos', images: 'Pool of 10 · shuffle', thumb: 'None', cap: 'Hormozi · 16:9 · 2L · auto · Cinematic', out: '',
     autoWatch: false, sourceUrl: '', sourceOrder: 'Latest', sourceCount: 5, imageMode: 'pool', poolSize: 10,
     kenBurns: true, captionPreset: 'Hormozi', captionFont: 'Montserrat', captionAnim: 'Pop-in',
-    captionAspect: '16:9', captionLines: 2, captionPosition: 'bottom', captionPace: 'auto'
+    captionAspect: '16:9', captionLines: 2, captionPosition: 'bottom', captionPace: 'auto',
+    betaOpts: {
+      ...DEFAULT_BETA_OPTS,
+      autoHighlight: true,
+      overlay: { ...DEFAULT_BETA_OPTS.overlay, bottom: true },
+      autoZoom: { atStart: true, atKeyPhrases: true },
+      broll: { ...DEFAULT_BETA_OPTS.broll, enabled: true, density: 'sparse', poolSize: 18 },
+      style: 'Cinematic'
+    }
   }
 }
 
