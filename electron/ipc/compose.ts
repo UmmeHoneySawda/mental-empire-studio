@@ -1,4 +1,4 @@
-import { app, ipcMain } from 'electron'
+import { ipcMain } from 'electron'
 import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Project, ProjectImage, TranscribeProgress, TranscriptWord } from '../../shared/types'
@@ -12,16 +12,14 @@ import { importImages, seededShuffle } from '../services/images'
 import { transcribeAudio } from '../services/transcribe'
 import { emit, hhmm, pushActivity } from './events'
 import { outputDir } from '../services/queue'
+import { itemDirForProject, itemImagesDir, itemThumbDir, cacheDir, ensureDir, writeProjectManifest, videoIdFromProjectId } from '../services/storage'
 import { buildAss } from '../services/captions'
 import { runRender } from '../services/render'
 import { probeRenderCapabilities } from '../services/engine/caps'
 
 // Compose orchestration: build a project from a downloaded mp3, manage its image
 // ranges + caption recipe, run transcription (Groq), and push to the render queue.
-
-function projectsDir(): string {
-  return join(app.getPath('userData'), 'projects')
-}
+// Images live in the per-video library folder (<lib>/<channel>/<id>__<slug>/images).
 
 function emitT(p: TranscribeProgress): void {
   emit('transcribe:progress', p)
@@ -57,6 +55,9 @@ function defaultProject(downloadId: string, title: string, channel: string, mp3P
 
 function effectiveThumbnailPath(project: Project): string | null {
   if (project.thumbPath) return project.thumbPath
+  // Per-item thumb (new layout) first, then the legacy flat output/thumbnails path.
+  const perItem = join(itemThumbDir(itemDirForProject(project)), `${safeName(project.title)}.png`)
+  if (existsSync(perItem)) return perItem
   const computed = join(outputDir(), 'thumbnails', `${safeName(project.title)}.png`)
   return existsSync(computed) ? computed : null
 }
@@ -79,6 +80,10 @@ function createProject(downloadId: string): Project {
   validateDownloadedAudio(downloadId, dl.filePath ?? '', dl.durationSec ?? 0)
   const p = defaultProject(downloadId, dl.title, dl.channel, dl.filePath ?? '', dl.durationSec ?? 0)
   repos.createProject(p)
+  writeProjectManifest(itemDirForProject(p), {
+    videoId: videoIdFromProjectId(p.id), channel: p.channel, title: p.title,
+    durationSec: p.durationSec, stage: p.stage, createdAt: p.createdAt, audioPath: p.mp3Path
+  })
   return p
 }
 
@@ -86,7 +91,7 @@ function setImages(projectId: string, paths: string[]): ProjectImage[] {
   const repos = getRepos()
   const project = repos.getProject(projectId)
   if (!project) throw new Error(`Unknown project: ${projectId}`)
-  let copied = importImages(join(projectsDir(), projectId), paths)
+  let copied = importImages(itemImagesDir(itemDirForProject(project)), paths)
   if (project.imageMode === 'pool') copied = seededShuffle(copied, project.seed)
   const ranges = splitRanges(project.durationSec, copied.length)
   const rows: ProjectImage[] = copied.map((path, i) => ({
@@ -100,6 +105,7 @@ function setImages(projectId: string, paths: string[]): ProjectImage[] {
     manual: false
   }))
   repos.replaceProjectImages(projectId, rows)
+  writeProjectManifest(itemDirForProject(project), { imagePaths: rows.map((r) => r.path) })
   return rows
 }
 
@@ -198,7 +204,7 @@ async function previewProject(projectId: string): Promise<string> {
   const previewSettings = { ...settings, quality: '720p' as const }
   const caps = probeRenderCapabilities()
   const previewSec = Math.max(1, Math.min(5, project.durationSec || 5))
-  const dir = join(outputDir(), 'previews')
+  const dir = cacheDir('previews')
   mkdirSync(dir, { recursive: true })
   const base = `${safeName(project.title)}-preview-${Date.now()}`
   const assPath = join(dir, `${base}.ass`)

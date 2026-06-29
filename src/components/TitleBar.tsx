@@ -5,12 +5,14 @@ import type { ScreenKey } from '@shared/types'
 
 const LABELS: Record<ScreenKey, string> = {
   library: 'Library',
+  workspace: 'Workspace',
   channels: 'My Channels',
   download: 'Download',
   compose: 'Compose',
   thumb: 'Thumbnails',
   render: 'Render Queue',
-  profiles: 'Profiles',
+  niches: 'B-roll Pools',
+  profiles: 'Automations',
   settings: 'Settings'
 }
 

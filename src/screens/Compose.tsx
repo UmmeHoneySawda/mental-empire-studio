@@ -6,7 +6,7 @@ import type { BetaVideoOpts, Project, ProjectImage, TranscriptWord, VideoStyle }
 import { asBetaOpts } from '@shared/types'
 import { buildMasterPrompt, validateEffectPlan } from '@shared/effectPlan'
 
-function Tab({ id, label, icon }: { id: 'media' | 'captions'; label: string; icon: JSX.Element }): JSX.Element {
+function Tab({ id, label, icon }: { id: 'media' | 'captions' | 'style' | 'advanced'; label: string; icon: JSX.Element }): JSX.Element {
   const composeTab = useStore((s) => s.composeTab)
   const setComposeTab = useStore((s) => s.setComposeTab)
   const on = composeTab === id
@@ -67,7 +67,6 @@ function MediaTab(): JSX.Element {
   const durationMissing = !project || !project.durationSec || project.durationSec <= 0
   const betaOpts = asBetaOpts(project?.betaOpts)
   const brollEnabled = betaOpts.broll.enabled
-  const setBeta = (patch: Partial<BetaVideoOpts>): void => void setCaptions({ betaOpts: { ...betaOpts, ...patch } })
 
   const pickFiles = (e: React.ChangeEvent<HTMLInputElement>): void => {
     // Electron 32 removed File.path — resolve via webUtils through the preload bridge.
@@ -94,9 +93,9 @@ function MediaTab(): JSX.Element {
     <>
       <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, marginBottom: 12 }}>
         {betaOn && (
-          <div title="When on, your images may be overlaid/replaced with stock B-roll footage during render. Requires a stock-footage API key in Settings." style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11.5, color: brollEnabled ? '#f5b323' : '#8a909c', background: brollEnabled ? 'rgba(245,179,35,.1)' : '#0e1116', border: `1px solid ${brollEnabled ? 'rgba(245,179,35,.3)' : '#23272f'}`, borderRadius: 8, padding: '5px 10px' }}>
-            <span>{brollEnabled ? '⚠ Auto B-roll ON' : 'Auto B-roll off'}</span>
-            <MiniToggle on={brollEnabled} onClick={() => setBeta({ broll: { ...betaOpts.broll, enabled: !brollEnabled } })} />
+          <div title="Auto B-roll status. Toggle it in the Style / Customize panel below — this is just an indicator so there's one source of truth." style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11.5, color: brollEnabled ? '#f5b323' : '#8a909c', background: brollEnabled ? 'rgba(245,179,35,.1)' : '#0e1116', border: `1px solid ${brollEnabled ? 'rgba(245,179,35,.3)' : '#23272f'}`, borderRadius: 8, padding: '5px 10px' }}>
+            <span style={{ width: 7, height: 7, borderRadius: '50%', background: brollEnabled ? '#f5b323' : '#3a3f4a', flex: 'none' }} />
+            <span>{brollEnabled ? 'Auto B-roll ON' : 'Auto B-roll off'}</span>
           </div>
         )}
         <div style={{ display: 'flex', background: '#0e1116', border: '1px solid #23272f', borderRadius: 10, overflow: 'hidden', fontSize: 12.5 }}>
@@ -217,6 +216,153 @@ function CaptionPreview({ words, aspect, lines, position, font, animation, image
             })}
           </div>
         ))}
+      </div>
+    </div>
+  )
+}
+
+/** Shared beta toggle row (lifted to module scope so StyleTab + AdvancedTab can both use it). */
+function BetaRow({ label, on, set, hint }: { label: string; on: boolean; set: () => void; hint?: string }): JSX.Element {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+      <div style={{ flex: 1 }}><div style={{ fontSize: 11.5, color: '#cdd2da' }}>{label}</div>{hint && <div style={{ fontSize: 9.5, color: '#6a7180' }}>{hint}</div>}</div>
+      <MiniToggle on={on} onClick={set} />
+    </div>
+  )
+}
+
+function BetaHeader({ betaOn }: { betaOn: boolean }): JSX.Element {
+  return (
+    <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '.6px', color: '#5b616f' }}>CUSTOMIZE</span>
+      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 8, fontWeight: 700, background: 'var(--accent-soft)', color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: 9, padding: '1px 6px' }}>BETA</span>
+      {!betaOn && <span style={{ marginLeft: 'auto', fontSize: 9.5, color: '#6a7180' }}>Enable in Settings → Beta</span>}
+    </div>
+  )
+}
+
+/** Compose "Style" tab — visual beta controls (greyed unless Settings → beta is on). */
+function StyleTab(): JSX.Element {
+  const betaOn = useStore((s) => s.settings.beta.enabled)
+  const project = useData((s) => s.activeProject)
+  const setCaptions = useData((s) => s.setCaptions)
+  const o = asBetaOpts(project?.betaOpts)
+  const patch = (p: Partial<BetaVideoOpts>): void => void setCaptions({ betaOpts: { ...o, ...p } })
+  const styles: VideoStyle[] = ['None', 'Cinematic', 'Intense', 'Heartfelt', 'Clean']
+  const styleTips: Record<VideoStyle, string> = {
+    None: 'No automatic transitions or text effects',
+    Cinematic: 'Slow zoom, fade transitions, elegant typography',
+    Intense: 'Fast cuts, punch-zoom, bold caps with glow',
+    Heartfelt: 'Soft dissolves, warm colours, gentle motion',
+    Clean: 'Smooth minimal slides, no extra noise',
+  }
+
+  return (
+    <div style={{ maxWidth: 480 }}>
+      <div style={{ position: 'relative', border: '1px solid #1d2129', borderRadius: 14, padding: 15, background: '#12151b', display: 'flex', flexDirection: 'column', gap: 13, opacity: betaOn ? 1 : 0.45, pointerEvents: betaOn ? 'auto' : 'none' }}>
+        <BetaHeader betaOn={betaOn} />
+        <div>
+          <BetaRow label="Hook (intro card)" on={o.hook.enabled} set={() => patch({ hook: { ...o.hook, enabled: !o.hook.enabled } })} hint="Big line for the first ~2.5s" />
+          {o.hook.enabled && <input value={o.hook.text} onChange={(e) => patch({ hook: { ...o.hook, text: e.target.value } })} placeholder="Auto from transcript — or type a hook" style={{ width: '100%', boxSizing: 'border-box', marginTop: 7, border: '1px solid #23272f', borderRadius: 7, padding: '6px 9px', fontSize: 11, color: '#dde0e5', background: '#0e1116' }} />}
+        </div>
+        <BetaRow label="Auto-highlight keywords" on={o.autoHighlight} set={() => patch({ autoHighlight: !o.autoHighlight })} hint="Emphasize key words in captions" />
+        <div>
+          <div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 7 }}>Background overlay (gradient)</div>
+          <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
+            {(['bottom', 'top', 'left', 'right'] as const).map((e) => {
+              const on = o.overlay[e]
+              return <span key={e} onClick={() => patch({ overlay: { ...o.overlay, [e]: !on } })} style={{ border: on ? '1px solid var(--accent)' : '1px solid #23272f', color: on ? 'var(--accent)' : '#8a909c', background: on ? 'var(--accent-soft)' : 'transparent', borderRadius: 7, padding: '4px 11px', fontSize: 11, cursor: 'pointer', textTransform: 'capitalize' }}>{e}</span>
+            })}
+          </div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginTop: 9 }}>
+            <span style={{ fontSize: 10.5, color: '#8a909c', width: 54 }}>Intensity</span>
+            <input type="range" min={0} max={100} value={o.overlay.intensity ?? 50} onChange={(e) => patch({ overlay: { ...o.overlay, intensity: Number(e.target.value) } })} style={{ flex: 1, accentColor: 'var(--accent)' }} />
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#8a909c', width: 34, textAlign: 'right' }}>{o.overlay.intensity ?? 50}%</span>
+          </div>
+        </div>
+        <div>
+          <div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 7 }}>Automatically zoom in</div>
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+            <BetaRow label="At start" on={o.autoZoom.atStart} set={() => patch({ autoZoom: { ...o.autoZoom, atStart: !o.autoZoom.atStart } })} />
+            <BetaRow label="At key phrases" on={o.autoZoom.atKeyPhrases} set={() => patch({ autoZoom: { ...o.autoZoom, atKeyPhrases: !o.autoZoom.atKeyPhrases } })} />
+          </div>
+        </div>
+        <div style={{ borderTop: '1px solid #1d2129', paddingTop: 12 }}>
+          <BetaRow label="Auto B-roll (stock footage)" on={o.broll.enabled} set={() => patch({ broll: { ...o.broll, enabled: !o.broll.enabled } })} hint="Themed clip pool from the transcript" />
+          {o.broll.enabled && (
+            <div style={{ display: 'flex', gap: 6, marginTop: 8 }}>
+              {([{ d: 'full', tip: 'B-roll covers the entire video' }, { d: 'sparse', tip: 'B-roll clips placed every ~30 seconds' }, { d: 'keywords', tip: 'B-roll cut in on auto-detected topic keywords' }] as const).map(({ d, tip }) =>
+                <span key={d} title={tip} onClick={() => patch({ broll: { ...o.broll, density: d } })} style={{ border: o.broll.density === d ? '1px solid var(--accent)' : '1px solid #23272f', color: o.broll.density === d ? 'var(--accent)' : '#8a909c', background: o.broll.density === d ? 'var(--accent-soft)' : 'transparent', borderRadius: 7, padding: '4px 10px', fontSize: 10.5, cursor: 'pointer', textTransform: 'capitalize' }}>{d}</span>
+              )}
+            </div>
+          )}
+        </div>
+        <div>
+          <div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 7 }}>Style (transitions &amp; text effects)</div>
+          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
+            {styles.map((s) => {
+              const on = o.style === s
+              const bg = s === 'Cinematic' ? 'linear-gradient(135deg,#26333a,#1d1714)' : s === 'Intense' ? 'linear-gradient(135deg,#3a1d25,#141820)' : s === 'Heartfelt' ? 'linear-gradient(135deg,#3a2b24,#15171d)' : s === 'Clean' ? 'linear-gradient(135deg,#26313a,#15171d)' : '#0e1116'
+              return (
+                <button key={s} type="button" title={styleTips[s]} onClick={() => patch({ style: s })} style={{ textAlign: 'left', border: on ? '1px solid var(--accent)' : '1px solid #23272f', color: on ? '#f2f4f7' : '#8a909c', background: bg, borderRadius: 8, padding: 8, cursor: 'pointer', minHeight: 54 }}>
+                  <div style={{ fontSize: 11.5, fontWeight: 700 }}>{s}</div>
+                  <div style={{ fontSize: 9.5, color: on ? '#cdd2da' : '#6a7180', lineHeight: 1.25, marginTop: 3 }}>{styleTips[s]}</div>
+                </button>
+              )
+            })}
+          </div>
+          <div style={{ fontSize: 9.5, color: '#6a7180', marginTop: 6 }}>The style auto-applies transitions + text effects. Fine-tune the raw plan in the Advanced tab.</div>
+        </div>
+      </div>
+    </div>
+  )
+}
+
+/** Compose "Advanced" tab — effect plan override (greyed unless Settings → beta is on). */
+function AdvancedTab(): JSX.Element {
+  const betaOn = useStore((s) => s.settings.beta.enabled)
+  const project = useData((s) => s.activeProject)
+  const transcript = useData((s) => s.transcript)
+  const setCaptions = useData((s) => s.setCaptions)
+  const o = asBetaOpts(project?.betaOpts)
+  const patch = (p: Partial<BetaVideoOpts>): void => void setCaptions({ betaOpts: { ...o, ...p } })
+  const [fxStatus, setFxStatus] = useState('')
+
+  const copyPrompt = (): void => {
+    void navigator.clipboard.writeText(buildMasterPrompt(transcript, o.style))
+    setFxStatus('Master prompt copied — paste into ChatGPT/Gemini, then paste the JSON back.')
+  }
+  const genGroq = async (): Promise<void> => {
+    if (!project) return
+    setFxStatus('Generating with Groq…')
+    try {
+      const json = await window.api.effects.generate(project.id, o.style)
+      patch({ effectPlanJson: json })
+      setFxStatus('Generated ✓')
+    } catch (e) {
+      setFxStatus(`Failed: ${(e as Error).message}`)
+    }
+  }
+  const planSummary = ((): string => {
+    if (!o.effectPlanJson.trim()) return ''
+    const { plan, warnings } = validateEffectPlan(o.effectPlanJson, project?.durationSec ?? 60)
+    return `${plan.transitions.length} transitions · ${plan.textEffects.length} text effects${warnings.length ? ` · ${warnings.length} adjusted` : ''}`
+  })()
+
+  return (
+    <div style={{ maxWidth: 560 }}>
+      <div style={{ position: 'relative', border: '1px solid #1d2129', borderRadius: 14, padding: 15, background: '#12151b', display: 'flex', flexDirection: 'column', gap: 13, opacity: betaOn ? 1 : 0.45, pointerEvents: betaOn ? 'auto' : 'none' }}>
+        <BetaHeader betaOn={betaOn} />
+        <div>
+          <div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 7 }}>Effect plan (advanced override)</div>
+          <div style={{ display: 'flex', gap: 6, marginBottom: 7 }}>
+            <button type="button" onClick={copyPrompt} className="me-btn" style={{ flex: 1, textAlign: 'center', border: '1px solid #262b34', borderRadius: 7, padding: '6px 8px', fontSize: 10.5, color: '#c4cad3', background: '#0e1116', cursor: 'pointer' }}>Copy master prompt</button>
+            <button type="button" onClick={() => void genGroq()} className="me-btn" style={{ flex: 1, textAlign: 'center', border: '1px solid var(--accent)', borderRadius: 7, padding: '6px 8px', fontSize: 10.5, color: 'var(--accent)', background: 'var(--accent-soft)', cursor: 'pointer' }}>Auto-generate (Groq)</button>
+          </div>
+          <textarea value={o.effectPlanJson} onChange={(e) => patch({ effectPlanJson: e.target.value })} placeholder='Paste an effect-plan JSON, or auto-generate. Leave empty to use the Style defaults.' rows={4} style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #23272f', borderRadius: 7, padding: 8, fontSize: 10, color: '#dde0e5', background: '#0e1116', fontFamily: 'var(--font-mono)', resize: 'vertical' }} />
+          {planSummary && <div style={{ fontSize: 9.5, color: '#36c98e', marginTop: 5 }}>{planSummary}</div>}
+          {fxStatus && <div title={fxStatus} className="me-clamp-2" style={{ fontSize: 9.5, color: '#8a909c', marginTop: 4 }}>{fxStatus}</div>}
+        </div>
       </div>
     </div>
   )
@@ -420,7 +566,7 @@ function CaptionsTab(): JSX.Element {
             <div onClick={() => void setCaptions({ punchZoom: !project?.punchZoom })} style={{ flex: 1, border: '1px solid #1d2129', borderRadius: 9, padding: 9, background: '#0e1116', cursor: 'pointer' }}><div style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ fontSize: 11, fontWeight: 600, color: '#dde0e5' }}>Punch</span><span style={{ marginLeft: 'auto', fontSize: 8.5, fontWeight: 700, background: project?.punchZoom ? '#1f9c6b' : '#2b303b', color: '#fff', borderRadius: 9, padding: '1px 6px' }}>{project?.punchZoom ? 'ON' : 'OFF'}</span></div><div style={{ fontSize: 9, color: '#6a7180', marginTop: 4 }}>Zoom on hit</div></div>
           </div>
         </div>
-        <BetaPanel />
+        {/* BetaPanel moved to the "Style" and "Advanced" tabs */}
       </div>
 
       <div style={{ flex: 'none', width: 230 }}>
@@ -519,14 +665,19 @@ export function Compose(): JSX.Element {
           <div style={{ fontSize: 12, color: '#6a7180' }}>{project ? `${project.title} · ${Math.floor((project.durationSec || 0) / 60)}:${String(Math.round((project.durationSec || 0) % 60)).padStart(2, '0')}` : 'No project — download a clip first'}</div>
         )}
       </div>
-      <div style={{ display: 'flex', gap: 9, marginBottom: 22 }}>
+      <div style={{ display: 'flex', gap: 9, marginBottom: 22, flexWrap: 'wrap' }}>
         <Tab id="media" label="Audio + Image" icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="5" width="18" height="14" rx="2.5" /><circle cx="8.5" cy="10" r="1.7" /><path d="M4 17l5-4 4 3 2-2 5 4" /></svg>} />
         <Tab id="captions" label="Captions" icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="5" width="18" height="14" rx="2.5" /><path d="M7 14h4" /><path d="M14 14h3" /></svg>} />
+        <Tab id="style" label="Style" icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2z" /></svg>} />
+        <Tab id="advanced" label="Advanced" icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M4 6h16M4 12h16M4 18h7" /></svg>} />
         <div style={{ flex: 1 }} />
         <button type="button" onClick={() => void sendToRender()} className="me-btn" style={{ display: 'flex', alignItems: 'center', gap: 7, border: '1px solid #262b34', background: '#15181f', borderRadius: 10, padding: '9px 16px', fontSize: 12.5, color: '#c4cad3', cursor: 'pointer' }}>Save &amp; send to render<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M5 12h14M13 6l6 6-6 6" /></svg></button>
       </div>
       {error && <div style={{ marginBottom: 16, border: `1px solid ${error === 'Queued for render.' ? '#1f9c6b' : '#5a2530'}`, background: error === 'Queued for render.' ? 'rgba(31,156,107,.12)' : 'rgba(255,90,110,.1)', color: error === 'Queued for render.' ? '#4fd6a0' : '#ff8a96', borderRadius: 10, padding: '10px 12px', fontSize: 12 }}>{error}</div>}
-      {composeTab === 'media' ? <MediaTab /> : <CaptionsTab />}
+      {composeTab === 'media' && <MediaTab />}
+      {composeTab === 'captions' && <CaptionsTab />}
+      {composeTab === 'style' && <StyleTab />}
+      {composeTab === 'advanced' && <AdvancedTab />}
     </ScreenPad>
   )
 }

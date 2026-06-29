@@ -7,6 +7,7 @@ import type {
   DownloadProgress,
   GoalsPatch,
   NativeApi,
+  Niche,
   Profile,
   Project,
   ScrapeOrder,
@@ -62,7 +63,14 @@ const api: NativeApi = {
     saveTemplate: (t: ThumbnailTemplate) => ipcRenderer.invoke('db:saveTemplate', t),
     recentUploads: (limit?: number) => ipcRenderer.invoke('db:recentUploads', limit),
     updateChannelGoals: (id: string, patch: GoalsPatch) => ipcRenderer.invoke('db:updateChannelGoals', id, patch),
-    deleteMyChannel: (id: string) => ipcRenderer.invoke('db:deleteMyChannel', id)
+    deleteMyChannel: (id: string) => ipcRenderer.invoke('db:deleteMyChannel', id),
+    workItems: () => ipcRenderer.invoke('db:workItems')
+  },
+
+  workItems: {
+    detect: () => ipcRenderer.invoke('workItems:detect'),
+    setUploaded: (videoId: string, uploaded: boolean) => ipcRenderer.invoke('workItems:setUploaded', videoId, uploaded),
+    setArchived: (videoId: string, archived: boolean) => ipcRenderer.invoke('workItems:setArchived', videoId, archived)
   },
 
   scrape: {
@@ -138,6 +146,23 @@ const api: NativeApi = {
   },
 
   chooseFolder: () => ipcRenderer.invoke('fs:chooseFolder'),
+
+  // Master library: dry-run the reorganize-existing migration, then execute it.
+  library: {
+    previewReorg: () => ipcRenderer.invoke('library:previewReorg'),
+    reorganize: () => ipcRenderer.invoke('library:reorganize')
+  },
+
+  // Niche b-roll pools (P3)
+  niche: {
+    list: () => ipcRenderer.invoke('niche:list'),
+    poolHealth: () => ipcRenderer.invoke('niche:poolHealth'),
+    refreshAll: () => ipcRenderer.invoke('niche:refreshAll'),
+    save: (n: Partial<Niche>) => ipcRenderer.invoke('niche:save', n),
+    remove: (id: string) => ipcRenderer.invoke('niche:delete', id),
+    assignChannel: (channelId: string, nicheId: string | null) => ipcRenderer.invoke('niche:assignChannel', channelId, nicheId),
+    warm: (id: string) => ipcRenderer.invoke('niche:warm', id)
+  },
 
   // Electron 32 removed the File.path property; webUtils.getPathForFile is the
   // supported way to get the absolute path of a dropped/picked file for the main

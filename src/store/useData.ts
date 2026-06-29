@@ -13,7 +13,11 @@ import type {
   TranscriptWord,
   RenderQueueRow,
   RenderProgress,
-  Profile
+  Profile,
+  WorkItem,
+  Niche,
+  NichePoolHealth,
+  SourceChannel
 } from '@shared/types'
 
 // Live data layer — everything sourced from the SQLite DB / scrape / download /
@@ -45,6 +49,10 @@ interface DataState {
   runningProfileId: string | null
   automationEvents: Record<string, AutomationEvent>
   automationErrors: Record<string, string>
+  workItems: WorkItem[]
+  niches: Niche[]
+  nichePools: NichePoolHealth[]
+  sourceChannels: SourceChannel[]
   ready: boolean
 
   init: () => Promise<void>
@@ -83,6 +91,16 @@ interface DataState {
   saveProfile: (p: Profile) => Promise<void>
   deleteProfile: (id: string) => Promise<void>
   runNow: () => Promise<void>
+  loadWorkItems: () => Promise<void>
+  detectUploads: () => Promise<void>
+  setItemUploaded: (videoId: string, uploaded: boolean) => Promise<void>
+  setItemArchived: (videoId: string, archived: boolean) => Promise<void>
+  loadNiches: () => Promise<void>
+  saveNiche: (n: Partial<Niche>) => Promise<void>
+  deleteNiche: (id: string) => Promise<void>
+  assignChannelNiche: (channelId: string, nicheId: string | null) => Promise<void>
+  warmNiche: (id: string) => Promise<void>
+  refreshAllPools: () => Promise<void>
 }
 
 let subscribed = false
@@ -128,6 +146,10 @@ export const useData = create<DataState>((set, get) => ({
   runningProfileId: null,
   automationEvents: {},
   automationErrors: {},
+  workItems: [],
+  niches: [],
+  nichePools: [],
+  sourceChannels: [],
   ready: false,
 
   init: async () => {
@@ -136,14 +158,14 @@ export const useData = create<DataState>((set, get) => ({
       set({ ready: true })
       return
     }
-    await Promise.all([get().loadChannels(), get().loadDownloads(), get().loadActivity(), get().loadProfiles(), get().loadRenderJobs()])
+    await Promise.all([get().loadChannels(), get().loadDownloads(), get().loadActivity(), get().loadProfiles(), get().loadRenderJobs(), get().loadWorkItems(), get().loadNiches()])
     set({ ready: true })
     a.reminders.check().catch(() => {})
 
     if (subscribed) return
     subscribed = true
-    const reloadDownloads = throttle(() => void get().loadDownloads(), 400)
-    const reloadRenderJobs = throttle(() => void get().loadRenderJobs(), 400)
+    const reloadDownloads = throttle(() => { void get().loadDownloads(); void get().loadWorkItems() }, 400)
+    const reloadRenderJobs = throttle(() => { void get().loadRenderJobs(); void get().loadWorkItems() }, 400)
     a.onActivity((row) => set((s) => ({ activity: [row, ...s.activity].slice(0, 30) })))
     a.onDownloadProgress((p) => {
       set((s) => ({ dlProgress: { ...s.dlProgress, [p.downloadId]: p } }))
@@ -209,7 +231,7 @@ export const useData = create<DataState>((set, get) => ({
     set({ scraping: true })
     try {
       await a.scrape.all()
-      await Promise.all([get().loadChannels(), get().loadActivity()])
+      await Promise.all([get().loadChannels(), get().loadActivity(), get().loadWorkItems()])
     } finally {
       set({ scraping: false })
     }
@@ -438,5 +460,64 @@ export const useData = create<DataState>((set, get) => ({
     if (!a) return
     await a.automation.tick()
     await Promise.all([get().loadActivity(), get().loadRenderJobs(), get().loadProfiles()])
+  },
+
+  loadWorkItems: async () => {
+    const a = api()
+    if (a) set({ workItems: await a.db.workItems() })
+  },
+  detectUploads: async () => {
+    const a = api()
+    if (!a) return
+    await a.workItems.detect()
+    await get().loadWorkItems()
+  },
+  setItemUploaded: async (videoId, uploaded) => {
+    const a = api()
+    if (!a) return
+    await a.workItems.setUploaded(videoId, uploaded)
+    await get().loadWorkItems()
+  },
+  setItemArchived: async (videoId, archived) => {
+    const a = api()
+    if (!a) return
+    await a.workItems.setArchived(videoId, archived)
+    await get().loadWorkItems()
+  },
+  loadNiches: async () => {
+    const a = api()
+    if (!a) return
+    const [niches, nichePools, sourceChannels] = await Promise.all([a.niche.list(), a.niche.poolHealth(), a.db.sourceChannels()])
+    set({ niches, nichePools, sourceChannels })
+  },
+  saveNiche: async (n) => {
+    const a = api()
+    if (!a) return
+    await a.niche.save(n)
+    await get().loadNiches()
+  },
+  deleteNiche: async (id) => {
+    const a = api()
+    if (!a) return
+    await a.niche.remove(id)
+    await get().loadNiches()
+  },
+  assignChannelNiche: async (channelId, nicheId) => {
+    const a = api()
+    if (!a) return
+    const sourceChannels = await a.niche.assignChannel(channelId, nicheId)
+    set({ sourceChannels })
+  },
+  warmNiche: async (id) => {
+    const a = api()
+    if (!a) return
+    await a.niche.warm(id)
+    await get().loadNiches()
+  },
+  refreshAllPools: async () => {
+    const a = api()
+    if (!a) return
+    await a.niche.refreshAll()
+    await get().loadNiches()
   }
 }))

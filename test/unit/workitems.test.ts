@@ -1,0 +1,78 @@
+import { describe, it, expect } from 'vitest'
+import { classifyWorkItem, progressScore, resumeCandidate, nextStepFor, actionLabel } from '../../src/lib/workitems'
+import type { WorkItem } from '../../shared/types'
+
+function wi(over: Partial<WorkItem>): WorkItem {
+  return {
+    videoId: 'v', channel: 'C', title: 'T', downloadId: 'dl-v', projectId: 'proj-dl-v',
+    downloaded: true, hasImages: false, captioned: false, hasThumbnail: false, rendered: false,
+    uploaded: false, uploadedTo: [], uploadedManual: null, archived: false, ...over
+  }
+}
+
+describe('classifyWorkItem', () => {
+  it('rendered → done', () => {
+    expect(classifyWorkItem(wi({ rendered: true }))).toBe('done')
+  })
+  it('any production progress (images/captions/thumb) but not rendered → inprogress', () => {
+    expect(classifyWorkItem(wi({ hasImages: true }))).toBe('inprogress')
+    expect(classifyWorkItem(wi({ captioned: true }))).toBe('inprogress')
+    expect(classifyWorkItem(wi({ hasThumbnail: true }))).toBe('inprogress')
+  })
+  it('downloaded only → todo', () => {
+    expect(classifyWorkItem(wi({}))).toBe('todo')
+  })
+  it('done takes precedence even if earlier stages are missing', () => {
+    expect(classifyWorkItem(wi({ rendered: true, hasImages: false }))).toBe('done')
+  })
+})
+
+describe('progressScore', () => {
+  it('counts completed stages', () => {
+    expect(progressScore(wi({}))).toBe(1) // downloaded
+    expect(progressScore(wi({ hasImages: true, captioned: true }))).toBe(3)
+    expect(progressScore(wi({ hasImages: true, captioned: true, hasThumbnail: true, rendered: true }))).toBe(5)
+  })
+})
+
+describe('resumeCandidate', () => {
+  it('returns the most-advanced unfinished item', () => {
+    const items = [
+      wi({ videoId: 'a' }),
+      wi({ videoId: 'b', hasImages: true, captioned: true }),
+      wi({ videoId: 'c', hasImages: true })
+    ]
+    expect(resumeCandidate(items)?.videoId).toBe('b')
+  })
+  it('skips rendered + archived items', () => {
+    const items = [
+      wi({ videoId: 'done', rendered: true, hasImages: true, captioned: true, hasThumbnail: true }),
+      wi({ videoId: 'arch', archived: true, hasImages: true, captioned: true }),
+      wi({ videoId: 'go', hasImages: true })
+    ]
+    expect(resumeCandidate(items)?.videoId).toBe('go')
+  })
+  it('returns null when everything is done/archived/empty', () => {
+    expect(resumeCandidate([])).toBeNull()
+    expect(resumeCandidate([wi({ rendered: true })])).toBeNull()
+  })
+  it('keeps input order on ties', () => {
+    const items = [wi({ videoId: 'x', hasImages: true }), wi({ videoId: 'y', captioned: true })]
+    expect(resumeCandidate(items)?.videoId).toBe('x')
+  })
+})
+
+describe('nextStepFor / actionLabel', () => {
+  it('rendered → render queue', () => {
+    expect(nextStepFor(wi({ rendered: true }))).toEqual({ screen: 'render' })
+    expect(actionLabel(wi({ rendered: true }))).toBe('Queue')
+  })
+  it('downloaded → compose with the project to open', () => {
+    expect(nextStepFor(wi({ downloadId: 'dl-z' }))).toEqual({ screen: 'compose', openProjectId: 'dl-z' })
+    expect(actionLabel(wi({}))).toBe('Edit')
+  })
+  it('not downloaded → download', () => {
+    expect(nextStepFor(wi({ downloaded: false, downloadId: undefined }))).toEqual({ screen: 'download' })
+    expect(actionLabel(wi({ downloaded: false }))).toBe('Download')
+  })
+})

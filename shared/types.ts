@@ -6,11 +6,13 @@ export type AccentName = 'Amber' | 'Violet' | 'Emerald' | 'Crimson'
 
 export type ScreenKey =
   | 'library'
+  | 'workspace'
   | 'channels'
   | 'download'
   | 'compose'
   | 'thumb'
   | 'render'
+  | 'niches'
   | 'profiles'
   | 'settings'
 
@@ -45,6 +47,30 @@ export interface SourceChannel {
   url: string
   handle: string
   name: string
+  /** assigned b-roll niche pool (id of a Niche); videos from this channel use its pool */
+  nicheId?: string
+}
+
+/** A global, user-curated b-roll niche/theme pool (workflow plan §4). Channels are
+ *  assigned to a niche; renders pull clips from the niche's pool first. */
+export interface Niche {
+  id: string
+  name: string
+  /** search phrases used to fill the pool (e.g. "toxic relationship", "city at night") */
+  keywords: string[]
+  orientation: 'landscape' | 'portrait' | 'any'
+  /** how many clips to keep cached in the pool */
+  targetClips: number
+  createdAt: string
+  updatedAt: string
+}
+
+/** Health summary for a niche's b-roll pool (clip count + freshness). */
+export interface NichePoolHealth {
+  nicheId: string
+  clips: number
+  keywords: string[]
+  updatedAt?: string
 }
 
 export interface DownloadedVideo {
@@ -507,13 +533,23 @@ export interface AppSettings {
   ambientGlow: boolean
   showActivityRail: boolean
   defaultScreen: ScreenKey
+  /** last channel viewed in the Workspace board, so reopening lands where you left */
+  lastWorkspaceChannel?: string
   namingTemplate: string
+  /** master library root: where all per-video folders (audio/images/captions/broll/
+   *  thumb/output) live. Empty = <Documents>/MentalEmpireStudio. Supersedes outputFolder
+   *  as the single storage root; outputFolder is kept as a back-compat fallback. */
+  libraryFolder?: string
   /** where downloads + renders are written; empty = <Downloads>/MentalEmpire_out */
   outputFolder: string
   concurrency: number
   quality: '720p' | '1080p' | '1440p'
   /** video encoder: cpu works everywhere; hardware modes are capability-gated and fall back. */
   encoder: 'cpu' | 'nvenc' | 'qsv' | 'amf'
+  /** render engine: 'ffmpeg' is the default CPU/ffmpeg filtergraph; 'gpu' uses the WebGL
+   *  compositor + WebCodecs hardware encoder (beta) with automatic ffmpeg fallback on any
+   *  error; 'auto' prefers GPU when hardware H.264 is present, else ffmpeg. */
+  renderEngine?: 'auto' | 'ffmpeg' | 'gpu'
   autoScrape: { enabled: boolean; frequency: string; delaySec: number; retries: number; proxy: string; cookiesPath: string }
   background: { tray: boolean; startOnSignIn: boolean; notifications: boolean; webhook: string }
   transcription: { apiKey: string; model: string }
@@ -545,10 +581,12 @@ export const DEFAULT_SETTINGS: AppSettings = {
   showActivityRail: true,
   defaultScreen: 'library',
   namingTemplate: '{channel} - {title}',
+  libraryFolder: '',
   outputFolder: '',
   concurrency: 2,
   quality: '1080p',
   encoder: 'cpu',
+  renderEngine: 'ffmpeg',
   autoScrape: { enabled: true, frequency: 'Every 6 hours', delaySec: 1.5, retries: 3, proxy: '', cookiesPath: '' },
   background: { tray: true, startOnSignIn: false, notifications: true, webhook: '' },
   transcription: { apiKey: '', model: 'whisper-large-v3-turbo' },
@@ -561,6 +599,57 @@ export type DeepPartial<T> = {
 }
 
 // ---- Native bridge surface ----
+export interface LibraryReorgPreview {
+  libraryRoot: string
+  fileCount: number
+  totalBytes: number
+  missing: number
+  alreadyOrganized: number
+  sample: Array<{ from: string; to: string }>
+}
+
+export interface LibraryReorgResult {
+  moved: number
+  skippedMissing: number
+  alreadyOrganized: number
+  undoLogPath?: string
+}
+
+/** A video's progress through the production pipeline. Stages are COMPUTED from existing
+ *  tables (download/project/images/transcript/render job); only uploaded/archived state is
+ *  persisted (work_item_state). Surfaced as a per-channel checklist in the workspace. */
+export type WorkItemStage = 'downloaded' | 'images' | 'captioned' | 'thumbnail' | 'rendered' | 'uploaded'
+
+export interface WorkItem {
+  /** bare source video id (stable key) */
+  videoId: string
+  /** source channel the video came from */
+  channel: string
+  title: string
+  thumb?: string
+  downloadId?: string
+  projectId?: string
+  renderJobId?: string
+  // computed stage flags
+  downloaded: boolean
+  hasImages: boolean
+  captioned: boolean
+  hasThumbnail: boolean
+  rendered: boolean
+  uploaded: boolean
+  // detail
+  renderStatus?: RenderStatus
+  outputPath?: string
+  error?: string
+  /** my-channel ids this video was fuzzy-matched as uploaded to (can be more than one) */
+  uploadedTo: string[]
+  /** best fuzzy match score for the upload detection (for display/confidence) */
+  uploadMatchScore?: number
+  /** user override forcing the uploaded state (null = use detection) */
+  uploadedManual: boolean | null
+  archived: boolean
+}
+
 export interface NativeApi {
   platform: NodeJS.Platform | 'web'
   /** the running app version (from package.json / app.getVersion()) */
@@ -600,6 +689,16 @@ export interface NativeApi {
     updateChannelGoals(id: string, patch: GoalsPatch): Promise<MyChannel[]>
     /** remove an owned channel (and its scraped uploads) */
     deleteMyChannel(id: string): Promise<MyChannel[]>
+    /** per-video pipeline read model (computed stages + persisted upload/archive state) */
+    workItems(): Promise<WorkItem[]>
+  }
+  workItems: {
+    /** run fuzzy upload detection (source titles vs your channels' uploads); returns # matched */
+    detect(): Promise<number>
+    /** manual override of the uploaded flag for a video */
+    setUploaded(videoId: string, uploaded: boolean): Promise<void>
+    /** hide/show a video from the "to do" lists without deleting it */
+    setArchived(videoId: string, archived: boolean): Promise<void>
   }
   scrape: {
     /** preview a channel's stats without persisting */
@@ -691,6 +790,23 @@ export interface NativeApi {
   }
   /** pick an output folder via the OS dialog; returns the chosen path or '' */
   chooseFolder(): Promise<string>
+  /** master library: reorganize existing files into the per-video layout */
+  library: {
+    /** dry-run: size the move plan for a confirmation prompt */
+    previewReorg(): Promise<LibraryReorgPreview>
+    /** execute the reorganize migration (copy-verify-delete + DB rewrite + undo log) */
+    reorganize(): Promise<LibraryReorgResult>
+  }
+  /** niche b-roll pools (P3) */
+  niche: {
+    list(): Promise<Niche[]>
+    poolHealth(): Promise<NichePoolHealth[]>
+    refreshAll(): Promise<NichePoolHealth[]>
+    save(n: Partial<Niche>): Promise<Niche[]>
+    remove(id: string): Promise<Niche[]>
+    assignChannel(channelId: string, nicheId: string | null): Promise<SourceChannel[]>
+    warm(id: string): Promise<NichePoolHealth>
+  }
   /** resolve the absolute filesystem path of a picked/dropped File (Electron webUtils) */
   pathForFile(file: File): string
   /** subscribe to live scrape progress; returns an unsubscribe fn */

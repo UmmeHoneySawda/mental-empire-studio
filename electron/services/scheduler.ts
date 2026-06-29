@@ -2,6 +2,7 @@ import { getRepos } from '../db'
 import { getSettings } from '../store/settings'
 import { sourceVideos, checkReminders } from '../ipc/scrape'
 import { newVideos, runProfile } from '../ipc/automation'
+import { refreshNichePools } from './pool-refresh'
 import { hhmm, pushActivity } from '../ipc/events'
 import { logger } from './logger'
 
@@ -55,6 +56,8 @@ export async function tick(): Promise<void> {
       await sleep((settings.autoScrape.delaySec || 0) * 1000)
     }
     checkReminders()
+    // Top up + prune niche b-roll pools that are due (no-op when none are stale).
+    await refreshNichePools()
   } finally {
     ticking = false
   }

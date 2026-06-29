@@ -9,14 +9,17 @@ import { getRepos } from '../db'
 import { getSettings } from '../store/settings'
 import { formatOutputName, probeDuration } from './audio'
 import { buildAss } from './captions'
-import { LONG_FORM_FAST_SEC, CAPTION_PHRASE_WORD_COUNT, BROLL_MAX_SEGMENTS_DEFAULT, BROLL_MAX_SEGMENTS_LONG } from './engine/render-config'
-import { runRender, dimensions, consumeCancelIntent, hasCancelIntent, canUseCudaFinalFilters } from './render'
-import { buildBrollManifest } from './broll'
+import { LONG_FORM_FAST_SEC, CAPTION_PHRASE_WORD_COUNT, BROLL_MAX_SEGMENTS_DEFAULT, BROLL_MAX_SEGMENTS_LONG, type RenderEngine } from './engine/render-config'
+import { runRender, dimensions, consumeCancelIntent, hasCancelIntent, canUseCudaFinalFilters, overlayGradientPath } from './render'
+import { buildBrollManifest, recordClipUsage } from './broll'
+import { buildGpuRenderSpec } from './engine/gpu/spec'
+import { runGpuRender, probeGpuEngine } from './engine/gpu/host'
 import { probeRenderCapabilities } from './engine/caps'
 import { selectEncoder } from './engine/encoder'
 import type { FfmpegProgress } from './engine/progress'
 import { emit, hhmm, pushActivity } from '../ipc/events'
 import { safeName } from '../../shared/sanitize'
+import { itemDirForProject, itemOutputDir, writeProjectManifest, videoIdFromProjectId } from './storage'
 
 // Concurrency-limited render runner. Pulls queued render_jobs, renders up to
 // settings.concurrency at once, writes the .ass + mp4, and streams render:progress.
@@ -28,6 +31,21 @@ export function outputDir(): string {
 
 function emitR(p: RenderProgress): void {
   emit('render:progress', p)
+}
+
+/** Decide which engine to use for a job. 'ffmpeg' (default) and 'gpu' are explicit;
+ *  'auto' uses the GPU only when WebCodecs hardware H.264 encode is present. Probing
+ *  happens only for 'auto'/'gpu' so the default ffmpeg path never spins up the worker. */
+async function resolveEngine(settings: ReturnType<typeof getSettings>): Promise<RenderEngine> {
+  const pref = settings.renderEngine ?? 'ffmpeg'
+  if (pref === 'ffmpeg') return 'ffmpeg'
+  if (pref === 'gpu') return 'gpu'
+  try {
+    const probe = await probeGpuEngine()
+    return probe.hardware ? 'gpu' : 'ffmpeg'
+  } catch {
+    return 'ffmpeg'
+  }
 }
 
 const STAGE_WEIGHTS: Array<{ stage: RenderStage; weight: number }> = [
@@ -84,7 +102,7 @@ export async function runJob(job: RenderJob): Promise<void> {
   let filterDevice: RenderProgress['filterDevice'] = 'cpu'
   let encoderDetail = enc.device === 'gpu' ? `${enc.label} encode · CPU filters` : `${enc.label} encode`
   let filterDetail = enc.device === 'gpu' ? 'CPU filters/captions' : undefined
-  const dir = outputDir()
+  const dir = itemOutputDir(itemDirForProject(project))
   mkdirSync(dir, { recursive: true })
   // Base output name. If a *different* project shares the same channel+title, append the
   // video id so the two don't overwrite each other's .mp4/.ass/.log (re-rendering the
@@ -209,7 +227,7 @@ export async function runJob(job: RenderJob): Promise<void> {
 
   emitStage('captioning', 20, 'Building caption file')
   const captionMode = captionRenderMode(renderProject, words.length)
-  const { ass } = buildAss(words, {
+  const { ass, zoomHits } = buildAss(words, {
     preset: renderProject.captionPreset,
     font: renderProject.captionFont,
     animation: renderProject.captionAnim,
@@ -240,6 +258,8 @@ export async function runJob(job: RenderJob): Promise<void> {
   // encode time becomes the bottleneck. Switching to single-pass is deferred as it would
   // need real ffmpeg validation that isn't available in CI.
   let brollManifestPath: string | undefined
+  // Library clips chosen for this render — stamped as "used" on success (P4 usage tracking).
+  let usedBrollClipPaths: string[] = []
   // Tracks whether requested B-roll silently degraded to the image track, so the render
   // row + log can say so instead of the user wondering why the output looks different.
   let brollFallback = false
@@ -267,6 +287,7 @@ export async function runJob(job: RenderJob): Promise<void> {
         style,
         jobId: job.id,
         maxSegments,
+        poolKey: getRepos().nicheKeyForDownload(project.downloadId),
         shouldCancel: () => hasCancelIntent(job.id),
         logPath,
         onProgress: (phase, done, total, ffmpeg) => {
@@ -282,6 +303,7 @@ export async function runJob(job: RenderJob): Promise<void> {
       })
       if (planned?.segments.length) {
         brollManifestPath = planned.manifestPath
+        usedBrollClipPaths = planned.clips.map((c) => c.path)
         if (enc.device === 'gpu' && canUseCudaFinalFilters(settings, caps)) {
           encoderDetail = `${enc.label} encode · CUDA scale + CPU captions`
           filterDetail = 'CUDA scale + CPU captions'
@@ -318,15 +340,74 @@ export async function runJob(job: RenderJob): Promise<void> {
     emitStage('assembling', 100, 'Using image track')
   }
 
+  // Temp video-only mp4 written by the GPU worker (deleted after a successful mux).
+  let gpuTempPath: string | undefined
+
   try {
     if (hasCancelIntent(job.id)) throw new Error('render cancelled')
-    await runRender({ project: renderProject, images, assPath, outPath, settings, caps, brollManifestPath, transition, plan, sfxPath, jobId: job.id, logPath }, (p) => {
-      emitStage('encoding', p.pct, `Encoding with ${encoderDetail}`, p)
-    })
+
+    // Engine selection. The GPU (WebCodecs) engine is additive + beta: it only handles
+    // image projects (no video B-roll yet), and ANY failure transparently falls back to
+    // the ffmpeg path so the user always gets a video. B-roll jobs always use ffmpeg.
+    const engine: RenderEngine = brollManifestPath ? 'ffmpeg' : await resolveEngine(settings)
+    let gpuDone = false
+    if (engine === 'gpu') {
+      const h264Path = join(dir, `${base}.gpu.mp4`)
+      gpuTempPath = h264Path
+      try {
+        const { w, h } = dimensions(settings.quality, renderProject.captionAspect)
+        const overlayPath = beta ? overlayGradientPath(beta.overlay, w, h) : undefined
+        const spec = buildGpuRenderSpec({
+          project: renderProject,
+          images,
+          words,
+          settings,
+          zoomHits,
+          overlayPath,
+          voicePath: renderProject.mp3Path,
+          sfxPath,
+          hookText,
+          out: { h264Path, finalPath: outPath }
+        })
+        if (renderLogPath) appendFileSync(renderLogPath, `[engine] gpu (webcodecs) requested · ${spec.images.length} images · ${spec.captions.groups.length} caption groups\n`)
+        encoderDetail = 'GPU compositor + WebCodecs H.264'
+        filterDevice = 'gpu'
+        filterDetail = 'WebGL grade/captions'
+        await runGpuRender(spec, {
+          logPath: renderLogPath,
+          onProgress: (p) => emitStage('encoding', p.totalFrames > 0 ? (p.framesDone / p.totalFrames) * 100 : 0, `Encoding with ${encoderDetail}`)
+        })
+        gpuDone = true
+      } catch (gpuErr) {
+        if (hasCancelIntent(job.id)) throw gpuErr
+        const msg = (gpuErr as Error).message
+        if (renderLogPath) appendFileSync(renderLogPath, `[engine:gpu-fallback] ${msg}\n`)
+        pushActivity({ t: hhmm(), icon: '!', color: '#f5b323', text: `GPU render fell back to ffmpeg: ${project.title.slice(0, 40)}` })
+        // Reset the surfaced detail so the ffmpeg path reports accurately.
+        filterDevice = enc.device === 'gpu' ? 'cpu' : 'cpu'
+        filterDetail = enc.device === 'gpu' ? 'CPU filters/captions' : undefined
+        encoderDetail = `${enc.label} encode (ffmpeg fallback)`
+        try { rmSync(h264Path, { force: true }) } catch { /* ignore */ }
+      }
+    }
+
+    if (!gpuDone) {
+      await runRender({ project: renderProject, images, assPath, outPath, settings, caps, brollManifestPath, transition, plan, sfxPath, jobId: job.id, logPath }, (p) => {
+        emitStage('encoding', p.pct, `Encoding with ${encoderDetail}`, p)
+      })
+    }
     emitStage('finalizing', 90, 'Writing output')
     finishStageLog('done')
     repos.setRenderStatus(job.id, { status: 'done', pct: 100, outputPath: outPath })
+    // Stamp the niche/library clips this render used so pruning keeps what's in rotation.
+    if (usedBrollClipPaths.length) {
+      try { recordClipUsage(usedBrollClipPaths) } catch { /* usage tracking is advisory */ }
+    }
     repos.updateProject(job.projectId, { stage: 'rendered' })
+    writeProjectManifest(itemDirForProject(project), {
+      videoId: videoIdFromProjectId(project.id), channel: project.channel, title: project.title,
+      durationSec: renderProject.durationSec, stage: 'rendered', audioPath: project.mp3Path, outputPath: outPath
+    })
     const doneDetail = brollFallback ? 'Done · B-roll unavailable, used images' : 'Done'
     emitR({ jobId: job.id, pct: 100, stage: 'done', stageDetail: doneDetail, done: true, outputPath: outPath, device: enc.device, filterDevice, filterDetail, encoder: enc.label, etaSec: 0, etaState: 'stable' })
     pushActivity({ t: hhmm(), icon: '✓', color: '#36c98e', text: `Rendered ${project.title} → ${base}.mp4` })
@@ -347,6 +428,10 @@ export async function runJob(job: RenderJob): Promise<void> {
     // The SFX track is a full-length WAV written per render — delete it so temp doesn't grow.
     if (sfxPath) {
       try { rmSync(sfxPath, { force: true }) } catch { /* ignore */ }
+    }
+    // The GPU video-only intermediate is no longer needed once muxed (or on failure).
+    if (gpuTempPath) {
+      try { rmSync(gpuTempPath, { force: true }) } catch { /* ignore */ }
     }
   }
 }

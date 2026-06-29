@@ -234,6 +234,19 @@ function installMock(): void {
     openLogs: async () => '(browser mock - no logs)',
     logPath: async () => '(browser mock)',
     chooseFolder: async () => '/Browser/MentalEmpire_out',
+    library: {
+      previewReorg: async () => ({ libraryRoot: '/Browser/MentalEmpireStudio', fileCount: 0, totalBytes: 0, missing: 0, alreadyOrganized: 0, sample: [] }),
+      reorganize: async () => ({ moved: 0, skippedMissing: 0, alreadyOrganized: 0 })
+    },
+    niche: ns({
+      list: async () => [],
+      poolHealth: async () => [],
+      refreshAll: async () => [],
+      save: async () => [],
+      remove: async () => [],
+      assignChannel: async () => [],
+      warm: async () => ({ nicheId: '', clips: 0, keywords: [] })
+    }),
     pathForFile: (file: File) => `browser://${file.name}`,
     settings: ns({
       get: async () => settings,
@@ -269,7 +282,13 @@ function installMock(): void {
         const c = channels.find((x) => x.id === id)
         if (c) Object.assign(c, patch)
         return channels
-      }
+      },
+      workItems: async () => []
+    }),
+    workItems: ns({
+      detect: async () => 0,
+      setUploaded: async () => {},
+      setArchived: async () => {}
     }),
     scrape: ns({
       channel: async (url: string): Promise<ScrapedChannel> => {

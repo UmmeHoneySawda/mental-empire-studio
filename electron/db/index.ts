@@ -15,7 +15,9 @@ import type {
   RenderJob,
   RenderStatus,
   ScrapeOrder,
-  ImageMode
+  ImageMode,
+  WorkItem,
+  Niche
 } from '../../shared/types'
 import { asBetaOpts, DEFAULT_BETA_OPTS } from '../../shared/types'
 import { seedIfEmpty, seedDemoData } from './seed'
@@ -82,6 +84,23 @@ CREATE TABLE IF NOT EXISTS transcript_words (
 CREATE TABLE IF NOT EXISTS app_meta (
   key TEXT PRIMARY KEY, value TEXT
 );
+CREATE TABLE IF NOT EXISTS work_item_state (
+  videoId TEXT PRIMARY KEY,
+  uploadedTo TEXT,
+  uploadMatchScore REAL,
+  manualUploaded INTEGER,
+  archived INTEGER DEFAULT 0,
+  updatedAt TEXT
+);
+CREATE TABLE IF NOT EXISTS niches (
+  id TEXT PRIMARY KEY,
+  name TEXT,
+  keywords TEXT,
+  orientation TEXT,
+  targetClips INTEGER,
+  createdAt TEXT,
+  updatedAt TEXT
+);
 `
 
 // Every table that holds user/domain data — wiped by resetAll(). app_meta is
@@ -89,7 +108,7 @@ CREATE TABLE IF NOT EXISTS app_meta (
 const DATA_TABLES = [
   'my_channels', 'source_channels', 'source_videos', 'downloaded_videos', 'uploads',
   'profiles', 'thumbnail_templates', 'render_jobs', 'activity_log',
-  'projects', 'project_images', 'transcript_words'
+  'projects', 'project_images', 'transcript_words', 'work_item_state', 'niches'
 ]
 
 /** Add a column only if it isn't already present — idempotent forward migration. */
@@ -98,9 +117,21 @@ function ensureColumn(d: Database.Database, table: string, col: string, type: st
   if (!cols.some((c) => c.name === col)) d.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`)
 }
 
+/** Parse a stored JSON string[] (niche keywords), tolerating null/garbage. */
+function parseKeywords(raw: unknown): string[] {
+  if (typeof raw !== 'string' || !raw.trim()) return []
+  try {
+    const v = JSON.parse(raw)
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
+  } catch {
+    return []
+  }
+}
+
 function migrate(d: Database.Database): void {
   ensureColumn(d, 'my_channels', 'lastScrapedAt', 'TEXT')
   ensureColumn(d, 'source_channels', 'lastScrapedAt', 'TEXT')
+  ensureColumn(d, 'source_channels', 'nicheId', 'TEXT')
   ensureColumn(d, 'downloaded_videos', 'matchedUploadId', 'TEXT')
   // M4: real download bookkeeping
   ensureColumn(d, 'downloaded_videos', 'filePath', 'TEXT')
@@ -260,6 +291,34 @@ export interface Repositories {
   deleteDownload(id: string): void
   /** Remove a single render job from the queue. */
   deleteRenderJob(id: string): void
+  /** Rewrite asset path columns (used by the library reorganize migration). Only a fixed
+   *  allowlist of table/column pairs is permitted; unknown pairs are ignored. Transactional. */
+  rewriteAssetPaths(updates: Array<{ table: string; column: string; id: string; value: string }>): void
+  // ---- P1: per-video work items (computed read model + persisted upload/archive state) ----
+  /** Compute the per-video pipeline status for every downloaded video. */
+  workItems(): WorkItem[]
+  /** All my-channel upload titles, for fuzzy upload detection. */
+  allUploadsForMatch(): Array<{ channelId: string; title: string }>
+  /** Manual override of a video's uploaded flag (true/false). */
+  setWorkItemUploaded(videoId: string, uploaded: boolean): void
+  /** Hide/show a video from "to do" without deleting it. */
+  setWorkItemArchived(videoId: string, archived: boolean): void
+  /** Persist fuzzy upload-detection results (matched channel ids + best score). */
+  setDetectedUploads(rows: Array<{ videoId: string; uploadedTo: string[]; score: number }>): void
+  // ---- P3: niche b-roll pools ----
+  /** All user-curated niches. */
+  niches(): Niche[]
+  /** Create/update a niche. */
+  saveNiche(n: Niche): void
+  /** Delete a niche + unassign any channels pointing at it. */
+  deleteNiche(id: string): void
+  /** Assign (or clear) a source channel's niche. */
+  setSourceChannelNiche(channelId: string, nicheId: string | null): void
+  /** The pool key (`niche-<id>`) for the niche assigned to a download's source channel,
+   *  or undefined when the channel has no niche. Used to scope render b-roll selection. */
+  nicheKeyForDownload(downloadId: string): string | undefined
+  /** The niche assigned to a download's source channel, if any. */
+  nicheForDownload(downloadId: string): Niche | undefined
   /** Wipe every domain table (channels, profiles, projects, jobs, …) back to empty,
    *  and mark the DB seeded so demo content is not re-inserted on next launch. */
   resetAll(): void
@@ -326,7 +385,7 @@ function buildRepositories(d: Database.Database): Repositories {
       ).run({ linkedSourceId: null, lastScrapedAt: null, ...c })
     },
 
-    sourceChannels: () => d.prepare('SELECT id,url,handle,name FROM source_channels').all() as SourceChannel[],
+    sourceChannels: () => d.prepare('SELECT id,url,handle,name,nicheId FROM source_channels').all() as SourceChannel[],
     sourceChannelByUrl: (url) =>
       d.prepare('SELECT id,url,handle,name FROM source_channels WHERE url=?').get(url) as SourceChannel | undefined,
     upsertSourceChannel: (s) => {
@@ -594,6 +653,150 @@ function buildRepositories(d: Database.Database): Repositories {
     deleteDownload: (id) => d.prepare('DELETE FROM downloaded_videos WHERE id=?').run(id),
     deleteRenderJob: (id) => d.prepare('DELETE FROM render_jobs WHERE id=?').run(id),
 
+    rewriteAssetPaths: (updates) => {
+      // Allowlist: table → set of columns the reorg migration may rewrite. Guards the
+      // dynamic SQL below against any unexpected table/column reaching it.
+      const ALLOW: Record<string, Set<string>> = {
+        downloaded_videos: new Set(['filePath']),
+        projects: new Set(['mp3Path', 'thumbPath']),
+        project_images: new Set(['path', 'thumb']),
+        render_jobs: new Set(['outputPath'])
+      }
+      const valid = updates.filter((u) => ALLOW[u.table]?.has(u.column))
+      if (!valid.length) return
+      const tx = d.transaction(() => {
+        for (const u of valid) {
+          d.prepare(`UPDATE ${u.table} SET ${u.column}=@value WHERE id=@id`).run({ value: u.value, id: u.id })
+        }
+      })
+      tx()
+    },
+    workItems: () => {
+      const downloads = d.prepare('SELECT * FROM downloaded_videos').all() as DownloadedVideo[]
+      const projects = d.prepare('SELECT * FROM projects').all() as Array<Record<string, unknown>>
+      const projByDownload = new Map<string, { id: string; thumbPath?: string }>()
+      for (const p of projects) projByDownload.set(String(p.downloadId), { id: String(p.id), thumbPath: (p.thumbPath as string) || undefined })
+      const imgCounts = new Map<string, number>()
+      for (const r of d.prepare('SELECT projectId, COUNT(*) c FROM project_images GROUP BY projectId').all() as Array<{ projectId: string; c: number }>) imgCounts.set(r.projectId, r.c)
+      const wordCounts = new Map<string, number>()
+      for (const r of d.prepare('SELECT projectId, COUNT(*) c FROM transcript_words GROUP BY projectId').all() as Array<{ projectId: string; c: number }>) wordCounts.set(r.projectId, r.c)
+      const jobByProject = new Map<string, RenderJob>()
+      for (const j of d.prepare('SELECT id,title,channel,status,pct,projectId,outputPath,error,createdAt FROM render_jobs ORDER BY createdAt').all() as RenderJob[]) {
+        if (j.projectId) jobByProject.set(j.projectId, j) // last (most recent) wins
+      }
+      const state = new Map<string, { uploadedTo?: string; uploadMatchScore?: number; manualUploaded?: number | null; archived?: number }>()
+      for (const s of d.prepare('SELECT * FROM work_item_state').all() as Array<Record<string, unknown>>) {
+        state.set(String(s.videoId), { uploadedTo: s.uploadedTo as string, uploadMatchScore: s.uploadMatchScore as number, manualUploaded: s.manualUploaded as number | null, archived: s.archived as number })
+      }
+      return downloads.map((dl): WorkItem => {
+        const videoId = dl.id.replace(/^dl-/, '')
+        const proj = projByDownload.get(dl.id)
+        const job = proj ? jobByProject.get(proj.id) : undefined
+        const st = state.get(videoId)
+        let uploadedTo: string[] = []
+        if (st?.uploadedTo) { try { uploadedTo = JSON.parse(st.uploadedTo) as string[] } catch { uploadedTo = [] } }
+        const manualUploaded = st?.manualUploaded == null ? null : !!st.manualUploaded
+        const uploaded = manualUploaded == null ? uploadedTo.length > 0 : manualUploaded
+        return {
+          videoId,
+          channel: dl.channel,
+          title: dl.title,
+          thumb: dl.thumb || undefined,
+          downloadId: dl.id,
+          projectId: proj?.id,
+          renderJobId: job?.id,
+          downloaded: !!dl.filePath,
+          hasImages: !!proj && (imgCounts.get(proj.id) ?? 0) > 0,
+          captioned: !!proj && (wordCounts.get(proj.id) ?? 0) > 0,
+          hasThumbnail: !!proj?.thumbPath,
+          rendered: job?.status === 'done' && !!job.outputPath,
+          uploaded,
+          renderStatus: job?.status,
+          outputPath: job?.outputPath,
+          error: dl.error || job?.error || undefined,
+          uploadedTo,
+          uploadMatchScore: st?.uploadMatchScore ?? undefined,
+          uploadedManual: manualUploaded,
+          archived: !!st?.archived
+        }
+      })
+    },
+    allUploadsForMatch: () =>
+      d.prepare('SELECT myChannelId AS channelId, title FROM uploads').all() as Array<{ channelId: string; title: string }>,
+    setWorkItemUploaded: (videoId, uploaded) => {
+      d.prepare(
+        `INSERT INTO work_item_state (videoId, manualUploaded, updatedAt) VALUES (@videoId, @v, @now)
+         ON CONFLICT(videoId) DO UPDATE SET manualUploaded=@v, updatedAt=@now`
+      ).run({ videoId, v: uploaded ? 1 : 0, now: new Date().toISOString() })
+    },
+    setWorkItemArchived: (videoId, archived) => {
+      d.prepare(
+        `INSERT INTO work_item_state (videoId, archived, updatedAt) VALUES (@videoId, @v, @now)
+         ON CONFLICT(videoId) DO UPDATE SET archived=@v, updatedAt=@now`
+      ).run({ videoId, v: archived ? 1 : 0, now: new Date().toISOString() })
+    },
+    setDetectedUploads: (rows) => {
+      const now = new Date().toISOString()
+      const up = d.prepare(
+        `INSERT INTO work_item_state (videoId, uploadedTo, uploadMatchScore, updatedAt) VALUES (@videoId, @uploadedTo, @score, @now)
+         ON CONFLICT(videoId) DO UPDATE SET uploadedTo=@uploadedTo, uploadMatchScore=@score, updatedAt=@now`
+      )
+      const tx = d.transaction(() => {
+        for (const r of rows) up.run({ videoId: r.videoId, uploadedTo: JSON.stringify(r.uploadedTo), score: r.score, now })
+      })
+      tx()
+    },
+    niches: () =>
+      (d.prepare('SELECT * FROM niches ORDER BY name').all() as Array<Record<string, unknown>>).map((r) => ({
+        id: String(r.id),
+        name: String(r.name ?? ''),
+        keywords: parseKeywords(r.keywords),
+        orientation: (r.orientation as Niche['orientation']) || 'landscape',
+        targetClips: Number(r.targetClips ?? 60),
+        createdAt: String(r.createdAt ?? ''),
+        updatedAt: String(r.updatedAt ?? '')
+      })),
+    saveNiche: (n) => {
+      d.prepare(
+        `INSERT INTO niches (id,name,keywords,orientation,targetClips,createdAt,updatedAt)
+         VALUES (@id,@name,@keywords,@orientation,@targetClips,@createdAt,@updatedAt)
+         ON CONFLICT(id) DO UPDATE SET name=@name, keywords=@keywords, orientation=@orientation, targetClips=@targetClips, updatedAt=@updatedAt`
+      ).run({
+        id: n.id, name: n.name, keywords: JSON.stringify(n.keywords ?? []),
+        orientation: n.orientation, targetClips: n.targetClips,
+        createdAt: n.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString()
+      })
+    },
+    deleteNiche: (id) => {
+      const tx = d.transaction(() => {
+        d.prepare('DELETE FROM niches WHERE id=?').run(id)
+        d.prepare('UPDATE source_channels SET nicheId=NULL WHERE nicheId=?').run(id)
+      })
+      tx()
+    },
+    setSourceChannelNiche: (channelId, nicheId) =>
+      d.prepare('UPDATE source_channels SET nicheId=? WHERE id=?').run(nicheId, channelId),
+    nicheKeyForDownload: (downloadId) => {
+      const row = d.prepare(
+        `SELECT sc.nicheId AS nicheId FROM downloaded_videos dv
+         JOIN source_channels sc ON sc.id = dv.sourceId WHERE dv.id=?`
+      ).get(downloadId) as { nicheId?: string } | undefined
+      return row?.nicheId ? `niche-${row.nicheId}` : undefined
+    },
+    nicheForDownload: (downloadId) => {
+      const row = d.prepare(
+        `SELECT n.* FROM downloaded_videos dv
+         JOIN source_channels sc ON sc.id = dv.sourceId
+         JOIN niches n ON n.id = sc.nicheId WHERE dv.id=?`
+      ).get(downloadId) as Record<string, unknown> | undefined
+      if (!row) return undefined
+      return {
+        id: String(row.id), name: String(row.name ?? ''), keywords: parseKeywords(row.keywords),
+        orientation: (row.orientation as Niche['orientation']) || 'landscape',
+        targetClips: Number(row.targetClips ?? 60), createdAt: String(row.createdAt ?? ''), updatedAt: String(row.updatedAt ?? '')
+      }
+    },
+
     softReset: () => {
       // Wipe domain data but leave thumbnail_templates (user art) intact.
       const softTables = [
@@ -603,6 +806,7 @@ function buildRepositories(d: Database.Database): Repositories {
       ]
       const tx = d.transaction(() => {
         for (const t of softTables) d.prepare(`DELETE FROM ${t}`).run()
+        d.prepare('DELETE FROM work_item_state').run()
         d.prepare("INSERT OR REPLACE INTO app_meta (key,value) VALUES ('seeded','1')").run()
       })
       tx()

@@ -7,6 +7,8 @@ import { registerDownloadIpc } from './download'
 import { registerComposeIpc } from './compose'
 import { registerThumbnailsIpc } from './thumbnails'
 import { registerRenderIpc } from './render'
+import { registerLibraryIpc } from './library'
+import { registerNicheIpc } from './niche'
 import { registerAutomationIpc, upsertProfileAndWarm } from './automation'
 import { tick, start as schedulerStart } from '../services/scheduler'
 import { applyLoginItem } from '../services/background'
@@ -66,6 +68,19 @@ export function registerIpc(): void {
     return getRepos().myChannels()
   })
 
+  // ---- P1: per-video work items + fuzzy upload detection ----
+  ipcMain.handle('db:workItems', () => getRepos().workItems())
+  ipcMain.handle('workItems:detect', async () => {
+    const { runUploadDetection } = await import('../services/uploads-detect')
+    return runUploadDetection()
+  })
+  ipcMain.handle('workItems:setUploaded', (_e, videoId: string, uploaded: boolean) => {
+    getRepos().setWorkItemUploaded(reqId(videoId, 'videoId'), !!uploaded)
+  })
+  ipcMain.handle('workItems:setArchived', (_e, videoId: string, archived: boolean) => {
+    getRepos().setWorkItemArchived(reqId(videoId, 'videoId'), !!archived)
+  })
+
   // ---- scraping + reminders (M3) ----
   registerScrapeIpc()
 
@@ -78,6 +93,11 @@ export function registerIpc(): void {
 
   // ---- render pipeline (M6) ----
   registerRenderIpc()
+
+  // ---- master library: reorganize-existing migration (P0) ----
+  registerLibraryIpc()
+  // ---- niche b-roll pools (P3) ----
+  registerNicheIpc()
 
   // ---- automation: profiles + scheduler (M7) ----
   registerAutomationIpc()
