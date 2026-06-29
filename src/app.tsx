@@ -9,6 +9,7 @@ import { Download } from './screens/Download'
 import { Compose } from './screens/Compose'
 import { RenderQueue } from './screens/RenderQueue'
 import { Profiles } from './screens/Profiles'
+import { Niches } from './screens/Niches'
 import { Settings } from './screens/Settings'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import type { ScreenKey } from '@shared/types'
@@ -24,6 +25,7 @@ const SCREENS: Record<ScreenKey, ComponentType> = {
   compose: Compose,
   thumb: Thumbnails,
   render: RenderQueue,
+  niches: Niches,
   profiles: Profiles,
   settings: Settings
 }

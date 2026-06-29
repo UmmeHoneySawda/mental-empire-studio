@@ -234,6 +234,14 @@ function installMock(): void {
     openLogs: async () => '(browser mock - no logs)',
     logPath: async () => '(browser mock)',
     chooseFolder: async () => '/Browser/MentalEmpire_out',
+    niche: ns({
+      list: async () => [],
+      poolHealth: async () => [],
+      save: async () => [],
+      remove: async () => [],
+      assignChannel: async () => [],
+      warm: async () => ({ nicheId: '', clips: 0, keywords: [] })
+    }),
     pathForFile: (file: File) => `browser://${file.name}`,
     settings: ns({
       get: async () => settings,

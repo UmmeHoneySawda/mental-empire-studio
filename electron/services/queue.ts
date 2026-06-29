@@ -267,6 +267,7 @@ export async function runJob(job: RenderJob): Promise<void> {
         style,
         jobId: job.id,
         maxSegments,
+        poolKey: getRepos().nicheKeyForDownload(project.downloadId),
         shouldCancel: () => hasCancelIntent(job.id),
         logPath,
         onProgress: (phase, done, total, ffmpeg) => {

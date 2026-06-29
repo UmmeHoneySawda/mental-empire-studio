@@ -7,6 +7,7 @@ import type {
   DownloadProgress,
   GoalsPatch,
   NativeApi,
+  Niche,
   Profile,
   Project,
   ScrapeOrder,
@@ -138,6 +139,16 @@ const api: NativeApi = {
   },
 
   chooseFolder: () => ipcRenderer.invoke('fs:chooseFolder'),
+
+  // Niche b-roll pools (P3)
+  niche: {
+    list: () => ipcRenderer.invoke('niche:list'),
+    poolHealth: () => ipcRenderer.invoke('niche:poolHealth'),
+    save: (n: Partial<Niche>) => ipcRenderer.invoke('niche:save', n),
+    remove: (id: string) => ipcRenderer.invoke('niche:delete', id),
+    assignChannel: (channelId: string, nicheId: string | null) => ipcRenderer.invoke('niche:assignChannel', channelId, nicheId),
+    warm: (id: string) => ipcRenderer.invoke('niche:warm', id)
+  },
 
   // Electron 32 removed the File.path property; webUtils.getPathForFile is the
   // supported way to get the absolute path of a dropped/picked file for the main

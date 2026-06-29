@@ -15,7 +15,8 @@ import type {
   RenderJob,
   RenderStatus,
   ScrapeOrder,
-  ImageMode
+  ImageMode,
+  Niche
 } from '../../shared/types'
 import { asBetaOpts, DEFAULT_BETA_OPTS } from '../../shared/types'
 import { seedIfEmpty, seedDemoData } from './seed'
@@ -82,6 +83,15 @@ CREATE TABLE IF NOT EXISTS transcript_words (
 CREATE TABLE IF NOT EXISTS app_meta (
   key TEXT PRIMARY KEY, value TEXT
 );
+CREATE TABLE IF NOT EXISTS niches (
+  id TEXT PRIMARY KEY,
+  name TEXT,
+  keywords TEXT,
+  orientation TEXT,
+  targetClips INTEGER,
+  createdAt TEXT,
+  updatedAt TEXT
+);
 `
 
 // Every table that holds user/domain data — wiped by resetAll(). app_meta is
@@ -89,7 +99,7 @@ CREATE TABLE IF NOT EXISTS app_meta (
 const DATA_TABLES = [
   'my_channels', 'source_channels', 'source_videos', 'downloaded_videos', 'uploads',
   'profiles', 'thumbnail_templates', 'render_jobs', 'activity_log',
-  'projects', 'project_images', 'transcript_words'
+  'projects', 'project_images', 'transcript_words', 'niches'
 ]
 
 /** Add a column only if it isn't already present — idempotent forward migration. */
@@ -98,9 +108,21 @@ function ensureColumn(d: Database.Database, table: string, col: string, type: st
   if (!cols.some((c) => c.name === col)) d.exec(`ALTER TABLE ${table} ADD COLUMN ${col} ${type}`)
 }
 
+/** Parse a stored JSON string[] (niche keywords), tolerating null/garbage. */
+function parseKeywords(raw: unknown): string[] {
+  if (typeof raw !== 'string' || !raw.trim()) return []
+  try {
+    const v = JSON.parse(raw)
+    return Array.isArray(v) ? v.filter((x): x is string => typeof x === 'string') : []
+  } catch {
+    return []
+  }
+}
+
 function migrate(d: Database.Database): void {
   ensureColumn(d, 'my_channels', 'lastScrapedAt', 'TEXT')
   ensureColumn(d, 'source_channels', 'lastScrapedAt', 'TEXT')
+  ensureColumn(d, 'source_channels', 'nicheId', 'TEXT')
   ensureColumn(d, 'downloaded_videos', 'matchedUploadId', 'TEXT')
   // M4: real download bookkeeping
   ensureColumn(d, 'downloaded_videos', 'filePath', 'TEXT')
@@ -260,6 +282,20 @@ export interface Repositories {
   deleteDownload(id: string): void
   /** Remove a single render job from the queue. */
   deleteRenderJob(id: string): void
+  // ---- P3: niche b-roll pools ----
+  /** All user-curated niches. */
+  niches(): Niche[]
+  /** Create/update a niche. */
+  saveNiche(n: Niche): void
+  /** Delete a niche + unassign any channels pointing at it. */
+  deleteNiche(id: string): void
+  /** Assign (or clear) a source channel's niche. */
+  setSourceChannelNiche(channelId: string, nicheId: string | null): void
+  /** The pool key (`niche-<id>`) for the niche assigned to a download's source channel,
+   *  or undefined when the channel has no niche. Used to scope render b-roll selection. */
+  nicheKeyForDownload(downloadId: string): string | undefined
+  /** The niche assigned to a download's source channel, if any. */
+  nicheForDownload(downloadId: string): Niche | undefined
   /** Wipe every domain table (channels, profiles, projects, jobs, …) back to empty,
    *  and mark the DB seeded so demo content is not re-inserted on next launch. */
   resetAll(): void
@@ -326,7 +362,7 @@ function buildRepositories(d: Database.Database): Repositories {
       ).run({ linkedSourceId: null, lastScrapedAt: null, ...c })
     },
 
-    sourceChannels: () => d.prepare('SELECT id,url,handle,name FROM source_channels').all() as SourceChannel[],
+    sourceChannels: () => d.prepare('SELECT id,url,handle,name,nicheId FROM source_channels').all() as SourceChannel[],
     sourceChannelByUrl: (url) =>
       d.prepare('SELECT id,url,handle,name FROM source_channels WHERE url=?').get(url) as SourceChannel | undefined,
     upsertSourceChannel: (s) => {
@@ -593,6 +629,57 @@ function buildRepositories(d: Database.Database): Repositories {
 
     deleteDownload: (id) => d.prepare('DELETE FROM downloaded_videos WHERE id=?').run(id),
     deleteRenderJob: (id) => d.prepare('DELETE FROM render_jobs WHERE id=?').run(id),
+
+    niches: () =>
+      (d.prepare('SELECT * FROM niches ORDER BY name').all() as Array<Record<string, unknown>>).map((r) => ({
+        id: String(r.id),
+        name: String(r.name ?? ''),
+        keywords: parseKeywords(r.keywords),
+        orientation: (r.orientation as Niche['orientation']) || 'landscape',
+        targetClips: Number(r.targetClips ?? 60),
+        createdAt: String(r.createdAt ?? ''),
+        updatedAt: String(r.updatedAt ?? '')
+      })),
+    saveNiche: (n) => {
+      d.prepare(
+        `INSERT INTO niches (id,name,keywords,orientation,targetClips,createdAt,updatedAt)
+         VALUES (@id,@name,@keywords,@orientation,@targetClips,@createdAt,@updatedAt)
+         ON CONFLICT(id) DO UPDATE SET name=@name, keywords=@keywords, orientation=@orientation, targetClips=@targetClips, updatedAt=@updatedAt`
+      ).run({
+        id: n.id, name: n.name, keywords: JSON.stringify(n.keywords ?? []),
+        orientation: n.orientation, targetClips: n.targetClips,
+        createdAt: n.createdAt || new Date().toISOString(), updatedAt: new Date().toISOString()
+      })
+    },
+    deleteNiche: (id) => {
+      const tx = d.transaction(() => {
+        d.prepare('DELETE FROM niches WHERE id=?').run(id)
+        d.prepare('UPDATE source_channels SET nicheId=NULL WHERE nicheId=?').run(id)
+      })
+      tx()
+    },
+    setSourceChannelNiche: (channelId, nicheId) =>
+      d.prepare('UPDATE source_channels SET nicheId=? WHERE id=?').run(nicheId, channelId),
+    nicheKeyForDownload: (downloadId) => {
+      const row = d.prepare(
+        `SELECT sc.nicheId AS nicheId FROM downloaded_videos dv
+         JOIN source_channels sc ON sc.id = dv.sourceId WHERE dv.id=?`
+      ).get(downloadId) as { nicheId?: string } | undefined
+      return row?.nicheId ? `niche-${row.nicheId}` : undefined
+    },
+    nicheForDownload: (downloadId) => {
+      const row = d.prepare(
+        `SELECT n.* FROM downloaded_videos dv
+         JOIN source_channels sc ON sc.id = dv.sourceId
+         JOIN niches n ON n.id = sc.nicheId WHERE dv.id=?`
+      ).get(downloadId) as Record<string, unknown> | undefined
+      if (!row) return undefined
+      return {
+        id: String(row.id), name: String(row.name ?? ''), keywords: parseKeywords(row.keywords),
+        orientation: (row.orientation as Niche['orientation']) || 'landscape',
+        targetClips: Number(row.targetClips ?? 60), createdAt: String(row.createdAt ?? ''), updatedAt: String(row.updatedAt ?? '')
+      }
+    },
 
     softReset: () => {
       // Wipe domain data but leave thumbnail_templates (user art) intact.

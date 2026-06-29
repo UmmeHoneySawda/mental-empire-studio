@@ -7,6 +7,7 @@ import { registerDownloadIpc } from './download'
 import { registerComposeIpc } from './compose'
 import { registerThumbnailsIpc } from './thumbnails'
 import { registerRenderIpc } from './render'
+import { registerNicheIpc } from './niche'
 import { registerAutomationIpc, upsertProfileAndWarm } from './automation'
 import { tick, start as schedulerStart } from '../services/scheduler'
 import { applyLoginItem } from '../services/background'
@@ -78,6 +79,9 @@ export function registerIpc(): void {
 
   // ---- render pipeline (M6) ----
   registerRenderIpc()
+
+  // ---- niche b-roll pools (P3) ----
+  registerNicheIpc()
 
   // ---- automation: profiles + scheduler (M7) ----
   registerAutomationIpc()
