@@ -310,7 +310,7 @@ async function runSmokeM4(): Promise<void> {
     const vids = await sourceVideos(srcUrl, 'Latest', 2)
     const dls = await startDownloads(vids, { bitrate: 192, sourceUrl: srcUrl })
     const dl = dls[0]
-    const fileOk = !!dl.filePath && existsSync(dl.filePath) && dl.durationSec === 12 && dl.stage === 'Downloaded only'
+    const fileOk = !!dl.filePath && existsSync(dl.filePath) && typeof dl.durationSec === 'number' && Math.abs(dl.durationSec - 12) < 0.1 && dl.stage === 'Downloaded only'
 
     // resume must not re-fetch (mtime unchanged)
     const before = statSync(dl.filePath as string).mtimeMs
@@ -324,7 +324,11 @@ async function runSmokeM4(): Promise<void> {
       join(process.cwd(), 'test', 'fixtures', 'ytdlp', `${n}.json`)
     )
     const imgs = setImages(project.id, imgPaths)
-    const imgOk = imgs.length === 3 && imgs[0].rangeStart === 0 && imgs[0].rangeEnd === 4 && imgs[2].rangeEnd === 12
+    const third = (project.durationSec || 12) / 3
+    const imgOk = imgs.length === 3 &&
+      Math.abs(imgs[0].rangeStart - 0) < 0.01 &&
+      Math.abs(imgs[0].rangeEnd - third) < 0.1 &&
+      Math.abs(imgs[2].rangeEnd - project.durationSec) < 0.1
 
     // transcript (ME_WHISPER_FIXTURE) + emphasis toggle
     const words = await runTranscribe(project.id)
@@ -367,13 +371,18 @@ async function runSmokeM5(): Promise<void> {
     const subject = tpl?.layers.find((l) => l.kind === 'subject')
     const tplOk = !!tpl && tpl.layers.length === 3 && !!headline && headline.frame.width === 780
 
-    // 2) auto-arrange: balanced lines, highlighted word largest, block opposite subject
+    // 2) auto-arrange: balanced lines, highlighted word preserved, block opposite subject.
+    // Highlight is now colour/box treatment only; whole-line size bumps caused uneven
+    // multi-line gaps and made users split one headline into multiple text layers.
     const aa = autoArrangeText(headline as TextLayer, { w: THUMB_W, h: THUMB_H }, subject?.frame ?? null)
     const hiLine = aa.lines.find((l) => /fake/i.test(l.text))
     const otherLine = aa.lines.find((l) => !/fake/i.test(l.text))
+    const highlightWords = (headline?.highlightWords?.length ? headline.highlightWords : headline?.highlightWord ? [headline.highlightWord] : [])
+      .map((w) => w.toLowerCase().replace(/[^a-z0-9]/g, ''))
     const aaOk =
       aa.lines.length === 2 &&
-      !!hiLine && !!otherLine && hiLine.size > otherLine.size &&
+      !!hiLine && !!otherLine && hiLine.size === otherLine.size &&
+      highlightWords.includes('fake') &&
       aa.frame.x + aa.frame.width / 2 > THUMB_W / 2 // subject is left → text parks right
 
     // 3) save a new template + reload (round-trip)

@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron'
-import type { AutomationEvent, Profile, ScrapedVideo } from '../../shared/types'
+import { asBetaOpts, type AutomationEvent, type Profile, type ScrapedVideo } from '../../shared/types'
 import { getRepos } from '../db'
 import { sourceVideos, warmSourceBrollLibrary } from './scrape'
 import { startDownloads } from './download'
@@ -120,7 +120,7 @@ export async function runProfile(profileId: string, headless = false): Promise<s
 
 export function upsertProfileAndWarm(p: Profile): Profile[] {
   const profiles = getRepos().upsertProfile(p)
-  if (p.sourceUrl?.trim()) {
+  if (p.sourceUrl?.trim() && asBetaOpts(p.betaOpts).broll.enabled) {
     void warmSourceBrollLibrary(p.sourceUrl, p.sourceOrder, {
       sourceKey: p.linkedSourceId || `profile-${p.id}`,
       displayName: p.name

@@ -224,7 +224,9 @@ export async function sourceVideos(url: string, order: ScrapeOrder, count: numbe
   const sourceId = existing?.id ?? `src-${ch.handle.replace(/^@/, '')}`
   repos.upsertSourceChannel({ id: sourceId, url: channelUrl(url), handle: ch.handle, name: ch.name })
   repos.replaceSourceVideos(sourceId, ordered)
-  void warmSourceBrollLibrary(url, order, { sourceKey: sourceId, displayName: ch.name, seedTitles: ordered.map((v) => v.title) })
+  // Do not prefetch stock B-roll just because a source was scraped. Users read that
+  // as "B-roll is being used" even when the project/profile B-roll toggle is off; the
+  // render queue can fetch clips later if B-roll is explicitly enabled.
   return ordered
 }
 

@@ -395,8 +395,10 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
     ]
   }
 
-  const inputs: string[] = []
   const overlayPath = beta ? overlayGradientPath(beta.overlay, w, h) : undefined
+  const useCudaImageScale = canUseCudaFinalFilters(settings, caps)
+  const hardwareFrameOutput = useCudaImageScale && !overlayPath
+  const inputs: string[] = []
   imgs.forEach((im) => {
     const dur = Math.max(0.5, im.rangeEnd - im.rangeStart) + effectiveCf
     if (im.path) {
@@ -418,7 +420,17 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
   const parts: string[] = []
   imgs.forEach((im, i) => {
     const frames = Math.round((Math.max(0.5, im.rangeEnd - im.rangeStart) + effectiveCf) * FPS)
-    const baseFilters = [`scale=${w}:${h}:force_original_aspect_ratio=increase`, `crop=${w}:${h}`, 'setsar=1']
+    const baseFilters = useCudaImageScale
+      ? [
+          'format=nv12',
+          'hwupload_cuda',
+          `scale_cuda=w=${w}:h=${h}:force_original_aspect_ratio=increase`,
+          'hwdownload',
+          'format=nv12',
+          `crop=${w}:${h}`,
+          'setsar=1'
+        ]
+      : [`scale=${w}:${h}:force_original_aspect_ratio=increase`, `crop=${w}:${h}`, 'setsar=1']
     if (longForm) baseFilters.push(`fps=${FPS}`, 'format=yuv420p', 'setpts=PTS-STARTPTS')
     const base = `[${i}:v]${baseFilters.join(',')}`
     // Ken Burns is intentionally disabled on long-form jobs: with burned captions it
@@ -452,7 +464,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
   const grade = gradeChain(beta?.style).replace(/,+$/, '')
   // Burn captions; punch-zoom adds a subtle pulse when enabled (project flag or beta key-phrases).
   const punch = punchZoomFilter(project, beta, w, h, allowCpuMotion)
-  pushFinishedVideo(parts, `[${last}]`, [grade], { overlayIdx, assPath, punch, prefix: 'img' })
+  pushFinishedVideo(parts, `[${last}]`, [grade], { overlayIdx, assPath, punch, afterSubtitles: hardwareFrameOutput ? ',format=nv12,hwupload_cuda' : '', prefix: 'img' })
   const aMap = audioWithSfx(parts, audioIdx, sfxIdx)
 
   const crf = crfFor(settings.quality)
@@ -462,7 +474,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
     '-filter_complex', parts.join(';'),
     '-map', '[v]',
     '-map', aMap,
-    ...videoCodecArgs(settings, crf, caps),
+    ...codecArgsForFilterOutput(settings, crf, caps, hardwareFrameOutput),
     '-r', String(FPS),
     '-c:a', 'aac',
     '-b:a', '192k',
