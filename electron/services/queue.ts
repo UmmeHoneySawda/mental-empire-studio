@@ -1,7 +1,7 @@
 import { app } from 'electron'
 import { appendFileSync, existsSync, mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import type { ProjectImage, RenderJob, RenderProgress, RenderStage } from '../../shared/types'
+import type { Project, ProjectImage, RenderJob, RenderProgress, RenderStage } from '../../shared/types'
 import { asBetaOpts } from '../../shared/types'
 import { styleCaptionLead, styleTransition, deriveStylePlan, validateEffectPlan, EMPTY_PLAN } from '../../shared/effectPlan'
 import { buildSfxTrack } from './sfx'
@@ -57,7 +57,10 @@ function alignImagesToDuration(images: ProjectImage[], durationSec: number): Pro
   return next
 }
 
-function captionRenderMode(durationSec: number, wordCount: number): 'word' | 'phrase' {
+function captionRenderMode(project: Pick<Project, 'durationSec' | 'captionPace'>, wordCount: number): 'word' | 'phrase' {
+  if (project.captionPace === 'word') return 'word'
+  if (project.captionPace === 'phrase') return 'phrase'
+  const durationSec = project.durationSec
   return durationSec >= 600 || wordCount >= 1500 ? 'phrase' : 'word'
 }
 
@@ -188,7 +191,7 @@ export async function runJob(job: RenderJob): Promise<void> {
   const sfxPath = beta ? buildSfxTrack(plan.transitions, renderProject.durationSec) ?? undefined : undefined
 
   emitStage('captioning', 20, 'Building caption file')
-  const captionMode = captionRenderMode(renderProject.durationSec, words.length)
+  const captionMode = captionRenderMode(renderProject, words.length)
   const { ass } = buildAss(words, {
     preset: renderProject.captionPreset,
     font: renderProject.captionFont,
@@ -204,8 +207,8 @@ export async function runJob(job: RenderJob): Promise<void> {
   })
   writeFileSync(assPath, ass)
   const dialogueCount = (ass.match(/^Dialogue:/gm) ?? []).length
-  if (renderLogPath) appendFileSync(renderLogPath, `[captions]\nmode=${captionMode}\nwords=${words.length}\ndialogues=${dialogueCount}\nlines=${renderProject.captionLines ?? 1}\n`)
-  emitStage('captioning', 100, captionMode === 'phrase' ? `Caption file ready · long-form optimized (${dialogueCount} events)` : 'Caption file ready')
+  if (renderLogPath) appendFileSync(renderLogPath, `[captions]\nmode=${captionMode}\npace=${renderProject.captionPace ?? 'auto'}\nwords=${words.length}\ndialogues=${dialogueCount}\nlines=${renderProject.captionLines ?? 1}\n`)
+  emitStage('captioning', 100, captionMode === 'phrase' ? `Caption file ready · steady phrases (${dialogueCount} events)` : 'Caption file ready')
 
   // Beta auto-B-roll v2: normalize selected stock segments to a resumable concat
   // manifest, then feed that manifest into the final render as one continuous input.

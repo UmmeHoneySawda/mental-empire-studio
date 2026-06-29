@@ -171,7 +171,12 @@ export interface Profile {
   poolSize: number
   kenBurns: boolean
   captionPreset: string
+  captionFont?: string
+  captionAnim?: string
   captionAspect: '16:9' | '1:1' | '9:16'
+  captionLines?: 1 | 2 | 3
+  captionPosition?: 'top' | 'middle' | 'bottom'
+  captionPace?: 'auto' | 'word' | 'phrase'
   outputFolder?: string
   /** newest source video id already processed — the auto-watch cursor */
   lastSeenVideoId?: string
@@ -382,6 +387,7 @@ export interface Project {
   captionAspect: '16:9' | '1:1' | '9:16'
   captionLines?: 1 | 2 | 3
   captionPosition?: 'top' | 'middle' | 'bottom'
+  captionPace?: 'auto' | 'word' | 'phrase'
   emphasis: boolean
   keywords: boolean
   punchZoom: boolean

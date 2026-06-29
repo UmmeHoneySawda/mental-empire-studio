@@ -61,7 +61,12 @@ export async function runProfile(profileId: string, headless = false): Promise<s
           poolSize: profile.poolSize,
           kenBurns: profile.kenBurns,
           captionPreset: profile.captionPreset,
+          captionFont: profile.captionFont ?? 'Montserrat',
+          captionAnim: profile.captionAnim ?? 'Pop-in',
           captionAspect: profile.captionAspect,
+          captionLines: profile.captionLines ?? 1,
+          captionPosition: profile.captionPosition ?? 'bottom',
+          captionPace: profile.captionPace ?? 'auto',
           // Inherit the profile's beta-feature defaults (hook/highlight/overlay/zoom/b-roll/style).
           ...(profile.betaOpts ? { betaOpts: profile.betaOpts } : {})
         })

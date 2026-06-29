@@ -28,6 +28,11 @@ const CAPTION_PRESETS = ['Hormozi', 'Pop', 'Bold', 'Word', 'Neon', 'Minimal']
 const CAPTION_ASPECTS: Project['captionAspect'][] = ['16:9', '1:1', '9:16']
 const CAPTION_LINES: Array<NonNullable<Project['captionLines']>> = [1, 2, 3]
 const CAPTION_POSITIONS: Array<NonNullable<Project['captionPosition']>> = ['bottom', 'middle', 'top']
+const CAPTION_PACES: Array<{ value: NonNullable<Project['captionPace']>; label: string }> = [
+  { value: 'auto', label: 'Auto' },
+  { value: 'word', label: 'Word' },
+  { value: 'phrase', label: 'Steady' }
+]
 
 function mediaSrc(path: string): string {
   if (!path) return ''
@@ -372,6 +377,7 @@ function CaptionsTab(): JSX.Element {
           <div><div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 7 }}>Aspect</div><div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, fontSize: 10.5 }}>{CAPTION_ASPECTS.map((a) => chip(a, (project?.captionAspect ?? '16:9') === a, () => void setCaptions({ captionAspect: a }), a))}</div></div>
           <div><div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 7 }}>Lines</div><div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, fontSize: 10.5 }}>{CAPTION_LINES.map((n) => chip(`${n} line${n > 1 ? 's' : ''}`, (project?.captionLines ?? 1) === n, () => void setCaptions({ captionLines: n }), String(n)))}</div></div>
           <div><div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 7 }}>Position</div><div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, fontSize: 10.5 }}>{CAPTION_POSITIONS.map((p) => chip(p[0].toUpperCase() + p.slice(1), (project?.captionPosition ?? 'bottom') === p, () => void setCaptions({ captionPosition: p }), p))}</div></div>
+          <div><div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 7 }}>Pace</div><div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, fontSize: 10.5 }}>{CAPTION_PACES.map((p) => chip(p.label, (project?.captionPace ?? 'auto') === p.value, () => void setCaptions({ captionPace: p.value }), p.value))}</div></div>
           <div style={{ display: 'flex', gap: 9 }}>
             <div onClick={() => void setCaptions({ keywords: !project?.keywords })} style={{ flex: 1, border: '1px solid #1d2129', borderRadius: 9, padding: 9, background: '#0e1116', cursor: 'pointer' }}><div style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ fontSize: 11, fontWeight: 600, color: '#dde0e5' }}>Keywords</span><span style={{ marginLeft: 'auto', fontSize: 8.5, fontWeight: 700, background: project?.keywords ? '#1f9c6b' : '#2b303b', color: '#fff', borderRadius: 9, padding: '1px 6px' }}>{project?.keywords ? 'ON' : 'OFF'}</span></div><div style={{ fontSize: 9, color: '#6a7180', marginTop: 4 }}>Auto-highlight</div></div>
             <div onClick={() => void setCaptions({ punchZoom: !project?.punchZoom })} style={{ flex: 1, border: '1px solid #1d2129', borderRadius: 9, padding: 9, background: '#0e1116', cursor: 'pointer' }}><div style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ fontSize: 11, fontWeight: 600, color: '#dde0e5' }}>Punch</span><span style={{ marginLeft: 'auto', fontSize: 8.5, fontWeight: 700, background: project?.punchZoom ? '#1f9c6b' : '#2b303b', color: '#fff', borderRadius: 9, padding: '1px 6px' }}>{project?.punchZoom ? 'ON' : 'OFF'}</span></div><div style={{ fontSize: 9, color: '#6a7180', marginTop: 4 }}>Zoom on hit</div></div>

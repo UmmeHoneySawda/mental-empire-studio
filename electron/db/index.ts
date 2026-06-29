@@ -67,7 +67,7 @@ CREATE TABLE IF NOT EXISTS projects (
   id TEXT PRIMARY KEY, downloadId TEXT, title TEXT, channel TEXT,
   mp3Path TEXT, durationSec INTEGER,
   imageMode TEXT, poolSize INTEGER, kenBurns INTEGER, seed INTEGER, crossfade INTEGER,
-  captionPreset TEXT, captionFont TEXT, captionAnim TEXT, captionAspect TEXT, captionLines INTEGER, captionPosition TEXT,
+  captionPreset TEXT, captionFont TEXT, captionAnim TEXT, captionAspect TEXT, captionLines INTEGER, captionPosition TEXT, captionPace TEXT,
   emphasis INTEGER, keywords INTEGER, punchZoom INTEGER,
   stage TEXT, createdAt TEXT
 );
@@ -121,7 +121,12 @@ function migrate(d: Database.Database): void {
   ensureColumn(d, 'profiles', 'poolSize', 'INTEGER')
   ensureColumn(d, 'profiles', 'kenBurns', 'INTEGER')
   ensureColumn(d, 'profiles', 'captionPreset', 'TEXT')
+  ensureColumn(d, 'profiles', 'captionFont', 'TEXT')
+  ensureColumn(d, 'profiles', 'captionAnim', 'TEXT')
   ensureColumn(d, 'profiles', 'captionAspect', 'TEXT')
+  ensureColumn(d, 'profiles', 'captionLines', 'INTEGER')
+  ensureColumn(d, 'profiles', 'captionPosition', 'TEXT')
+  ensureColumn(d, 'profiles', 'captionPace', 'TEXT')
   ensureColumn(d, 'profiles', 'outputFolder', 'TEXT')
   ensureColumn(d, 'profiles', 'lastSeenVideoId', 'TEXT')
   ensureColumn(d, 'profiles', 'lastRunAt', 'TEXT')
@@ -133,6 +138,7 @@ function migrate(d: Database.Database): void {
   ensureColumn(d, 'projects', 'thumbPath', 'TEXT')
   ensureColumn(d, 'projects', 'captionLines', 'INTEGER')
   ensureColumn(d, 'projects', 'captionPosition', 'TEXT')
+  ensureColumn(d, 'projects', 'captionPace', 'TEXT')
   ensureColumn(d, 'downloaded_videos', 'error', 'TEXT')
 
   purgeLegacyDemoSeed(d)
@@ -476,8 +482,8 @@ function buildRepositories(d: Database.Database): Repositories {
 
     createProject: (p) => {
       d.prepare(
-        `INSERT INTO projects (id,downloadId,title,channel,mp3Path,durationSec,imageMode,poolSize,kenBurns,seed,crossfade,captionPreset,captionFont,captionAnim,captionAspect,captionLines,captionPosition,emphasis,keywords,punchZoom,stage,createdAt,betaOpts)
-         VALUES (@id,@downloadId,@title,@channel,@mp3Path,@durationSec,@imageMode,@poolSize,@kenBurns,@seed,@crossfade,@captionPreset,@captionFont,@captionAnim,@captionAspect,@captionLines,@captionPosition,@emphasis,@keywords,@punchZoom,@stage,@createdAt,@betaOpts)`
+        `INSERT INTO projects (id,downloadId,title,channel,mp3Path,durationSec,imageMode,poolSize,kenBurns,seed,crossfade,captionPreset,captionFont,captionAnim,captionAspect,captionLines,captionPosition,captionPace,emphasis,keywords,punchZoom,stage,createdAt,betaOpts)
+         VALUES (@id,@downloadId,@title,@channel,@mp3Path,@durationSec,@imageMode,@poolSize,@kenBurns,@seed,@crossfade,@captionPreset,@captionFont,@captionAnim,@captionAspect,@captionLines,@captionPosition,@captionPace,@emphasis,@keywords,@punchZoom,@stage,@createdAt,@betaOpts)`
       ).run(projectToRow(p))
     },
     getProject: (id) => {
@@ -587,7 +593,7 @@ function buildRepositories(d: Database.Database): Repositories {
 const PROJECT_BOOL_KEYS = new Set(['kenBurns', 'emphasis', 'keywords', 'punchZoom'])
 
 function projectToRow(p: Project): Record<string, unknown> {
-  return { ...p, captionLines: p.captionLines ?? 1, captionPosition: p.captionPosition ?? 'bottom', kenBurns: p.kenBurns ? 1 : 0, crossfade: p.crossfade ?? 0.8, emphasis: p.emphasis ? 1 : 0, keywords: p.keywords ? 1 : 0, punchZoom: p.punchZoom ? 1 : 0, betaOpts: JSON.stringify(p.betaOpts ?? DEFAULT_BETA_OPTS) }
+  return { ...p, captionLines: p.captionLines ?? 1, captionPosition: p.captionPosition ?? 'bottom', captionPace: p.captionPace ?? 'auto', kenBurns: p.kenBurns ? 1 : 0, crossfade: p.crossfade ?? 0.8, emphasis: p.emphasis ? 1 : 0, keywords: p.keywords ? 1 : 0, punchZoom: p.punchZoom ? 1 : 0, betaOpts: JSON.stringify(p.betaOpts ?? DEFAULT_BETA_OPTS) }
 }
 function projectPatchToRow(patch: Partial<Project>): Record<string, unknown> {
   const out: Record<string, unknown> = {}
@@ -601,7 +607,9 @@ function projectPatchToRow(patch: Partial<Project>): Record<string, unknown> {
 function rowToProject(r: Record<string, unknown>): Project {
   const rawLines = Number(r.captionLines ?? 1)
   const captionLines = rawLines === 2 || rawLines === 3 ? rawLines : 1
-  return { ...(r as unknown as Project), captionLines, captionPosition: (r.captionPosition as Project['captionPosition']) ?? 'bottom', kenBurns: !!r.kenBurns, crossfade: Number(r.crossfade) || 0.8, emphasis: !!r.emphasis, keywords: !!r.keywords, punchZoom: !!r.punchZoom, betaOpts: parseBetaOpts(r) }
+  const rawPace = r.captionPace as Project['captionPace']
+  const captionPace = rawPace === 'word' || rawPace === 'phrase' ? rawPace : 'auto'
+  return { ...(r as unknown as Project), captionLines, captionPosition: (r.captionPosition as Project['captionPosition']) ?? 'bottom', captionPace, kenBurns: !!r.kenBurns, crossfade: Number(r.crossfade) || 0.8, emphasis: !!r.emphasis, keywords: !!r.keywords, punchZoom: !!r.punchZoom, betaOpts: parseBetaOpts(r) }
 }
 function rowToImage(r: Record<string, unknown>): ProjectImage {
   return { ...(r as unknown as ProjectImage), manual: !!r.manual }
@@ -613,7 +621,8 @@ function rowToWord(r: Record<string, unknown>): TranscriptWord {
 const PROFILE_COLS = [
   'id', 'name', 'mono', 'avatar', 'rule', 'images', 'thumb', 'cap', 'out', 'autoWatch', 'thumbnailTemplateId',
   'linkedSourceId', 'sourceUrl', 'sourceOrder', 'sourceCount', 'imageMode', 'poolSize', 'kenBurns',
-  'captionPreset', 'captionAspect', 'outputFolder', 'lastSeenVideoId', 'lastRunAt', 'betaOpts'
+  'captionPreset', 'captionFont', 'captionAnim', 'captionAspect', 'captionLines', 'captionPosition', 'captionPace',
+  'outputFolder', 'lastSeenVideoId', 'lastRunAt', 'betaOpts'
 ]
 
 function profileToRow(p: Profile): Record<string, unknown> {
@@ -621,6 +630,11 @@ function profileToRow(p: Profile): Record<string, unknown> {
     ...p,
     autoWatch: p.autoWatch ? 1 : 0,
     kenBurns: p.kenBurns ? 1 : 0,
+    captionFont: p.captionFont ?? 'Montserrat',
+    captionAnim: p.captionAnim ?? 'Pop-in',
+    captionLines: p.captionLines ?? 1,
+    captionPosition: p.captionPosition ?? 'bottom',
+    captionPace: p.captionPace ?? 'auto',
     thumbnailTemplateId: p.thumbnailTemplateId ?? null,
     linkedSourceId: p.linkedSourceId ?? null,
     outputFolder: p.outputFolder ?? null,
@@ -632,6 +646,10 @@ function profileToRow(p: Profile): Record<string, unknown> {
 
 /** Map a profiles row → Profile, coercing bools and defaulting run config for legacy rows. */
 function rowToProfile(r: Record<string, unknown>): Profile {
+  const rawLines = Number(r.captionLines ?? 1)
+  const captionLines = rawLines === 2 || rawLines === 3 ? rawLines : 1
+  const rawPace = r.captionPace as Profile['captionPace']
+  const captionPace = rawPace === 'word' || rawPace === 'phrase' ? rawPace : 'auto'
   return {
     ...(r as unknown as Profile),
     autoWatch: !!r.autoWatch,
@@ -642,7 +660,12 @@ function rowToProfile(r: Record<string, unknown>): Profile {
     imageMode: (r.imageMode as ImageMode) ?? 'sequence',
     poolSize: (r.poolSize as number) ?? 10,
     captionPreset: (r.captionPreset as string) ?? 'Hormozi',
+    captionFont: (r.captionFont as string) ?? 'Montserrat',
+    captionAnim: (r.captionAnim as string) ?? 'Pop-in',
     captionAspect: (r.captionAspect as Profile['captionAspect']) ?? '16:9',
+    captionLines,
+    captionPosition: (r.captionPosition as Profile['captionPosition']) ?? 'bottom',
+    captionPace,
     betaOpts: parseBetaOpts(r)
   }
 }

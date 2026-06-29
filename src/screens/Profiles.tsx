@@ -11,6 +11,13 @@ const ROWS: { k: keyof Profile; label: string }[] = [
   { k: 'cap', label: 'CAPTIONS' },
   { k: 'out', label: 'OUTPUT' }
 ]
+const CAPTION_LINES: Array<NonNullable<Profile['captionLines']>> = [1, 2, 3]
+const CAPTION_POSITIONS: Array<NonNullable<Profile['captionPosition']>> = ['bottom', 'middle', 'top']
+const CAPTION_PACES: Array<{ value: NonNullable<Profile['captionPace']>; label: string }> = [
+  { value: 'auto', label: 'Auto' },
+  { value: 'word', label: 'Word' },
+  { value: 'phrase', label: 'Steady' }
+]
 
 function ProfileEditor({ profile, onClose }: { profile: Profile; onClose: () => void }): JSX.Element {
   const saveProfile = useData((s) => s.saveProfile)
@@ -20,12 +27,15 @@ function ProfileEditor({ profile, onClose }: { profile: Profile; onClose: () => 
   const set = (patch: Partial<Profile>): void => setP((cur) => ({ ...cur, ...patch }))
   const field = { width: '100%', border: '1px solid #23272f', borderRadius: 8, padding: '8px 10px', fontSize: 12, color: '#dde0e5', background: '#0e1116', boxSizing: 'border-box' as const }
   const label = { fontSize: 10, color: '#6a7180', marginBottom: 5, fontFamily: 'var(--font-mono)', letterSpacing: '.4px' }
+  const smallSelect = { ...field, padding: '7px 8px' }
 
   const save = async (): Promise<void> => {
+    const pace = p.captionPace ?? 'auto'
+    const lines = p.captionLines ?? 1
     await saveProfile({
       ...p,
       rule: `${p.sourceOrder} · ${p.sourceCount} videos`,
-      cap: `${p.captionPreset} · ${p.captionAspect}`,
+      cap: `${p.captionPreset} · ${p.captionAspect} · ${lines}L · ${pace === 'phrase' ? 'steady' : pace}`,
       images: p.imageMode === 'pool' ? `Pool of ${p.poolSize} · shuffle` : 'Single image'
     })
     onClose()
@@ -63,6 +73,35 @@ function ProfileEditor({ profile, onClose }: { profile: Profile; onClose: () => 
           </select>
         </div>
       </div>
+      <div style={{ display: 'flex', gap: 9 }}>
+        <div style={{ flex: 1 }}><div style={label}>FONT</div>
+          <select value={p.captionFont ?? 'Montserrat'} onChange={(e) => set({ captionFont: e.target.value })} style={smallSelect}>
+            {['Montserrat', 'Anton', 'Space Grotesk', 'Hanken Grotesk', 'JetBrains Mono', 'Arial', 'Impact', 'Oswald', 'Bebas Neue', 'Roboto'].map((f) => <option key={f} value={f}>{f}</option>)}
+          </select>
+        </div>
+        <div style={{ flex: 1 }}><div style={label}>ANIMATION</div>
+          <select value={p.captionAnim ?? 'Pop-in'} onChange={(e) => set({ captionAnim: e.target.value })} style={smallSelect}>
+            {['Pop-in', 'Bounce', 'Slide', 'Type'].map((a) => <option key={a} value={a}>{a}</option>)}
+          </select>
+        </div>
+      </div>
+      <div style={{ display: 'flex', gap: 9 }}>
+        <div style={{ flex: 1 }}><div style={label}>LINES</div>
+          <select value={p.captionLines ?? 1} onChange={(e) => set({ captionLines: Number(e.target.value) as NonNullable<Profile['captionLines']> })} style={smallSelect}>
+            {CAPTION_LINES.map((n) => <option key={n} value={n}>{n}</option>)}
+          </select>
+        </div>
+        <div style={{ flex: 1 }}><div style={label}>POSITION</div>
+          <select value={p.captionPosition ?? 'bottom'} onChange={(e) => set({ captionPosition: e.target.value as NonNullable<Profile['captionPosition']> })} style={smallSelect}>
+            {CAPTION_POSITIONS.map((pos) => <option key={pos} value={pos}>{pos}</option>)}
+          </select>
+        </div>
+        <div style={{ flex: 1 }}><div style={label}>PACE</div>
+          <select value={p.captionPace ?? 'auto'} onChange={(e) => set({ captionPace: e.target.value as NonNullable<Profile['captionPace']> })} style={smallSelect}>
+            {CAPTION_PACES.map((pace) => <option key={pace.value} value={pace.value}>{pace.label}</option>)}
+          </select>
+        </div>
+      </div>
       <div><div style={label}>THUMBNAIL TEMPLATE</div>
         <select value={p.thumbnailTemplateId ?? ''} onChange={(e) => set({ thumbnailTemplateId: e.target.value || undefined })} style={field}>
           <option value="">None</option>
@@ -86,9 +125,10 @@ function newProfile(): Profile {
   const id = `prof-${Date.now()}`
   return {
     id, name: 'New profile', mono: 'NP', avatar: 'linear-gradient(135deg,#8b7cff,#5b4fd6)',
-    rule: 'Latest · 5 videos', images: 'Pool of 10 · shuffle', thumb: 'None', cap: 'Hormozi · 16:9', out: '',
+    rule: 'Latest · 5 videos', images: 'Pool of 10 · shuffle', thumb: 'None', cap: 'Hormozi · 16:9 · 2L · auto', out: '',
     autoWatch: false, sourceUrl: '', sourceOrder: 'Latest', sourceCount: 5, imageMode: 'pool', poolSize: 10,
-    kenBurns: true, captionPreset: 'Hormozi', captionAspect: '16:9'
+    kenBurns: true, captionPreset: 'Hormozi', captionFont: 'Montserrat', captionAnim: 'Pop-in',
+    captionAspect: '16:9', captionLines: 2, captionPosition: 'bottom', captionPace: 'auto'
   }
 }
 

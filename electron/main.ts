@@ -687,7 +687,12 @@ async function runSmokeM6(): Promise<void> {
     const ns = Date.now()
     for (const k of [1, 2]) {
       const id = `proj-m6-${ns}-${k}`
-      repos.createProject(proj(id, `M6 Test ${k}`))
+      repos.createProject({
+        ...proj(id, `M6 Test ${k}`),
+        captionLines: k === 1 ? 3 : 2,
+        captionPosition: k === 1 ? 'middle' : 'bottom',
+        captionPace: k === 1 ? 'phrase' : 'auto'
+      })
       repos.replaceProjectImages(id, [{ id: `${id}-i0`, projectId: id, ord: 0, path: '/x/a.png', thumb: '', rangeStart: 0, rangeEnd: 12, manual: false }])
       repos.replaceTranscript(id, words.map((w, i) => ({ ...w, id: `${id}-w${i}`, projectId: id })))
       repos.createRenderJob({ id: `job-${id}`, title: `M6 Test ${k}`, channel: 'Mental Empire', projectId: id })
@@ -700,12 +705,13 @@ async function runSmokeM6(): Promise<void> {
     const logTxt = existsSync(logFile) ? readFileSync(logFile, 'utf8') : ''
     const stageTimingOk = logTxt.includes('[stage:start] preparing') && logTxt.includes('[stage:end] preparing') && logTxt.includes('[render:end] status=done')
     const probeLogOk = logTxt.includes('[probe] output=') && logTxt.includes('expectedSec=12.00')
+    const captionPaceLogOk = logTxt.includes('mode=phrase') && logTxt.includes('pace=phrase') && logTxt.includes('lines=3')
 
     console.log(`SMOKE_M6_ASS ok=${assOk} zoomHits=${ass169.zoomHits.length} top=${assTop.ass.includes(',8,60,60,')}`)
     console.log(`SMOKE_M6_ARGS ok=${argsOk} eta=${etaOk}`)
     console.log(`SMOKE_M6_LONGFORM captions=${captionPerfOk} wordEvents=${longWordDialogues} phraseEvents=${longPhraseDialogues} motion=${longMotionOk}`)
-    console.log(`SMOKE_M6_QUEUE status=${j1?.status} pct=${j1?.pct} maxActive=${lastMaxActive()} out=${!!j1?.outputPath} ass=${assFileOk} stageTiming=${stageTimingOk} probe=${probeLogOk}`)
-    const ok = assOk && argsOk && etaOk && captionPerfOk && longMotionOk && queueOk && assFileOk && stageTimingOk && probeLogOk && betaOk && brollOk && styleOk && sfxOk
+    console.log(`SMOKE_M6_QUEUE status=${j1?.status} pct=${j1?.pct} maxActive=${lastMaxActive()} out=${!!j1?.outputPath} ass=${assFileOk} stageTiming=${stageTimingOk} probe=${probeLogOk} captionPace=${captionPaceLogOk}`)
+    const ok = assOk && argsOk && etaOk && captionPerfOk && longMotionOk && queueOk && assFileOk && stageTimingOk && probeLogOk && captionPaceLogOk && betaOk && brollOk && styleOk && sfxOk
     console.log(ok ? 'SMOKE_M6_OK' : 'SMOKE_M6_FAIL')
     closeDatabase()
     app.exit(ok ? 0 : 1)
