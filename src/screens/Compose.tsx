@@ -5,6 +5,7 @@ import { ScreenPad, Eyebrow, Title } from '../components/primitives'
 import type { BetaVideoOpts, Project, ProjectImage, TranscriptWord, VideoStyle } from '@shared/types'
 import { asBetaOpts } from '@shared/types'
 import { buildMasterPrompt, validateEffectPlan } from '@shared/effectPlan'
+import { isCssImageValue, mediaSrc, videoSrc } from '../lib/media'
 
 function Tab({ id, label, icon }: { id: 'media' | 'captions' | 'style' | 'advanced'; label: string; icon: JSX.Element }): JSX.Element {
   const composeTab = useStore((s) => s.composeTab)
@@ -34,12 +35,6 @@ const CAPTION_PACES: Array<{ value: NonNullable<Project['captionPace']>; label: 
   { value: 'phrase', label: 'Steady' }
 ]
 
-function mediaSrc(path: string): string {
-  if (!path) return ''
-  if (/^(https?:|data:|file:)/.test(path)) return path
-  return `file:///${path.replace(/\\/g, '/')}`
-}
-
 function overlayBackground(o?: BetaVideoOpts['overlay']): string {
   if (!o) return 'linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.42))'
   const intensity = Math.max(0, Math.min(100, o.intensity ?? 50))
@@ -67,6 +62,9 @@ function MediaTab(): JSX.Element {
   const durationMissing = !project || !project.durationSec || project.durationSec <= 0
   const betaOpts = asBetaOpts(project?.betaOpts)
   const brollEnabled = betaOpts.broll.enabled
+  const heroImage = images[0]?.thumb || images[0]?.path
+  const heroSrc = mediaSrc(heroImage)
+  const heroBg = isCssImageValue(heroImage) ? heroImage : images[0] ? '#0e1116' : 'linear-gradient(135deg,#23262e,#15171d)'
 
   const pickFiles = (e: React.ChangeEvent<HTMLInputElement>): void => {
     // Electron 32 removed File.path — resolve via webUtils through the preload bridge.
@@ -110,10 +108,10 @@ function MediaTab(): JSX.Element {
       )}
       <div style={{ display: 'flex', gap: 20, marginBottom: 20 }}>
         <div style={{ flex: 'none', width: 520 }}>
-          <div style={{ border: '1px solid #1d2129', borderRadius: 14, aspectRatio: '16/9', background: images[0] ? '#0e1116' : 'linear-gradient(135deg,#23262e,#15171d)', position: 'relative', overflow: 'hidden', display: 'grid', placeItems: 'center' }}>
-            {images[0] ? (
-              <img src={mediaSrc(images[0].thumb || images[0].path)} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
-            ) : (
+          <div style={{ border: '1px solid #1d2129', borderRadius: 14, aspectRatio: '16/9', background: heroBg, position: 'relative', overflow: 'hidden', display: 'grid', placeItems: 'center' }}>
+            {heroSrc ? (
+              <img src={heroSrc} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover' }} />
+            ) : !isCssImageValue(heroImage) && (
               <div style={{ position: 'absolute', left: '9%', bottom: 0, width: '36%', height: '88%', background: 'linear-gradient(180deg,#3a4150,#23262e)', borderRadius: '80px 80px 0 0' }} />
             )}
             <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.45))' }} />
@@ -134,9 +132,16 @@ function MediaTab(): JSX.Element {
             {images.map((im: ProjectImage, i) => (
               <div key={im.id} draggable onDragStart={() => { dragId.current = im.id }} onDragOver={(e) => e.preventDefault()} onDrop={() => moveImage(im.id)} className="me-row" style={{ display: 'flex', alignItems: 'center', gap: 12, border: '1px solid #1d2129', borderRadius: 11, padding: 10, background: '#12151b' }}>
                 <span title="Drag to reorder" style={{ color: '#6a7180', cursor: 'grab' }}>⠿</span>
-                <div style={{ width: 58, height: 33, borderRadius: 6, background: IMG_GRADS[i % IMG_GRADS.length], flex: 'none', overflow: 'hidden' }}>
-                  <img src={mediaSrc(im.thumb || im.path)} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                </div>
+                {(() => {
+                  const thumb = im.thumb || im.path
+                  const src = mediaSrc(thumb)
+                  const bg = isCssImageValue(thumb) ? thumb : IMG_GRADS[i % IMG_GRADS.length]
+                  return (
+                    <div style={{ width: 58, height: 33, borderRadius: 6, background: bg, flex: 'none', overflow: 'hidden' }}>
+                      {src && <img src={src} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />}
+                    </div>
+                  )
+                })()}
                 <div style={{ flex: 1, fontSize: 12.5, color: '#dde0e5', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{im.path.split(/[\\/]/).pop()}</div>
                 <div style={{ fontSize: 11, color: durationMissing ? '#ff8a96' : '#6a7180', fontFamily: 'var(--font-mono)' }}>{durationMissing ? 'duration missing' : `${fmt(im.rangeStart)}–${fmt(im.rangeEnd)}`}</div>
               </div>
@@ -195,9 +200,11 @@ function CaptionPreview({ words, aspect, lines, position, font, animation, image
     : position === 'bottom' ? '0 16px 34px' : position === 'top' ? '34px 16px 0' : '0 16px'
   const perLine = Math.max(1, Math.ceil(sample.length / lines))
   const rows = Array.from({ length: lines }, (_, i) => sample.slice(i * perLine, (i + 1) * perLine)).filter((r) => r.length > 0)
+  const imageSrc = mediaSrc(imagePath)
+  const background = isCssImageValue(imagePath) ? imagePath : 'linear-gradient(135deg,#23262e,#15171d)'
   return (
-    <div style={{ width: '100%', maxWidth: 230, margin: '0 auto', border: '1px solid #1d2129', borderRadius: 12, aspectRatio: ratio, background: 'linear-gradient(135deg,#23262e,#15171d)', position: 'relative', display: 'flex', alignItems, justifyContent: 'center', padding, overflow: 'hidden' }}>
-      {imagePath ? <img src={mediaSrc(imagePath)} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: 0.72 }} /> : <div style={{ position: 'absolute', left: '14%', bottom: 0, width: '34%', height: '80%', background: 'linear-gradient(180deg,#3a4150,#23262e)', borderRadius: '50px 50px 0 0' }} />}
+    <div style={{ width: '100%', maxWidth: 230, margin: '0 auto', border: '1px solid #1d2129', borderRadius: 12, aspectRatio: ratio, background, position: 'relative', display: 'flex', alignItems, justifyContent: 'center', padding, overflow: 'hidden' }}>
+      {imageSrc ? <img src={imageSrc} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: 0.72 }} /> : !isCssImageValue(imagePath) && <div style={{ position: 'absolute', left: '14%', bottom: 0, width: '34%', height: '80%', background: 'linear-gradient(180deg,#3a4150,#23262e)', borderRadius: '50px 50px 0 0' }} />}
       <div style={{ position: 'absolute', inset: 0, background: overlayBackground(overlay) }} />
       <div style={{ position: 'relative', textAlign: 'center', fontFamily: `${font}, Anton, var(--font-poster)`, fontSize, lineHeight: 1.04, color: '#fff', textTransform: 'uppercase', WebkitTextStroke: '1.4px #000', textShadow: '0 2px 0 #000, 0 4px 12px rgba(0,0,0,.5)' }}>
         {rows.map((row, rowIdx) => (
@@ -385,6 +392,7 @@ function CaptionsTab(): JSX.Element {
   const [previewState, setPreviewState] = useState<'idle' | 'rendering' | 'ready' | 'error'>('idle')
   const [previewError, setPreviewError] = useState('')
   const previewing = previewState === 'rendering'
+  const previewMediaSrc = videoSrc(previewPath)
 
   const renderPreview = async (): Promise<void> => {
     if (!project || previewing) return
@@ -442,7 +450,11 @@ function CaptionsTab(): JSX.Element {
         <button type="button" disabled={!project || previewing} onClick={() => void renderPreview()} className="me-btn" style={{ width: '100%', marginTop: 10, border: '1px solid #262b34', background: '#15181f', borderRadius: 9, padding: '8px 10px', fontSize: 11.5, color: '#c4cad3', cursor: project && !previewing ? 'pointer' : 'not-allowed', opacity: project && !previewing ? 1 : 0.55 }}>{previewing ? 'Rendering…' : 'Render preview'}</button>
         {previewPath && (
           <div style={{ marginTop: 10 }}>
-            <video controls src={mediaSrc(previewPath)} style={{ width: '100%', border: '1px solid #1d2129', borderRadius: 12, background: '#0e1116', display: 'block' }} />
+            {previewMediaSrc ? (
+              <video controls src={previewMediaSrc} style={{ width: '100%', border: '1px solid #1d2129', borderRadius: 12, background: '#0e1116', display: 'block' }} />
+            ) : (
+              <div style={{ width: '100%', aspectRatio: '16/9', border: '1px solid #1d2129', borderRadius: 12, background: '#0e1116', display: 'grid', placeItems: 'center', fontSize: 10.5, color: '#6a7180' }}>Preview generated</div>
+            )}
             <div title={previewPath} className="me-ellipsis" style={{ marginTop: 5, fontSize: 9.5, color: '#5b616f', fontFamily: 'var(--font-mono)' }}>{previewState === 'ready' ? 'Rendered preview ready' : 'Preview file'}</div>
           </div>
         )}

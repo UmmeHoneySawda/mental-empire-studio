@@ -9,7 +9,7 @@
   "scripts": {
     "dev": "electron-vite dev",
     "build": "electron-vite build",
-    "build:renderer": "electron-vite build --rendererOnly",
+    "build:renderer": "vite build --config vite.renderer.config.ts",
     "preview": "electron-vite preview",
     "typecheck": "tsc --noEmit -p tsconfig.json && tsc --noEmit -p tsconfig.node.json",
     "fetch:bin": "node scripts/fetch-binaries.mjs",
@@ -20,8 +20,8 @@
     "dist:win": "electron-vite build && electron-builder --win",
     "dist:mac": "electron-vite build && electron-builder --mac",
     "dist:linux": "electron-vite build && electron-builder --linux",
-    "dev:browser": "electron-vite dev --rendererOnly",
-    "preview:browser": "vite preview --base ./ --outDir out/renderer --port 4173",
+    "dev:browser": "vite --config vite.renderer.config.ts --host localhost --port 5173",
+    "preview:browser": "vite preview --config vite.renderer.config.ts --outDir out/renderer --port 4173",
     "test": "vitest run",
     "test:watch": "vitest"
   },

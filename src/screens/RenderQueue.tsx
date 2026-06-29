@@ -3,6 +3,7 @@ import { ScreenPad } from '../components/primitives'
 import { useStore } from '../store/useStore'
 import { useData } from '../store/useData'
 import type { RenderProgress, RenderQueueRow, RenderStage, RenderStatus } from '@shared/types'
+import { mediaSrc } from '../lib/media'
 
 const THUMB_BG = 'linear-gradient(135deg,#2a2540,#46243a)'
 const STAGES: RenderStage[] = ['preparing', 'captioning', 'fetching-broll', 'assembling', 'encoding', 'finalizing']
@@ -10,12 +11,6 @@ const STAGE_LABEL: Partial<Record<RenderStage, string>> = {
   preparing: 'Preparing', captioning: 'Captions', 'fetching-broll': 'B-roll',
   assembling: 'Assembling', encoding: 'Encoding', finalizing: 'Finalizing',
   done: 'Done', error: 'Error', cancelled: 'Cancelled'
-}
-
-function mediaSrc(path: string | undefined): string {
-  if (!path) return ''
-  if (/^(https?:|data:|file:)/.test(path)) return path
-  return `file:///${path.replace(/\\/g, '/')}`
 }
 
 function fmtEta(sec?: number): string {
@@ -198,7 +193,7 @@ export function RenderQueue(): JSX.Element {
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, padding: '14px 16px' }}>
                 {/* Thumbnail */}
                 <div style={{ width: 64, height: 36, borderRadius: 7, background: THUMB_BG, flex: 'none', overflow: 'hidden' }}>
-                  {r.firstImagePath && <img src={mediaSrc(r.firstImagePath)} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />}
+                  {mediaSrc(r.firstImagePath) && <img src={mediaSrc(r.firstImagePath)} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />}
                 </div>
 
                 {/* Main content */}

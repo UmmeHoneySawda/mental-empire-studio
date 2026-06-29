@@ -3,18 +3,13 @@ import { useData } from '../store/useData'
 import { ScreenPad } from '../components/primitives'
 import { statusStyle } from '../data/mock'
 import type { WorkItem } from '@shared/types'
+import { mediaSrc } from '../lib/media'
 
 const GRADIENTS = [
   'linear-gradient(135deg,#2a2540,#46243a)', 'linear-gradient(135deg,#1a2e3a,#0f3a32)',
   'linear-gradient(135deg,#23304a,#1a2438)', 'linear-gradient(135deg,#16323a,#0f2630)',
   'linear-gradient(135deg,#3a2440,#2a1530)'
 ]
-
-function mediaSrc(path: string | undefined): string {
-  if (!path) return ''
-  if (/^(https?:|data:|file:)/.test(path)) return path
-  return `file:///${path.replace(/\\/g, '/')}`
-}
 
 function parseHuman(s: string): number {
   const m = s.trim().match(/^([\d.]+)\s*([KM])?$/i)
@@ -219,7 +214,7 @@ export function Library(): JSX.Element {
               return (
                 <div key={`${u.title}-${i}`} className="me-row" style={{ display: 'flex', alignItems: 'center', padding: '11px 16px', borderBottom: '1px solid #14171d' }}>
                   <div style={{ flex: 2.4, display: 'flex', alignItems: 'center', gap: 11, minWidth: 0 }}>
-                    <div style={{ width: 46, height: 26, borderRadius: 5, background: GRADIENTS[i % GRADIENTS.length], flex: 'none', overflow: 'hidden' }}>{u.thumb && <img src={mediaSrc(u.thumb)} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />}</div>
+                    <div style={{ width: 46, height: 26, borderRadius: 5, background: GRADIENTS[i % GRADIENTS.length], flex: 'none', overflow: 'hidden' }}>{mediaSrc(u.thumb) && <img src={mediaSrc(u.thumb)} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />}</div>
                     <span title={u.title} className="me-ellipsis" style={{ fontSize: 12.5, color: '#dde0e5', flex: 1 }}>{u.title}</span>
                   </div>
                   <div title={u.channel} className="me-ellipsis" style={{ width: 120, fontSize: 11.5, color: '#8a909c' }}>{u.channel}</div>
