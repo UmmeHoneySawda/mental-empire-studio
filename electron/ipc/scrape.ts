@@ -11,6 +11,7 @@ import { getSettings } from '../store/settings'
 import { getRepos } from '../db'
 import { channelUrl, humanizeCount, orderVideos, scrapeChannel } from '../services/scraper'
 import { matchDownloadsToUploads } from '../services/mapping'
+import { runUploadDetection } from '../services/uploads-detect'
 import { goalProgressFromUploads } from '../../shared/goals'
 import { notify, reminderHit } from '../services/notify'
 import { warmBrollLibraryFromTitles } from '../services/broll'
@@ -147,6 +148,10 @@ function persistScrape(channelId: string, scraped: ScrapedChannel): MyChannel {
   const updated = repos.myChannel(channelId) as MyChannel
   const hit = reminderHit(updated)
   if (hit) notify(hit, settings)
+
+  // Now that this channel's uploads are saved, refresh which processed videos look
+  // already-uploaded (fuzzy title match across all owned channels).
+  try { runUploadDetection() } catch { /* detection is advisory */ }
 
   pushActivity({ t: hhmm(), icon: '↻', color: '#8b7cff', text: `Scraped ${updated.name} — ${uploads.length} uploads` })
   emitProgress({ channelId, channelName: updated.name, phase: 'done', message: 'Done' })

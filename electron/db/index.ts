@@ -15,7 +15,8 @@ import type {
   RenderJob,
   RenderStatus,
   ScrapeOrder,
-  ImageMode
+  ImageMode,
+  WorkItem
 } from '../../shared/types'
 import { asBetaOpts, DEFAULT_BETA_OPTS } from '../../shared/types'
 import { seedIfEmpty, seedDemoData } from './seed'
@@ -82,6 +83,14 @@ CREATE TABLE IF NOT EXISTS transcript_words (
 CREATE TABLE IF NOT EXISTS app_meta (
   key TEXT PRIMARY KEY, value TEXT
 );
+CREATE TABLE IF NOT EXISTS work_item_state (
+  videoId TEXT PRIMARY KEY,
+  uploadedTo TEXT,
+  uploadMatchScore REAL,
+  manualUploaded INTEGER,
+  archived INTEGER DEFAULT 0,
+  updatedAt TEXT
+);
 `
 
 // Every table that holds user/domain data — wiped by resetAll(). app_meta is
@@ -89,7 +98,7 @@ CREATE TABLE IF NOT EXISTS app_meta (
 const DATA_TABLES = [
   'my_channels', 'source_channels', 'source_videos', 'downloaded_videos', 'uploads',
   'profiles', 'thumbnail_templates', 'render_jobs', 'activity_log',
-  'projects', 'project_images', 'transcript_words'
+  'projects', 'project_images', 'transcript_words', 'work_item_state'
 ]
 
 /** Add a column only if it isn't already present — idempotent forward migration. */
@@ -260,6 +269,17 @@ export interface Repositories {
   deleteDownload(id: string): void
   /** Remove a single render job from the queue. */
   deleteRenderJob(id: string): void
+  // ---- P1: per-video work items (computed read model + persisted upload/archive state) ----
+  /** Compute the per-video pipeline status for every downloaded video. */
+  workItems(): WorkItem[]
+  /** All my-channel upload titles, for fuzzy upload detection. */
+  allUploadsForMatch(): Array<{ channelId: string; title: string }>
+  /** Manual override of a video's uploaded flag (true/false). */
+  setWorkItemUploaded(videoId: string, uploaded: boolean): void
+  /** Hide/show a video from "to do" without deleting it. */
+  setWorkItemArchived(videoId: string, archived: boolean): void
+  /** Persist fuzzy upload-detection results (matched channel ids + best score). */
+  setDetectedUploads(rows: Array<{ videoId: string; uploadedTo: string[]; score: number }>): void
   /** Wipe every domain table (channels, profiles, projects, jobs, …) back to empty,
    *  and mark the DB seeded so demo content is not re-inserted on next launch. */
   resetAll(): void
@@ -594,6 +614,82 @@ function buildRepositories(d: Database.Database): Repositories {
     deleteDownload: (id) => d.prepare('DELETE FROM downloaded_videos WHERE id=?').run(id),
     deleteRenderJob: (id) => d.prepare('DELETE FROM render_jobs WHERE id=?').run(id),
 
+    workItems: () => {
+      const downloads = d.prepare('SELECT * FROM downloaded_videos').all() as DownloadedVideo[]
+      const projects = d.prepare('SELECT * FROM projects').all() as Array<Record<string, unknown>>
+      const projByDownload = new Map<string, { id: string; thumbPath?: string }>()
+      for (const p of projects) projByDownload.set(String(p.downloadId), { id: String(p.id), thumbPath: (p.thumbPath as string) || undefined })
+      const imgCounts = new Map<string, number>()
+      for (const r of d.prepare('SELECT projectId, COUNT(*) c FROM project_images GROUP BY projectId').all() as Array<{ projectId: string; c: number }>) imgCounts.set(r.projectId, r.c)
+      const wordCounts = new Map<string, number>()
+      for (const r of d.prepare('SELECT projectId, COUNT(*) c FROM transcript_words GROUP BY projectId').all() as Array<{ projectId: string; c: number }>) wordCounts.set(r.projectId, r.c)
+      const jobByProject = new Map<string, RenderJob>()
+      for (const j of d.prepare('SELECT id,title,channel,status,pct,projectId,outputPath,error,createdAt FROM render_jobs ORDER BY createdAt').all() as RenderJob[]) {
+        if (j.projectId) jobByProject.set(j.projectId, j) // last (most recent) wins
+      }
+      const state = new Map<string, { uploadedTo?: string; uploadMatchScore?: number; manualUploaded?: number | null; archived?: number }>()
+      for (const s of d.prepare('SELECT * FROM work_item_state').all() as Array<Record<string, unknown>>) {
+        state.set(String(s.videoId), { uploadedTo: s.uploadedTo as string, uploadMatchScore: s.uploadMatchScore as number, manualUploaded: s.manualUploaded as number | null, archived: s.archived as number })
+      }
+      return downloads.map((dl): WorkItem => {
+        const videoId = dl.id.replace(/^dl-/, '')
+        const proj = projByDownload.get(dl.id)
+        const job = proj ? jobByProject.get(proj.id) : undefined
+        const st = state.get(videoId)
+        let uploadedTo: string[] = []
+        if (st?.uploadedTo) { try { uploadedTo = JSON.parse(st.uploadedTo) as string[] } catch { uploadedTo = [] } }
+        const manualUploaded = st?.manualUploaded == null ? null : !!st.manualUploaded
+        const uploaded = manualUploaded == null ? uploadedTo.length > 0 : manualUploaded
+        return {
+          videoId,
+          channel: dl.channel,
+          title: dl.title,
+          thumb: dl.thumb || undefined,
+          downloadId: dl.id,
+          projectId: proj?.id,
+          renderJobId: job?.id,
+          downloaded: !!dl.filePath,
+          hasImages: !!proj && (imgCounts.get(proj.id) ?? 0) > 0,
+          captioned: !!proj && (wordCounts.get(proj.id) ?? 0) > 0,
+          hasThumbnail: !!proj?.thumbPath,
+          rendered: job?.status === 'done' && !!job.outputPath,
+          uploaded,
+          renderStatus: job?.status,
+          outputPath: job?.outputPath,
+          error: dl.error || job?.error || undefined,
+          uploadedTo,
+          uploadMatchScore: st?.uploadMatchScore ?? undefined,
+          uploadedManual: manualUploaded,
+          archived: !!st?.archived
+        }
+      })
+    },
+    allUploadsForMatch: () =>
+      d.prepare('SELECT myChannelId AS channelId, title FROM uploads').all() as Array<{ channelId: string; title: string }>,
+    setWorkItemUploaded: (videoId, uploaded) => {
+      d.prepare(
+        `INSERT INTO work_item_state (videoId, manualUploaded, updatedAt) VALUES (@videoId, @v, @now)
+         ON CONFLICT(videoId) DO UPDATE SET manualUploaded=@v, updatedAt=@now`
+      ).run({ videoId, v: uploaded ? 1 : 0, now: new Date().toISOString() })
+    },
+    setWorkItemArchived: (videoId, archived) => {
+      d.prepare(
+        `INSERT INTO work_item_state (videoId, archived, updatedAt) VALUES (@videoId, @v, @now)
+         ON CONFLICT(videoId) DO UPDATE SET archived=@v, updatedAt=@now`
+      ).run({ videoId, v: archived ? 1 : 0, now: new Date().toISOString() })
+    },
+    setDetectedUploads: (rows) => {
+      const now = new Date().toISOString()
+      const up = d.prepare(
+        `INSERT INTO work_item_state (videoId, uploadedTo, uploadMatchScore, updatedAt) VALUES (@videoId, @uploadedTo, @score, @now)
+         ON CONFLICT(videoId) DO UPDATE SET uploadedTo=@uploadedTo, uploadMatchScore=@score, updatedAt=@now`
+      )
+      const tx = d.transaction(() => {
+        for (const r of rows) up.run({ videoId: r.videoId, uploadedTo: JSON.stringify(r.uploadedTo), score: r.score, now })
+      })
+      tx()
+    },
+
     softReset: () => {
       // Wipe domain data but leave thumbnail_templates (user art) intact.
       const softTables = [
@@ -603,6 +699,7 @@ function buildRepositories(d: Database.Database): Repositories {
       ]
       const tx = d.transaction(() => {
         for (const t of softTables) d.prepare(`DELETE FROM ${t}`).run()
+        d.prepare('DELETE FROM work_item_state').run()
         d.prepare("INSERT OR REPLACE INTO app_meta (key,value) VALUES ('seeded','1')").run()
       })
       tx()
