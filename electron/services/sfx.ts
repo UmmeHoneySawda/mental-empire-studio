@@ -1,7 +1,7 @@
 import { mkdirSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
-import { app } from 'electron'
 import type { PlanTransition, Sfx } from '../../shared/effectPlan'
+import { cacheDir } from './storage'
 
 // Transition sound effects, synthesized in-process (no bundled audio, no licensing)
 // and mixed into one low-gain WAV the renderer overlays on the voice track. Kept
@@ -79,7 +79,7 @@ export function buildSfxTrack(transitions: PlanTransition[], durationSec: number
     const off = Math.floor(t.atSec * SR)
     for (let i = 0; i < s.length && off + i < total; i++) mix[off + i] += s[i] * MASTER_GAIN
   }
-  const dir = join(app.getPath('temp'), 'me-sfx')
+  const dir = cacheDir('sfx')
   mkdirSync(dir, { recursive: true })
   const path = join(dir, `sfx-${Date.now()}.wav`)
   writeWav(path, mix)

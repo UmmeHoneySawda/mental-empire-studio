@@ -139,6 +139,12 @@ const api: NativeApi = {
 
   chooseFolder: () => ipcRenderer.invoke('fs:chooseFolder'),
 
+  // Master library: dry-run the reorganize-existing migration, then execute it.
+  library: {
+    previewReorg: () => ipcRenderer.invoke('library:previewReorg'),
+    reorganize: () => ipcRenderer.invoke('library:reorganize')
+  },
+
   // Electron 32 removed the File.path property; webUtils.getPathForFile is the
   // supported way to get the absolute path of a dropped/picked file for the main
   // process (used to import images/audio in Compose).

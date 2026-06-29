@@ -9,6 +9,7 @@ import type { RenderCapabilities } from '../../shared/types'
 import { FALLBACK_CAPS } from './engine/encoder'
 import { createProgressSmoother, parseFfmpegProgressBlock, type FfmpegProgress } from './engine/progress'
 import { logger } from './logger'
+import { cacheDir } from './storage'
 
 // Auto B-roll: themed stock-footage pool driven by the transcript. We pick the
 // video's dominant themes, fetch a small pool of clips (Pexels → Pixabay → Coverr),
@@ -426,7 +427,7 @@ export async function fetchPool(
 }
 
 function brollDir(): string {
-  const d = join(app.getPath('temp'), 'me-broll-cache')
+  const d = cacheDir('broll')
   mkdirSync(d, { recursive: true })
   return d
 }

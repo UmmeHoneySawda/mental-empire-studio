@@ -88,11 +88,34 @@ export function RenderQueue(): JSX.Element {
   const readyCount = rows.filter((r) => r.isReady).length
   const canRenderAll = rows.length > 0 && rows.every((r) => r.isReady) && !rendering
   const canRenderSome = readyCount > 0 && !rows.every((r) => r.isReady) && !rendering
-  const outputFolder = settings.outputFolder || '<Downloads>/MentalEmpire_out'
+  const outputFolder = settings.libraryFolder || settings.outputFolder || '<Documents>/MentalEmpireStudio'
 
   const browse = async (): Promise<void> => {
     const dir = await window.api?.chooseFolder?.()
-    if (dir) updateSettings({ outputFolder: dir })
+    if (dir) updateSettings({ libraryFolder: dir })
+  }
+
+  const organizeLibrary = async (): Promise<void> => {
+    const p = await window.api?.library?.previewReorg?.()
+    if (!p) return
+    if (p.fileCount === 0) {
+      window.alert(`Library is already organized — nothing to move.\n\nRoot: ${p.libraryRoot}`)
+      return
+    }
+    const mb = (p.totalBytes / 1_000_000).toFixed(0)
+    const ok = window.confirm(
+      `Organize library?\n\nMove ${p.fileCount} files (~${mb} MB) into per-video folders under:\n${p.libraryRoot}\n\n` +
+      `Each file is copied, verified, then the original removed, and an undo log is written.` +
+      (p.missing ? `\n\n${p.missing} missing source file(s) will be skipped.` : '')
+    )
+    if (!ok) return
+    const r = await window.api.library.reorganize()
+    await loadRenderJobs()
+    window.alert(
+      `Organized ${r.moved} file(s) into per-video folders.` +
+      (r.skippedMissing ? `\nSkipped ${r.skippedMissing} missing.` : '') +
+      (r.undoLogPath ? `\n\nUndo log: ${r.undoLogPath}` : '')
+    )
   }
 
   return (
@@ -108,11 +131,12 @@ export function RenderQueue(): JSX.Element {
             </div>
           </div>
 
-          {/* Output folder */}
+          {/* Library folder (master root for per-video folders) */}
           <div style={{ display: 'flex', alignItems: 'center', gap: 7, border: '1px solid #23272f', borderRadius: 9, padding: '7px 12px', background: '#0e1116', flex: 1, minWidth: 200, maxWidth: 360 }}>
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, color: '#5b616f', flex: 'none' }}>OUT</span>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, color: '#5b616f', flex: 'none' }}>LIB</span>
             <span title={outputFolder} style={{ flex: 1, fontSize: 11, color: '#aab0bb', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{outputFolder}</span>
             <button type="button" onClick={browse} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 7, padding: '3px 8px', fontSize: 10, color: '#c4cad3', cursor: 'pointer', flex: 'none' }}>Browse</button>
+            <button type="button" onClick={() => void organizeLibrary()} title="Move existing audio, images, b-roll and renders into per-video folders under the library root (safe: copy → verify → remove, with an undo log)." className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 7, padding: '3px 8px', fontSize: 10, color: '#c4cad3', cursor: 'pointer', flex: 'none' }}>Organize</button>
           </div>
 
           {/* Format chip */}

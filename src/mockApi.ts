@@ -234,6 +234,10 @@ function installMock(): void {
     openLogs: async () => '(browser mock - no logs)',
     logPath: async () => '(browser mock)',
     chooseFolder: async () => '/Browser/MentalEmpire_out',
+    library: {
+      previewReorg: async () => ({ libraryRoot: '/Browser/MentalEmpireStudio', fileCount: 0, totalBytes: 0, missing: 0, alreadyOrganized: 0, sample: [] }),
+      reorganize: async () => ({ moved: 0, skippedMissing: 0, alreadyOrganized: 0 })
+    },
     pathForFile: (file: File) => `browser://${file.name}`,
     settings: ns({
       get: async () => settings,

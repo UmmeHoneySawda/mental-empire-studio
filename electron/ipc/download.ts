@@ -1,24 +1,20 @@
-import { app, ipcMain, shell } from 'electron'
+import { ipcMain, shell } from 'electron'
 import { statSync } from 'node:fs'
-import { join } from 'node:path'
 import type { DownloadOptions, DownloadProgress, DownloadedVideo, ScrapedVideo } from '../../shared/types'
 import { getSettings } from '../store/settings'
 import { getRepos } from '../db'
 import { cancelDownload, downloadAudio } from '../services/downloader'
 import { channelUrl } from '../services/scraper'
 import { probeDuration } from '../services/audio'
+import { itemAudioDir, itemDir, ensureDir } from '../services/storage'
 import { youtubeThumbUrl } from '../../shared/youtube'
 import { emit, hhmm, pushActivity } from './events'
 import { L } from '../services/logger'
 
 // Download orchestration: yt-dlp mp3 download → DB history → duration probe, with
-// streamed progress. Resume reuses finished files (no re-fetch).
-
-function resolveOutputDir(): string {
-  const s = getSettings()
-  if (s.outputFolder) return s.outputFolder
-  return join(app.getPath('downloads'), 'MentalEmpire_out')
-}
+// streamed progress. Resume reuses finished files (no re-fetch). Audio lands in the
+// per-video library folder (<lib>/<channel>/<videoId>__<slug>/audio) via the storage
+// service so every asset for a video sits together.
 
 function emitProgress(p: DownloadProgress): void {
   emit('download:progress', p)
@@ -54,11 +50,12 @@ async function runOne(video: ScrapedVideo, sourceId: string, channel: string, bi
   emitProgress({ downloadId: id, title: video.title, pct: 0, stage: 'Downloading', done: false })
 
   try {
+    const audioOut = ensureDir(itemAudioDir(itemDir({ channel, videoId: video.id, title: video.title })))
     const res = await downloadAudio({
       video,
       downloadId: id,
       channel,
-      outDir: resolveOutputDir(),
+      outDir: audioOut,
       bitrate,
       settings,
       onProgress: (pct) => {

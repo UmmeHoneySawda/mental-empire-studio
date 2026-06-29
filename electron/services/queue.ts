@@ -17,6 +17,7 @@ import { selectEncoder } from './engine/encoder'
 import type { FfmpegProgress } from './engine/progress'
 import { emit, hhmm, pushActivity } from '../ipc/events'
 import { safeName } from '../../shared/sanitize'
+import { itemDirForProject, itemOutputDir, writeProjectManifest, videoIdFromProjectId } from './storage'
 
 // Concurrency-limited render runner. Pulls queued render_jobs, renders up to
 // settings.concurrency at once, writes the .ass + mp4, and streams render:progress.
@@ -84,7 +85,7 @@ export async function runJob(job: RenderJob): Promise<void> {
   let filterDevice: RenderProgress['filterDevice'] = 'cpu'
   let encoderDetail = enc.device === 'gpu' ? `${enc.label} encode · CPU filters` : `${enc.label} encode`
   let filterDetail = enc.device === 'gpu' ? 'CPU filters/captions' : undefined
-  const dir = outputDir()
+  const dir = itemOutputDir(itemDirForProject(project))
   mkdirSync(dir, { recursive: true })
   // Base output name. If a *different* project shares the same channel+title, append the
   // video id so the two don't overwrite each other's .mp4/.ass/.log (re-rendering the
@@ -327,6 +328,10 @@ export async function runJob(job: RenderJob): Promise<void> {
     finishStageLog('done')
     repos.setRenderStatus(job.id, { status: 'done', pct: 100, outputPath: outPath })
     repos.updateProject(job.projectId, { stage: 'rendered' })
+    writeProjectManifest(itemDirForProject(project), {
+      videoId: videoIdFromProjectId(project.id), channel: project.channel, title: project.title,
+      durationSec: renderProject.durationSec, stage: 'rendered', audioPath: project.mp3Path, outputPath: outPath
+    })
     const doneDetail = brollFallback ? 'Done · B-roll unavailable, used images' : 'Done'
     emitR({ jobId: job.id, pct: 100, stage: 'done', stageDetail: doneDetail, done: true, outputPath: outPath, device: enc.device, filterDevice, filterDetail, encoder: enc.label, etaSec: 0, etaState: 'stable' })
     pushActivity({ t: hhmm(), icon: '✓', color: '#36c98e', text: `Rendered ${project.title} → ${base}.mp4` })

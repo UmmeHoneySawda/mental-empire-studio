@@ -12,7 +12,8 @@ export default defineConfig({
       // Stub electron + electron-log so modules that transitively import them
       // (logger, ytdlp, render) can be unit-tested in plain Node.
       electron: resolve(__dirname, 'test/stubs/electron.ts'),
-      'electron-log/main': resolve(__dirname, 'test/stubs/electron-log.ts')
+      'electron-log/main': resolve(__dirname, 'test/stubs/electron-log.ts'),
+      'electron-store': resolve(__dirname, 'test/stubs/electron-store.ts')
     }
   },
   test: {
