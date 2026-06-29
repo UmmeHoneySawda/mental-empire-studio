@@ -112,7 +112,18 @@ async function resume(id: string): Promise<DownloadedVideo> {
   const repos = getRepos()
   const row = repos.download(id)
   if (!row) throw new Error(`Unknown download: ${id}`)
-  const video: ScrapedVideo = { id: id.replace(/^dl-/, ''), title: row.title, durationSec: 0, views: 0, uploadDate: '', thumb: '' }
+  const videoId = id.replace(/^dl-/, '')
+  // Carry forward the metadata we already have (deterministic thumb + any known
+  // duration) instead of resuming with blanks; runOne re-probes the real duration
+  // once the file lands.
+  const video: ScrapedVideo = {
+    id: videoId,
+    title: row.title,
+    durationSec: row.durationSec ?? 0,
+    views: 0,
+    uploadDate: '',
+    thumb: row.thumb && !row.thumb.startsWith('linear-gradient') ? row.thumb : youtubeThumbUrl(videoId, 'hq')
+  }
   return runOne(video, row.sourceId, row.channel, 192)
 }
 

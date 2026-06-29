@@ -15,6 +15,7 @@ import { probeRenderCapabilities } from './engine/caps'
 import { selectEncoder } from './engine/encoder'
 import type { FfmpegProgress } from './engine/progress'
 import { emit, hhmm, pushActivity } from '../ipc/events'
+import { safeName } from '../../shared/sanitize'
 
 // Concurrency-limited render runner. Pulls queued render_jobs, renders up to
 // settings.concurrency at once, writes the .ass + mp4, and streams render:progress.
@@ -22,10 +23,6 @@ import { emit, hhmm, pushActivity } from '../ipc/events'
 export function outputDir(): string {
   const s = getSettings()
   return s.outputFolder || join(app.getPath('downloads'), 'MentalEmpire_out')
-}
-
-function safeName(name: string): string {
-  return (name.replace(/[^a-z0-9\-_. ]/gi, '_').trim() || 'thumbnail').slice(0, 120)
 }
 
 function emitR(p: RenderProgress): void {
@@ -231,12 +228,26 @@ export async function runJob(job: RenderJob): Promise<void> {
 
   // Beta auto-B-roll v2: normalize selected stock segments to a resumable concat
   // manifest, then feed that manifest into the final render as one continuous input.
+  //
+  // B2 (perf) note — evaluated, intentionally kept: this normalizes each segment to its
+  // own mp4 (encode #1) and the final render re-encodes the concat (encode #2). A true
+  // single-pass `assembleBed`/`brollSegments` graph exists, but the manifest approach is
+  // kept deliberately because it's RESUMABLE (normalizeSegment caches `seg-NNN.mp4` per
+  // job dir, so a cancelled/failed render reuses finished segments) and it isolates
+  // per-clip codec/timebase quirks. The cheap win already in place is that cache; a
+  // cross-render segment cache (keyed by clip+dims+fps+style) is the next step if B-roll
+  // encode time becomes the bottleneck. Switching to single-pass is deferred as it would
+  // need real ffmpeg validation that isn't available in CI.
   let brollManifestPath: string | undefined
+  // Tracks whether requested B-roll silently degraded to the image track, so the render
+  // row + log can say so instead of the user wondering why the output looks different.
+  let brollFallback = false
   if (beta?.broll.enabled) {
     const hasStockSource = !!(settings.beta.pexelsKey || settings.beta.pixabayKey || settings.beta.coverrKey || process.env['ME_BROLL_LOCAL'] || process.env['ME_BROLL_FIXTURE'])
     if (!hasStockSource) {
       const msg = 'Stock B-roll unavailable: add a Pexels, Pixabay, or Coverr key in Settings'
       if (renderLogPath) appendFileSync(renderLogPath, `[broll:warn] ${msg}\n`)
+      brollFallback = true
       emitStage('fetching-broll', 100, 'B-roll unavailable: missing stock API key')
       emitStage('assembling', 100, 'Using image track')
       pushActivity({ t: hhmm(), icon: '!', color: '#f5b323', text: `B-roll skipped: add a stock-footage API key for ${project.title.slice(0, 36)}` })
@@ -280,6 +291,7 @@ export async function runJob(job: RenderJob): Promise<void> {
       } else {
         const msg = 'No downloadable B-roll clips found'
         if (renderLogPath) appendFileSync(renderLogPath, `[broll:warn] ${msg}\n`)
+        brollFallback = true
         emitStage('fetching-broll', 100, 'B-roll unavailable: no clips found')
         emitStage('assembling', 100, 'Using image track')
         pushActivity({ t: hhmm(), icon: '!', color: '#f5b323', text: `B-roll skipped: no stock clips found for ${project.title.slice(0, 36)}` })
@@ -295,6 +307,7 @@ export async function runJob(job: RenderJob): Promise<void> {
       }
       const msg = (e as Error).message
       if (renderLogPath) appendFileSync(renderLogPath, `[broll:warn] ${msg}\n`)
+      brollFallback = true
       emitStage('fetching-broll', 100, 'B-roll unavailable; using image track')
       emitStage('assembling', 100, 'Using image track')
       pushActivity({ t: hhmm(), icon: '!', color: '#f5b323', text: `B-roll skipped: ${msg.slice(0, 90)}` })
@@ -313,7 +326,8 @@ export async function runJob(job: RenderJob): Promise<void> {
     finishStageLog('done')
     repos.setRenderStatus(job.id, { status: 'done', pct: 100, outputPath: outPath })
     repos.updateProject(job.projectId, { stage: 'rendered' })
-    emitR({ jobId: job.id, pct: 100, stage: 'done', stageDetail: 'Done', done: true, outputPath: outPath, device: enc.device, filterDevice, filterDetail, encoder: enc.label, etaSec: 0, etaState: 'stable' })
+    const doneDetail = brollFallback ? 'Done · B-roll unavailable, used images' : 'Done'
+    emitR({ jobId: job.id, pct: 100, stage: 'done', stageDetail: doneDetail, done: true, outputPath: outPath, device: enc.device, filterDevice, filterDetail, encoder: enc.label, etaSec: 0, etaState: 'stable' })
     pushActivity({ t: hhmm(), icon: '✓', color: '#36c98e', text: `Rendered ${project.title} → ${base}.mp4` })
   } catch (e) {
     // A ffmpeg failure caused by the user cancelling/deleting the job isn't an error:
@@ -334,7 +348,13 @@ export async function runJob(job: RenderJob): Promise<void> {
 /** Render every queued job, at most `settings.concurrency` in flight at a time. */
 export async function runAll(): Promise<void> {
   const jobs = getRepos().queuedJobs()
-  const concurrency = Math.max(1, getSettings().concurrency)
+  const settings = getSettings()
+  const requested = Math.max(1, settings.concurrency)
+  // Consumer GPUs cap concurrent hardware-encode sessions (often 2–3 on GeForce) and a
+  // single encoder ASIC means parallel HW encodes mostly contend rather than speed up.
+  // So when a GPU encoder is selected, cap effective parallelism for the encode stage.
+  const enc = selectEncoder(settings, probeRenderCapabilities())
+  const concurrency = enc.device === 'gpu' ? Math.min(requested, 2) : requested
   let idx = 0
   let active = 0
   maxActive = 0

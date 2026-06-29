@@ -1,10 +1,10 @@
-import { spawn } from 'node:child_process'
+import { spawn, spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, readdirSync, rmSync, statSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { AppSettings } from '../../shared/types'
 import { L } from './logger'
-import { ffmpegPath } from './bin'
+import { ffmpegPath, ffprobePath } from './bin'
 
 // Word-level transcription via Groq's free Whisper API (OpenAI-compatible). We
 // upload the mp3 and ask for word timestamps. Offline seam: ME_WHISPER_FIXTURE
@@ -26,6 +26,16 @@ export interface TranscribeAudioOptions {
 }
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
+
+/** Actual duration of an audio chunk in seconds via ffprobe; 0 if it can't be read. */
+function probeChunkSeconds(path: string): number {
+  try {
+    const r = spawnSync(ffprobePath(), ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', path], { encoding: 'utf8' })
+    return parseFloat((r.stdout || '').trim()) || 0
+  } catch {
+    return 0
+  }
+}
 
 function mb(bytes: number): string {
   return `${(bytes / 1_000_000).toFixed(2)} MB`
@@ -152,11 +162,16 @@ export async function transcribeAudio(mp3Path: string, settings: AppSettings, op
   const chunks = await chunkAudio(mp3Path, opts.onProgress)
   try {
     const out: RawWord[] = []
+    // Accumulate the TRUE start offset of each chunk. `-segment_time 600` cuts at the
+    // nearest packet boundary, so chunks aren't exactly 600s; using i*600 drifted word
+    // timings on multi-chunk (10 min+) audio. Probe each chunk's real duration instead.
+    let offset = 0
     for (let i = 0; i < chunks.length; i++) {
-      const offset = i * CHUNK_SECONDS
       const label = `chunk ${i + 1}/${chunks.length}`
       const words = await transcribeOneWithRetry(chunks[i], apiKey, model, label, opts.onProgress)
       out.push(...words.map((w) => ({ ...w, start: w.start + offset, end: w.end + offset })))
+      const chunkSeconds = probeChunkSeconds(chunks[i]) || CHUNK_SECONDS
+      offset += chunkSeconds
       opts.onProgress?.(`Merged ${i + 1}/${chunks.length} chunk${chunks.length === 1 ? '' : 's'}`)
     }
     L.info(`transcribe: merged ${out.length} word(s) from ${chunks.length} chunk(s)`)
