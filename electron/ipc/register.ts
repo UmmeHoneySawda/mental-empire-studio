@@ -8,6 +8,7 @@ import { registerComposeIpc } from './compose'
 import { registerThumbnailsIpc } from './thumbnails'
 import { registerRenderIpc } from './render'
 import { registerLibraryIpc } from './library'
+import { registerNicheIpc } from './niche'
 import { registerAutomationIpc, upsertProfileAndWarm } from './automation'
 import { tick, start as schedulerStart } from '../services/scheduler'
 import { applyLoginItem } from '../services/background'
@@ -95,6 +96,8 @@ export function registerIpc(): void {
 
   // ---- master library: reorganize-existing migration (P0) ----
   registerLibraryIpc()
+  // ---- niche b-roll pools (P3) ----
+  registerNicheIpc()
 
   // ---- automation: profiles + scheduler (M7) ----
   registerAutomationIpc()

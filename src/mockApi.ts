@@ -238,6 +238,15 @@ function installMock(): void {
       previewReorg: async () => ({ libraryRoot: '/Browser/MentalEmpireStudio', fileCount: 0, totalBytes: 0, missing: 0, alreadyOrganized: 0, sample: [] }),
       reorganize: async () => ({ moved: 0, skippedMissing: 0, alreadyOrganized: 0 })
     },
+    niche: ns({
+      list: async () => [],
+      poolHealth: async () => [],
+      refreshAll: async () => [],
+      save: async () => [],
+      remove: async () => [],
+      assignChannel: async () => [],
+      warm: async () => ({ nicheId: '', clips: 0, keywords: [] })
+    }),
     pathForFile: (file: File) => `browser://${file.name}`,
     settings: ns({
       get: async () => settings,

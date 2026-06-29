@@ -11,7 +11,7 @@ import { formatOutputName, probeDuration } from './audio'
 import { buildAss } from './captions'
 import { LONG_FORM_FAST_SEC, CAPTION_PHRASE_WORD_COUNT, BROLL_MAX_SEGMENTS_DEFAULT, BROLL_MAX_SEGMENTS_LONG, type RenderEngine } from './engine/render-config'
 import { runRender, dimensions, consumeCancelIntent, hasCancelIntent, canUseCudaFinalFilters, overlayGradientPath } from './render'
-import { buildBrollManifest } from './broll'
+import { buildBrollManifest, recordClipUsage } from './broll'
 import { buildGpuRenderSpec } from './engine/gpu/spec'
 import { runGpuRender, probeGpuEngine } from './engine/gpu/host'
 import { probeRenderCapabilities } from './engine/caps'
@@ -258,6 +258,8 @@ export async function runJob(job: RenderJob): Promise<void> {
   // encode time becomes the bottleneck. Switching to single-pass is deferred as it would
   // need real ffmpeg validation that isn't available in CI.
   let brollManifestPath: string | undefined
+  // Library clips chosen for this render — stamped as "used" on success (P4 usage tracking).
+  let usedBrollClipPaths: string[] = []
   // Tracks whether requested B-roll silently degraded to the image track, so the render
   // row + log can say so instead of the user wondering why the output looks different.
   let brollFallback = false
@@ -285,6 +287,7 @@ export async function runJob(job: RenderJob): Promise<void> {
         style,
         jobId: job.id,
         maxSegments,
+        poolKey: getRepos().nicheKeyForDownload(project.downloadId),
         shouldCancel: () => hasCancelIntent(job.id),
         logPath,
         onProgress: (phase, done, total, ffmpeg) => {
@@ -300,6 +303,7 @@ export async function runJob(job: RenderJob): Promise<void> {
       })
       if (planned?.segments.length) {
         brollManifestPath = planned.manifestPath
+        usedBrollClipPaths = planned.clips.map((c) => c.path)
         if (enc.device === 'gpu' && canUseCudaFinalFilters(settings, caps)) {
           encoderDetail = `${enc.label} encode · CUDA scale + CPU captions`
           filterDetail = 'CUDA scale + CPU captions'
@@ -395,6 +399,10 @@ export async function runJob(job: RenderJob): Promise<void> {
     emitStage('finalizing', 90, 'Writing output')
     finishStageLog('done')
     repos.setRenderStatus(job.id, { status: 'done', pct: 100, outputPath: outPath })
+    // Stamp the niche/library clips this render used so pruning keeps what's in rotation.
+    if (usedBrollClipPaths.length) {
+      try { recordClipUsage(usedBrollClipPaths) } catch { /* usage tracking is advisory */ }
+    }
     repos.updateProject(job.projectId, { stage: 'rendered' })
     writeProjectManifest(itemDirForProject(project), {
       videoId: videoIdFromProjectId(project.id), channel: project.channel, title: project.title,

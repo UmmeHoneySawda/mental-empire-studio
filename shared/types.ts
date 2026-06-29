@@ -12,6 +12,7 @@ export type ScreenKey =
   | 'compose'
   | 'thumb'
   | 'render'
+  | 'niches'
   | 'profiles'
   | 'settings'
 
@@ -46,6 +47,30 @@ export interface SourceChannel {
   url: string
   handle: string
   name: string
+  /** assigned b-roll niche pool (id of a Niche); videos from this channel use its pool */
+  nicheId?: string
+}
+
+/** A global, user-curated b-roll niche/theme pool (workflow plan §4). Channels are
+ *  assigned to a niche; renders pull clips from the niche's pool first. */
+export interface Niche {
+  id: string
+  name: string
+  /** search phrases used to fill the pool (e.g. "toxic relationship", "city at night") */
+  keywords: string[]
+  orientation: 'landscape' | 'portrait' | 'any'
+  /** how many clips to keep cached in the pool */
+  targetClips: number
+  createdAt: string
+  updatedAt: string
+}
+
+/** Health summary for a niche's b-roll pool (clip count + freshness). */
+export interface NichePoolHealth {
+  nicheId: string
+  clips: number
+  keywords: string[]
+  updatedAt?: string
 }
 
 export interface DownloadedVideo {
@@ -771,6 +796,16 @@ export interface NativeApi {
     previewReorg(): Promise<LibraryReorgPreview>
     /** execute the reorganize migration (copy-verify-delete + DB rewrite + undo log) */
     reorganize(): Promise<LibraryReorgResult>
+  }
+  /** niche b-roll pools (P3) */
+  niche: {
+    list(): Promise<Niche[]>
+    poolHealth(): Promise<NichePoolHealth[]>
+    refreshAll(): Promise<NichePoolHealth[]>
+    save(n: Partial<Niche>): Promise<Niche[]>
+    remove(id: string): Promise<Niche[]>
+    assignChannel(channelId: string, nicheId: string | null): Promise<SourceChannel[]>
+    warm(id: string): Promise<NichePoolHealth>
   }
   /** resolve the absolute filesystem path of a picked/dropped File (Electron webUtils) */
   pathForFile(file: File): string
