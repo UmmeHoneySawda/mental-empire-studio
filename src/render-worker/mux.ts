@@ -1,20 +1,33 @@
-import { Muxer, ArrayBufferTarget } from 'mp4-muxer'
+import { Muxer, StreamTarget } from 'mp4-muxer'
 
-// Thin wrapper around mp4-muxer that produces a video-only MP4 (H.264) in memory. The
-// Electron host muxes this with the mastered AAC audio via a single ffmpeg stream-copy
-// (no re-encode), so the costly per-frame work stays on the GPU and ffmpeg's remaining
-// job is just the container assembly.
+// Streaming wrapper around mp4-muxer that writes a video-only MP4 (H.264) incrementally
+// to disk via the worker preload's fs bridge. This replaces the old ArrayBufferTarget +
+// fastStart:'in-memory' approach that buffered the entire MP4 in RAM — the cause of T1
+// OOM ("Array buffer allocation failed") on long videos (~22min+, ~1GB).
+//
+// With StreamTarget, mp4-muxer calls onData(chunk, position) as it produces output;
+// each chunk is written to disk immediately via the preload's writeChunk bridge (which
+// maps to Node's writeSync). Memory stays flat regardless of video duration.
+//
+// fastStart is set to false (moov at end), which is fine because the host's ffmpegMux
+// already adds -movflags +faststart to the final muxed output.
+
+export interface StreamingWriteHandle {
+  /** Write `data` at byte `position` in the output file. */
+  write(data: Uint8Array, position: number): void
+}
 
 export class VideoMuxer {
-  private muxer: Muxer<ArrayBufferTarget>
+  private muxer: Muxer<StreamTarget>
 
-  constructor(opts: { width: number; height: number; fps: number }) {
+  constructor(opts: { width: number; height: number; fps: number; handle: StreamingWriteHandle }) {
     this.muxer = new Muxer({
-      target: new ArrayBufferTarget(),
+      target: new StreamTarget({
+        onData: (data, position) => opts.handle.write(data, position)
+      }),
       video: { codec: 'avc', width: opts.width, height: opts.height, frameRate: opts.fps },
-      // 'in-memory' Fast Start: compact, seekable output. The whole video lives in RAM
-      // until finalize(); acceptable for the typical slideshow sizes here.
-      fastStart: 'in-memory'
+      // moov-at-end: host's ffmpegMux adds -movflags +faststart to the final output.
+      fastStart: false
     })
   }
 
@@ -22,9 +35,8 @@ export class VideoMuxer {
     this.muxer.addVideoChunk(chunk, meta)
   }
 
-  /** Finalize the container and return the bytes. */
-  finalize(): ArrayBuffer {
+  /** Finalize the container (flush remaining data to the stream). */
+  finalize(): void {
     this.muxer.finalize()
-    return this.muxer.target.buffer
   }
 }

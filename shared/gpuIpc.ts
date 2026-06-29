@@ -50,8 +50,14 @@ export interface GpuWorkerApi {
   onRun(cb: (spec: GpuRenderSpec) => void): void
   /** read an input file (image/overlay/audio) from disk as bytes */
   readFile(path: string): ArrayBuffer
-  /** write the muxed output bytes to disk */
+  /** write the muxed output bytes to disk (kept for small writes / self-test) */
   writeFile(path: string, data: ArrayBuffer): void
+  /** open a file for incremental streaming writes; returns a numeric handle */
+  openFile(path: string): number
+  /** write a chunk at a byte offset to a previously opened file handle */
+  writeChunk(fd: number, data: Uint8Array, position: number): void
+  /** close a streaming file handle */
+  closeFile(fd: number): void
   /** report periodic progress */
   progress(msg: GpuProgressMsg): void
   /** report successful completion */

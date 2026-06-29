@@ -1,5 +1,5 @@
 import { contextBridge, ipcRenderer } from 'electron'
-import { readFileSync, writeFileSync, mkdirSync } from 'node:fs'
+import { readFileSync, writeFileSync, mkdirSync, openSync, writeSync, closeSync } from 'node:fs'
 import { dirname } from 'node:path'
 import { GPU_CHANNELS, type GpuWorkerApi } from '../shared/gpuIpc'
 import type { GpuRenderSpec } from '../shared/renderSpec'
@@ -22,6 +22,16 @@ const api: GpuWorkerApi = {
     mkdirSync(dirname(path), { recursive: true })
     writeFileSync(path, Buffer.from(data))
   },
+  openFile: (path: string): number => {
+    mkdirSync(dirname(path), { recursive: true })
+    return openSync(path, 'w')
+  },
+  writeChunk: (fd: number, data: Uint8Array, position: number): void => {
+    writeSync(fd, data, 0, data.byteLength, position)
+  },
+  closeFile: (fd: number): void => {
+    closeSync(fd)
+  },
   progress: (msg) => ipcRenderer.send(GPU_CHANNELS.progress, msg),
   done: (msg) => ipcRenderer.send(GPU_CHANNELS.done, msg),
   error: (msg) => ipcRenderer.send(GPU_CHANNELS.error, msg),
@@ -29,3 +39,4 @@ const api: GpuWorkerApi = {
 }
 
 contextBridge.exposeInMainWorld('gpuWorker', api)
+

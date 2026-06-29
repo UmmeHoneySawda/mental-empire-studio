@@ -11,7 +11,7 @@ import { formatOutputName, probeDuration } from './audio'
 import { buildAss } from './captions'
 import { LONG_FORM_FAST_SEC, CAPTION_PHRASE_WORD_COUNT, BROLL_MAX_SEGMENTS_DEFAULT, BROLL_MAX_SEGMENTS_LONG, type RenderEngine } from './engine/render-config'
 import { runRender, dimensions, consumeCancelIntent, hasCancelIntent, canUseCudaFinalFilters, overlayGradientPath } from './render'
-import { buildBrollManifest, recordClipUsage } from './broll'
+import { buildBrollManifest, recordClipUsage, type BrollManifestSegment } from './broll'
 import { buildGpuRenderSpec } from './engine/gpu/spec'
 import { runGpuRender, probeGpuEngine } from './engine/gpu/host'
 import { probeRenderCapabilities } from './engine/caps'
@@ -258,6 +258,7 @@ export async function runJob(job: RenderJob): Promise<void> {
   // encode time becomes the bottleneck. Switching to single-pass is deferred as it would
   // need real ffmpeg validation that isn't available in CI.
   let brollManifestPath: string | undefined
+  let brollSegments: BrollManifestSegment[] | undefined
   // Library clips chosen for this render — stamped as "used" on success (P4 usage tracking).
   let usedBrollClipPaths: string[] = []
   // Tracks whether requested B-roll silently degraded to the image track, so the render
@@ -303,6 +304,7 @@ export async function runJob(job: RenderJob): Promise<void> {
       })
       if (planned?.segments.length) {
         brollManifestPath = planned.manifestPath
+        brollSegments = planned.segments
         usedBrollClipPaths = planned.clips.map((c) => c.path)
         if (enc.device === 'gpu' && canUseCudaFinalFilters(settings, caps)) {
           encoderDetail = `${enc.label} encode · CUDA scale + CPU captions`
@@ -346,10 +348,10 @@ export async function runJob(job: RenderJob): Promise<void> {
   try {
     if (hasCancelIntent(job.id)) throw new Error('render cancelled')
 
-    // Engine selection. The GPU (WebCodecs) engine is additive + beta: it only handles
-    // image projects (no video B-roll yet), and ANY failure transparently falls back to
-    // the ffmpeg path so the user always gets a video. B-roll jobs always use ffmpeg.
-    const engine: RenderEngine = brollManifestPath ? 'ffmpeg' : await resolveEngine(settings)
+    // Engine selection. The GPU (WebCodecs) engine is additive + beta: it handles
+    // image projects, and B-roll video stitching. ANY failure transparently falls back to
+    // the ffmpeg path so the user always gets a video.
+    const engine: RenderEngine = await resolveEngine(settings)
     let gpuDone = false
     if (engine === 'gpu') {
       const h264Path = join(dir, `${base}.gpu.mp4`)
@@ -367,7 +369,8 @@ export async function runJob(job: RenderJob): Promise<void> {
           voicePath: renderProject.mp3Path,
           sfxPath,
           hookText,
-          out: { h264Path, finalPath: outPath }
+          out: { h264Path, finalPath: outPath },
+          brollSegments
         })
         if (renderLogPath) appendFileSync(renderLogPath, `[engine] gpu (webcodecs) requested · ${spec.images.length} images · ${spec.captions.groups.length} caption groups\n`)
         encoderDetail = 'GPU compositor + WebCodecs H.264'

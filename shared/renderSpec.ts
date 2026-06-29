@@ -74,6 +74,13 @@ export interface MotionSpec {
   punchAtSec: number[]
 }
 
+/** One B-roll segment and its playback window. */
+export interface GpuBrollSegment {
+  path: string
+  startSec: number
+  endSec: number
+}
+
 /** The full GPU render job spec. Serializable across the IPC boundary to the worker. */
 export interface GpuRenderSpec {
   jobId: string
@@ -82,6 +89,7 @@ export interface GpuRenderSpec {
   fps: number
   durationSec: number
   images: RenderImageSpec[]
+  broll?: GpuBrollSegment[]
   motion: MotionSpec
   grade: GradeParams
   grain: GrainParams

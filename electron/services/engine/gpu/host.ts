@@ -61,14 +61,16 @@ function bindListenersOnce(): void {
   })
 }
 
+const gpuDebug = !!process.env['ME_GPU_DEBUG']
+
 /** Lazily create (or reuse) the hidden render-worker window. */
 function ensureWorker(): Promise<GpuReadyMsg> {
   bindListenersOnce()
   if (worker && !worker.isDestroyed() && workerReady) return workerReady
   worker = new BrowserWindow({
-    show: false,
-    width: 16,
-    height: 16,
+    show: gpuDebug,
+    width: gpuDebug ? 800 : 16,
+    height: gpuDebug ? 600 : 16,
     webPreferences: {
       preload: join(__dirname, '../preload/preload-worker.cjs'),
       // Real GPU compositing (not the CPU OSR path); keep full speed while hidden.
@@ -79,6 +81,13 @@ function ensureWorker(): Promise<GpuReadyMsg> {
       sandbox: false
     }
   })
+  // Forward worker console output to the main log so GPU errors + stack traces
+  // are always captured, even when the window is hidden (§5 instrumentation).
+  worker.webContents.on('console-message', (_event, level, message, _line, _source) => {
+    const tag = level <= 0 ? 'debug' : level === 1 ? 'info' : level === 2 ? 'warn' : 'error'
+    log.info(`[worker:${tag}] ${message}`)
+  })
+  if (gpuDebug) worker.webContents.openDevTools()
   worker.on('closed', () => {
     worker = null
     workerReady = null
@@ -159,7 +168,9 @@ async function runGpuRenderInner(spec: GpuRenderSpec, opts: GpuRunOptions): Prom
   if (!ready.supported) throw new Error(`GPU engine unsupported: ${ready.detail ?? 'no WebCodecs encoder'}`)
   if (!worker || worker.isDestroyed()) throw new Error('GPU worker window unavailable')
 
-  if (opts.logPath) appendFileSync(opts.logPath, `\n[gpu] engine=webcodecs hardware=${ready.hardware} ${spec.width}x${spec.height}@${spec.fps} frames~${Math.round(spec.durationSec * spec.fps)}\n`)
+  const electronVer = app.getVersion()
+  const chromeVer = process.versions['chrome'] ?? 'unknown'
+  if (opts.logPath) appendFileSync(opts.logPath, `\n[gpu] engine=webcodecs hardware=${ready.hardware} ${spec.width}x${spec.height}@${spec.fps} frames~${Math.round(spec.durationSec * spec.fps)} electron=${electronVer} chrome=${chromeVer} muxer=streaming\n`)
 
   await new Promise<void>((resolve, reject) => {
     pending.set(spec.jobId, { resolve, reject, onProgress: opts.onProgress })
@@ -188,3 +199,59 @@ export function destroyGpuWorker(): void {
   for (const [, job] of pending) job.reject(new Error('GPU worker destroyed'))
   pending.clear()
 }
+
+/** Run the GPU worker self-test: encode ~100 solid frames through the streaming muxer to verify capabilities and pipeline integrity. */
+export async function runGpuSelfTest(): Promise<{ ok: boolean; error?: string; timeMs?: number }> {
+  try {
+    const ready = await ensureWorker()
+    if (!ready.supported) {
+      return { ok: false, error: `GPU engine unsupported: ${ready.detail ?? 'no WebCodecs encoder'}` }
+    }
+    const tempDir = app.getPath('temp')
+    const h264Path = join(tempDir, 'me-gpu-selftest.h264.mp4')
+    const finalPath = join(tempDir, 'me-gpu-selftest.mp4')
+    const spec: GpuRenderSpec = {
+      jobId: 'selftest',
+      width: 640,
+      height: 360,
+      fps: 24,
+      durationSec: 4.2, // ~100 frames
+      images: [],
+      motion: { kenBurns: false, punchAtSec: [] },
+      grade: {
+        style: 'None',
+        saturation: 1,
+        contrast: 1,
+        brightness: 0,
+        colorBalance: { r: 0, g: 0, b: 0 },
+        vignette: 0,
+        sharpen: 0
+      },
+      grain: { strength: 0, temporal: false },
+      captions: {
+        groups: [],
+        preset: 'Clean',
+        font: 'Anton',
+        animation: 'Pop-in',
+        mode: 'word',
+        position: 'bottom',
+        lines: 1,
+        highlightColor: '#ffffff'
+      },
+      audio: { voicePath: '' },
+      encoder: { codec: 'avc', bitrateMbps: 2, keyIntervalSec: 2 },
+      out: { h264Path, finalPath }
+    }
+
+    const start = Date.now()
+    await new Promise<void>((resolve, reject) => {
+      pending.set(spec.jobId, { resolve, reject })
+      worker!.webContents.send(GPU_CHANNELS.run, spec)
+    })
+    const duration = Date.now() - start
+    return { ok: true, timeMs: duration }
+  } catch (e) {
+    return { ok: false, error: (e as Error).message }
+  }
+}
+

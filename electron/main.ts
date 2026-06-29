@@ -1340,6 +1340,27 @@ app.whenReady().then(() => {
   registerIpc()
   sweepTempArtifacts()
 
+  if (process.env['ME_GPU_SELFTEST']) {
+    void (async () => {
+      try {
+        const { runGpuSelfTest, destroyGpuWorker } = await import('./services/engine/gpu/host')
+        const result = await runGpuSelfTest()
+        destroyGpuWorker()
+        if (result.ok) {
+          console.log(`SELFTEST_OK timeMs=${result.timeMs}`)
+          app.exit(0)
+        } else {
+          console.error(`SELFTEST_FAIL error=${result.error}`)
+          app.exit(1)
+        }
+      } catch (err) {
+        console.error(`SELFTEST_FAIL error=${(err as Error).message}`)
+        app.exit(1)
+      }
+    })()
+    return
+  }
+
   if (process.env['ME_DEMO']) {
     void runDemoRender()
     return

@@ -3,11 +3,12 @@ import '@fontsource/hanken-grotesk'
 import type { GpuRenderSpec } from '@shared/renderSpec'
 import { totalFrames } from '@shared/renderSpec'
 import { encodeSpec, probeHardwareEncode } from './encoder'
+import { SegmentDecoder } from './decoder'
 
 // Entry for the hidden render-worker page. It waits for a spec from the host, loads the
-// input images/overlay from disk (via the worker preload's fs bridge), runs the
-// GPU compose + WebCodecs encode + in-memory mux, writes the video-only MP4 to disk, and
-// reports completion. Any failure is reported so the host can fall back to ffmpeg.
+// input images/overlay/B-roll segments from disk (via the worker preload's fs bridge),
+// runs the GPU compose + WebCodecs encode, and streams the muxed video-only MP4 to disk
+// incrementally. Reports completion so the host can mux audio.
 
 const worker = window.gpuWorker
 
@@ -18,25 +19,72 @@ async function loadBitmap(path: string): Promise<ImageBitmap> {
 }
 
 async function run(spec: GpuRenderSpec): Promise<void> {
+  let fd: number | null = null
+  const decoders: (SegmentDecoder | null)[] = []
   try {
-    // Load slideshow stills + optional overlay.
-    const images = await Promise.all(spec.images.map((im) => loadBitmap(im.path)))
+    const isSelfTest = spec.jobId === 'selftest'
+    console.log(`[worker] run start: job=${spec.jobId} isSelfTest=${isSelfTest} imageCount=${spec.images.length} brollCount=${spec.broll?.length ?? 0} durationSec=${spec.durationSec}`)
+    let images: ImageBitmap[] = []
     let overlay: ImageBitmap | null = null
-    if (spec.overlayPath) {
-      try { overlay = await loadBitmap(spec.overlayPath) } catch { overlay = null }
+
+    if (!isSelfTest) {
+      // Load slideshow stills + optional overlay.
+      images = await Promise.all(spec.images.map((im) => loadBitmap(im.path)))
+      console.log(`[worker] loaded ${images.length} slides`)
+      if (spec.overlayPath) {
+        try {
+          overlay = await loadBitmap(spec.overlayPath)
+          console.log(`[worker] loaded overlay: ${spec.overlayPath}`)
+        } catch {
+          overlay = null
+          console.warn(`[worker] failed to load overlay at: ${spec.overlayPath}`)
+        }
+      }
     }
 
-    const buffer = await encodeSpec(spec, images, overlay, {
-      onProgress: (framesDone, frames) =>
+    // Initialize placeholders for B-roll decoders to be lazy-loaded in the encode loop
+    if (spec.broll && spec.broll.length > 0) {
+      console.log(`[worker] preparing lazy placeholders for ${spec.broll.length} B-roll clips`)
+      for (let i = 0; i < spec.broll.length; i++) {
+        decoders.push(null)
+      }
+    }
+
+    // Open the output file for streaming writes.
+    console.log(`[worker] opening output file: ${spec.out.h264Path}`)
+    fd = worker!.openFile(spec.out.h264Path)
+    const handle = {
+      write: (data: Uint8Array, position: number): void => {
+        worker!.writeChunk(fd!, data, position)
+      }
+    }
+
+    console.log(`[worker] starting frame loop with encodeSpec`)
+    await encodeSpec(spec, images, overlay, decoders, handle, {
+      onProgress: (framesDone, frames) => {
+        console.log(`[worker] encode progress: ${framesDone}/${frames} frames`)
         worker!.progress({ jobId: spec.jobId, framesDone, totalFrames: frames, fps: spec.fps })
+      }
     })
 
-    worker!.writeFile(spec.out.h264Path, buffer)
+    console.log(`[worker] closing output file and finalizing B-roll decoders`)
+    worker!.closeFile(fd)
+    fd = null
+    decoders.forEach((dec) => dec?.close())
     worker!.done({ jobId: spec.jobId, h264Path: spec.out.h264Path })
+    console.log(`[worker] job completed successfully`)
 
     images.forEach((b) => b.close())
     overlay?.close()
   } catch (e) {
+    console.error(`[worker] FATAL ERROR in render run:`, e)
+    // Close the file handle on error so we don't leak it.
+    if (fd != null) {
+      try { worker!.closeFile(fd) } catch { /* ignore close-on-error */ }
+    }
+    decoders.forEach((dec) => {
+      try { dec?.close() } catch { /* ignore close-on-error */ }
+    })
     worker!.error({ jobId: spec.jobId, message: (e as Error).message })
   }
 }
@@ -57,3 +105,4 @@ async function boot(): Promise<void> {
 }
 
 void boot()
+

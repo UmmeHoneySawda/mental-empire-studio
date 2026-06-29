@@ -9,6 +9,7 @@ import type {
 import { groupWords, resolutionFor } from '../../captions'
 import { gradeParams } from '../grade'
 import { FPS, LONG_FORM_FAST_SEC, CAPTION_PHRASE_WORD_COUNT, gpuBitrateMbpsFor, GPU_KEY_INTERVAL_SEC } from '../render-config'
+import type { BrollManifestSegment } from '../../broll'
 
 // Pure builder that converts the existing project/images/transcript model into a
 // serializable GpuRenderSpec for the WebCodecs render worker. Mirrors the decisions the
@@ -91,6 +92,7 @@ export interface GpuSpecInputs {
   /** intro hook text (already resolved by the queue), '' = no hook */
   hookText?: string
   out: { h264Path: string; finalPath: string }
+  brollSegments?: BrollManifestSegment[]
 }
 
 /**
@@ -120,6 +122,11 @@ export function buildGpuRenderSpec(inp: GpuSpecInputs): GpuRenderSpec {
     fps: FPS,
     durationSec: project.durationSec,
     images: buildImageSpecs(inp.images, project.durationSec),
+    broll: inp.brollSegments?.map((s) => ({
+      path: s.normalizedPath,
+      startSec: s.start,
+      endSec: s.end
+    })),
     motion: { kenBurns, punchAtSec: punchEnabled ? [...inp.zoomHits] : [] },
     grade,
     grain,

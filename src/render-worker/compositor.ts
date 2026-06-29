@@ -110,6 +110,8 @@ export class Compositor {
   private imgTextures: WebGLTexture[] = []
   private overlayTex: WebGLTexture | null = null
   private captionTex: WebGLTexture
+  private videoTexA: WebGLTexture
+  private videoTexB: WebGLTexture
   private uniforms: Record<string, WebGLUniformLocation | null> = {}
 
   constructor(public canvas: OffscreenCanvas, private spec: GpuRenderSpec) {
@@ -143,6 +145,8 @@ export class Compositor {
     }
 
     this.captionTex = this.newTexture()
+    this.videoTexA = this.newTexture()
+    this.videoTexB = this.newTexture()
   }
 
   private newTexture(): WebGLTexture {
@@ -190,10 +194,24 @@ export class Compositor {
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source)
   }
 
+  /** Upload decoded B-roll frames directly as textures. */
+  updateVideoTextures(frameA: VideoFrame | null, frameB: VideoFrame | null): void {
+    const gl = this.gl
+    if (frameA) {
+      gl.bindTexture(gl.TEXTURE_2D, this.videoTexA)
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, frameA)
+    }
+    if (frameB) {
+      gl.bindTexture(gl.TEXTURE_2D, this.videoTexB)
+      gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, frameB)
+    }
+  }
+
   /** Ken Burns / punch zoom scale for the image at index i at time t. */
   private scaleAt(i: number, timeSec: number): [number, number] {
     let s = 1
-    const img = this.spec.images[i]
+    const isBroll = this.spec.broll && this.spec.broll.length > 0
+    const img = isBroll ? null : this.spec.images[i]
     if (this.spec.motion.kenBurns && img) {
       const span = Math.max(0.5, img.endSec - img.startSec)
       const p = Math.min(1, Math.max(0, (timeSec - img.startSec) / span))
@@ -210,28 +228,34 @@ export class Compositor {
   drawFrame(timeSec: number): void {
     const gl = this.gl
     const g = this.spec.grade
-    const idx = this.spec.images.length ? activeImageIndex(this.spec.images, timeSec) : 0
-    const nextIdx = Math.min(idx + 1, Math.max(0, this.imgTextures.length - 1))
 
-    // Crossfade in the last 0.4s of an image window when a next image exists.
+    const isBroll = !!(this.spec.broll && this.spec.broll.length > 0)
+    const activeSegs = isBroll ? this.spec.broll! : this.spec.images
+    const idx = activeSegs.length ? activeImageIndex(activeSegs as any, timeSec) : 0
+    const nextIdx = Math.min(idx + 1, Math.max(0, activeSegs.length - 1))
+
+    // Crossfade in the last 0.4s of an image/B-roll window when a next segment exists.
     let mix = 0
-    const img = this.spec.images[idx]
-    if (img && nextIdx !== idx) {
-      const remain = img.endSec - timeSec
+    const seg = activeSegs[idx]
+    if (seg && nextIdx !== idx) {
+      const remain = seg.endSec - timeSec
       if (remain < 0.4) mix = Math.min(1, Math.max(0, (0.4 - remain) / 0.4))
     }
+
+    const textureA = isBroll ? this.videoTexA : this.imgTextures[Math.min(idx, this.imgTextures.length - 1)]
+    const textureB = isBroll ? this.videoTexB : this.imgTextures[nextIdx]
 
     gl.useProgram(this.program)
     gl.viewport(0, 0, this.canvas.width, this.canvas.height)
 
     gl.activeTexture(gl.TEXTURE0)
-    gl.bindTexture(gl.TEXTURE_2D, this.imgTextures[Math.min(idx, this.imgTextures.length - 1)])
+    gl.bindTexture(gl.TEXTURE_2D, textureA)
     gl.uniform1i(this.uniforms.u_imgA, 0)
     gl.activeTexture(gl.TEXTURE1)
-    gl.bindTexture(gl.TEXTURE_2D, this.imgTextures[nextIdx])
+    gl.bindTexture(gl.TEXTURE_2D, textureB)
     gl.uniform1i(this.uniforms.u_imgB, 1)
     gl.activeTexture(gl.TEXTURE2)
-    gl.bindTexture(gl.TEXTURE_2D, this.overlayTex ?? this.imgTextures[0])
+    gl.bindTexture(gl.TEXTURE_2D, this.overlayTex ?? (this.imgTextures.length ? this.imgTextures[0] : this.videoTexA))
     gl.uniform1i(this.uniforms.u_overlay, 2)
     gl.activeTexture(gl.TEXTURE3)
     gl.bindTexture(gl.TEXTURE_2D, this.captionTex)
