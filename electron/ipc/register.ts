@@ -13,6 +13,7 @@ import { registerAutomationIpc, upsertProfileAndWarm } from './automation'
 import { tick, start as schedulerStart } from '../services/scheduler'
 import { applyLoginItem } from '../services/background'
 import { probeRenderCapabilities } from '../services/engine/caps'
+import { runUploadDetection } from '../services/uploads-detect'
 
 // All native capability the renderer can reach is registered here as invoke
 // handlers and exposed through the typed preload bridge (window.api.*).
@@ -70,10 +71,7 @@ export function registerIpc(): void {
 
   // ---- P1: per-video work items + fuzzy upload detection ----
   ipcMain.handle('db:workItems', () => getRepos().workItems())
-  ipcMain.handle('workItems:detect', async () => {
-    const { runUploadDetection } = await import('../services/uploads-detect')
-    return runUploadDetection()
-  })
+  ipcMain.handle('workItems:detect', () => runUploadDetection())
   ipcMain.handle('workItems:setUploaded', (_e, videoId: string, uploaded: boolean) => {
     getRepos().setWorkItemUploaded(reqId(videoId, 'videoId'), !!uploaded)
   })
