@@ -48,6 +48,7 @@ function PipelineSection(): JSX.Element | null {
   const setItemArchived = useData((s) => s.setItemArchived)
   const detectUploads = useData((s) => s.detectUploads)
   const setActive = useStore((s) => s.setActive)
+  const openWorkspace = useStore((s) => s.openWorkspace)
 
   const visible = workItems.filter((w) => !w.archived)
   if (workItems.length === 0) return null
@@ -81,6 +82,8 @@ function PipelineSection(): JSX.Element | null {
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 16px', borderBottom: '1px solid #1d2129' }}>
               <span title={chan} className="me-ellipsis" style={{ fontSize: 12.5, fontWeight: 600, color: '#dde0e5' }}>{chan}</span>
               <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#5b616f' }}>{items.length}</span>
+              <div style={{ flex: 1 }} />
+              <span onClick={() => openWorkspace(chan)} className="me-btn" style={{ fontSize: 10.5, color: 'var(--accent)', cursor: 'pointer' }} title="Open this channel's workspace board">Open workspace →</span>
             </div>
             {items.map((w) => (
               <div key={w.videoId} className="me-row" style={{ display: 'flex', alignItems: 'center', gap: 12, padding: '10px 16px', borderBottom: '1px solid #14171d' }}>

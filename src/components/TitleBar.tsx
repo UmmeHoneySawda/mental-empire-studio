@@ -5,6 +5,7 @@ import type { ScreenKey } from '@shared/types'
 
 const LABELS: Record<ScreenKey, string> = {
   library: 'Library',
+  workspace: 'Workspace',
   channels: 'My Channels',
   download: 'Download',
   compose: 'Compose',

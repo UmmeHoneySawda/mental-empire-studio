@@ -6,6 +6,7 @@ export type AccentName = 'Amber' | 'Violet' | 'Emerald' | 'Crimson'
 
 export type ScreenKey =
   | 'library'
+  | 'workspace'
   | 'channels'
   | 'download'
   | 'compose'
@@ -507,6 +508,8 @@ export interface AppSettings {
   ambientGlow: boolean
   showActivityRail: boolean
   defaultScreen: ScreenKey
+  /** last channel viewed in the Workspace board, so reopening lands where you left */
+  lastWorkspaceChannel?: string
   namingTemplate: string
   /** where downloads + renders are written; empty = <Downloads>/MentalEmpire_out */
   outputFolder: string
