@@ -14,6 +14,7 @@ import {
   type TextLayer,
   type ThumbnailLayer
 } from '@shared/types'
+import { normalizeThumbnailLayers } from '@shared/thumbnail'
 
 // ---- shared effect helpers (used by subject PNG + text) ----
 
@@ -274,9 +275,10 @@ export interface LayerImages {
 /** Build a Konva.Group containing every visible layer, drawn in order. */
 export function buildLayerGroup(layers: ThumbnailLayer[], images: LayerImages = {}): Konva.Group {
   const group = new Konva.Group()
+  const safeLayers = normalizeThumbnailLayers(layers)
   // The layers array is front-to-back (index 0 = top of the panel = front-most), so
   // paint in reverse: background first (bottom), headline last (on top).
-  for (const l of [...layers].reverse()) {
+  for (const l of [...safeLayers].reverse()) {
     if (!l.visible) continue
     let node: Konva.Shape | Konva.Group | null = null
     if (l.kind === 'background') node = drawBackground(l, images[l.id])
@@ -307,8 +309,9 @@ export function loadImage(src: string): Promise<HTMLImageElement> {
  */
 export async function rasterizeLayers(layers: ThumbnailLayer[]): Promise<string> {
   if (document.fonts && 'ready' in document.fonts) await document.fonts.ready
+  const safeLayers = normalizeThumbnailLayers(layers)
   const images: LayerImages = {}
-  for (const l of layers) {
+  for (const l of safeLayers) {
     const src = l.kind === 'subject' ? l.src : l.kind === 'background' && l.mode === 'image' ? l.src : undefined
     if (src) {
       try {
@@ -321,7 +324,7 @@ export async function rasterizeLayers(layers: ThumbnailLayer[]): Promise<string>
   const container = document.createElement('div')
   const stage = new Konva.Stage({ container, width: THUMB_W, height: THUMB_H })
   const klayer = new Konva.Layer()
-  klayer.add(buildLayerGroup(layers, images))
+  klayer.add(buildLayerGroup(safeLayers, images))
   stage.add(klayer)
   klayer.draw()
   const url = stage.toDataURL({ pixelRatio: 1, mimeType: 'image/png' })
@@ -334,7 +337,7 @@ export async function rasterizeLayers(layers: ThumbnailLayer[]): Promise<string>
 /** Replace the headline text layer's content with a new title (for batch generate). */
 export function withHeadline(layers: ThumbnailLayer[], title: string): ThumbnailLayer[] {
   let replaced = false
-  return layers.map((l) => {
+  return normalizeThumbnailLayers(layers).map((l) => {
     if (!replaced && l.kind === 'text') {
       replaced = true
       const words = title.toUpperCase().split(/\s+/)

@@ -86,7 +86,7 @@ function installMock(): void {
     ambientGlow: true,
     showActivityRail: true,
     outputFolder: '/Browser/MentalEmpire_out',
-    beta: { enabled: true, pexelsKey: '', pixabayKey: '', coverrKey: '' }
+    beta: { enabled: false, pexelsKey: '', pixabayKey: '', coverrKey: '' }
   } as Partial<AppSettings>)
 
   const sourceChannels: SourceChannel[] = [
@@ -435,6 +435,14 @@ function installMock(): void {
           const w = words.find((x) => x.id === wordId)
           if (w) w.emphasis = !w.emphasis
         })
+      },
+      setEmphasis: async (wordIds: string[], emphasis: boolean) => {
+        const ids = new Set(wordIds)
+        transcripts.forEach((words) => {
+          words.forEach((w) => {
+            if (ids.has(w.id)) w.emphasis = emphasis
+          })
+        })
       }
     }),
     thumbnails: ns({
@@ -450,7 +458,21 @@ function installMock(): void {
         if (p) p.thumbnailTemplateId = templateId
         return profiles
       },
-      writePng: async (name: string) => `/Browser/MentalEmpire_out/${slug(name)}.png`
+      writePng: async (name: string) => `/Browser/MentalEmpire_out/${slug(name)}.png`,
+      saveProjectThumb: async (projectId: string, name: string) => {
+        const path = `/Browser/MentalEmpire_out/thumbnails/${slug(name)}.png`
+        const project = projects.find((p) => p.id === projectId)
+        if (project) project.thumbPath = path
+        renderRows.forEach((row) => {
+          if (row.job.projectId === projectId) {
+            row.hasThumb = true
+            row.missing = row.missing.filter((m) => m !== 'thumbnail')
+            row.isReady = row.hasMp3 && row.missing.length === 0
+          }
+        })
+        pushActivity(`Saved thumbnail for "${name}"`)
+        return path
+      }
     }),
     render: ns({
       jobs: async () => renderRows,

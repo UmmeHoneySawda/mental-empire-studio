@@ -28,7 +28,7 @@ function normWord(word: string): string { return word.toLowerCase().replace(/[^a
 function layerHighlightWords(layer: TextLayer): string[] { return layer.highlightWords?.length ? layer.highlightWords : layer.highlightWord ? [layer.highlightWord] : [] }
 function wordsFromLayer(layer: TextLayer): string[] {
   const seen = new Set<string>()
-  return layer.lines.flatMap((ln) => ln.text.split(/\s+/)).map((w) => w.trim()).filter((w) => { const key = normWord(w); if (!key || seen.has(key)) return false; seen.add(key); return true })
+  return (layer.lines ?? []).flatMap((ln) => ln.text.split(/\s+/)).map((w) => w.trim()).filter((w) => { const key = normWord(w); if (!key || seen.has(key)) return false; seen.add(key); return true })
 }
 
 const FX_SWATCHES = ['#ffffff', '#000000', '#f2c200', '#e8403a', '#19c3d6', '#8b7cff', '#36c98e']
@@ -407,15 +407,25 @@ export function Thumbnails(): JSX.Element {
   const activeProject = useData((s) => s.activeProject)
   const [leftTab, setLeftTab] = useState<'layers' | 'templates'>('layers')
   const [saved, setSaved] = useState(false)
+  const [saving, setSaving] = useState(false)
+  const [saveError, setSaveError] = useState('')
 
   useEffect(() => { void loadTemplates() }, [loadTemplates])
 
   const saveThumbnail = async (): Promise<void> => {
     if (!activeProject) return
-    const url = await rasterizeLayers(layers)
-    await window.api?.thumbnails?.saveProjectThumb?.(activeProject.id, activeProject.title, url)
-    setSaved(true)
-    setTimeout(() => setSaved(false), 2000)
+    setSaving(true)
+    setSaveError('')
+    try {
+      const url = await rasterizeLayers(layers)
+      await window.api?.thumbnails?.saveProjectThumb?.(activeProject.id, activeProject.title, url)
+      setSaved(true)
+      setTimeout(() => setSaved(false), 2000)
+    } catch (e) {
+      setSaveError((e as Error).message || 'Could not save thumbnail.')
+    } finally {
+      setSaving(false)
+    }
   }
 
   return (
@@ -432,13 +442,14 @@ export function Thumbnails(): JSX.Element {
         <div style={{ flex: 1 }} />
         <div style={{ display: 'flex', gap: 9 }}>
           {activeProject && (
-            <div onClick={() => void saveThumbnail()} className="me-btn" style={{ display: 'flex', alignItems: 'center', gap: 6, border: '1px solid var(--accent)', background: 'var(--accent-soft)', borderRadius: 9, padding: '8px 14px', fontSize: 12, color: 'var(--accent)', fontWeight: 600, cursor: 'pointer' }}>
+            <div onClick={() => { if (!saving) void saveThumbnail() }} className="me-btn" style={{ display: 'flex', alignItems: 'center', gap: 6, border: '1px solid var(--accent)', background: 'var(--accent-soft)', borderRadius: 9, padding: '8px 14px', fontSize: 12, color: 'var(--accent)', fontWeight: 600, cursor: saving ? 'wait' : 'pointer', opacity: saving ? 0.7 : 1 }}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 3h11l3 3v15H5z" /><path d="M8 3v6h7" /></svg>
-              {saved ? 'Saved ✓' : 'Save thumbnail'}
+              {saving ? 'Saving...' : saved ? 'Saved ✓' : 'Save thumbnail'}
             </div>
           )}
         </div>
       </div>
+      {saveError && <div title={saveError} className="me-clamp-2" style={{ marginTop: -10, marginBottom: 14, border: '1px solid #5a2530', background: 'rgba(255,90,110,.1)', color: '#ff8a96', borderRadius: 10, padding: '9px 12px', fontSize: 11.5 }}>{saveError}</div>}
 
       {/* 3-panel workspace */}
       <div className="me-thumb-workspace" style={{ display: 'grid', gridTemplateColumns: '220px minmax(400px,1fr) 290px', gap: 16, alignItems: 'start', marginBottom: 0 }}>

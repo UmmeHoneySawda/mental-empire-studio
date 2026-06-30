@@ -369,6 +369,8 @@ export interface TranscriptWord {
 // phase 2 = b-roll pool; phase 3 = style + effect plan.
 export type VideoStyle = 'None' | 'Cinematic' | 'Intense' | 'Heartfelt' | 'Clean'
 export type BrollDensity = 'full' | 'sparse' | 'keywords'
+const VIDEO_STYLES: VideoStyle[] = ['None', 'Cinematic', 'Intense', 'Heartfelt', 'Clean']
+const BROLL_DENSITIES: BrollDensity[] = ['full', 'sparse', 'keywords']
 
 export interface BetaVideoOpts {
   /** intro text card shown for the first few seconds ('' text → auto from transcript) */
@@ -397,16 +399,63 @@ export const DEFAULT_BETA_OPTS: BetaVideoOpts = {
   effectPlanJson: ''
 }
 
+function finiteNumber(v: unknown, fallback: number): number {
+  const n = typeof v === 'number' ? v : typeof v === 'string' && v.trim() !== '' ? Number(v) : NaN
+  return Number.isFinite(n) ? n : fallback
+}
+
+function boolValue(v: unknown, fallback: boolean): boolean {
+  return typeof v === 'boolean' ? v : fallback
+}
+
+function stringValue(v: unknown, fallback = ''): string {
+  return typeof v === 'string' ? v : fallback
+}
+
+function clampNumber(v: unknown, fallback: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, finiteNumber(v, fallback)))
+}
+
+function asRecord(v: unknown): Record<string, unknown> {
+  return v && typeof v === 'object' && !Array.isArray(v) ? v as Record<string, unknown> : {}
+}
+
 /** Merge a possibly-partial/legacy betaOpts onto the defaults (deep, for nested groups). */
 export function asBetaOpts(v: unknown): BetaVideoOpts {
-  const o = (v && typeof v === 'object' ? v : {}) as Partial<BetaVideoOpts>
+  const o = asRecord(v)
+  const hook = asRecord(o.hook)
+  const overlay = asRecord(o.overlay)
+  const autoZoom = asRecord(o.autoZoom)
+  const broll = asRecord(o.broll)
+  const style = VIDEO_STYLES.includes(o.style as VideoStyle) ? o.style as VideoStyle : DEFAULT_BETA_OPTS.style
+  const density = BROLL_DENSITIES.includes(broll.density as BrollDensity) ? broll.density as BrollDensity : DEFAULT_BETA_OPTS.broll.density
+  const mode = broll.mode === 'overlay' || broll.mode === 'full' ? broll.mode : DEFAULT_BETA_OPTS.broll.mode
   return {
     ...DEFAULT_BETA_OPTS,
-    ...o,
-    hook: { ...DEFAULT_BETA_OPTS.hook, ...(o.hook ?? {}) },
-    overlay: { ...DEFAULT_BETA_OPTS.overlay, ...(o.overlay ?? {}) },
-    autoZoom: { ...DEFAULT_BETA_OPTS.autoZoom, ...(o.autoZoom ?? {}) },
-    broll: { ...DEFAULT_BETA_OPTS.broll, ...(o.broll ?? {}) }
+    hook: {
+      enabled: boolValue(hook.enabled, DEFAULT_BETA_OPTS.hook.enabled),
+      text: stringValue(hook.text, DEFAULT_BETA_OPTS.hook.text)
+    },
+    autoHighlight: boolValue(o.autoHighlight, DEFAULT_BETA_OPTS.autoHighlight),
+    overlay: {
+      bottom: boolValue(overlay.bottom, DEFAULT_BETA_OPTS.overlay.bottom),
+      top: boolValue(overlay.top, DEFAULT_BETA_OPTS.overlay.top),
+      left: boolValue(overlay.left, DEFAULT_BETA_OPTS.overlay.left),
+      right: boolValue(overlay.right, DEFAULT_BETA_OPTS.overlay.right),
+      intensity: clampNumber(overlay.intensity, DEFAULT_BETA_OPTS.overlay.intensity, 0, 100)
+    },
+    autoZoom: {
+      atStart: boolValue(autoZoom.atStart, DEFAULT_BETA_OPTS.autoZoom.atStart),
+      atKeyPhrases: boolValue(autoZoom.atKeyPhrases, DEFAULT_BETA_OPTS.autoZoom.atKeyPhrases)
+    },
+    broll: {
+      enabled: boolValue(broll.enabled, DEFAULT_BETA_OPTS.broll.enabled),
+      density,
+      poolSize: Math.round(clampNumber(broll.poolSize, DEFAULT_BETA_OPTS.broll.poolSize, 1, 200)),
+      mode
+    },
+    style,
+    effectPlanJson: stringValue(o.effectPlanJson, DEFAULT_BETA_OPTS.effectPlanJson)
   }
 }
 

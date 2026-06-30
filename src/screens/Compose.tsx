@@ -243,18 +243,22 @@ function BetaHeader({ betaOn }: { betaOn: boolean }): JSX.Element {
     <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
       <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '.6px', color: '#5b616f' }}>CUSTOMIZE</span>
       <span style={{ fontFamily: 'var(--font-mono)', fontSize: 8, fontWeight: 700, background: 'var(--accent-soft)', color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: 9, padding: '1px 6px' }}>BETA</span>
-      {!betaOn && <span style={{ marginLeft: 'auto', fontSize: 9.5, color: '#6a7180' }}>Enable in Settings → Beta</span>}
+      {!betaOn && <span style={{ marginLeft: 'auto', fontSize: 9.5, color: '#6a7180' }}>Turns on when changed</span>}
     </div>
   )
 }
 
-/** Compose "Style" tab — visual beta controls (greyed unless Settings → beta is on). */
+/** Compose "Style" tab — visual beta controls, auto-enabling beta on first change. */
 function StyleTab(): JSX.Element {
   const betaOn = useStore((s) => s.settings.beta.enabled)
+  const updateSettings = useStore((s) => s.updateSettings)
   const project = useData((s) => s.activeProject)
   const setCaptions = useData((s) => s.setCaptions)
   const o = asBetaOpts(project?.betaOpts)
-  const patch = (p: Partial<BetaVideoOpts>): void => void setCaptions({ betaOpts: { ...o, ...p } })
+  const patch = (p: Partial<BetaVideoOpts>): void => {
+    if (!betaOn) updateSettings({ beta: { enabled: true } })
+    void setCaptions({ betaOpts: { ...o, ...p } })
+  }
   const styles: VideoStyle[] = ['None', 'Cinematic', 'Intense', 'Heartfelt', 'Clean']
   const styleTips: Record<VideoStyle, string> = {
     None: 'No automatic transitions or text effects',
@@ -266,7 +270,7 @@ function StyleTab(): JSX.Element {
 
   return (
     <div style={{ maxWidth: 480 }}>
-      <div style={{ position: 'relative', border: '1px solid #1d2129', borderRadius: 14, padding: 15, background: '#12151b', display: 'flex', flexDirection: 'column', gap: 13, opacity: betaOn ? 1 : 0.45, pointerEvents: betaOn ? 'auto' : 'none' }}>
+      <div style={{ position: 'relative', border: '1px solid #1d2129', borderRadius: 14, padding: 15, background: '#12151b', display: 'flex', flexDirection: 'column', gap: 13 }}>
         <BetaHeader betaOn={betaOn} />
         <div>
           <BetaRow label="Hook (intro card)" on={o.hook.enabled} set={() => patch({ hook: { ...o.hook, enabled: !o.hook.enabled } })} hint="Big line for the first ~2.5s" />
@@ -325,14 +329,18 @@ function StyleTab(): JSX.Element {
   )
 }
 
-/** Compose "Advanced" tab — effect plan override (greyed unless Settings → beta is on). */
+/** Compose "Advanced" tab — effect plan override, auto-enabling beta on first edit. */
 function AdvancedTab(): JSX.Element {
   const betaOn = useStore((s) => s.settings.beta.enabled)
+  const updateSettings = useStore((s) => s.updateSettings)
   const project = useData((s) => s.activeProject)
   const transcript = useData((s) => s.transcript)
   const setCaptions = useData((s) => s.setCaptions)
   const o = asBetaOpts(project?.betaOpts)
-  const patch = (p: Partial<BetaVideoOpts>): void => void setCaptions({ betaOpts: { ...o, ...p } })
+  const patch = (p: Partial<BetaVideoOpts>): void => {
+    if (!betaOn) updateSettings({ beta: { enabled: true } })
+    void setCaptions({ betaOpts: { ...o, ...p } })
+  }
   const [fxStatus, setFxStatus] = useState('')
 
   const copyPrompt = (): void => {
@@ -358,7 +366,7 @@ function AdvancedTab(): JSX.Element {
 
   return (
     <div style={{ maxWidth: 560 }}>
-      <div style={{ position: 'relative', border: '1px solid #1d2129', borderRadius: 14, padding: 15, background: '#12151b', display: 'flex', flexDirection: 'column', gap: 13, opacity: betaOn ? 1 : 0.45, pointerEvents: betaOn ? 'auto' : 'none' }}>
+      <div style={{ position: 'relative', border: '1px solid #1d2129', borderRadius: 14, padding: 15, background: '#12151b', display: 'flex', flexDirection: 'column', gap: 13 }}>
         <BetaHeader betaOn={betaOn} />
         <div>
           <div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 7 }}>Effect plan (advanced override)</div>

@@ -15,7 +15,7 @@ import {
   type ThumbnailLayer,
   type ThumbnailTemplate
 } from '@shared/types'
-import { autoArrangeText } from '@shared/thumbnail'
+import { autoArrangeText, normalizeThumbnailLayer, normalizeThumbnailLayers } from '@shared/thumbnail'
 import { initialLayers } from '@/data/mock'
 
 type ComposeTab = 'media' | 'captions' | 'style' | 'advanced'
@@ -84,6 +84,7 @@ interface AppState {
 const FULL_FRAME: LayerFrame = { x: 0, y: 0, width: THUMB_W, height: THUMB_H, rotation: 0 }
 
 let layerSeq = 100
+const safeInitialLayers = normalizeThumbnailLayers(initialLayers)
 
 /** Fire-and-forget persist through the native bridge (absent in plain-web contexts). */
 function pushPatch(patch: DeepPartial<AppSettings>): void {
@@ -170,8 +171,8 @@ export const useStore = create<AppState>((set, get) => ({
   mediaMode: 'sequence',
   setMediaMode: (m) => set({ mediaMode: m }),
 
-  layers: initialLayers,
-  selectedLayerId: 'headline',
+  layers: safeInitialLayers,
+  selectedLayerId: safeInitialLayers.find((l) => l.kind === 'text')?.id ?? safeInitialLayers[0]?.id ?? '',
   textEditorFocusTrigger: 0,
   templates: [],
   selectLayer: (id) => set({ selectedLayerId: id }),
@@ -184,12 +185,15 @@ export const useStore = create<AppState>((set, get) => ({
     set((s) => {
       const src = s.layers.find((l) => l.id === id)
       if (!src) return s
-      const copy = {
-        ...src,
+      const normalized = normalizeThumbnailLayer(src, s.layers.findIndex((l) => l.id === id))
+      if (!normalized) return s
+      const copy = normalizeThumbnailLayer({
+        ...normalized,
         id: `${src.kind}-${layerSeq++}`,
         name: `${src.name} copy`,
         frame: { ...src.frame, x: src.frame.x + 24, y: src.frame.y + 24 }
-      }
+      }, s.layers.length)
+      if (!copy) return s
       const idx = s.layers.findIndex((l) => l.id === id)
       const next = [...s.layers]
       next.splice(idx, 0, copy)
@@ -245,46 +249,53 @@ export const useStore = create<AppState>((set, get) => ({
     }),
   updateLayer: (id, patch) =>
     set((s) => ({
-      layers: s.layers.map((l) => (l.id === id ? ({ ...l, ...patch } as ThumbnailLayer) : l))
+      layers: s.layers.map((l, i) => {
+        if (l.id !== id) return l
+        return normalizeThumbnailLayer({ ...l, ...patch }, i) ?? l
+      })
     })),
   updateGeometry: (id, frame) =>
     set((s) => ({
-      layers: s.layers.map((l) => (l.id === id ? { ...l, frame: { ...l.frame, ...frame } } : l))
+      layers: s.layers.map((l, i) => (l.id === id ? (normalizeThumbnailLayer({ ...l, frame: { ...l.frame, ...frame } }, i) ?? l) : l))
     })),
   setSubjectImage: (src) =>
     set((s) => ({
-      layers: s.layers.map((l) => (l.kind === 'subject' ? ({ ...(l as SubjectLayer), src } as ThumbnailLayer) : l))
+      layers: s.layers.map((l, i) => (l.kind === 'subject' ? (normalizeThumbnailLayer({ ...(l as SubjectLayer), src }, i) ?? l) : l))
     })),
   setBackground: (patch) =>
     set((s) => ({
-      layers: s.layers.map((l) => (l.kind === 'background' ? ({ ...(l as BackgroundLayer), ...patch } as ThumbnailLayer) : l))
+      layers: s.layers.map((l, i) => (l.kind === 'background' ? (normalizeThumbnailLayer({ ...(l as BackgroundLayer), ...patch }, i) ?? l) : l))
     })),
   runAutoArrange: () =>
     set((s) => {
-      const sel = s.layers.find((l) => l.id === s.selectedLayerId && l.kind === 'text') as TextLayer | undefined
-      const target = sel ?? (s.layers.find((l) => l.kind === 'text') as TextLayer | undefined)
+      const layers = normalizeThumbnailLayers(s.layers)
+      const sel = layers.find((l) => l.id === s.selectedLayerId && l.kind === 'text') as TextLayer | undefined
+      const target = sel ?? (layers.find((l) => l.kind === 'text') as TextLayer | undefined)
       if (!target) return s
-      const subject = s.layers.find((l) => l.kind === 'subject')
+      const subject = layers.find((l) => l.kind === 'subject')
       const { frame, lines } = autoArrangeText(target, { w: THUMB_W, h: THUMB_H }, subject?.frame ?? null)
       return {
-        layers: s.layers.map((l) => (l.id === target.id ? { ...(l as TextLayer), frame, lines } : l)),
+        layers: layers.map((l, i) => (l.id === target.id ? (normalizeThumbnailLayer({ ...(l as TextLayer), frame, lines }, i) ?? l) : l)),
         selectedLayerId: target.id
       }
     }),
   loadTemplates: async () => {
     const templates = (await window.api?.thumbnails?.templates?.()) ?? []
-    set({ templates })
+    set({ templates: templates.map((t) => ({ ...t, layers: normalizeThumbnailLayers(t.layers) })) })
   },
   saveCurrentTemplate: async (name) => {
     const id = `tpl-${Date.now()}`
-    const template: ThumbnailTemplate = { id, name, layers: get().layers }
+    const template: ThumbnailTemplate = { id, name, layers: normalizeThumbnailLayers(get().layers) }
     const templates = (await window.api?.thumbnails?.saveTemplate?.(template)) ?? get().templates
-    set({ templates })
+    set({ templates: templates.map((t) => ({ ...t, layers: normalizeThumbnailLayers(t.layers) })) })
   },
   deleteTemplate: async (id) => {
     const templates = (await window.api?.thumbnails?.deleteTemplate?.(id)) ?? get().templates.filter((t) => t.id !== id)
     set({ templates })
   },
   applyTemplate: (t) =>
-    set({ layers: t.layers.map((l) => ({ ...l })), selectedLayerId: t.layers[0]?.id ?? '' })
+    set(() => {
+      const layers = normalizeThumbnailLayers(t.layers)
+      return { layers, selectedLayerId: layers.find((l) => l.kind === 'text')?.id ?? layers[0]?.id ?? '' }
+    })
 }))
