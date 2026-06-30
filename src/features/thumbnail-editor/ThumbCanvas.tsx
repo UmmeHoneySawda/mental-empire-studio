@@ -1,16 +1,31 @@
-import { useEffect, useRef } from 'react'
+import { useEffect, useRef, useState } from 'react'
 import Konva from 'konva'
 import { useStore } from '../../store/useStore'
-import { THUMB_W, THUMB_H } from '@shared/types'
+import { THUMB_W, THUMB_H, type TextLayer } from '@shared/types'
 import { buildLayerGroup, loadImage, type LayerImages } from './render'
 
 // On-screen Konva editor. Renders the layer stack imperatively (reusing the shared
 // drawing in render.ts), scales to fit the panel, and wires select / drag /
 // transform back into the store. Title-safe inset is drawn as a dashed overlay.
 
+interface InlineTextEdit {
+  id: string
+  value: string
+  x: number
+  y: number
+  width: number
+  minHeight: number
+  fontSize: number
+  fontFamily: string
+  color: string
+  align: TextLayer['align']
+  rotation: number
+}
+
 export function ThumbCanvas(): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
   const stageRef = useRef<Konva.Stage | null>(null)
+  const skipInlineCommitRef = useRef(false)
   // Cache decoded images by src so edits don't reload subject/background from disk
   // on every change — reloading is what caused the canvas to flash black.
   const imgCacheRef = useRef<Map<string, HTMLImageElement>>(new Map())
@@ -18,8 +33,52 @@ export function ThumbCanvas(): JSX.Element {
   const layers = useStore((s) => s.layers)
   const selectedLayerId = useStore((s) => s.selectedLayerId)
   const selectLayer = useStore((s) => s.selectLayer)
+  const updateLayer = useStore((s) => s.updateLayer)
   const updateGeometry = useStore((s) => s.updateGeometry)
   const requestFocusTextEditor = useStore((s) => s.requestFocusTextEditor)
+  const thumbEditorV2 = useStore((s) => s.settings.features.thumbEditorV2)
+  const [editing, setEditing] = useState<InlineTextEdit | null>(null)
+
+  const openInlineEditor = (layer: TextLayer): void => {
+    const stage = stageRef.current
+    if (!stage) {
+      requestFocusTextEditor()
+      return
+    }
+    skipInlineCommitRef.current = false
+    const scale = stage.scaleX() || 1
+    const maxSize = Math.max(24, ...layer.lines.map((ln) => ln.size))
+    setEditing({
+      id: layer.id,
+      value: layer.lines.map((ln) => ln.text).join('\n'),
+      x: layer.frame.x * scale,
+      y: layer.frame.y * scale,
+      width: Math.max(160, layer.frame.width * scale),
+      minHeight: Math.max(52, layer.frame.height * scale),
+      fontSize: Math.max(12, maxSize * scale),
+      fontFamily: `${layer.fontFamily}, Anton, Impact, sans-serif`,
+      color: layer.color,
+      align: layer.align,
+      rotation: layer.frame.rotation
+    })
+  }
+
+  const commitInlineEditor = (edit = editing): void => {
+    if (!edit) return
+    const layer = useStore.getState().layers.find((l) => l.id === edit.id)
+    if (!layer || layer.kind !== 'text') {
+      setEditing(null)
+      return
+    }
+    const rows = edit.value.split(/\r?\n/)
+    const fallbackSize = layer.lines[0]?.size ?? 72
+    const lines = (rows.length ? rows : ['']).map((text, i) => ({
+      text,
+      size: layer.lines[i]?.size ?? fallbackSize
+    }))
+    updateLayer(edit.id, { text: rows.join(' '), lines } as Partial<TextLayer>)
+    setEditing(null)
+  }
 
   // create the stage once
   useEffect(() => {
@@ -96,7 +155,11 @@ export function ThumbCanvas(): JSX.Element {
         if (!layer) return
         node.on('mousedown tap', () => selectLayer(id))
         if (layer.kind === 'text') {
-          node.on('dblclick dbltap', () => { selectLayer(id); requestFocusTextEditor() })
+          node.on('dblclick dbltap', () => {
+            selectLayer(id)
+            if (thumbEditorV2) openInlineEditor(layer as TextLayer)
+            else requestFocusTextEditor()
+          })
         }
         if (!layer.locked) {
           node.draggable(true)
@@ -150,12 +213,60 @@ export function ThumbCanvas(): JSX.Element {
     return () => {
       cancelled = true
     }
-  }, [layers, selectedLayerId, selectLayer, updateGeometry])
+  }, [layers, selectedLayerId, selectLayer, updateGeometry, thumbEditorV2])
 
   return (
     <div
-      ref={containerRef}
-      style={{ width: '100%', aspectRatio: '16/9', borderRadius: 14, overflow: 'hidden', border: '1px solid #1d2129', background: '#0c0d11' }}
-    />
+      style={{ position: 'relative', width: '100%', aspectRatio: '16/9', borderRadius: 14, overflow: 'hidden', border: '1px solid #1d2129', background: '#0c0d11' }}
+    >
+      <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
+      {editing && (
+        <textarea
+          autoFocus
+          value={editing.value}
+          onChange={(e) => setEditing({ ...editing, value: e.target.value })}
+          onKeyDown={(e) => {
+            if (e.key === 'Escape') {
+              e.preventDefault()
+              skipInlineCommitRef.current = true
+              setEditing(null)
+            } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+              e.preventDefault()
+              commitInlineEditor()
+            }
+          }}
+          onBlur={() => {
+            if (skipInlineCommitRef.current) {
+              skipInlineCommitRef.current = false
+              return
+            }
+            commitInlineEditor()
+          }}
+          style={{
+            position: 'absolute',
+            left: editing.x,
+            top: editing.y,
+            width: editing.width,
+            minHeight: editing.minHeight,
+            transform: `rotate(${editing.rotation}deg)`,
+            transformOrigin: 'top left',
+            boxSizing: 'border-box',
+            border: '1px solid var(--accent)',
+            borderRadius: 8,
+            padding: 8,
+            color: editing.color,
+            background: 'rgba(8,10,14,.86)',
+            outline: 'none',
+            resize: 'both',
+            fontFamily: editing.fontFamily,
+            fontSize: editing.fontSize,
+            lineHeight: 1.08,
+            textAlign: editing.align,
+            textTransform: 'uppercase',
+            zIndex: 5
+          }}
+        />
+      )}
+    </div>
   )
 }

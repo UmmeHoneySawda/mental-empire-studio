@@ -2,8 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store/useStore'
 import { useData } from '../store/useData'
 import { ScreenPad } from '../components/primitives'
-import type { BackgroundLayer, FxGlow, FxOutline, FxShadow, ShapeLayer, SubjectLayer, TextLayer, ThumbnailLayer } from '@shared/types'
-import { asGlow, asOutline, asShadow, DEFAULT_SCRIM } from '@shared/types'
+import type { BackgroundLayer, FxGlow, FxOutline, FxShadow, ShapeLayer, SubjectLayer, TextHighlight, TextLayer, ThumbnailLayer } from '@shared/types'
+import { asGlow, asOutline, asShadow, DEFAULT_SCRIM, DEFAULT_TEXT_HIGHLIGHT } from '@shared/types'
 import { ThumbCanvas } from '../features/thumbnail-editor/ThumbCanvas'
 import { rasterizeLayers, withHeadline } from '../features/thumbnail-editor/render'
 import { youtubeIdFromDownloadId, youtubeThumbUrl, type YoutubeThumbQuality } from '@shared/youtube'
@@ -91,6 +91,7 @@ function LayerInspector(): JSX.Element {
   const setSubjectImage = useStore((s) => s.setSubjectImage)
   const setBackground = useStore((s) => s.setBackground)
   const textEditorFocusTrigger = useStore((s) => s.textEditorFocusTrigger)
+  const thumbEditorV2 = useStore((s) => s.settings.features.thumbEditorV2)
   const textareaRef = useRef<HTMLTextAreaElement>(null)
   const subjectFile = useRef<HTMLInputElement>(null)
   const bgFile = useRef<HTMLInputElement>(null)
@@ -182,9 +183,14 @@ function LayerInspector(): JSX.Element {
   // Text layer
   const layer = textLayer
   if (!layer) return <div />
-  const swatches = ['#ffffff', '#f2c200', '#e8403a', '#19c3d6']
+  const swatches = ['#ffffff', '#111111', '#f2c200', '#e8403a', '#19c3d6', '#8b7cff', '#36c98e']
+  const highlight: TextHighlight = layer.highlight ?? { ...DEFAULT_TEXT_HIGHLIGHT, enabled: layer.highlightSquare, boxColor: layer.highlightColor }
   const setHighlights = (words: string[]): void => { const clean = words.map((w) => w.trim()).filter(Boolean); updateLayer(layer.id, { highlightWords: clean, highlightWord: clean[0] ?? '' } as Partial<TextLayer>) }
   const toggleHighlight = (word: string): void => { const key = normWord(word); if (!key) return; setHighlights(highlightKeys.has(key) ? highlightWords.filter((w) => normWord(w) !== key) : [...highlightWords, word]) }
+  const setHighlight = (patch: Partial<TextHighlight>): void => {
+    const next = { ...highlight, ...patch }
+    updateLayer(layer.id, { highlight: next, highlightSquare: next.enabled, highlightColor: next.boxColor } as Partial<TextLayer>)
+  }
 
   return (
     <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 0, overflowY: 'auto' }}>
@@ -215,14 +221,45 @@ function LayerInspector(): JSX.Element {
         <div style={{ display: 'flex', gap: 6, marginBottom: 8 }}>
           <input value={customHighlight} onChange={(e) => setCustomHighlight(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') { e.preventDefault(); const w = customHighlight.trim(); if (w && !highlightKeys.has(normWord(w))) { setHighlights([...highlightWords, w]); setCustomHighlight('') } } }} placeholder="Custom word" style={{ flex: 1, border: '1px solid #23272f', borderRadius: 8, padding: '7px 10px', fontSize: 12, color: '#dde0e5', background: '#0e1116', boxSizing: 'border-box' }} />
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
-          <span style={{ fontSize: 10.5, color: '#8a909c', flex: 1 }}>Square background</span>
-          <div onClick={() => updateLayer(layer.id, { highlightSquare: !layer.highlightSquare })} style={{ width: 34, height: 19, borderRadius: 11, background: layer.highlightSquare ? 'var(--accent)' : '#2b303b', position: 'relative', cursor: 'pointer' }}><span style={{ position: 'absolute', top: 2, right: layer.highlightSquare ? 2 : 17, width: 15, height: 15, borderRadius: '50%', background: '#fff' }} /></div>
-        </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
-          <span style={{ fontSize: 10.5, color: '#8a909c' }}>Color</span>
-          {swatches.map((c) => <span key={c} onClick={() => updateLayer(layer.id, { highlightColor: c })} style={{ width: 22, height: 22, borderRadius: 6, background: c, border: c === layer.highlightColor ? '2px solid var(--accent)' : '1px solid #2c303b', cursor: 'pointer' }} />)}
-        </div>
+        {thumbEditorV2 ? (
+          <div style={{ border: highlight.enabled ? '1px solid var(--accent)' : '1px solid #1d2129', borderRadius: 9, padding: '8px 10px', background: highlight.enabled ? 'var(--accent-soft)' : '#0e1116' }}>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: highlight.enabled ? 9 : 0 }}>
+              <span style={{ fontSize: 11.5, color: highlight.enabled ? '#eef0f3' : '#8a909c', flex: 1, fontWeight: highlight.enabled ? 600 : 400 }}>Highlight box</span>
+              <div onClick={() => setHighlight({ enabled: !highlight.enabled })} style={{ width: 34, height: 19, borderRadius: 11, background: highlight.enabled ? 'var(--accent)' : '#2b303b', position: 'relative', cursor: 'pointer' }}><span style={{ position: 'absolute', top: 2, right: highlight.enabled ? 2 : 17, width: 15, height: 15, borderRadius: '50%', background: '#fff' }} /></div>
+            </div>
+            {highlight.enabled ? (
+              <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 10.5, color: '#8a909c', width: 54 }}>Box</span>
+                  {swatches.map((c) => <span key={`box-${c}`} onClick={() => setHighlight({ boxColor: c })} style={{ width: 18, height: 18, borderRadius: 5, background: c, border: c === highlight.boxColor ? '2px solid var(--accent)' : '1px solid #2c303b', cursor: 'pointer' }} />)}
+                </div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
+                  <span style={{ fontSize: 10.5, color: '#8a909c', width: 54 }}>Text</span>
+                  {swatches.map((c) => <span key={`text-${c}`} onClick={() => setHighlight({ textColor: c })} style={{ width: 18, height: 18, borderRadius: 5, background: c, border: c === highlight.textColor ? '2px solid var(--accent)' : '1px solid #2c303b', cursor: 'pointer' }} />)}
+                </div>
+                <FxSlider label="Radius" value={highlight.radius} min={0} max={48} onChange={(n) => setHighlight({ radius: n })} />
+                <FxSlider label="Padding" value={highlight.padding} min={0} max={40} onChange={(n) => setHighlight({ padding: n })} />
+                <FxSlider label="Opacity" value={Math.round(highlight.opacity * 100)} min={0} max={100} suffix="%" onChange={(n) => setHighlight({ opacity: n / 100 })} />
+              </div>
+            ) : (
+              <div style={{ display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap', marginTop: 8 }}>
+                <span style={{ fontSize: 10.5, color: '#8a909c', width: 54 }}>Color</span>
+                {swatches.map((c) => <span key={`legacy-${c}`} onClick={() => updateLayer(layer.id, { highlightColor: c })} style={{ width: 18, height: 18, borderRadius: 5, background: c, border: c === layer.highlightColor ? '2px solid var(--accent)' : '1px solid #2c303b', cursor: 'pointer' }} />)}
+              </div>
+            )}
+          </div>
+        ) : (
+          <>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+              <span style={{ fontSize: 10.5, color: '#8a909c', flex: 1 }}>Square background</span>
+              <div onClick={() => updateLayer(layer.id, { highlightSquare: !layer.highlightSquare })} style={{ width: 34, height: 19, borderRadius: 11, background: layer.highlightSquare ? 'var(--accent)' : '#2b303b', position: 'relative', cursor: 'pointer' }}><span style={{ position: 'absolute', top: 2, right: layer.highlightSquare ? 2 : 17, width: 15, height: 15, borderRadius: '50%', background: '#fff' }} /></div>
+            </div>
+            <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
+              <span style={{ fontSize: 10.5, color: '#8a909c' }}>Color</span>
+              {swatches.map((c) => <span key={c} onClick={() => updateLayer(layer.id, { highlightColor: c })} style={{ width: 22, height: 22, borderRadius: 6, background: c, border: c === layer.highlightColor ? '2px solid var(--accent)' : '1px solid #2c303b', cursor: 'pointer' }} />)}
+            </div>
+          </>
+        )}
       </CollapseSection>
       <CollapseSection label="Text effects" headerRight={
         <div style={{ display: 'flex', gap: 6 }}>

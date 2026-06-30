@@ -2,6 +2,7 @@ import Konva from 'konva'
 import {
   THUMB_W,
   THUMB_H,
+  DEFAULT_TEXT_HIGHLIGHT,
   asShadow,
   asGlow,
   asOutline,
@@ -205,6 +206,7 @@ function drawText(l: TextLayer): Konva.Group {
   const shadow: FxShadow = asShadow(l.effects.shadow)
   const stroke: FxOutline = asOutline(l.effects.stroke, '#000000')
   const glow: FxGlow = asGlow(l.effects.glow, l.highlightColor)
+  const hl = l.highlight ?? { ...DEFAULT_TEXT_HIGHLIGHT, enabled: l.highlightSquare, boxColor: l.highlightColor }
   const sizes = l.lines.map((ln) => ln.size)
   const maxSize = sizes.length ? Math.max(...sizes) : 72
   // Uniform line box: advance every line by the SAME height (largest line × factor) and
@@ -226,14 +228,22 @@ function drawText(l: TextLayer): Konva.Group {
     for (let i = 0; i < words.length; i++) {
       const w = words[i]
       const isHi = highlights.has(normWord(w))
-      const fill = isHi && l.highlightSquare ? '#111111' : isHi ? l.highlightColor : l.color
+      const fill = isHi && hl.enabled ? hl.textColor : isHi ? l.highlightColor : l.color
       const base = { x: cx, y: lineY, text: w, fontFamily: POSTER_FONT, fontSize }
       const measure = new Konva.Text({ ...base })
       const wWidth = measure.width()
 
       // Highlighted-word box sits behind the glyph.
-      if (isHi && l.highlightSquare) {
-        group.add(new Konva.Rect({ x: cx - 6, y: lineY - 2, width: wWidth + 12, height: fontSize * 1.02, fill: l.highlightColor }))
+      if (isHi && hl.enabled) {
+        group.add(new Konva.Rect({
+          x: cx - hl.padding,
+          y: lineY - hl.padding * 0.5,
+          width: wWidth + hl.padding * 2,
+          height: fontSize * 1.02 + hl.padding,
+          fill: hl.boxColor,
+          cornerRadius: hl.radius,
+          opacity: hl.opacity
+        }))
       }
 
       // Glow: a blurred clone behind the word (so it coexists with the drop shadow,

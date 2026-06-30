@@ -16,6 +16,14 @@ describe('normalizeThumbnailLayer', () => {
     if (layer?.kind !== 'text') throw new Error('expected text layer')
     expect(layer.lines).toEqual([{ text: 'Never explain yourself', size: 72 }])
     expect(layer.highlightWords).toEqual(['Never'])
+    expect(layer.highlight).toEqual({
+      enabled: false,
+      boxColor: '#ffffff',
+      textColor: '#111111',
+      radius: 0,
+      padding: 6,
+      opacity: 1
+    })
     expect(layer.effects.caps).toBe(true)
     expect(layer.effects.shadow.enabled).toBe(true)
     expect(layer.frame.width).toBeGreaterThan(0)
@@ -33,6 +41,72 @@ describe('normalizeThumbnailLayer', () => {
     expect(layers.some((l) => l.kind === 'shape')).toBe(true)
     expect(layers.some((l) => l.kind === 'text')).toBe(true)
     expect(layers.some((l) => l.kind === 'background')).toBe(true)
+  })
+
+  it('migrates legacy highlight boxes into independent V2 box controls', () => {
+    const layer = normalizeThumbnailLayer({
+      id: 'legacy-highlight-box',
+      kind: 'text',
+      text: 'Stop explaining',
+      highlightWord: 'Stop',
+      highlightColor: '#f2c200',
+      highlightSquare: true
+    })
+
+    expect(layer?.kind).toBe('text')
+    if (layer?.kind !== 'text') throw new Error('expected text layer')
+    expect(layer.highlight).toEqual({
+      enabled: true,
+      boxColor: '#f2c200',
+      textColor: '#111111',
+      radius: 0,
+      padding: 6,
+      opacity: 1
+    })
+    expect(layer.highlightSquare).toBe(true)
+    expect(layer.highlightColor).toBe('#f2c200')
+  })
+
+  it('normalizes explicit V2 highlight controls without collapsing legacy fields', () => {
+    const layer = normalizeThumbnailLayer({
+      id: 'v2-highlight-box',
+      kind: 'text',
+      text: 'Stop explaining',
+      highlightWords: ['Stop'],
+      highlightColor: '#ffffff',
+      highlightSquare: false,
+      highlight: {
+        enabled: true,
+        boxColor: '#19c3d6',
+        textColor: '#000000',
+        radius: 999,
+        padding: 999,
+        opacity: 2
+      }
+    })
+
+    expect(layer?.kind).toBe('text')
+    if (layer?.kind !== 'text') throw new Error('expected text layer')
+    expect(layer.highlight?.enabled).toBe(true)
+    expect(layer.highlight?.boxColor).toBe('#19c3d6')
+    expect(layer.highlight?.textColor).toBe('#000000')
+    expect(layer.highlight?.radius).toBe(80)
+    expect(layer.highlight?.padding).toBe(80)
+    expect(layer.highlight?.opacity).toBe(1)
+    expect(layer.highlightSquare).toBe(false)
+    expect(layer.highlightColor).toBe('#ffffff')
+  })
+
+  it('round-trips inline multiline text into separate normalized rows', () => {
+    const layer = normalizeThumbnailLayer({
+      id: 'multiline',
+      kind: 'text',
+      text: 'Line one\nLine two'
+    })
+
+    expect(layer?.kind).toBe('text')
+    if (layer?.kind !== 'text') throw new Error('expected text layer')
+    expect(layer.lines.map((l) => l.text)).toEqual(['Line one', 'Line two'])
   })
 })
 

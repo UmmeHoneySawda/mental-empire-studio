@@ -3,6 +3,7 @@ import {
   DEFAULT_OUTLINE,
   DEFAULT_SCRIM,
   DEFAULT_SHADOW,
+  DEFAULT_TEXT_HIGHLIGHT,
   THUMB_W,
   THUMB_H,
   asGlow,
@@ -15,6 +16,7 @@ import {
   type LayerFrame,
   type ShapeLayer,
   type SubjectLayer,
+  type TextHighlight,
   type TextLayer,
   type ThumbnailLayer
 } from './types'
@@ -121,6 +123,23 @@ function normalizeHighlightWords(raw: Record<string, unknown>): string[] {
   return clean
 }
 
+function normalizeTextHighlight(raw: unknown, legacyEnabled: boolean, legacyColor: string): TextHighlight {
+  const fallback: TextHighlight = {
+    ...DEFAULT_TEXT_HIGHLIGHT,
+    enabled: legacyEnabled,
+    boxColor: legacyColor
+  }
+  const h = obj(raw)
+  return {
+    enabled: bool(h.enabled, fallback.enabled),
+    boxColor: text(h.boxColor, fallback.boxColor),
+    textColor: text(h.textColor, fallback.textColor),
+    radius: clamp(finite(h.radius, fallback.radius), 0, 80),
+    padding: clamp(finite(h.padding, fallback.padding), 0, 80),
+    opacity: clamp(finite(h.opacity, fallback.opacity), 0, 1)
+  }
+}
+
 function layerKind(raw: Record<string, unknown>): ThumbnailLayer['kind'] | null {
   if (raw.kind === 'text' || raw.kind === 'subject' || raw.kind === 'shape' || raw.kind === 'background') return raw.kind
   if ('lines' in raw || 'text' in raw || 'effects' in raw) return 'text'
@@ -153,6 +172,9 @@ export function normalizeThumbnailLayer(layer: unknown, index = 0): ThumbnailLay
     const joined = lines.map((line) => line.text).join(' ').trim()
     const highlightWords = normalizeHighlightWords(raw)
     const effects = obj(raw.effects)
+    const legacyHighlightColor = text(raw.highlightColor, '#ffffff')
+    const legacyHighlightSquare = bool(raw.highlightSquare, false)
+    const highlight = normalizeTextHighlight(raw.highlight, legacyHighlightSquare, legacyHighlightColor)
     return {
       ...base,
       kind,
@@ -161,8 +183,9 @@ export function normalizeThumbnailLayer(layer: unknown, index = 0): ThumbnailLay
       lines,
       highlightWord: highlightWords[0] ?? text(raw.highlightWord, ''),
       highlightWords,
-      highlightColor: text(raw.highlightColor, '#ffffff'),
-      highlightSquare: bool(raw.highlightSquare, false),
+      highlight,
+      highlightColor: legacyHighlightColor,
+      highlightSquare: legacyHighlightSquare,
       color: text(raw.color, '#ffffff'),
       fontFamily: text(raw.fontFamily, 'Anton'),
       align: raw.align === 'center' || raw.align === 'right' ? raw.align : 'left',

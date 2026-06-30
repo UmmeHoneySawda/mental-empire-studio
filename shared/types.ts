@@ -283,6 +283,8 @@ export interface TextLayer extends BaseLayer {
   highlightWord?: string
   /** Words to highlight (multiple selection). Falls back to highlightWord for legacy. */
   highlightWords?: string[]
+  /** V2 highlight-box controls; legacy highlightColor/highlightSquare stay for compat. */
+  highlight?: TextHighlight
   highlightColor: string
   highlightSquare: boolean
   color: string
@@ -294,6 +296,24 @@ export interface TextLayer extends BaseLayer {
    *  mixed sizes space evenly. 0/undefined = auto (≈1.12, or derived from legacy lineGap). */
   lineHeight?: number
   effects: { shadow: FxShadow; stroke: FxOutline; glow: FxGlow; caps: boolean }
+}
+
+export interface TextHighlight {
+  enabled: boolean
+  boxColor: string
+  textColor: string
+  radius: number
+  padding: number
+  opacity: number
+}
+
+export const DEFAULT_TEXT_HIGHLIGHT: TextHighlight = {
+  enabled: false,
+  boxColor: '#ffffff',
+  textColor: '#111111',
+  radius: 0,
+  padding: 6,
+  opacity: 1
 }
 
 export interface SubjectLayer extends BaseLayer {

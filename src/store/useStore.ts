@@ -1,6 +1,7 @@
 import { create } from 'zustand'
 import {
   DEFAULT_SETTINGS,
+  DEFAULT_TEXT_HIGHLIGHT,
   THUMB_W,
   THUMB_H,
   type AccentName,
@@ -218,6 +219,7 @@ export const useStore = create<AppState>((set, get) => ({
         frame: { x: 120, y: 120, width: 600, height: 90, rotation: 0 },
         text: 'NEW TEXT',
         lines: [{ text: 'NEW TEXT', size: 72 }],
+        highlight: { ...DEFAULT_TEXT_HIGHLIGHT },
         highlightColor: '#ffffff',
         highlightSquare: false,
         color: '#ffffff',
