@@ -13,13 +13,14 @@ const RENDER_ENGINES: Array<{ value: NonNullable<AppSettings['renderEngine']>; l
   { value: 'auto', label: 'Auto', note: 'Use the GPU engine when hardware H.264 encode is available, otherwise ffmpeg.' },
 ]
 
-type Section = 'looks' | 'output' | 'scraping' | 'integrations' | 'beta' | 'danger'
+type Section = 'looks' | 'output' | 'scraping' | 'integrations' | 'beta' | 'advanced' | 'danger'
 const NAV: Array<{ id: Section; label: string }> = [
   { id: 'looks', label: 'Looks' },
   { id: 'output', label: 'Output & Quality' },
   { id: 'scraping', label: 'Scraping' },
   { id: 'integrations', label: 'Integrations' },
   { id: 'beta', label: 'Beta features' },
+  { id: 'advanced', label: 'Advanced' },
   { id: 'danger', label: 'Danger zone' },
 ]
 
@@ -87,6 +88,8 @@ export function Settings(): JSX.Element {
     { value: 'amf' as const, label: 'AMF', enabled: !!(caps?.hasAmf || caps?.hasAmfListed), note: caps?.hasAmf ? 'AMD AMF available' : 'AMD AMF not confirmed' },
   ]
   const selectedEncoder = encoders.find((e) => e.value === (settings.encoder ?? 'cpu')) ?? encoders[0]
+  const confirmFloor = settings.detection.confirmBand[0] ?? 0.6
+  const confirmCeil = settings.detection.confirmBand[1] ?? 0.82
   const chooseEncoder = (enc: typeof encoders[number]): void => {
     saved({ encoder: enc.value })
     if (!enc.enabled && enc.value !== 'cpu') void refreshCaps(true)
@@ -233,6 +236,41 @@ export function Settings(): JSX.Element {
         </div>
         {!settings.beta.enabled && <div style={{ fontSize: 11.5, color: '#5b616f', padding: '12px 0' }}>Toggle on to access Style and Advanced tabs in Compose. Stock footage API keys are in Integrations.</div>}
       </Card>
+    ),
+    advanced: (
+      <div>
+        <Card label="UPLOAD DETECTION">
+          <Row
+            on={settings.detection.auto}
+            label="Auto-detect uploaded matches"
+            hint="Runs after downloads, renders and channel scrapes."
+            onClick={() => saved({ detection: { auto: !settings.detection.auto } })}
+          />
+          <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 12 }}>
+            <div>
+              <div style={{ fontSize: 11, color: '#8a909c', marginBottom: 6 }}>Confirm from</div>
+              <input type="number" min={0} max={1} step={0.01} value={confirmFloor} onChange={(e) => saved({ detection: { confirmBand: [Math.max(0, Math.min(1, Number(e.target.value))), confirmCeil] } })} style={{ width: 78, border: '1px solid #23272f', borderRadius: 8, padding: '8px 10px', fontSize: 11.5, color: '#dde0e5', background: '#0e1116', fontFamily: 'var(--font-mono)', outline: 'none' }} />
+            </div>
+            <div>
+              <div style={{ fontSize: 11, color: '#8a909c', marginBottom: 6 }}>High from</div>
+              <input type="number" min={0} max={1} step={0.01} value={confirmCeil} onChange={(e) => saved({ detection: { confirmBand: [confirmFloor, Math.max(0, Math.min(1, Number(e.target.value)))] } })} style={{ width: 78, border: '1px solid #23272f', borderRadius: 8, padding: '8px 10px', fontSize: 11.5, color: '#dde0e5', background: '#0e1116', fontFamily: 'var(--font-mono)', outline: 'none' }} />
+            </div>
+          </div>
+        </Card>
+        <Card label="DEDUPLICATION">
+          <Row
+            on={settings.dedup.allowReupload}
+            label="Allow re-downloading uploaded videos"
+            hint="When off, uploaded source videos are locked unless Alt-click confirms an override."
+            onClick={() => saved({ dedup: { allowReupload: !settings.dedup.allowReupload } })}
+          />
+        </Card>
+        <Card label="REDESIGN FLAGS">
+          <Row on={settings.features.workflowP1} label="Workflow P1 source state" onClick={() => saved({ features: { workflowP1: !settings.features.workflowP1 } })} />
+          <Row on={settings.features.videoEditorV2} label="Video editor V2 preview" onClick={() => saved({ features: { videoEditorV2: !settings.features.videoEditorV2 } })} />
+          <Row on={settings.features.thumbEditorV2} label="Thumbnail editor V2" onClick={() => saved({ features: { thumbEditorV2: !settings.features.thumbEditorV2 } })} />
+        </Card>
+      </div>
     ),
     danger: (
       <Card label="DANGER ZONE">

@@ -604,6 +604,12 @@ export interface AppSettings {
   transcription: { apiKey: string; model: string }
   /** experimental features + stock-footage API keys (gated; default off) */
   beta: { enabled: boolean; pexelsKey: string; pixabayKey: string; coverrKey: string }
+  /** additive redesign flags, so each shipped slice remains rollback-friendly */
+  features: { workflowP1: boolean; videoEditorV2: boolean; thumbEditorV2: boolean }
+  /** upload detection automation + pending/high confidence band */
+  detection: { auto: boolean; confirmBand: [number, number] }
+  /** duplicate-download behavior for source videos already uploaded to owned channels */
+  dedup: { allowReupload: boolean }
 }
 
 export interface RenderCapabilities {
@@ -639,7 +645,10 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoScrape: { enabled: true, frequency: 'Every 6 hours', delaySec: 1.5, retries: 3, proxy: '', cookiesPath: '' },
   background: { tray: true, startOnSignIn: false, notifications: true, webhook: '' },
   transcription: { apiKey: '', model: 'whisper-large-v3-turbo' },
-  beta: { enabled: false, pexelsKey: '', pixabayKey: '', coverrKey: '' }
+  beta: { enabled: false, pexelsKey: '', pixabayKey: '', coverrKey: '' },
+  features: { workflowP1: true, videoEditorV2: true, thumbEditorV2: true },
+  detection: { auto: true, confirmBand: [0.6, 0.82] },
+  dedup: { allowReupload: false }
 }
 
 /** Recursive partial — used for settings patches that touch only nested keys. */
@@ -694,6 +703,8 @@ export interface WorkItem {
   uploadedTo: string[]
   /** best fuzzy match score for the upload detection (for display/confidence) */
   uploadMatchScore?: number
+  /** high means asserted uploaded; pending means user should confirm before blocking */
+  uploadConfidence?: 'high' | 'pending'
   /** user override forcing the uploaded state (null = use detection) */
   uploadedManual: boolean | null
   archived: boolean

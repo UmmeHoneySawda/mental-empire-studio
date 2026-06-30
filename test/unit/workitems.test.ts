@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { classifyWorkItem, progressScore, resumeCandidate, nextStepFor, actionLabel } from '../../src/lib/workitems'
+import { classifyWorkItem, progressScore, resumeCandidate, nextStepFor, actionLabel, sourceVideoBadge } from '../../src/lib/workitems'
 import type { WorkItem } from '../../shared/types'
 
 function wi(over: Partial<WorkItem>): WorkItem {
@@ -74,5 +74,32 @@ describe('nextStepFor / actionLabel', () => {
   it('not downloaded → download', () => {
     expect(nextStepFor(wi({ downloaded: false, downloadId: undefined }))).toEqual({ screen: 'download' })
     expect(actionLabel(wi({ downloaded: false }))).toBe('Download')
+  })
+})
+
+describe('sourceVideoBadge', () => {
+  const channels = [{ id: 'ch-a', name: 'Mental Empire', handle: '@mental', mono: '', avatar: '', views: '', subs: '', total: 0, source: '', mapDone: 0, mapTotal: 0, weekDone: 0, weekGoal: 0, monthDone: 0, monthGoal: 0, reminder: '', reminderNote: '' }]
+
+  it('marks unseen source videos as NEW', () => {
+    expect(sourceVideoBadge().kind).toBe('new')
+  })
+
+  it('shows pending upload matches as confirmable, not uploaded', () => {
+    const badge = sourceVideoBadge(wi({ uploadedTo: ['ch-a'], uploadMatchScore: 0.7, uploadConfidence: 'pending' }), channels)
+    expect(badge.kind).toBe('pending')
+    expect(badge.label).toBe('confirm?')
+    expect(badge.title).toContain('@mental')
+  })
+
+  it('shows high-confidence uploads with the channel handle', () => {
+    const badge = sourceVideoBadge(wi({ uploaded: true, uploadedTo: ['ch-a'], uploadMatchScore: 0.94, uploadConfidence: 'high' }), channels)
+    expect(badge.kind).toBe('uploaded')
+    expect(badge.label).toBe('Uploaded -> @mental')
+  })
+
+  it('falls through to rendered and in-progress states', () => {
+    expect(sourceVideoBadge(wi({ rendered: true })).kind).toBe('rendered')
+    expect(sourceVideoBadge(wi({ captioned: true })).kind).toBe('inprogress')
+    expect(sourceVideoBadge(wi({})).kind).toBe('downloaded')
   })
 })

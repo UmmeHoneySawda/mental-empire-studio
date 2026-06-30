@@ -20,6 +20,7 @@ import type { FfmpegProgress } from './engine/progress'
 import { emit, hhmm, pushActivity } from '../ipc/events'
 import { safeName } from '../../shared/sanitize'
 import { itemDirForProject, itemOutputDir, writeProjectManifest, videoIdFromProjectId } from './storage'
+import { runUploadDetection } from './uploads-detect'
 
 // Concurrency-limited render runner. Pulls queued render_jobs, renders up to
 // settings.concurrency at once, writes the .ass + mp4, and streams render:progress.
@@ -415,6 +416,7 @@ export async function runJob(job: RenderJob): Promise<void> {
       try { recordClipUsage(usedBrollClipPaths) } catch { /* usage tracking is advisory */ }
     }
     repos.updateProject(job.projectId, { stage: 'rendered' })
+    try { runUploadDetection() } catch { /* upload detection is advisory */ }
     writeProjectManifest(itemDirForProject(project), {
       videoId: videoIdFromProjectId(project.id), channel: project.channel, title: project.title,
       durationSec: renderProject.durationSec, stage: 'rendered', audioPath: project.mp3Path, outputPath: outPath

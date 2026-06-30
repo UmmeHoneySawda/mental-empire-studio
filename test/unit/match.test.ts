@@ -52,6 +52,14 @@ describe('matchUploads', () => {
     expect(res[0].videoId).toBe('v1')
     expect(res[0].uploadedTo.sort()).toEqual(['ch-a', 'ch-b'])
     expect(res[0].score).toBeGreaterThanOrEqual(0.82)
+    expect(res[0].confidence).toBe('high')
+  })
+  it('returns pending matches in the confirmation band', () => {
+    const res = matchUploads([{ videoId: 'v-pending', title: 'When Stop Contacting Narcissist' }], uploads)
+    expect(res).toHaveLength(1)
+    expect(res[0].score).toBeGreaterThanOrEqual(0.6)
+    expect(res[0].score).toBeLessThan(0.82)
+    expect(res[0].confidence).toBe('pending')
   })
   it('omits items with no match above threshold', () => {
     const res = matchUploads([{ videoId: 'v2', title: 'How to Build a Gaming PC' }], uploads)
@@ -59,7 +67,7 @@ describe('matchUploads', () => {
   })
   it('respects a custom threshold', () => {
     const items = [{ videoId: 'v3', title: 'When You Stop the Narcissist' }]
-    expect(matchUploads(items, uploads, 0.99)).toHaveLength(0)
+    expect(matchUploads(items, uploads, 0.99, 0.99)).toHaveLength(0)
     expect(matchUploads(items, uploads, 0.5).length).toBeGreaterThan(0)
   })
 })

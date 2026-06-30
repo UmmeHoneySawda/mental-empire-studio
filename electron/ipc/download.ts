@@ -10,6 +10,7 @@ import { itemAudioDir, itemDir, ensureDir } from '../services/storage'
 import { youtubeThumbUrl } from '../../shared/youtube'
 import { emit, hhmm, pushActivity } from './events'
 import { L } from '../services/logger'
+import { runUploadDetection } from '../services/uploads-detect'
 
 // Download orchestration: yt-dlp mp3 download → DB history → duration probe, with
 // streamed progress. Resume reuses finished files (no re-fetch). Audio lands in the
@@ -74,6 +75,7 @@ async function runOne(video: ScrapedVideo, sourceId: string, channel: string, bi
     })
     repos.upsertDownload({ ...(repos.download(id) as DownloadedVideo), size: sizeLabel(res.filePath) })
     pushActivity({ t: hhmm(), icon: '✓', color: '#36c98e', text: `Downloaded ${video.title}` })
+    try { runUploadDetection() } catch { /* upload detection is advisory */ }
     emitProgress({ downloadId: id, title: video.title, pct: 100, stage: 'Downloaded only', done: true })
     return repos.download(id) as DownloadedVideo
   } catch (e) {

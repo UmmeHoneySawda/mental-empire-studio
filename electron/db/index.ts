@@ -173,6 +173,7 @@ function migrate(d: Database.Database): void {
   ensureColumn(d, 'projects', 'captionPosition', 'TEXT')
   ensureColumn(d, 'projects', 'captionPace', 'TEXT')
   ensureColumn(d, 'downloaded_videos', 'error', 'TEXT')
+  ensureColumn(d, 'work_item_state', 'uploadConfidence', 'TEXT')
 
   purgeLegacyDemoSeed(d)
 }
@@ -304,7 +305,7 @@ export interface Repositories {
   /** Hide/show a video from "to do" without deleting it. */
   setWorkItemArchived(videoId: string, archived: boolean): void
   /** Persist fuzzy upload-detection results (matched channel ids + best score). */
-  setDetectedUploads(rows: Array<{ videoId: string; uploadedTo: string[]; score: number }>): void
+  setDetectedUploads(rows: Array<{ videoId: string; uploadedTo: string[]; score: number; confidence?: 'high' | 'pending' | null }>): void
   // ---- P3: niche b-roll pools ----
   /** All user-curated niches. */
   niches(): Niche[]
@@ -684,9 +685,9 @@ function buildRepositories(d: Database.Database): Repositories {
       for (const j of d.prepare('SELECT id,title,channel,status,pct,projectId,outputPath,error,createdAt FROM render_jobs ORDER BY createdAt').all() as RenderJob[]) {
         if (j.projectId) jobByProject.set(j.projectId, j) // last (most recent) wins
       }
-      const state = new Map<string, { uploadedTo?: string; uploadMatchScore?: number; manualUploaded?: number | null; archived?: number }>()
+      const state = new Map<string, { uploadedTo?: string; uploadMatchScore?: number; uploadConfidence?: string | null; manualUploaded?: number | null; archived?: number }>()
       for (const s of d.prepare('SELECT * FROM work_item_state').all() as Array<Record<string, unknown>>) {
-        state.set(String(s.videoId), { uploadedTo: s.uploadedTo as string, uploadMatchScore: s.uploadMatchScore as number, manualUploaded: s.manualUploaded as number | null, archived: s.archived as number })
+        state.set(String(s.videoId), { uploadedTo: s.uploadedTo as string, uploadMatchScore: s.uploadMatchScore as number, uploadConfidence: s.uploadConfidence as string | null, manualUploaded: s.manualUploaded as number | null, archived: s.archived as number })
       }
       return downloads.map((dl): WorkItem => {
         const videoId = dl.id.replace(/^dl-/, '')
@@ -696,7 +697,12 @@ function buildRepositories(d: Database.Database): Repositories {
         let uploadedTo: string[] = []
         if (st?.uploadedTo) { try { uploadedTo = JSON.parse(st.uploadedTo) as string[] } catch { uploadedTo = [] } }
         const manualUploaded = st?.manualUploaded == null ? null : !!st.manualUploaded
-        const uploaded = manualUploaded == null ? uploadedTo.length > 0 : manualUploaded
+        const detectedConfidence = st?.uploadConfidence === 'pending'
+          ? 'pending'
+          : uploadedTo.length > 0 ? 'high' : undefined
+        const uploaded = manualUploaded == null
+          ? uploadedTo.length > 0 && detectedConfidence !== 'pending'
+          : manualUploaded
         return {
           videoId,
           channel: dl.channel,
@@ -716,6 +722,7 @@ function buildRepositories(d: Database.Database): Repositories {
           error: dl.error || job?.error || undefined,
           uploadedTo,
           uploadMatchScore: st?.uploadMatchScore ?? undefined,
+          uploadConfidence: detectedConfidence,
           uploadedManual: manualUploaded,
           archived: !!st?.archived
         }
@@ -738,11 +745,11 @@ function buildRepositories(d: Database.Database): Repositories {
     setDetectedUploads: (rows) => {
       const now = new Date().toISOString()
       const up = d.prepare(
-        `INSERT INTO work_item_state (videoId, uploadedTo, uploadMatchScore, updatedAt) VALUES (@videoId, @uploadedTo, @score, @now)
-         ON CONFLICT(videoId) DO UPDATE SET uploadedTo=@uploadedTo, uploadMatchScore=@score, updatedAt=@now`
+        `INSERT INTO work_item_state (videoId, uploadedTo, uploadMatchScore, uploadConfidence, updatedAt) VALUES (@videoId, @uploadedTo, @score, @confidence, @now)
+         ON CONFLICT(videoId) DO UPDATE SET uploadedTo=@uploadedTo, uploadMatchScore=@score, uploadConfidence=@confidence, updatedAt=@now`
       )
       const tx = d.transaction(() => {
-        for (const r of rows) up.run({ videoId: r.videoId, uploadedTo: JSON.stringify(r.uploadedTo), score: r.score, now })
+        for (const r of rows) up.run({ videoId: r.videoId, uploadedTo: JSON.stringify(r.uploadedTo), score: r.score, confidence: r.confidence ?? null, now })
       })
       tx()
     },

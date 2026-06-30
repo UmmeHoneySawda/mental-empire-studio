@@ -263,7 +263,7 @@ export const useData = create<DataState>((set, get) => ({
     const a = api()
     if (!a || videos.length === 0) return []
     const rows = await a.download.start(videos, { bitrate, sourceUrl })
-    await get().loadDownloads()
+    await Promise.all([get().loadDownloads(), get().loadWorkItems()])
     return rows
   },
   resumeDownload: async (id) => {
@@ -376,7 +376,7 @@ export const useData = create<DataState>((set, get) => ({
     const p = get().activeProject
     if (!a || !p) return
     await a.compose.sendToRender(p.id)
-    await Promise.all([get().loadActivity(), get().loadRenderJobs()])
+    await Promise.all([get().loadActivity(), get().loadRenderJobs(), get().loadWorkItems()])
   },
 
   loadRenderJobs: async () => {

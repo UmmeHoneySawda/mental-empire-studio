@@ -63,9 +63,10 @@ export function titleMatchScore(a: string, b: string): number {
 
 export interface UploadCandidate { channelId: string; title: string }
 export interface MatchItem { videoId: string; title: string }
-export interface UploadMatch { videoId: string; uploadedTo: string[]; score: number }
+export interface UploadMatch { videoId: string; uploadedTo: string[]; score: number; confidence: 'high' | 'pending' }
 
 export const DEFAULT_UPLOAD_MATCH_THRESHOLD = 0.82
+export const DEFAULT_UPLOAD_CONFIRM_FLOOR = 0.6
 
 /**
  * For each item, find which of the user's channels it appears to be uploaded on (a video
@@ -75,22 +76,26 @@ export const DEFAULT_UPLOAD_MATCH_THRESHOLD = 0.82
 export function matchUploads(
   items: MatchItem[],
   uploads: UploadCandidate[],
-  threshold: number = DEFAULT_UPLOAD_MATCH_THRESHOLD
+  threshold: number = DEFAULT_UPLOAD_MATCH_THRESHOLD,
+  confirmFloor: number = DEFAULT_UPLOAD_CONFIRM_FLOOR
 ): UploadMatch[] {
   const out: UploadMatch[] = []
+  const floor = Math.min(confirmFloor, threshold)
   for (const item of items) {
     const bestByChannel = new Map<string, number>()
     for (const up of uploads) {
       const s = titleMatchScore(item.title, up.title)
-      if (s >= threshold && s > (bestByChannel.get(up.channelId) ?? 0)) {
+      if (s >= floor && s > (bestByChannel.get(up.channelId) ?? 0)) {
         bestByChannel.set(up.channelId, s)
       }
     }
     if (bestByChannel.size > 0) {
+      const score = Math.max(...bestByChannel.values())
       out.push({
         videoId: item.videoId,
         uploadedTo: [...bestByChannel.keys()],
-        score: Math.max(...bestByChannel.values())
+        score,
+        confidence: score >= threshold ? 'high' : 'pending'
       })
     }
   }

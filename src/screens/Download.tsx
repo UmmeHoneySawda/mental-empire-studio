@@ -1,9 +1,10 @@
-import { useState } from 'react'
+import { useState, type CSSProperties } from 'react'
 import { ScreenPad, Eyebrow, Title } from '../components/primitives'
 import { useData } from '../store/useData'
 import { useStore } from '../store/useStore'
-import type { ScrapeOrder } from '@shared/types'
+import type { ScrapedVideo, ScrapeOrder } from '@shared/types'
 import { youtubeIdFromDownloadId, youtubeThumbUrl, type YoutubeThumbQuality } from '@shared/youtube'
+import { sourceVideoBadge, type SourceVideoBadge } from '../lib/workitems'
 
 const GRADS = [
   'linear-gradient(135deg,#2a2540,#46243a)', 'linear-gradient(135deg,#1a2e3a,#0f3a32)',
@@ -39,9 +40,44 @@ function YouTubeThumb({ videoId, alt, fallback, selected }: { videoId: string; a
   )
 }
 
+type SourceFilter = 'new' | 'not-downloaded' | 'not-uploaded' | 'all'
+
+const FILTERS: Array<{ id: SourceFilter; label: string }> = [
+  { id: 'new', label: 'New' },
+  { id: 'not-downloaded', label: 'Not downloaded' },
+  { id: 'not-uploaded', label: 'Not uploaded' },
+  { id: 'all', label: 'All' }
+]
+
+function badgeStyle(b: SourceVideoBadge): CSSProperties {
+  const colors = {
+    neutral: ['rgba(255,255,255,.72)', 'rgba(0,0,0,.58)', 'rgba(255,255,255,.18)'],
+    blue: ['#a7c7ff', 'rgba(65,118,210,.16)', 'rgba(92,143,240,.35)'],
+    amber: ['#f5b323', 'rgba(245,179,35,.14)', 'rgba(245,179,35,.38)'],
+    green: ['#4fd6a0', 'rgba(54,201,142,.14)', 'rgba(54,201,142,.38)'],
+    purple: ['#b9a7ff', 'rgba(139,124,255,.16)', 'rgba(139,124,255,.38)']
+  }[b.tone]
+  return {
+    maxWidth: '72%',
+    border: `1px solid ${colors[2]}`,
+    color: colors[0],
+    background: colors[1],
+    borderRadius: 999,
+    padding: '2px 7px',
+    fontSize: 9.5,
+    fontFamily: 'var(--font-mono)',
+    fontWeight: 700,
+    whiteSpace: 'nowrap',
+    overflow: 'hidden',
+    textOverflow: 'ellipsis'
+  }
+}
+
 export function Download(): JSX.Element {
   const sourceVideos = useData((s) => s.sourceVideos)
   const downloads = useData((s) => s.downloads)
+  const workItems = useData((s) => s.workItems)
+  const channels = useData((s) => s.channels)
   const dlProgress = useData((s) => s.dlProgress)
   const fetching = useData((s) => s.fetching)
   const sourceError = useData((s) => s.sourceError)
@@ -50,8 +86,11 @@ export function Download(): JSX.Element {
   const resumeDownload = useData((s) => s.resumeDownload)
   const cancelDownload = useData((s) => s.cancelDownload)
   const deleteDownload = useData((s) => s.deleteDownload)
+  const setItemUploaded = useData((s) => s.setItemUploaded)
   const openProject = useData((s) => s.openProject)
   const setActive = useStore((s) => s.setActive)
+  const allowReupload = useStore((s) => s.settings.dedup.allowReupload)
+  const workflowP1 = useStore((s) => s.settings.features.workflowP1)
 
   const [url, setUrl] = useState('')
   const [order, setOrder] = useState<ScrapeOrder>('Popular')
@@ -61,13 +100,41 @@ export function Download(): JSX.Element {
   const [busy, setBusy] = useState(false)
   const [message, setMessage] = useState('')
   const [historyOpen, setHistoryOpen] = useState(false)
+  const [filter, setFilter] = useState<SourceFilter>('new')
+  const [overrideReupload, setOverrideReupload] = useState<Set<string>>(new Set())
 
-  const toggle = (id: string): void =>
-    setSel((prev) => { const next = new Set(prev); next.has(id) ? next.delete(id) : next.add(id); return next })
+  const byVideo = new Map(workItems.map((w) => [w.videoId, w]))
+  const badgeFor = (video: ScrapedVideo): SourceVideoBadge => workflowP1 ? sourceVideoBadge(byVideo.get(video.id), channels) : { kind: 'new', label: 'NEW', tone: 'neutral' }
+  const isBlocked = (video: ScrapedVideo): boolean => {
+    if (!workflowP1) return false
+    const badge = badgeFor(video)
+    return badge.kind === 'uploaded' && !allowReupload && !overrideReupload.has(video.id)
+  }
+  const toggle = (video: ScrapedVideo, altKey = false): void => {
+    const badge = badgeFor(video)
+    if (badge.kind === 'uploaded' && !allowReupload && !overrideReupload.has(video.id)) {
+      if (altKey && window.confirm(`${badge.title ?? 'This video is already uploaded.'}\n\nRe-download it anyway?`)) {
+        setOverrideReupload((prev) => new Set(prev).add(video.id))
+      } else {
+        setMessage(badge.title ?? 'Already uploaded. Hold Alt and click to override.')
+        return
+      }
+    }
+    setSel((prev) => { const next = new Set(prev); next.has(video.id) ? next.delete(video.id) : next.add(video.id); return next })
+  }
 
   const canFetch = url.trim().length > 0 && !fetching
   const fetchVids = (): void => { if (!canFetch) return; setMessage(''); void fetchSource(url, order, qty) }
-  const selected = sourceVideos.filter((v) => sel.has(v.id))
+  const visibleVideos = sourceVideos.filter((v) => {
+    if (!workflowP1) return true
+    const wi = byVideo.get(v.id)
+    const badge = badgeFor(v)
+    if (filter === 'new') return badge.kind === 'new'
+    if (filter === 'not-downloaded') return !wi?.downloaded
+    if (filter === 'not-uploaded') return !wi?.uploaded
+    return true
+  })
+  const selected = sourceVideos.filter((v) => sel.has(v.id) && !isBlocked(v))
   const estMb = (selected.reduce((a, v) => a + v.durationSec, 0) * bitrate) / 8 / 1000
 
   const download = async (toCompose: boolean): Promise<void> => {
@@ -113,7 +180,14 @@ export function Download(): JSX.Element {
       {/* Row 2: Filter bar — only after videos load */}
       {videosLoaded && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18, padding: '10px 14px', background: '#12151b', border: '1px solid #1d2129', borderRadius: 11 }}>
-          <div style={{ fontSize: 11.5, color: '#8a909c' }}><b style={{ color: '#cdd2da' }}>{sourceVideos.length}</b> videos</div>
+          <div style={{ fontSize: 11.5, color: '#8a909c' }}><b style={{ color: '#cdd2da' }}>{visibleVideos.length}</b> of {sourceVideos.length}</div>
+          {workflowP1 && (
+            <div style={{ display: 'flex', background: '#0e1116', border: '1px solid #23272f', borderRadius: 9, overflow: 'hidden', fontSize: 11.5 }}>
+              {FILTERS.map((f) => (
+                <button type="button" key={f.id} onClick={() => setFilter(f.id)} style={{ border: 0, padding: '7px 11px', cursor: 'pointer', background: filter === f.id ? 'var(--accent)' : 'transparent', color: filter === f.id ? 'var(--accent-ink)' : '#8a909c', fontWeight: filter === f.id ? 600 : undefined }}>{f.label}</button>
+              ))}
+            </div>
+          )}
           <div style={{ display: 'flex', background: '#0e1116', border: '1px solid #23272f', borderRadius: 9, overflow: 'hidden', fontSize: 12 }}>
             {(['Popular', 'Latest', 'Oldest'] as ScrapeOrder[]).map((o) => (
               <button type="button" key={o} onClick={() => setOrder(o)} style={{ border: 0, padding: '7px 13px', cursor: 'pointer', background: order === o ? 'var(--accent)' : 'transparent', color: order === o ? 'var(--accent-ink)' : '#8a909c', fontWeight: order === o ? 600 : undefined }}>{o}</button>
@@ -124,26 +198,37 @@ export function Download(): JSX.Element {
             <input value={qty} onChange={(e) => setQty(Math.min(50, Math.max(1, parseInt(e.target.value) || 1)))} title="1–50 videos" style={{ width: 28, border: 'none', outline: 'none', background: 'transparent', fontFamily: 'var(--font-display)', fontWeight: 600, color: '#eef0f3', fontSize: 14 }} />
           </div>
           <div style={{ fontSize: 11.5, color: '#8a909c' }}>mp3 · {bitrate}k</div>
-          {sel.size > 0 && <div style={{ marginLeft: 'auto', fontSize: 11.5, color: '#cdd2da' }}><b style={{ color: 'var(--accent)' }}>{sel.size}</b> selected · ~{estMb.toFixed(0)} MB</div>}
+          {selected.length > 0 && <div style={{ marginLeft: 'auto', fontSize: 11.5, color: '#cdd2da' }}><b style={{ color: 'var(--accent)' }}>{selected.length}</b> selected · ~{estMb.toFixed(0)} MB</div>}
         </div>
       )}
 
       {/* 3-column video grid — larger thumbnails */}
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 14, marginBottom: sel.size > 0 ? 80 : 20 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 14, marginBottom: selected.length > 0 ? 80 : 20 }}>
         {sourceVideos.length === 0 && (
           <div style={{ gridColumn: '1 / -1', padding: '34px 0', textAlign: 'center', fontSize: 12.5, color: '#5b616f', border: '1.5px dashed #23272f', borderRadius: 12 }}>Fetch a channel to list its videos.</div>
         )}
-        {sourceVideos.map((v, i) => {
+        {sourceVideos.length > 0 && visibleVideos.length === 0 && (
+          <div style={{ gridColumn: '1 / -1', padding: '34px 0', textAlign: 'center', fontSize: 12.5, color: '#5b616f', border: '1.5px dashed #23272f', borderRadius: 12 }}>No videos match this filter.</div>
+        )}
+        {visibleVideos.map((v, i) => {
           const on = sel.has(v.id)
+          const badge = badgeFor(v)
+          const blocked = isBlocked(v)
           return (
-            <div key={v.id} onClick={() => toggle(v.id)} className="me-vid me-card" style={{ border: `1.5px solid ${on ? 'var(--accent)' : '#1d2129'}`, borderRadius: 12, overflow: 'hidden', background: on ? 'var(--accent-soft)' : '#12151b', cursor: 'pointer', position: 'relative' }}>
+            <div key={v.id} onClick={(e) => toggle(v, e.altKey)} className="me-vid me-card" title={blocked ? (badge.title ?? 'Already uploaded') : undefined} style={{ border: `1.5px solid ${on ? 'var(--accent)' : blocked ? '#2f2a1d' : '#1d2129'}`, borderRadius: 12, overflow: 'hidden', background: on ? 'var(--accent-soft)' : '#12151b', cursor: blocked ? 'not-allowed' : 'pointer', position: 'relative', opacity: blocked ? 0.62 : 1 }}>
               <div style={{ position: 'relative', height: 130, overflow: 'hidden' }}>
-                <YouTubeThumb videoId={v.id} alt={v.title} fallback={GRADS[i % GRADS.length]} selected={on} />
+                <YouTubeThumb videoId={v.id} alt={v.title} fallback={GRADS[i % GRADS.length]} selected={blocked ? false : on} />
+                {workflowP1 && <div title={badge.title ?? badge.label} style={{ position: 'absolute', top: 8, right: 8, ...badgeStyle(badge) }}>{blocked ? `Locked · ${badge.label}` : badge.label}</div>}
                 <div style={{ position: 'absolute', bottom: 7, right: 7, fontFamily: 'var(--font-mono)', fontSize: 10, background: 'rgba(0,0,0,.7)', color: '#dde0e5', padding: '2px 6px', borderRadius: 5 }}>{fmtDur(v.durationSec)}</div>
               </div>
               <div style={{ padding: '11px 12px' }}>
                 <div title={v.title} style={{ fontSize: 12.5, color: on ? '#f2f4f7' : '#dde0e5', lineHeight: 1.35, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{v.title}</div>
-                <div style={{ fontSize: 10.5, color: '#5b616f', fontFamily: 'var(--font-mono)', marginTop: 5 }}>{v.views > 0 ? `${v.views.toLocaleString()} views` : ''}</div>
+                <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5 }}>
+                  <div style={{ fontSize: 10.5, color: '#5b616f', fontFamily: 'var(--font-mono)', minWidth: 0, flex: 1 }}>{v.views > 0 ? `${v.views.toLocaleString()} views` : ''}</div>
+                  {workflowP1 && badge.kind === 'pending' && (
+                    <button type="button" onClick={(e) => { e.stopPropagation(); void setItemUploaded(v.id, true) }} style={{ flex: 'none', border: '1px solid rgba(245,179,35,.45)', background: 'rgba(245,179,35,.12)', color: '#f5b323', borderRadius: 7, padding: '3px 7px', fontSize: 10, cursor: 'pointer' }}>Confirm</button>
+                  )}
+                </div>
               </div>
             </div>
           )
@@ -151,13 +236,13 @@ export function Download(): JSX.Element {
       </div>
 
       {/* Sticky selection footer */}
-      {sel.size > 0 && (
+      {selected.length > 0 && (
         <div style={{ position: 'sticky', bottom: 0, marginLeft: 'calc(var(--pad) * -1)', marginRight: 'calc(var(--pad) * -1)', background: '#0d0f14', borderTop: '1px solid #1d2129', padding: '12px 24px', display: 'flex', alignItems: 'center', gap: 16, zIndex: 10 }}>
-          <div style={{ fontSize: 13, color: '#8a909c' }}><b style={{ color: '#eef0f3', fontFamily: 'var(--font-display)' }}>{sel.size}</b> selected · ~{estMb.toFixed(0)} MB</div>
+          <div style={{ fontSize: 13, color: '#8a909c' }}><b style={{ color: '#eef0f3', fontFamily: 'var(--font-display)' }}>{selected.length}</b> selected · ~{estMb.toFixed(0)} MB</div>
           <div style={{ flex: 1 }} />
           {message && <div style={{ fontSize: 11.5, color: message.includes('failed') ? '#ff8a96' : '#8a909c', flex: 1, textAlign: 'right', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{message}</div>}
-          <button type="button" disabled={!sel.size || busy} onClick={() => void download(false)} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 10, padding: '10px 18px', fontSize: 12.5, color: '#c4cad3', cursor: sel.size && !busy ? 'pointer' : 'not-allowed', opacity: sel.size && !busy ? 1 : 0.45 }}>Download mp3</button>
-          <button type="button" disabled={!sel.size || busy} onClick={() => void download(true)} className="me-btn" style={{ display: 'flex', alignItems: 'center', gap: 8, border: 0, background: 'linear-gradient(180deg,var(--accent),var(--accent-deep))', color: 'var(--accent-ink)', fontWeight: 600, fontSize: 12.5, padding: '10px 20px', borderRadius: 10, cursor: sel.size && !busy ? 'pointer' : 'not-allowed', boxShadow: '0 4px 16px -4px var(--accent-glow)', opacity: sel.size && !busy ? 1 : 0.45 }}>
+          <button type="button" disabled={!selected.length || busy} onClick={() => void download(false)} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 10, padding: '10px 18px', fontSize: 12.5, color: '#c4cad3', cursor: selected.length && !busy ? 'pointer' : 'not-allowed', opacity: selected.length && !busy ? 1 : 0.45 }}>Download mp3</button>
+          <button type="button" disabled={!selected.length || busy} onClick={() => void download(true)} className="me-btn" style={{ display: 'flex', alignItems: 'center', gap: 8, border: 0, background: 'linear-gradient(180deg,var(--accent),var(--accent-deep))', color: 'var(--accent-ink)', fontWeight: 600, fontSize: 12.5, padding: '10px 20px', borderRadius: 10, cursor: selected.length && !busy ? 'pointer' : 'not-allowed', boxShadow: '0 4px 16px -4px var(--accent-glow)', opacity: selected.length && !busy ? 1 : 0.45 }}>
             {busy ? 'Working…' : '→ Compose'}
             <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M5 12h14M13 6l6 6-6 6" /></svg>
           </button>
@@ -165,7 +250,7 @@ export function Download(): JSX.Element {
       )}
 
       {/* Collapsible "Already downloaded" */}
-      <div style={{ marginTop: sel.size > 0 ? 0 : 10 }}>
+      <div style={{ marginTop: selected.length > 0 ? 0 : 10 }}>
         <button type="button" onClick={() => setHistoryOpen((o) => !o)} className="me-btn" style={{ display: 'flex', alignItems: 'center', gap: 10, width: '100%', border: '1px solid #1d2129', background: '#12151b', borderRadius: 12, padding: '12px 16px', cursor: 'pointer' }}>
           <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 14, color: '#e9ebef' }}>Already downloaded</span>
           <span style={{ fontSize: 11, color: '#6a7180' }}>— resume unfinished, don't re-fetch</span>

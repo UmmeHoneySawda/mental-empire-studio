@@ -71,7 +71,7 @@ export function registerIpc(): void {
 
   // ---- P1: per-video work items + fuzzy upload detection ----
   ipcMain.handle('db:workItems', () => getRepos().workItems())
-  ipcMain.handle('workItems:detect', () => runUploadDetection())
+  ipcMain.handle('workItems:detect', () => runUploadDetection({ force: true }))
   ipcMain.handle('workItems:setUploaded', (_e, videoId: string, uploaded: boolean) => {
     getRepos().setWorkItemUploaded(reqId(videoId, 'videoId'), !!uploaded)
   })
