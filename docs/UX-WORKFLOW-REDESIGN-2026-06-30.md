@@ -469,14 +469,347 @@ The following are logged for the *next* plan and intentionally deferred:
 
 ---
 
-## 15. Open questions for you
+## 15. Decisions (resolved 2026-06-30)
 
-1. **Sources vs Download naming** — call the screen **Sources**, or keep "Download" as the
-   verb and add a saved "Sources" sub-section?
-2. **Auto-detect uploads** — run it silently in the background always, or behind a setting?
-3. **Linking** — should each Source be explicitly linked to the My Channel(s) it feeds, or
-   inferred from upload detection?
-4. **Automations fold** — do the full migration into Sources/Channels now (P5), or keep the
-   lighter reframe and defer the migration?
-5. **Dedup strictness** — block re-download of already-uploaded items by default, or always
-   allow with a soft confirm?
+The five open questions are now resolved. Where the user deferred to product judgment, the
+decision below follows what a world-class app does; rationale is included so the call can be
+revisited if needed.
+
+| # | Question | Decision | Why |
+|---|---|---|---|
+| 1 | Sources vs "Download" naming | **Rename the destination to `Sources`. "Download" becomes an action button inside it.** | Nav items in premium tools are *nouns you manage* (Library, Sources, Channels), not *verbs you perform once*. You manage a list of sources; downloading is something you do to a video within one. Descript/Opus/CapCut never have a "Download" nav item. |
+| 2 | Auto-detect uploads: silent vs setting | **Silent + automatic by default, with confidence bands, plus a Settings toggle to disable.** It already runs after every My-Channels scrape (`persistScrape` → `runUploadDetection`); we extend it to run after renders and downloads too. | "Whatever's best" = the user shouldn't have to think about it. Automatic is the premium default; the setting exists only for power users who want manual control. |
+| 3 | Linking: explicit vs inferred | **Hybrid: inferred by fuzzy title match (already tolerant of a word or two), *strengthened* by an optional explicit Source→My-Channel link.** The link scopes and boosts confidence; detection still works without it. | The user said they "could change a word or two" in titles — exactly what `shared/match.ts` already handles (Levenshtein-1 per token + plural/prefix tolerance, threshold `0.82`). The explicit link (already present as `my_channels.linkedSourceId`) narrows the candidate set so a reworded title matches more reliably and with fewer false positives. |
+| 4 | Automations fold: full vs deferred | **Full plan written now (see §17.5), staged after Sources so there's one home to fold into.** | Requested: "make the full plan… not just what, but how." §17.5 is a complete migration runbook. |
+| 5 | Dedup strictness | **Block re-download of already-uploaded videos by default; provide a hidden override.** Hidden override = `Alt/Option-click` the blocked tile → "Re-download anyway" confirm, backed by a `dedup.allowReupload` Settings flag (default off). | The user said "block, but add a hidden way I can do it." The Alt-click + settings escape hatch keeps the default safe while leaving a deliberate, discoverable-by-power-users bypass. |
+
+These decisions are now baked into the implementation guide below.
+
+---
+
+# PART II — Implementation guide (the *how*)
+
+This part is grounded in the actual code read on 2026-06-30. Key facts the plan relies on:
+
+- **`source_channels`** already has columns `id, url, handle, name, nicheId, lastScrapedAt`
+  and repo methods `sourceChannels()`, `sourceChannelByUrl()`, `upsertSourceChannel()`,
+  `setSourceChannelNiche()` (`electron/db/index.ts`).
+- **`source_videos`** already has `id, sourceId, title, durationSec, views, uploadDate,
+  thumb, scrapedAt` with `getSourceVideos(sourceId)` / `replaceSourceVideos(sourceId, rows)`.
+  **The cache layer the plan needs largely already exists** — `scrape:sourceVideos`
+  (`electron/ipc/scrape.ts`) already upserts a `source_channels` row and calls
+  `replaceSourceVideos`. It just isn't surfaced as a managed list, and the renderer re-scrapes
+  by URL instead of reading the cache.
+- **`workItems()`** is a computed read model joining `downloaded_videos` + `projects` +
+  `render_jobs` + `work_item_state`. `WorkItem.videoId` = the download id with the `dl-`
+  prefix stripped = **the YouTube video id**, which equals `ScrapedVideo.id` from a source
+  scrape. That id is the join key for badges.
+- **`work_item_state`** holds `uploadedTo` (JSON channel-id array), `uploadMatchScore`,
+  `manualUploaded`, `archived`. `setDetectedUploads()` / `setWorkItemUploaded()` already exist.
+- **`runUploadDetection()`** (`electron/services/uploads-detect.ts`) calls
+  `matchUploads(items, uploads)` from `shared/match.ts` at `DEFAULT_UPLOAD_MATCH_THRESHOLD = 0.82`.
+- **`my_channels.linkedSourceId`** already links an output channel to a source; `persistScrape`
+  uses it to map downloads→uploads via `mapping.ts` (`matchDownloadsToUploads`, Dice `0.85`).
+- IPC is registered in `electron/ipc/register.ts` and exposed to the renderer through the
+  typed preload bridge as `window.api.*`; the renderer reads/writes via `src/store/useData.ts`.
+
+> Convention note for every phase: a new repo method needs (a) a method on the `Repositories`
+> interface + implementation in `buildRepositories` (`electron/db/index.ts`), (b) an
+> `ipcMain.handle` in the relevant `electron/ipc/*.ts`, (c) a matching entry in the preload
+> bridge (`electron/preload.ts`) and its type, and (d) a `useData` action. New columns are
+> added idempotently via `ensureColumn(d, table, col, type)` inside `migrate()` — never edit
+> the `SCHEMA` string for existing installs.
+
+---
+
+## 16. Phase-by-phase implementation
+
+### P1 — Source-video state badges + dedup blocking + always-on detection
+
+**Outcome:** every video tile in the source browser shows its real state, already-uploaded
+videos are blocked from re-download (with a hidden override), and detection runs without a
+manual click. No IA change yet — lowest risk, highest immediate value.
+
+**1.1 Make detection always-on (main process).**
+- It already fires in `persistScrape` (`electron/ipc/scrape.ts`). Add two more call sites:
+  - In `electron/ipc/download.ts` `runOne()`, after a successful download
+    (`stage: 'Downloaded only'`), call `runUploadDetection()` (import from
+    `../services/uploads-detect`). Cheap and idempotent.
+  - In the render-completion path (`electron/ipc/render.ts`, where `setRenderStatus(..,
+    {status:'done'})` is written), call it again.
+- Add a Settings flag `detection.auto` (default `true`) in `electron/store/settings.ts`
+  defaults and gate the calls on it. Add `detection.confirmBand: [number, number]` default
+  `[0.6, 0.82]` (see 1.4).
+
+**1.2 Add a confidence band to detection (so the ledger stays trustworthy).**
+- In `shared/match.ts`, `matchUploads` currently returns only matches `>= threshold (0.82)`.
+  Add an optional second threshold so callers can get a "pending/confirm" tier:
+  - Extend `UploadMatch` with `confidence: 'high' | 'pending'`.
+  - Pass `confirmFloor` (default `0.6`); score in `[confirmFloor, threshold)` → `pending`;
+    `>= threshold` → `high`.
+- `setDetectedUploads` already persists `uploadedTo` + `uploadMatchScore`. Add a
+  `confidence` column to `work_item_state` via `ensureColumn(d, 'work_item_state',
+  'uploadConfidence', 'TEXT')` and persist it. `workItems()` already reads `work_item_state`;
+  surface `uploadConfidence` on the `WorkItem` type.
+- UI treats `high` as "Uploaded" (asserted) and `pending` as "Looks uploaded — confirm?"
+  with a one-tap confirm that calls `workItems:setUploaded(videoId, true)` (existing handler).
+
+**1.3 Surface state on every source video tile (renderer).**
+- In `src/screens/Download.tsx` (soon `Sources` browser): the store already exposes
+  `workItems` (used by Library/Workspace). Build `const byVideo = new Map(workItems.map(w =>
+  [w.videoId, w]))`. For each scraped `video.id`, look up `byVideo.get(video.id)`.
+- Derive the badge with a small pure helper in `src/lib/workitems.ts`, e.g.
+  `sourceVideoBadge(wi?: WorkItem)`:
+  - no `wi` → `NEW`
+  - `wi.uploaded` (or `uploadedTo.length`) → `Uploaded → @name` (resolve names from
+    `myChannels`), with score shown on hover; `pending` → amber "confirm?" variant
+  - `wi.rendered` → `Rendered`
+  - `wi.captioned || wi.hasImages || wi.hasThumbnail` → `In progress`
+  - `wi.downloaded` → `Downloaded`
+- Add filter chips **New · Not downloaded · Not uploaded · All**, default **New**. Filter the
+  grid by the derived state. (Mirror the existing chip-row pattern from `Workspace`.)
+
+**1.4 Block re-download of already-uploaded (with hidden override).**
+- In the source grid, if a tile's `wi.uploaded === true` (high confidence) **and**
+  `settings.dedup.allowReupload !== true`: disable the selection checkbox / Download button,
+  show a small lock + "Already uploaded to @X."
+- Hidden override: `onClick` with `e.altKey` (Option on macOS) on a blocked tile opens a
+  confirm dialog ("You already uploaded this to @X on <date>. Re-download anyway?"); on
+  confirm, proceed with the normal `download:start`. Also honor a global
+  `Settings → Advanced → Allow re-downloading uploaded videos` (`dedup.allowReupload`,
+  default off) which removes the block entirely.
+- Add `dedup.allowReupload` to settings defaults; expose in Settings under an "Advanced"
+  disclosure so it's deliberately out of the way.
+
+**1.5 Files touched (P1).**
+`electron/services/uploads-detect.ts`, `shared/match.ts`, `electron/db/index.ts`
+(`work_item_state.uploadConfidence` column + `WorkItem` field), `electron/ipc/download.ts`,
+`electron/ipc/render.ts`, `electron/store/settings.ts`, `src/lib/workitems.ts`,
+`src/screens/Download.tsx`, Settings screen. ~2 eng-days.
+
+---
+
+### P2 — Sources as a persistent, managed list
+
+**Outcome:** "Download" becomes **Sources** — a saved grid of source channels you never
+re-paste, each with cached videos and a real "N new since last visit" count.
+
+**2.1 Schema (idempotent migrations in `migrate()`):**
+```
+ensureColumn(d, 'source_channels', 'avatar', 'TEXT')
+ensureColumn(d, 'source_channels', 'lastVisitedAt', 'TEXT')
+ensureColumn(d, 'source_channels', 'lastSeenVideoId', 'TEXT')   // promote from profiles
+ensureColumn(d, 'source_channels', 'linkedMyChannelId', 'TEXT') // optional explicit link
+ensureColumn(d, 'source_channels', 'videoCount', 'INTEGER')
+```
+`source_videos.sourceId` + `scrapedAt` already exist — the per-source cache is in place.
+
+**2.2 Repo methods (`Repositories` + `buildRepositories`):**
+- Extend `sourceChannels()` SELECT to return the new columns; extend `SourceChannel` type in
+  `shared/types.ts`.
+- `upsertSourceChannel` — extend the INSERT/UPSERT column list with the new fields.
+- Add `setSourceCursor(id, { lastSeenVideoId, lastVisitedAt })` (mirror `setProfileCursor`).
+- Add `deleteSourceChannel(id)` (transactional: delete the row + its `source_videos`).
+- Add `newVideoCountForSource(id)`: read `getSourceVideos(id)`, count entries before the
+  stored `lastSeenVideoId` (reuse `newVideos()` logic from `electron/ipc/automation.ts` —
+  yt-dlp is newest-first, so "new" = entries before the cursor).
+
+**2.3 IPC (`electron/ipc/scrape.ts` + `register.ts`):**
+- Add `sources:list` → `getRepos().sourceChannels()` enriched with cached
+  `getSourceVideos(id)` length + new count.
+- Add `sources:add(url)` → scrape once (reuse `scrapeChannel`), `upsertSourceChannel`,
+  `replaceSourceVideos`, return the row. (Factor the existing `sourceVideos()` body so add +
+  refresh share it.)
+- Add `sources:refresh(id)` → re-scrape that one source by its stored URL, `replaceSourceVideos`,
+  update `lastScrapedAt`/`videoCount`.
+- Add `sources:videos(id)` → return cached `getSourceVideos(id)` **immediately** (no network).
+- Add `sources:markVisited(id)` → set `lastVisitedAt = now`, `lastSeenVideoId =
+  videos[0]?.id` after the user opens/leaves the browser.
+- Add `sources:remove(id)`, `sources:setLinkedMyChannel(id, myChannelId|null)`.
+
+**2.4 Renderer (`src/store/useData.ts` + new screen):**
+- Add `sources` to the store with actions `loadSources`, `addSource`, `refreshSource`,
+  `removeSource`, `openSource(id)` (loads cached videos, fires `markVisited`).
+- Rename `src/screens/Download.tsx` → `src/screens/Sources.tsx` and split into two views:
+  1. **Sources list** — card grid modeled on `MyChannels.tsx` (avatar, name, handle, niche
+     chip, linked-channel chip, "42 videos · 6 new · checked 2h ago"). Primary **Open**;
+     secondary **Check for new** (`refreshSource`), **Automate** (P5), **Remove**. A
+     persistent `+ Add source` field at top.
+  2. **Source detail / video browser** — the P1 badge grid, now fed from cached
+     `sources:videos(id)` first, with a background `sources:refresh(id)` that appends new
+     items flagged `NEW`. The download action lives here.
+- Update `src/components/Sidebar.tsx` + `src/app.tsx` route table: `download` → `sources`
+  under a new "CHANNELS" group with My Channels.
+
+**2.5 Freshness UX.** On open: render cached list instantly; show a subtle "checking for
+new…" pill; when `refresh` resolves, diff by id and badge additions `NEW`. Never block the
+grid on the network. ~3–4 eng-days.
+
+---
+
+### P3 — Home consolidation (merge Library + Workspace)
+
+**Outcome:** one command center; one pipeline board; one "what's next" surface.
+
+**3.1** Create `src/screens/Home.tsx` from `Workspace.tsx` as the base (it already has the
+To-do/In-progress/Done board, the channel-filter chip row, `resumeCandidate()` and
+`nextStepFor()` from `src/lib/workitems.ts`).
+
+**3.2 "Needs you" rail** (new component, computed from already-loaded store data):
+- *N rendered, ready to upload* = `workItems.filter(w => w.rendered && !w.uploaded)`.
+- *N sources have new videos* = sum of `newVideoCountForSource` (from P2).
+- *Render failures* = `renderJobs.filter(j => j.status==='error')` (+ missing-asset reason
+  already computed in `RenderQueue`).
+- *Channels behind goal* = `myChannels.filter(c => c.weekDone < c.weekGoal)`.
+Each row is a one-line statement + a deep-link action. Sort by urgency (failures → ready →
+new → goals).
+
+**3.3 Retire duplicates.** Remove `PipelineSection` from `Library.tsx`; fold its useful
+header bits (Activity feed, Auto-watch status card) into Home's right rail. Delete the
+`workspace` route + `library` route, point both old paths at `home` (keep a redirect for one
+version). Update Sidebar to a single **Home** entry. ~3 eng-days.
+
+---
+
+### P4 — Direction, wayfinding & onboarding
+
+**Outcome:** the app always says "do this next"; no empty tools; calmer surfaces.
+
+- **Pipeline ribbon** — a shared `<PipelineRibbon stage=…/>` component rendered atop Compose,
+  Thumbnails, and the render view. Stages: `Audio · Images · Captions · Thumb · Render ·
+  Upload`, current lit, next stage as the screen's single primary CTA. Stage state comes from
+  the same `WorkItem` booleans (`downloaded/hasImages/captioned/hasThumbnail/rendered/uploaded`).
+- **Never-empty tools** — in `src/app.tsx`, guard the `compose`/`thumbnails` routes: if no
+  active video/project, render a "Pick a video to work on" chooser (a mini Home board)
+  instead of blank controls. Generalize the existing "auto-open Compose when a single
+  download exists" behavior.
+- **One primary CTA pass** — audit `Download`/`Compose`/`MyChannels` for competing equal-weight
+  buttons; demote secondaries to text/ghost buttons. Make `→ Compose` the primary on a
+  downloaded video (download itself becomes secondary once the file exists).
+- **Plain-language labels** — replace/annotate jargon flagged in `docs/USER-REVIEW-2026-06-26.md`
+  ("seed", "Ken Burns", "pace", "phrase", "Random pool/Sequence"). Inline one-liners, not
+  tooltips-only. (Editor *internals* stay out of scope; this is label copy only.)
+- **Progressive disclosure** — wrap advanced controls (effect-plan JSON, seed, crossfade) in
+  an "Advanced" `<details>`-style disclosure so the default surface is calm.
+- **First-run onboarding** — a 3-step modal flow (gated by an `app_meta` `onboarded` marker,
+  same pattern as the `seeded` marker): add My Channel → add Source → "Make my first video"
+  (pre-selects newest source video and walks the ribbon). ~3–4 eng-days.
+
+---
+
+### P5 — Automations fold (full migration runbook)
+
+**Outcome:** automation stops being a parallel "Profiles" universe. A Source can run
+hands-free; its settings live on the Source/My-Channel; the `profiles` table is migrated and
+then retired. This is the full how, staged in three safe sub-steps.
+
+**Today's reality (confirmed in code):** `profiles` is a wide table that *duplicates* most of
+a project's config (`sourceUrl, sourceOrder, sourceCount, imageMode, poolSize, kenBurns,
+captionPreset/Font/Anim/Aspect/Lines/Position/Pace, betaOpts, outputFolder, autoWatch,
+autoQueueRender, lastSeenVideoId, lastRunAt, thumbnailTemplateId, linkedSourceId`).
+`scheduler.tick()` iterates `repos.profiles()` where `autoWatch && sourceUrl` and calls
+`runProfile(id, true)`; `runProfile` (`electron/ipc/automation.ts`) does scrape → download →
+createProject (applying the profile's caption/image/beta config) → optional transcribe →
+optional `sendToRender`.
+
+#### P5.0 — Reframe in the UI first (no schema change, fully reversible)
+- Add an **Automate** switch to each **Source** card (from P2). It reads/writes the *existing*
+  profile linked to that source (match by `profile.linkedSourceId === source.id`, or
+  `profile.sourceUrl === source.url`). Turning it on creates/updates that profile with
+  `autoWatch = true`; off sets `autoWatch = false`.
+- Render the cadence + a **plain-English summary** built from the profile fields (reuse the
+  `pipelineChips` logic already in `Profiles.tsx`, but as a sentence).
+- Convert the **Automations** screen to a **read-only roll-up**: list running automations,
+  last run (`lastRunAt`), last activity, with an "Edit on Source" link. Stop using it as a
+  second place to *define* a source. This step alone removes the "two places define a source"
+  confusion and is shippable on its own.
+
+#### P5.1 — Introduce the new home for automation settings (additive schema)
+- Add automation columns to `source_channels` via `ensureColumn` (booleans as INTEGER):
+  ```
+  autoWatch, autoQueueRender, sourceOrder, sourceCount,
+  imageMode, poolSize, kenBurns,
+  captionPreset, captionFont, captionAnim, captionAspect, captionLines, captionPosition, captionPace,
+  betaOpts (TEXT/JSON), outputFolder, thumbnailTemplateId, lastSeenVideoId, lastRunAt
+  ```
+  (These mirror `PROFILE_COLS`; reuse the same `rowToProfile`/`profileToRow` coercion helpers,
+  generalized into `rowToAutomation`.)
+- Define a shared `AutomationConfig` type in `shared/types.ts` and a defaults builder, so a
+  Source with `autoWatch=false` still has valid render defaults for one-click manual runs.
+
+#### P5.2 — One-time data migration (guarded, idempotent)
+- In `migrate()`, after the `ensureColumn`s, run a `migrateProfilesToSources()` guarded by an
+  `app_meta` marker (`profiles_folded_v1`), same pattern as `purgeLegacyDemoSeed`:
+  ```
+  for each profile p:
+    sid = p.linkedSourceId
+        ?? sourceChannelByUrl(channelUrl(p.sourceUrl))?.id
+        ?? upsert a new source_channels row from p.sourceUrl/name
+    copy p's automation+render columns onto that source_channels row
+       (only if the source's column is null — never clobber newer source data)
+    if p.autoWatch -> set source.autoWatch = 1
+  set app_meta['profiles_folded_v1'] = '1'
+  ```
+- Keep the `profiles` table **readable** (do not drop it) for one release so a rollback is a
+  config flip, not a data-loss event.
+
+#### P5.3 — Repoint the runtime at Sources
+- **Scheduler** (`electron/services/scheduler.ts`): change `tick()` to iterate
+  `repos.sourceChannels().filter(s => s.autoWatch && s.url)` and call a new
+  `runSource(sourceId, true)`.
+- **Runner** (`electron/ipc/automation.ts`): generalize `runProfile` into `runSource(sourceId,
+  headless)` that reads the `AutomationConfig` off the source row instead of a profile. The
+  body is otherwise unchanged (scrape → download → createProject(apply config) → transcribe →
+  sendToRender). Update `setProfileCursor` calls to `setSourceCursor`.
+- **Precedence rule (explicit):** the Source's `AutomationConfig` provides *defaults* at
+  project-creation time; once a project exists, **per-project edits win** and are never
+  overwritten by a later automated run. (Automated runs only set config on `createProject`,
+  exactly as `runProfile` does today — so this already holds; document and test it.)
+- Update IPC names (`automation:runProfile` → `automation:runSource`, etc.) and the preload
+  bridge + `useData` actions; keep thin back-compat shims for one version.
+
+#### P5.4 — Retire profiles
+- After one release with no rollback needed, delete the `profiles` table from `DATA_TABLES`,
+  remove `PROFILE_COLS`/`rowToProfile`/`profileToRow`, delete `Profiles.tsx`, and remove the
+  shims. Track this as a separate cleanup PR.
+
+#### P5.5 — Collapse the duplicate B-roll control (carry-over)
+- Keep one authoritative B-roll control (Compose panel: enable + density + niche, bound to
+  `betaOpts.broll`). Everywhere else that currently toggles `betaOpts.broll.enabled` becomes a
+  **read-only status chip** that deep-links to that control. Removes the "which toggle is
+  real?" ambiguity. ~3–4 eng-days incl. migration.
+
+---
+
+## 17. Testing & rollback notes
+
+- **Migrations** are all `ensureColumn`/`app_meta`-guarded and additive → forward-safe; a
+  downgrade simply ignores the extra columns. The P5 fold keeps `profiles` readable until
+  P5.4, so every step before final cleanup is reversible.
+- **Detection** changes are pure where it matters (`shared/match.ts` is dependency-free and
+  unit-testable) — add cases for the new `confirm` band and for "title changed by one/two
+  words still matches."
+- **Dedup blocking** — test the Alt-click override and the `dedup.allowReupload` flag both
+  unblock; test that the block keys off **high-confidence** uploads only (a `pending` match
+  must not block, only warn).
+- **Sources cache** — test that opening a source renders cached `source_videos` with zero
+  network, and that a background refresh appends `NEW` items and advances `lastSeenVideoId`
+  only on explicit visit.
+- Smoke harness (`seedDemoData`) already seeds source channels, downloads, and profiles —
+  extend it to assert badge derivation and the profiles→sources migration.
+
+---
+
+## 18. Suggested build order (so each PR is shippable)
+
+1. **P1** (badges + block + always-on detection) — no IA change, immediate payoff.
+2. **P2** (Sources list + cache) — kills the re-fetch pain.
+3. **P5.0** (Automate switch on Source + Automations becomes read-only) — cheap, removes the
+   "two places" confusion, no migration.
+4. **P3** (Home consolidation).
+5. **P4** (ribbon, never-empty tools, labels, onboarding).
+6. **P5.1–P5.4** (the full profiles→sources migration) — last, because it's the highest-risk
+   and benefits from Sources + Home already being in place.
+
+P1 + P2 + P5.0 together resolve every complaint in the original message except the
+editor-internals ones, which are the explicitly-deferred next plan.
