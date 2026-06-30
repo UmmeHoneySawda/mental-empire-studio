@@ -102,6 +102,7 @@ export async function runJob(job: RenderJob): Promise<void> {
   let filterDevice: RenderProgress['filterDevice'] = 'cpu'
   let encoderDetail = enc.device === 'gpu' ? `${enc.label} encode · CPU filters` : `${enc.label} encode`
   let filterDetail = enc.device === 'gpu' ? 'CPU filters/captions' : undefined
+  let renderWarning: string | undefined
   const dir = itemOutputDir(itemDirForProject(project))
   mkdirSync(dir, { recursive: true })
   // Base output name. If a *different* project shares the same channel+title, append the
@@ -148,7 +149,8 @@ export async function runJob(job: RenderJob): Promise<void> {
       device: enc.device,
       filterDevice,
       filterDetail,
-      encoder: enc.label
+      encoder: enc.label,
+      warning: renderWarning
     })
     if (renderLogPath) {
       const now = Date.now()
@@ -270,6 +272,7 @@ export async function runJob(job: RenderJob): Promise<void> {
       const msg = 'Stock B-roll unavailable: add a Pexels, Pixabay, or Coverr key in Settings'
       if (renderLogPath) appendFileSync(renderLogPath, `[broll:warn] ${msg}\n`)
       brollFallback = true
+      renderWarning = msg
       emitStage('fetching-broll', 100, 'B-roll unavailable: missing stock API key')
       emitStage('assembling', 100, 'Using image track')
       pushActivity({ t: hhmm(), icon: '!', color: '#f5b323', text: `B-roll skipped: add a stock-footage API key for ${project.title.slice(0, 36)}` })
@@ -317,6 +320,7 @@ export async function runJob(job: RenderJob): Promise<void> {
         const msg = 'No downloadable B-roll clips found'
         if (renderLogPath) appendFileSync(renderLogPath, `[broll:warn] ${msg}\n`)
         brollFallback = true
+        renderWarning = msg
         emitStage('fetching-broll', 100, 'B-roll unavailable: no clips found')
         emitStage('assembling', 100, 'Using image track')
         pushActivity({ t: hhmm(), icon: '!', color: '#f5b323', text: `B-roll skipped: no stock clips found for ${project.title.slice(0, 36)}` })
@@ -333,6 +337,7 @@ export async function runJob(job: RenderJob): Promise<void> {
       const msg = (e as Error).message
       if (renderLogPath) appendFileSync(renderLogPath, `[broll:warn] ${msg}\n`)
       brollFallback = true
+      renderWarning = `B-roll unavailable: ${msg}`
       emitStage('fetching-broll', 100, 'B-roll unavailable; using image track')
       emitStage('assembling', 100, 'Using image track')
       pushActivity({ t: hhmm(), icon: '!', color: '#f5b323', text: `B-roll skipped: ${msg.slice(0, 90)}` })
@@ -386,6 +391,9 @@ export async function runJob(job: RenderJob): Promise<void> {
         const msg = (gpuErr as Error).message
         if (renderLogPath) appendFileSync(renderLogPath, `[engine:gpu-fallback] ${msg}\n`)
         pushActivity({ t: hhmm(), icon: '!', color: '#f5b323', text: `GPU render fell back to ffmpeg: ${project.title.slice(0, 40)}` })
+        renderWarning = enc.device === 'gpu'
+          ? `GPU compositor failed; ffmpeg fallback is still using ${enc.label}`
+          : 'GPU compositor failed; ffmpeg fallback is using CPU because CPU encoder is selected'
         // Reset the surfaced detail so the ffmpeg path reports accurately.
         filterDevice = enc.device === 'gpu' ? 'cpu' : 'cpu'
         filterDetail = enc.device === 'gpu' ? 'CPU filters/captions' : undefined
@@ -412,7 +420,7 @@ export async function runJob(job: RenderJob): Promise<void> {
       durationSec: renderProject.durationSec, stage: 'rendered', audioPath: project.mp3Path, outputPath: outPath
     })
     const doneDetail = brollFallback ? 'Done · B-roll unavailable, used images' : 'Done'
-    emitR({ jobId: job.id, pct: 100, stage: 'done', stageDetail: doneDetail, done: true, outputPath: outPath, device: enc.device, filterDevice, filterDetail, encoder: enc.label, etaSec: 0, etaState: 'stable' })
+    emitR({ jobId: job.id, pct: 100, stage: 'done', stageDetail: doneDetail, done: true, outputPath: outPath, device: enc.device, filterDevice, filterDetail, encoder: enc.label, warning: renderWarning, etaSec: 0, etaState: 'stable' })
     pushActivity({ t: hhmm(), icon: '✓', color: '#36c98e', text: `Rendered ${project.title} → ${base}.mp4` })
   } catch (e) {
     // A ffmpeg failure caused by the user cancelling/deleting the job isn't an error:

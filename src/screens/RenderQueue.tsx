@@ -217,6 +217,7 @@ export function RenderQueue(): JSX.Element {
                             {p?.stageDetail && <span style={{ fontSize: 10, color: '#8a909c' }}>{p.stageDetail}</span>}
                             {encoderChip && <span style={{ border: '1px solid #262b34', borderRadius: 999, padding: '1px 6px', fontSize: 9.5, color: p?.device === 'gpu' ? '#4fd6a0' : '#aab0bb', fontFamily: 'var(--font-mono)' }}>{encoderChip}</span>}
                             {eta && <span style={{ fontSize: 9.5, color: '#6a7180', fontFamily: 'var(--font-mono)' }}>{eta}</span>}
+                            {p?.warning && <span title={p.warning} style={{ border: '1px solid rgba(245,179,35,.35)', borderRadius: 999, padding: '1px 7px', fontSize: 9.5, color: '#f5b323', background: 'rgba(245,179,35,.08)' }}>Warning</span>}
                           </div>
                         </>
                       )}

@@ -70,6 +70,7 @@ interface DataState {
   cancelDownload: (id: string) => Promise<void>
   openProject: (downloadId: string) => Promise<void>
   openProjectById: (projectId: string) => Promise<void>
+  refreshActiveProjectSnapshot: (projectId?: string) => Promise<void>
   setProjectImages: (paths: string[]) => Promise<void>
   reorderProjectImages: (imageIds: string[]) => Promise<void>
   setMedia: (patch: Partial<Project>) => Promise<void>
@@ -292,6 +293,27 @@ export const useData = create<DataState>((set, get) => ({
     if (!project) return
     const [projectImages, transcript] = await Promise.all([a.compose.images(projectId), a.transcribe.get(projectId)])
     set({ activeProject: project, projectImages, transcript, transcribeError: '', transcribeMessage: '' })
+  },
+  refreshActiveProjectSnapshot: async (projectId) => {
+    const a = api()
+    const current = get().activeProject
+    const id = projectId ?? current?.id
+    if (!a || !id) return
+    const project = await a.compose.get(id)
+    if (!project) return
+    const [projectImages, transcript] = await Promise.all([a.compose.images(id), a.transcribe.get(id)])
+    const latest = get()
+    if (latest.activeProject?.id !== id) return
+
+    set({
+      activeProject: project,
+      // Preview renders are read-only; if a delayed/empty IPC refresh arrives, keep
+      // the editor state visible instead of making the user re-fetch images/captions.
+      projectImages: projectImages.length > 0 || latest.projectImages.length === 0 ? projectImages : latest.projectImages,
+      transcript: transcript.length > 0 || latest.transcript.length === 0 ? transcript : latest.transcript,
+      transcribeError: '',
+      transcribeMessage: ''
+    })
   },
   setProjectImages: async (paths) => {
     const a = api()

@@ -393,6 +393,7 @@ function CaptionsTab(): JSX.Element {
   const toggleWordEmphasis = useData((s) => s.toggleWordEmphasis)
   const setWordsEmphasis = useData((s) => s.setWordsEmphasis)
   const setCaptions = useData((s) => s.setCaptions)
+  const refreshActiveProjectSnapshot = useData((s) => s.refreshActiveProjectSnapshot)
   const images = useData((s) => s.projectImages)
   const preset = project?.captionPreset ?? 'Hormozi'
   const betaOpts = asBetaOpts(project?.betaOpts)
@@ -406,12 +407,13 @@ function CaptionsTab(): JSX.Element {
     if (!project || previewing) return
     setPreviewState('rendering')
     setPreviewError('')
+    const projectId = project.id
     try {
-      // Preview is a read-only render. Do NOT reload the project here — calling
-      // openProjectById() replaced activeProject/projectImages/transcript in the
-      // store and was wiping the user's images + captions on every preview.
-      const p = await window.api.compose.preview(project.id)
+      // Preview is read-only, but a long IPC call can leave the renderer with stale
+      // arrays. Refresh with a guarded merge so empty delayed reads never wipe edits.
+      const p = await window.api.compose.preview(projectId)
       setPreviewPath(p)
+      await refreshActiveProjectSnapshot(projectId)
       setPreviewState('ready')
     } catch (e) {
       setPreviewError((e as Error).message)
