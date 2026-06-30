@@ -813,3 +813,96 @@ optional `sendToRender`.
 
 P1 + P2 + P5.0 together resolve every complaint in the original message except the
 editor-internals ones, which are the explicitly-deferred next plan.
+
+
+---
+
+# PART III — Dev integration addendum (verified 2026-06-30)
+
+This addendum (a) records a code-verification pass so a developer can trust the file/symbol
+references in Parts I–II, (b) notes the few clarifications that came out of it, and (c) adds a
+per-phase **Definition of Done** plus the **cross-plan build order**. Part II already contains
+the file-by-file *how*; this is the integration wrapper around it.
+
+## III-1. Verification stamp (claims re-checked against the code)
+
+Confirmed accurate, by file:
+- **Schema (`electron/db/index.ts`)** — `source_channels(id,url,handle,name)` with
+  `lastScrapedAt` + `nicheId` added in `migrate()` via `ensureColumn`; and
+  `source_videos(id,sourceId,title,durationSec,views,uploadDate,thumb,scrapedAt)` — i.e. the
+  **per-source cache already exists**. `work_item_state` carries the detection fields;
+  `setDetectedUploads(...)` is implemented.
+- **Scrape (`electron/ipc/scrape.ts`)** — the `sourceVideos()` path already
+  `upsertSourceChannel(...)` + `replaceSourceVideos(sourceId, ordered)` (≈L228–231), and
+  `persistScrape` already calls **`runUploadDetection()` after every My-Channels scrape**
+  (≈L154). `download.ts` resolves a source via `sourceChannelByUrl(channelUrl(...))`.
+- **Detection/matching** — `runUploadDetection()` (`electron/services/uploads-detect.ts`) →
+  `matchUploads(items, uploads)` from `shared/match.ts`, `DEFAULT_UPLOAD_MATCH_THRESHOLD = 0.82`
+  (tolerant of light edits / pluralization, per `test/unit/match.test.ts`).
+  `matchDownloadsToUploads` (Dice) drives the per-channel map chip.
+- **Linking** — `my_channels.linkedSourceId` exists on `MyChannel` (see `electron/db/seed.ts`
+  `demoMyChannels`), and `persistScrape` already uses it to map downloads→uploads. So the
+  **explicit link the plan leans on is already in the model** — P2/P5 extend, not invent it.
+
+**Net:** the workflow plan's two highest-value moves (P1 dedup badges/auto-detection, P2
+persistent Sources) sit on infrastructure that **already exists** — they are mostly surfacing
++ small additive columns, exactly as Part II states.
+
+## III-2. Clarifications from the verification pass
+
+1. **Detection already auto-runs after My-Channels scrapes.** So P1's "make detection
+   always-on" reduces to adding the *two extra* trigger points (after a download in
+   `download.ts`, after a render completes in `render.ts`) + the Settings gate — not building
+   detection. Update mental model accordingly.
+2. **`source_videos` already keys by `sourceId` and stores `scrapedAt`.** P2's "add a
+   `sourceChannelId` FK + `scrapedAt`" is therefore mostly **already done**; the remaining P2
+   schema work is the *channel-level* fields (`lastVisitedAt`, `lastSeenVideoId`,
+   `linkedMyChannelId`, `avatar`, `videoCount`). Treat the §2.1 list as "add the missing ones."
+3. **`linkedSourceId` lives on `my_channels` (output→source)**, while `Profile.linkedSourceId`
+   is the automation copy. The P5 fold must reconcile both onto the Source row; precedence is
+   spelled out in §P5.3.
+
+None of these change the plan's direction — they make P1/P2 even smaller.
+
+## III-3. Definition of Done (per phase — what a dev ships against)
+
+- **P1** — On a source's video grid, every tile shows exactly one of
+  `NEW / Downloaded / In progress / Rendered / Uploaded→@name`; the **New** filter is default;
+  an already-uploaded tile is non-selectable unless `dedup.allowReupload` or Alt-click confirm;
+  detection runs after download + render (gated by `detection.auto`); `pending` matches render
+  as "confirm?" and a confirm tap persists via `workItems:setUploaded`. Unit tests for the
+  confirm band + "one/two-word title change still matches."
+- **P2** — A **Sources** list renders saved `source_channels` with "N new since last visit /
+  checked ago"; opening one shows cached `source_videos` **with zero network**, then a
+  background refresh appends `NEW`; "Add source" persists once and never re-prompts; removing a
+  source deletes its `source_videos`. No daily re-paste anywhere in the flow.
+- **P3** — One **Home** with the "Needs you" rail; `library` + `workspace` routes redirect to
+  `home`; the duplicate `PipelineSection` is gone; a single Sidebar entry.
+- **P4** — Tools never open empty; one primary CTA per screen; jargon replaced; first-run flow
+  gated by an `app_meta` `onboarded` marker.
+- **P5** — Automate switch on a Source; Automations screen is read-only; (P5.1–P5.4) the
+  `profiles→sources` migration runs once behind `app_meta['profiles_folded_v1']`, the scheduler
+  iterates sources, and per-project edits still win over automation defaults.
+
+## III-4. Cross-plan build order (this plan + the video & thumbnail plans)
+
+These three documents are independent but share two foundations; build in this order to avoid
+rework:
+1. **Workflow P1 + P2** (this doc) — fastest payoff, no renderer work.
+2. **Video E1 (live still preview)** — establishes the "reuse the renderer for preview"
+   pattern that the thumbnail plan's real-template-previews also benefit from.
+3. **Workflow P3 (Home)** — once Sources exists.
+4. **Thumbnail T1–T2** (box colour + multi-select) — isolated to the Konva editor; can run in
+   parallel with the above by a second dev.
+5. **Video E2/E5 + Workflow P4/P5 + Thumbnail T3–T5** — the deeper passes.
+
+Shared utilities worth factoring once: a `useRendererFramePreview` hook (video + thumbnail
+galleries), and the "preset → live thumbnail of the user's own asset" pattern (video Looks /
+caption gallery + thumbnail templates).
+
+## III-5. Risk & rollback
+Every schema change is `ensureColumn`/`app_meta`-guarded (additive, forward-safe). Ship each
+phase behind a simple flag in `electron/store/settings.ts` (`features.sources`,
+`features.home`, `features.autoDetect`) so anything can be reverted without a data migration.
+P5.4 (dropping `profiles`) is the only destructive step and stays one release behind a green
+P5.1–P5.3.
