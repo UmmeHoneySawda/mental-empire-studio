@@ -301,3 +301,130 @@ Paraphrased/summarized for compliance; short factual phrases only.
   [canva-clone](https://github.com/Davronov-Alimardon/canva-clone).
 - Canva text highlight/background model: [roundness/spread/transparency + colour](https://www.storylane.io/tutorials/how-to-highlight-words-in-canva),
   [Effects → Background](https://adventureswithart.com/how-to-highlight-text-in-canva/).
+
+
+---
+
+# 11. Implementation plan (dev integration guide, verified 2026-06-30)
+
+Re-checked against the code; every claim in §0–§7 holds. Confirmed symbols a dev will touch:
+`useStore` thumbnail slice exposes `selectedLayerId: string` (single), `selectLayer(id)`,
+`updateLayer(id, patch)`, `updateGeometry(id, frame)`, `addTextLayer()`,
+`addShapeLayer(shape)`, `duplicateLayer(id)`, `deleteLayer(id)`, `toggleLayerVisible(id)`,
+`requestFocusTextEditor()` — **no** multi-select, reorder, or undo. `ThumbCanvas.tsx` attaches a
+`Konva.Transformer` only for `subject`/`shape` (text excluded), and text dblclick calls
+`requestFocusTextEditor`. `render.ts > drawText` has the exact line
+`const fill = isHi && l.highlightSquare ? '#111111' : isHi ? l.highlightColor : l.color` and a
+box `Konva.Rect({..., fill: l.highlightColor})` — the box-colour bug, confirmed.
+
+> **Nice consequence:** thumbnail templates persist their `layers` as a JSON blob via
+> `saveTemplate()` (`thumbnail_templates`), and `normalizeThumbnailLayer()` coerces on load — so
+> **the box-colour fix and every new `TextLayer` field need ZERO DB migration**; they flow
+> through automatically. (Confirm the templates table stores `layers` as JSON before relying on
+> this.)
+
+## 11.1 — T1: highlight box colour + inline line breaks (smallest, do first)
+
+**(a) Model (`shared/types.ts`).** Add to `TextLayer`:
+```ts
+highlight?: {
+  enabled: boolean
+  boxColor: string     // box fill — the missing independent control
+  textColor: string    // text on the box — replaces hardcoded '#111111'
+  radius: number       // corner roundness
+  padding: number      // spread around the glyph
+  opacity: number      // box transparency
+}
+```
+**(b) Migration (`shared/thumbnail.ts > normalizeThumbnailLayer`).** Coerce + back-fill from
+legacy so existing templates render identically:
+```ts
+highlight: raw.highlight ? coerceHighlight(raw.highlight)
+  : { enabled: bool(raw.highlightSquare,false), boxColor: text(raw.highlightColor,'#ffffff'),
+      textColor: '#111111', radius: 0, padding: 6, opacity: 1 }
+```
+Keep reading `highlightColor`/`highlightSquare` for compatibility.
+**(c) Render (`src/features/thumbnail-editor/render.ts > drawText`).** Replace the hardcoded
+branch:
+```ts
+const hl = l.highlight
+const fill = isHi && hl?.enabled ? hl.textColor : isHi ? l.highlightColor : l.color
+// box behind active glyph:
+if (isHi && hl?.enabled) group.add(new Konva.Rect({
+  x: cx - hl.padding, y: lineY - hl.padding * 0.5,
+  width: wWidth + hl.padding * 2, height: fontSize * 1.02 + hl.padding,
+  fill: hl.boxColor, cornerRadius: hl.radius, opacity: hl.opacity }))
+```
+**(d) Inspector (`Thumbnails.tsx` text section).** Add a **Highlight** group: enable toggle,
+**box colour**, **text colour**, roundness, padding, opacity → `updateLayer(id,{highlight:{…}})`.
+**(e) Inline line breaks (`ThumbCanvas.tsx`).** On text `dblclick`, overlay a DOM `<textarea>`
+positioned via the stage transform (node absolute pos × scale + container offset), styled to the
+layer's font/size/colour; **Enter = newline** (native), Esc cancels, blur/⌘Enter commits via
+`updateLayer(id,{ lines: value.split('\n').map(t=>({text:t, size:<current>})) })`. Keep
+`requestFocusTextEditor` as a fallback. Remove the "one line per row" side textarea as the
+*primary* path.
+- **DoD:** the box colour is independently editable and renders in exports; pressing Enter on the
+  canvas adds a line; legacy templates look unchanged.
+
+## 11.2 — T2: multi-select + group ops
+
+**Store (`useStore.ts`):** add `selectedLayerIds: string[]` (keep `selectedLayerId` as a getter =
+`ids[0]` so the inspector keeps working); `selectLayer(id, additive=false)`,
+`setSelection(ids)`, `clearSelection()`.
+**Canvas (`ThumbCanvas.tsx`):**
+- Click handler: `selectLayer(id, e.evt.shiftKey || e.evt.ctrlKey || e.evt.metaKey)`; empty-stage
+  click → `clearSelection()`.
+- **Rubber-band:** on empty-stage `mousedown`, draw a selection `Konva.Rect`; on `mouseup`,
+  select layers whose `node.getClientRect()` intersects it (`Konva.Util.haveIntersection`).
+- **Transformer:** `transformer.nodes(selectedNodes)` for all selected (now **including text**).
+- Align/Distribute: compute over the selected `frame`s and apply via `updateGeometry` (left/
+  center/right/top/middle/bottom, distribute h/v).
+- Group delete/duplicate operate over `selectedLayerIds`.
+- **DoD:** Shift/Ctrl-click and rubber-band select multiple; group move/scale/align works.
+
+## 11.3 — T3: resize text on canvas + simpler controls + floating toolbar
+
+- **Resize text:** include text in the Transformer; on `transformend`, read `node.scaleX()`,
+  multiply each `lines[i].size`, reset scale to 1 — the exact commit pattern already used for
+  subject/shape in `ThumbCanvas`.
+- **Simpler typography (`Thumbnails.tsx`):** lead with one **Size** (whole block) + a plain
+  **"Line spacing"** slider (rename the `lineHeight` "×" control); move per-line sizes into an
+  **Advanced** disclosure. Keep Auto-arrange as a one-click "tidy".
+- **Select-to-highlight:** while the inline textarea is open, a selection + **Highlight** button
+  adds the word(s) to `highlightWords`.
+- **Floating selection toolbar:** new `SelectionToolbar.tsx` positioned at the selection's client
+  rect; buttons: Size, Colour, Highlight, CAPS, Align, Duplicate, Delete.
+- **DoD:** text resizes by dragging; the common edits are one click from the canvas.
+
+## 11.4 — T4: undo/redo + reorder + snapping + keyboard
+
+- **Undo/redo:** wrap the thumbnail slice with a history stack (recommend the small `zundo`
+  temporal middleware for zustand, or a hand-rolled snapshot stack of `layers`); bind ⌘Z/⌘⇧Z.
+- **Reorder:** add `reorderLayers(from,to)`; make the Layers panel drag-to-reorder (z-order =
+  array order today).
+- **Snapping/guides:** on `dragmove`/`transform`, snap to canvas centre/edges, the title-safe
+  inset, and other layers' edges; draw guide lines (standard Konva snapping recipe).
+- **Keyboard:** arrow nudge (`updateGeometry`, Shift = 10px), Del, ⌘D, ⌘A, Esc.
+- **DoD:** every edit is undoable; layers reorder by drag; dragging snaps with visible guides.
+
+## 11.5 — T5: real template previews + great defaults
+
+- **Previews (`TemplatesTab`):** render each template via the existing `rasterizeLayers(layers)`
+  to a small offscreen → dataURL, cached by template id; replace the placeholder gradient. (Same
+  "preset → real preview" pattern as the video plan's Look/caption galleries — factor a shared
+  helper.)
+- Ship several strong default templates (full-bleed, subject-left/right, centred) with good
+  highlight/effect defaults so "change nothing" already looks great.
+- (Optional, *new* functionality) subject auto-cutout — flag for later, not core.
+
+## 11.6 — Testing & flags
+- Extend `test/unit/thumbnail-normalize.test.ts` with: legacy `highlightSquare:true` →
+  `highlight.enabled` migration; box renders with `boxColor` not `#111111`; multiline `lines[]`
+  round-trips through inline edit.
+- Ship behind `features.thumbEditorV2` in `electron/store/settings.ts`; T1 is independently
+  shippable and is the highest-value/lowest-risk start.
+
+## 11.7 — Build order
+T1 (box colour + inline breaks) → T2 (multi-select) → T3 (resize/toolbar) → T4 (undo/reorder/
+snap) → T5 (previews). T1–T3 resolve all four stated complaints; T4 is what makes it feel
+premium. Can run in parallel with the workflow/video work — this editor is self-contained.
