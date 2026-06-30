@@ -472,19 +472,17 @@ E1 + E2 are the highest-impact and lowest-risk; they can ship before the structu
 
 ---
 
-## 14. Open questions for you
+## 14. Decisions (resolved 2026-06-30) — see Part II for the detail
 
-1. **Quick vs Pro** — do you want a deliberately simple default mode, or always the full
-   timeline/inspector?
-2. **Per-segment looks** — important to you (different grade on different images), or is one
-   global look per video enough for v1?
-3. **Motion ambition** — is "Ken Burns direction + amount per image" enough, or do you
-   eventually want full CapCut-style keyframes (position/scale over time)?
-4. **B-roll preview** — is the poster-still approach acceptable, or do you want a couple of
-   sampled frames per B-roll segment so it reads more like motion?
-5. **Caption highlighter box** — do you want a Submagic-style coloured box behind the active
-   *caption* word (with box colour) added as a new caption style, since you raised it for
-   text generally?
+All five are resolved; the *how*, with code-level research, is in **Part II** below.
+
+| # | Question | Decision |
+|---|---|---|
+| 1 | Quick vs Pro | **Quick mode is the default and must be gorgeous out of the box**; "Customize everything" is one click deeper. This is an **automation tool a beginner drives**, not a pro NLE. (§II-A) |
+| 2 | Per-segment looks | **One global look per video is fine** — but it must be *previewable* and dialable. Per-segment look is optional/advanced, not v1. (§II-C) |
+| 3 | Motion | **"Simple but gorgeous, creative" — designer's call.** Proposing **Smart Motion / "Living Stills"** (eased alternating push-pull + emphasis punch), auto by default, customizable. (§II-D) |
+| 4 | B-roll preview | **Poster still confirmed.** (§II-E) |
+| 5 | Submagic caption style | **Yes — add it** (highly popular), grounded in how open-source editors implement it in code. (§II-F) |
 
 ---
 
@@ -522,3 +520,244 @@ restrictions (no verbatim passages beyond short factual phrases):
   [word highlight colours](https://care.submagic.co/en/article/how-to-apply-highlighting-colors-to-your-words-16ttppq/).
 - Kdenlive (open source) effect stack: [effects & filters](https://docs.kdenlive.org/en/effects_and_filters.html),
   [applying effects](https://wikisandbox.kde.org/Kdenlive/Manual/Effects/en).
+
+
+---
+
+# PART II — Refinements: automation-first, with code-level research (2026-06-30 update)
+
+This part incorporates the user's direction: **this is an automation tool a beginner can
+drive — not a video/photo editor.** Quick mode is the default and must look great with zero
+decisions, while *everything* remains customizable one layer deeper. It also answers the
+explicit ask: **research how other (popular, open-source) editors implement these things in
+their code**, and ground the proposals in those implementations. Web content below was
+paraphrased for compliance; sources are linked inline and collected in §II-I.
+
+## II-A. The guiding principle: "gorgeous defaults, optional infinite depth"
+
+Reframe the editor's *purpose*. The pipeline already auto-produces a finished video; the
+editor is an **optional override/tweak surface**, not a place you must visit. So the design
+law is:
+
+> **A complete beginner should get a beautiful result by changing nothing. Anyone who wants
+> control should find it one click away — never required, never hidden forever.**
+
+Concretely:
+- **Quick mode is the entire default experience.** It is the live preview (Part I §4) plus a
+  short, friendly control stack — nothing else on screen:
+  - **Look** (a row of preview thumbnails of *your own frame* + an intensity slider)
+  - **Captions** (a row of style thumbnails, incl. *Submagic*)
+  - **Motion** (Off / Subtle / Cinematic)
+  - **B-roll** (Off / Auto)
+  - **Aspect** (16:9 / 1:1 / 9:16)
+  Each control has a great default already chosen by the automation.
+- **"Customize" reveals the Inspector + Timeline** (Part I §3, §5) for per-segment and
+  per-parameter control. This is the only thing the "Pro" mode adds. Beginners never see it
+  unless they ask.
+- **No jargon in Quick mode.** "Look" not "grade/LUT"; "Motion" not "Ken Burns"; "Captions"
+  not "caption preset/animation." The technical names live in Customize with one-line
+  explanations.
+
+This mirrors how consumer tools win beginners while keeping pros: Canva applies a filter on
+click and *then* offers an intensity slider ([Canva video filters](https://www.canva.com/features/video-filters/));
+Resolve separates a fast surface (Cut) from a deep one (Edit)
+([Resolve pages](https://pixflow.net/blog/davinci-resolve-beginners-guide)).
+
+## II-B. The previewable Look system (filters) — what creators use + how pros do it in code
+
+**Decision:** keep looks **global** (per-video), but (1) make every look **previewable** on
+the user's own frame and (2) give it an **intensity** slider. No more invisible baked-in
+filter.
+
+### II-B.1 The looks to ship (what popular creators actually use)
+From surveying creator-facing LUT/filter packs and tools, the looks that dominate short-form
+and "faceless" content cluster into a small, recognizable set (names are descriptive, not
+brands):
+
+| Look | What it does | Where it's popular |
+|---|---|---|
+| **Teal & Orange** | warm skin/highlights vs teal shadows — the "blockbuster cinematic" look | the single most common creator LUT ([Filmora teal & orange](https://filmora.wondershare.com/video-creative-tips/teal-and-orange-cinematic-lut-filter-pack.html)) |
+| **Warm Film / Vintage** | warm cast, lifted/faded blacks, gentle grain | retro/storytelling ([vintage film LUTs](https://flourishpresets.com/blogs/flourish-presets-lightroom-presets-luts/enhance-your-videos-with-video-luts-a-comprehensive-guide)) |
+| **Clean & Bright** | neutral, slightly lifted, punchy — "lifestyle/UGC" | talking-head, product |
+| **Moody Cinematic** | crushed contrast, desaturated, cool | motivation/dark themes (fits "Mental Empire") |
+| **Golden Hour** | warm dreamy glow | inspirational ([Elgato "orange glow"](https://marketplace.elgato.com/video/luts)) |
+| **Cold / Blue** | cool, clinical, tech | tech/news |
+| **Noir / B&W** | monochrome, high contrast | dramatic quotes |
+
+Ship ~6–8 of these as the Look gallery, each with a sensible **default intensity** (~60–80%,
+because full-strength LUTs read as "overcooked").
+
+### II-B.2 How pro/most editors apply filters *in code* (and what we should do)
+The universal technique across DaVinci/Premiere/CapCut/games is a **3D LUT (`.cube`) sampled
+in a fragment shader, blended by a strength value**:
+- A `.cube` file is a 3D table mapping input RGB → output RGB. In a shader you treat it as a
+  texture, look up the pixel's colour, and read back the graded colour; intensity is just
+  `mix(original, graded, strength)`. This is exactly the approach walked through in
+  [frost.kiwi "WebGL LUTs made simple"](https://blog.frost.kiwi/WebGL-LUTS-made-simple/) and
+  packaged by libraries like [web-luts](https://www.mintlify.com/hsrambo07/grader-extension/quickstart)
+  (presets + per-image strength) and engine examples like
+  [keijiro/CubeLutTest](https://github.com/keijiro/CubeLutTest) (Unity Shader Graph applying a
+  `.cube`). Parsers to mirror: [pycubelut](https://github.com/yoonsikp/pycubelut),
+  [3dLUT2js](https://github.com/walter-arrighetti/3dLUT2js).
+- CapCut/KineMaster expose this to users as a **filter + intensity slider (0–100%)**
+  ([KineMaster](http://kinemaster.com/features/color-grading)) and, for finer control,
+  shadow/midtone/highlight wheels ([CapCut colour grading](https://www.capcut.com/resource/capcut-color-grading)).
+
+**Recommendation for this app (small, code-level):** the compositor already does per-pixel
+colour work in a fragment shader, so add a LUT stage on top of the existing parametric grade:
+1. **LUT loader:** parse `.cube` → a tiled 2D texture (the standard "sliced cube" / Hald image
+   layout used by the references above). Bundle the 6–8 looks as `.cube` assets.
+2. **Shader:** add a `lutTexture` sampler + `lutStrength` uniform; after the current grade,
+   sample the LUT (trilinear via two texture taps) and `mix()` by `lutStrength`.
+3. **Spec:** add `grade.lut: { id, strength }` to `GpuRenderSpec.grade` (alongside the existing
+   brightness/contrast/etc., which become the "Adjust" advanced layer beneath the look).
+4. **Preview:** render each look as a thumbnail of the user's **own first frame** via the live
+   still preview (Part I §4) — so the gallery shows real before/after, the
+   [Canva](https://www.canva.com/features/video-filters/)/ImagineRokas
+   ([before/after LUT packs](https://imaginerokas.gumroad.com/l/cinematicluts)) pattern.
+
+This keeps "functionality already there" true — it's one extra shader stage and a texture,
+reusing the existing fragment pipeline.
+
+## II-C. Global vs per-segment looks
+Per the decision, **v1 = one look for the whole video** (simplest mental model for a
+beginner). The architecture (a `grade.lut` on the spec) trivially extends to a per-segment
+override later (CapCut's adjustment-layer-over-a-range idea,
+[adjustment layers](https://umatechnology.org/how-to-add-an-adjustment-layer-in-capcut/)),
+but it stays out of Quick mode.
+
+## II-D. Motion — "Smart Motion / Living Stills" (the creative call)
+
+Goal: **simple but gorgeous, creative, and automatic.** Most slideshow tools either sit
+static (cheap) or zoom linearly (jerky/seasick). The design:
+
+- **Living Stills (default).** Every image gets a slow, **eased** move (ease-in-out, never
+  linear — linear is what makes CSS Ken Burns look jittery on long pans, which is why people
+  move it to canvas: [GSAP fluid canvas Ken Burns](https://github.com/Bannerboy/gsap-fluid-ken-burns),
+  [smooth Ken Burns via transform](https://stackoverflow.com/questions/76477751/how-to-create-a-smooth-ken-burns-style-animation-using-transform-instead-of)).
+  We're on WebGL already, so we get smoothness for free.
+- **It breathes.** Direction **alternates** per image — push-in, then pull-back, then push-in
+  with a slight pan — so a sequence feels intentional, not repetitive. The pattern is
+  **deterministic from the project seed** (re-rollable, consistent across renders), not random.
+- **It reacts to the words.** On an emphasized caption word, a subtle, fast **punch** (≈1–3%
+  quick zoom, eased) snapped to that word's timestamp — energy exactly where the narration
+  lands. (The engine already has `motion.punchAtSec[]`; we sync it to the active caption
+  token times from §II-F.)
+- **B-roll** gets a slow drift only (it already moves).
+
+**Controls:**
+- Quick: **Motion = Off / Subtle / Cinematic** (one choice; Cinematic = bigger moves + punch).
+- Customize: per-image direction (in/out/left/right + focal point) and amount; toggle the
+  emphasis punch.
+
+**Code-level:** generalize the compositor's `scaleAt()` into a small motion function taking
+`{ from, to, easing, focal }` per image (today it's a fixed +12% linear-ish zoom); add an
+`easeInOutCubic`; assign per-image direction from the seeded alternating pattern. This is a
+contained change to one shader-driving function. Reference patterns: the canvas/transform Ken
+Burns implementations above (for the easing/smoothness lessons).
+
+## II-E. B-roll preview — poster still (confirmed)
+Decode **one representative frame** per B-roll segment (first keyframe via the existing
+ffmpeg/decoder path), cache it as an `ImageBitmap`, and show it in the preview/timeline with
+the look + caption composited on top and a small "▶ video" badge. No live video decode in the
+editor — exactly the simplification requested, and the creative call (look/captions/timing)
+is still accurate.
+
+## II-F. Submagic-style captions — add it, grounded in open-source code
+
+**What "Submagic style" means concretely:** big, bold, centered captions revealed **word by
+word (1–3 words on screen)**, with the **active word highlighted by a coloured box/background**
+(not just coloured text) and a small **pop/bounce**. ([Submagic word highlighting](https://care.submagic.co/en/article/how-to-apply-highlighting-colors-to-your-words-16ttppq/),
+which offers a few highlight colours.)
+
+**How open-source editors do it in code (the model to copy):** the cleanest reference is
+**Remotion's `@remotion/captions` + the open-source `template-tiktok`**
+([template-tiktok repo](https://github.com/remotion-dev/template-tiktok),
+[createTikTokStyleCaptions docs](https://www.remotion.dev/docs/captions/create-tiktok-style-captions)).
+The data model is:
+- A flat list of `Caption { text, startMs, endMs, timestampMs }` (which this app already has
+  from its Whisper transcription).
+- `createTikTokStyleCaptions({ captions, combineTokensWithinMilliseconds })` groups them into
+  **pages**, each with `tokens: { text, fromMs, toMs }`. A **high** combine value puts many
+  words on a page; a **low** value gives true word-by-word. (Content rephrased.)
+- At render time `t`, the **active token** is the one where `fromMs ≤ t < toMs`. That token
+  gets the highlight treatment; the rest of the page is shown dimmer/plain.
+
+**How it maps onto THIS app's existing caption renderer (`src/render-worker/captions.ts`) —
+i.e. why it's mostly already there:** the renderer already (a) draws word-by-word, (b) paints
+the active/emphasized word in `highlightColor`, and (c) does a pop scale. The *additions* to
+reach true Submagic style are small and specific:
+1. **A rounded-rect highlight box behind the active word** — measure the active token's text
+   box (`ctx.measureText`), draw a rounded rect fill, then the text on top. (New, ~a few lines
+   in the caption canvas layer.)
+2. **A `boxColor` control** (+ keep `highlightColor` for the text) — so the box colour is
+   customizable, which the user explicitly wanted. Add `boxColor` to `CaptionFrameModel`.
+3. **Words-per-page** = generalize the existing `mode: word | phrase` into a
+   `combineWithinMs`/`maxWordsPerPage` value, exactly the Remotion `combineTokensWithinMilliseconds`
+   knob.
+4. **Pop/bounce on the active word** — already present; expose its amount.
+
+**Presentation:** add **"Submagic"** as a named entry in the previewable caption gallery
+(Part I §7.1), rendered live on the user's own frame. In Customize, expose: highlight text
+colour, **box colour**, words-per-page, font, size, position. Defaults chosen to look like the
+popular style with zero edits.
+
+> This is also the answer to "research how other editors do it in their code": we are
+> deliberately adopting the **Remotion token/page model** (open source, MIT) for grouping and
+> active-word selection, and the **rounded-box-behind-active-word** rendering pattern that the
+> TikTok/Submagic family uses — implemented inside the caption canvas layer that already
+> exists here.
+
+## II-G. Quick-mode default layout (beginner-first)
+
+```
+┌───────────────────────────────────────────────┐
+│            LIVE PREVIEW (still @ playhead)      │
+│         ⏮ ◀ ▶ ⏭   00:14/03:02      [Customize ▸]│
+├───────────────────────────────────────────────┤
+│ Look      [▦][▦][▦][▦][▦]   intensity ●───── 70%│   (thumbnails of your own frame)
+│ Captions  [Aa][Aa][Aa]  ‹Submagic selected›     │
+│ Motion    ( Off · Subtle · ●Cinematic )         │
+│ B-roll    ( Off · ●Auto )                       │
+│ Aspect    ( 16:9 · 1:1 · ●9:16 )                │
+├───────────────────────────────────────────────┤
+│              → Send to render                   │
+└───────────────────────────────────────────────┘
+```
+Five rows, all pre-set by automation, all previewed live. "Customize ▸" swaps in the
+inspector + timeline from Part I for anyone who wants more. Nothing else competes for
+attention.
+
+## II-H. Updated rollout (reflecting these decisions)
+
+- **E1 — Live still preview + transport** (unchanged; still the keystone).
+- **E2 — Look system (LUT-based + intensity + live thumbnails)** — ship the 6–8 creator looks
+  as `.cube` + the shader stage; this *is* the "previewable global filter" the user asked for.
+- **E2.5 — Smart Motion / Living Stills** — eased alternating moves + emphasis punch; Quick
+  toggle Off/Subtle/Cinematic.
+- **E3 — Inspector + selection** (Customize surface).
+- **E4 — Timeline** (per-segment, advanced).
+- **E5 — Caption gallery + Submagic style** (rounded active-word box + box colour +
+  words-per-page; transcript navigation).
+- **E6 — Quick-mode polish, coachmarks, plain language, remove beta gating.**
+
+E1 + E2 + E5(Submagic) are the visible wins a beginner feels immediately; E3/E4 serve the
+"customize everything" promise without ever being mandatory.
+
+## II-I. Additional sources (code-level research)
+
+Paraphrased/summarized for compliance; short factual phrases only.
+- WebGL LUT technique: [frost.kiwi — WebGL LUTs made simple](https://blog.frost.kiwi/WebGL-LUTS-made-simple/);
+  libraries/parsers: [web-luts](https://www.mintlify.com/hsrambo07/grader-extension/quickstart),
+  [keijiro/CubeLutTest](https://github.com/keijiro/CubeLutTest),
+  [pycubelut](https://github.com/yoonsikp/pycubelut),
+  [3dLUT2js](https://github.com/walter-arrighetti/3dLUT2js).
+- Creator looks: [Filmora teal & orange](https://filmora.wondershare.com/video-creative-tips/teal-and-orange-cinematic-lut-filter-pack.html),
+  [Flourish vintage/LUT guide](https://flourishpresets.com/blogs/flourish-presets-lightroom-presets-luts/enhance-your-videos-with-video-luts-a-comprehensive-guide),
+  [Elgato LUTs](https://marketplace.elgato.com/video/luts),
+  [Canva video filters + intensity](https://www.canva.com/features/video-filters/).
+- TikTok/Submagic captions in code: [Remotion template-tiktok](https://github.com/remotion-dev/template-tiktok),
+  [createTikTokStyleCaptions](https://www.remotion.dev/docs/captions/create-tiktok-style-captions),
+  [Submagic word-highlight colours](https://care.submagic.co/en/article/how-to-apply-highlighting-colors-to-your-words-16ttppq/).
+- Smooth motion: [GSAP canvas Ken Burns](https://github.com/Bannerboy/gsap-fluid-ken-burns),
+  [smooth Ken Burns via transform](https://stackoverflow.com/questions/76477751/how-to-create-a-smooth-ken-burns-style-animation-using-transform-instead-of).
