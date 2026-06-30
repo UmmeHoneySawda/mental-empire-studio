@@ -26,7 +26,8 @@ export function TitleBar(): JSX.Element {
   const rows = useData((s) => s.renderJobs)
   const rendering = useData((s) => s.rendering)
   const renderAll = useData((s) => s.renderAll)
-  const canRender = rows.length > 0 && rows.every((r) => r.isReady) && !rendering
+  const queuedRows = rows.filter((r) => r.job.status === 'queued')
+  const canRender = queuedRows.length > 0 && queuedRows.every((r) => r.isReady) && !rendering
   const handleRenderAll = (): void => {
     setActive('render')
     if (canRender) void renderAll()

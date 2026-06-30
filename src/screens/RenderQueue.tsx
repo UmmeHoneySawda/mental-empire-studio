@@ -4,6 +4,7 @@ import { useStore } from '../store/useStore'
 import { useData } from '../store/useData'
 import type { RenderProgress, RenderQueueRow, RenderStage, RenderStatus } from '@shared/types'
 import { mediaSrc } from '../lib/media'
+import { renderLiveState } from '../lib/renderProgress'
 
 const THUMB_BG = 'linear-gradient(135deg,#2a2540,#46243a)'
 const STAGES: RenderStage[] = ['preparing', 'captioning', 'fetching-broll', 'assembling', 'encoding', 'finalizing']
@@ -73,16 +74,12 @@ export function RenderQueue(): JSX.Element {
 
   useEffect(() => { void loadRenderJobs() }, [loadRenderJobs])
 
-  const live = (r: RenderQueueRow): { pct: number; status: RenderStatus } => {
-    const p = progress[r.job.id]
-    const pct = p ? p.pct : r.job.pct
-    const status: RenderStatus = p ? (p.done ? (p.error ? 'error' : 'done') : 'rendering') : r.job.status
-    return { pct, status }
-  }
+  const live = (r: RenderQueueRow): { pct: number; status: RenderStatus } => renderLiveState(r, progress[r.job.id])
   const processing = rows.filter((r) => live(r).status === 'rendering').length
-  const readyCount = rows.filter((r) => r.isReady).length
-  const canRenderAll = rows.length > 0 && rows.every((r) => r.isReady) && !rendering
-  const canRenderSome = readyCount > 0 && !rows.every((r) => r.isReady) && !rendering
+  const queuedRows = rows.filter((r) => live(r).status === 'queued')
+  const readyCount = queuedRows.filter((r) => r.isReady).length
+  const canRenderAll = queuedRows.length > 0 && readyCount === queuedRows.length && !rendering
+  const canRenderSome = readyCount > 0 && !canRenderAll && !rendering
   const outputFolder = settings.libraryFolder || settings.outputFolder || '<Documents>/MentalEmpireStudio'
 
   const browse = async (): Promise<void> => {
@@ -147,7 +144,7 @@ export function RenderQueue(): JSX.Element {
           )}
           <button type="button" disabled={!canRenderAll} onClick={() => void renderAll()} className="me-btn" style={{ display: 'flex', alignItems: 'center', gap: 8, border: 0, background: 'linear-gradient(180deg,var(--accent),var(--accent-deep))', color: 'var(--accent-ink)', fontWeight: 600, fontSize: 13, padding: '10px 22px', borderRadius: 10, cursor: canRenderAll ? 'pointer' : 'not-allowed', boxShadow: '0 5px 18px -5px var(--accent-glow)', opacity: canRenderAll ? 1 : 0.5 }}>
             <svg width="13" height="13" viewBox="0 0 24 24" fill="currentColor"><path d="M5 4l14 8-14 8z" /></svg>
-            {rendering ? 'Rendering…' : `Render all (${rows.length})`}
+            {rendering ? 'Rendering…' : `Render all (${queuedRows.length})`}
           </button>
         </div>
       </div>
@@ -160,8 +157,8 @@ export function RenderQueue(): JSX.Element {
       )}
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
         {rows.map((r) => {
-          const p = progress[r.job.id]
           const { pct, status } = live(r)
+          const p = status === 'rendering' ? progress[r.job.id] : undefined
           const isBlocked = !r.isReady && status !== 'rendering' && status !== 'done'
           const barColor = status === 'done' ? '#36c98e' : status === 'error' ? '#ff5a6e' : 'var(--accent)'
           const encoderChip = p?.encoder ? (p.device === 'gpu' ? `${p.encoder} · GPU` : p.encoder) : ''

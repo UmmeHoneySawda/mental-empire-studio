@@ -19,6 +19,7 @@ import type {
   NichePoolHealth,
   SourceChannel
 } from '@shared/types'
+import { dropIdleRenderProgress } from '../lib/renderProgress'
 
 // Live data layer — everything sourced from the SQLite DB / scrape / download /
 // transcription services over window.api. Separate from useStore (UI state) so the
@@ -358,7 +359,9 @@ export const useData = create<DataState>((set, get) => ({
 
   loadRenderJobs: async () => {
     const a = api()
-    if (a) set({ renderJobs: await a.render.jobs() })
+    if (!a) return
+    const renderJobs = await a.render.jobs()
+    set((s) => ({ renderJobs, renderProgress: dropIdleRenderProgress(renderJobs, s.renderProgress) }))
   },
   renderAll: async () => {
     const a = api()

@@ -3,6 +3,7 @@ import { useStore } from '../store/useStore'
 import { useData } from '../store/useData'
 import { clickableProps } from './primitives'
 import type { ScreenKey } from '@shared/types'
+import { renderLiveState } from '../lib/renderProgress'
 
 interface NavDef {
   key: ScreenKey
@@ -69,15 +70,17 @@ export function Sidebar(): JSX.Element {
   const channels = useData((s) => s.channels)
   const profiles = useData((s) => s.profiles)
   const setActive = useStore((s) => s.setActive)
-  const queued = renderJobs.filter((j) => j.job.status === 'queued' || j.job.status === 'rendering').length
+  const queued = renderJobs.filter((j) => {
+    const state = renderLiveState(j, renderProgress[j.job.id])
+    return state.status === 'queued' || state.status === 'rendering'
+  }).length
   const watching = profiles.filter((p) => p.autoWatch).length
 
   // Find the most active rendering job for the mini status strip
   const activeJob = renderJobs.find((j) => {
-    const p = renderProgress[j.job.id]
-    return p ? !p.done : j.job.status === 'rendering'
+    return renderLiveState(j, renderProgress[j.job.id]).status === 'rendering'
   })
-  const activePct = activeJob ? Math.round(renderProgress[activeJob.job.id]?.pct ?? activeJob.job.pct) : 0
+  const activePct = activeJob ? Math.round(renderLiveState(activeJob, renderProgress[activeJob.job.id]).pct) : 0
 
   return (
     <div className="me-sidebar" style={{ width: 'clamp(196px, 15vw, 236px)', flex: 'none', background: '#0a0c10', borderRight: '1px solid #1a1e26', display: 'flex', flexDirection: 'column', padding: '14px 12px', minHeight: 0, overflowY: 'auto', overflowX: 'hidden' }}>

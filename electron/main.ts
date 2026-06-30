@@ -198,12 +198,53 @@ function initPersistence(): void {
   const dbPath = join(app.getPath('userData'), 'mental-empire.db')
   try {
     initDatabase(dbPath)
+    recoverInterruptedRenderJobs()
   } catch (e) {
     L.error(`DB init FAILED at ${dbPath}: ${(e as Error).message}`)
     throw e
   }
   // The most valuable lines in a bug report: versions + whether the sidecars exist.
   logStartupDiagnostics({ ytdlp: resolveYtdlpPath(), ffmpeg: ffmpegPath(), ffprobe: ffprobePath(), dbPath })
+}
+
+function hasUsableOutput(p?: string): p is string {
+  if (!p || !existsSync(p)) return false
+  try {
+    return statSync(p).size > 0
+  } catch {
+    return false
+  }
+}
+
+/** If the app was closed while a render was running, repair the persisted queue row
+ *  on the next launch. Completed outputs become done; unfinished rows return to
+ *  queued so the user can resume instead of staring at a frozen percentage. */
+function recoverInterruptedRenderJobs(): void {
+  const repos = getRepos()
+  const stale = repos.renderJobs().filter((j) => j.status === 'rendering')
+  if (!stale.length) return
+
+  let completed = 0
+  let requeued = 0
+  for (const job of stale) {
+    if (hasUsableOutput(job.outputPath)) {
+      repos.setRenderStatus(job.id, { status: 'done', pct: 100, outputPath: job.outputPath, error: '' })
+      if (job.projectId) repos.updateProject(job.projectId, { stage: 'rendered' })
+      completed++
+    } else {
+      repos.setRenderStatus(job.id, { status: 'queued', pct: 0, error: '' })
+      requeued++
+    }
+  }
+
+  const t = new Date().toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false })
+  repos.addActivity({
+    t,
+    icon: '!',
+    color: '#f5b323',
+    text: `Recovered ${stale.length} interrupted render job${stale.length === 1 ? '' : 's'} on startup (${completed} done, ${requeued} requeued)`
+  })
+  L.warn(`render recovery: repaired=${stale.length} completed=${completed} requeued=${requeued}`)
 }
 
 /**
