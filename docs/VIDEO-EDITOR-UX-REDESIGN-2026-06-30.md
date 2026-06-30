@@ -761,3 +761,150 @@ Paraphrased/summarized for compliance; short factual phrases only.
   [Submagic word-highlight colours](https://care.submagic.co/en/article/how-to-apply-highlighting-colors-to-your-words-16ttppq/).
 - Smooth motion: [GSAP canvas Ken Burns](https://github.com/Bannerboy/gsap-fluid-ken-burns),
   [smooth Ken Burns via transform](https://stackoverflow.com/questions/76477751/how-to-create-a-smooth-ken-burns-style-animation-using-transform-instead-of).
+
+
+---
+
+# PART III — Implementation plan (dev integration guide, verified 2026-06-30)
+
+This is the file-by-file integration guide. It was checked against the code; two findings make
+the plan *easier* than written:
+
+- **`GradeParams.lut?: string` already exists** in `shared/renderSpec.ts` ("optional baked 3D
+  LUT (.cube) asset id; when absent the shader uses the math below"). So the Look system (§II-B)
+  is **already anticipated by the data model** — the compositor just doesn't sample a LUT yet.
+- **The active-word/active-image logic already exists as pure helpers** in `renderSpec.ts`:
+  `activeCaptionGroup()`, `activeWordInGroup()`, `activeImageIndex()`, `totalFrames()`. The
+  Submagic active-word box (§II-F) and the live preview (§4) reuse these — no new timing math.
+
+Also confirmed: `CaptionFrameModel{groups,preset,font,animation,mode:'word'|'phrase',position,
+lines:1|2|3,highlightColor,hook}`, `MotionSpec{kenBurns,punchAtSec}`, `RenderImageSpec
+{path,startSec,endSec}`, `audio.{voicePath,sfxPath?}`, `GpuBrollSegment`; the compositor
+(`src/render-worker/compositor.ts`) is WebGL2 with uniforms incl. `u_colorBalance/u_vignette/
+u_grain/u_sharpen`, a `drawFrame(timeSec)` method, `setImages`, and `scaleAt()` doing the fixed
+`1 + 0.12*p` Ken Burns; the 0.4s crossfade is hardcoded in `src/render-worker/encoder.ts`.
+
+## III-0. The one real integration decision: where the preview compositor runs
+
+Today `Compositor` runs in the render-worker for the *full* render. For the live still preview
+it must run in the **main window**. Two pieces are needed:
+
+1. **A spec to draw.** `buildGpuRenderSpec()` lives in `electron/services/engine/gpu/spec.ts`
+   (Node side, imports services). **Do not import it into the renderer.** Instead add an IPC
+   **`compose:previewSpec(projectId, draftOverrides) → GpuRenderSpec`** that builds the spec in
+   main and returns it (the spec is serializable + DOM-free by design). `draftOverrides` carries
+   the not-yet-saved Look/Caption/Motion/aspect choices so the preview reflects live edits.
+2. **Pixels for the textures.** The compositor needs decoded images. In the renderer, load each
+   `RenderImageSpec.path` via the app's file access (`createImageBitmap(await (await fetch(<file
+   url>)).blob())`) and `compositor.setImages(...)`; cache by path. Reuse whatever file-URL/
+   protocol the worker already uses to read assets (confirm in the worker's image loader).
+
+This keeps the Node-only spec building in main and the GL work in the window. If WebGL2 is
+unavailable, fall back to the existing backend `compose.preview` render for a single frame.
+
+## III-1. E1 — Live still preview + transport
+
+New: `src/features/video-editor/PreviewCanvas.tsx` + `usePreviewCompositor.ts`.
+- Export the `Compositor` class (or a thin `PreviewCompositor` wrapper) from the render-worker
+  module so it can be imported by the window; create a WebGL2 context on a `<canvas>` sized to
+  the aspect (e.g. 640×360 / 360×640).
+- State: `playheadSec` (zustand or local). On playhead change or any control change, call
+  `compositor.drawFrame(t)` inside `requestAnimationFrame`; debounce slider input to one rAF.
+- Fetch the spec via `compose:previewSpec(projectId, draft)`; rebuild only when structural
+  things change (image list, durations), not on every slider tick (for pure grade/caption
+  tweaks, mutate the spec in place and redraw).
+- Transport bar: ⏮◀▶⏭, a scrubber bound to `playheadSec`, time readout. "▶" can step the still a
+  few fps for a timing sanity check (no audio).
+- **B-roll poster (§II-E):** add IPC **`compose:posterFrame(path) → dataURL`** (one ffmpeg
+  thumbnail at t=0; cache on disk). For a b-roll segment window, bind its poster as the image
+  texture so look+captions still composite exactly.
+- DoD: changing any existing control updates the centre frame within one frame; scrubbing
+  redraws; b-roll segments show a poster + "▶ video" badge.
+
+## III-2. E2 — Look system (LUT + intensity), reusing `GradeParams.lut`
+
+**Shader (`compositor.ts`):**
+- Add uniforms `u_lut` (sampler2D), `u_lutSize` (float, e.g. 33), `u_lutStrength` (float) to the
+  uniform list + lookups.
+- After the existing grade math, sample the LUT (tiled "sliced-cube" 2D layout; trilinear via
+  two taps) and `gl_FragColor.rgb = mix(graded, lutColor, u_lutStrength)`.
+**Loader:** new `src/render-worker/lut.ts` — parse a `.cube` file → `Uint8Array` tiled texture +
+size (pure, unit-testable). Bundle assets under `resources/luts/*.cube` and a manifest
+`shared/looks.ts` = `[{id,name,defaultStrength}]` for the 6–8 looks in §II-B.1.
+**Spec/model:** add `grade.lutStrength?: number` (0..1) to `GradeParams` (`lut` already exists).
+`gradeParams(style)` in `electron/services/engine/grade.ts` may set a default `lut`; the spec
+builder overlays the project's saved look.
+**Persistence:** `ensureColumn(d,'projects','lookLut','TEXT')`, `lookStrength` (REAL),
+`lookAdjust` (TEXT/JSON for the parametric overrides). IPC `compose:updateLook(projectId,{lut,
+strength,adjust})`.
+**UI:** `LookGallery.tsx` — a row of thumbnails rendered by the **preview compositor** on the
+user's own first frame at each LUT's default strength; an **intensity slider** → `lutStrength`;
+an **Adjust (advanced)** disclosure binding sliders directly to the existing `GradeParams`
+fields (`brightness/contrast/saturation/colorBalance/vignette/sharpen/grain`) each with reset.
+- DoD: picking a look + dragging intensity updates the preview live; "Off" = raw image; values
+  persist and the final render matches the preview for image segments.
+
+## III-3. E2.5 — Smart Motion / "Living Stills"
+
+- **Compositor:** replace the fixed `1 + 0.12*p` in `scaleAt()` with a per-image motion
+  function `{zoomFrom, zoomTo, panX, panY, ease}` and add `easeInOutCubic`.
+- **Spec:** extend `RenderImageSpec` with optional `motion?: {zoomFrom;zoomTo;panX;panY;ease}`.
+  In the spec builder, assign **alternating** push/pull + slight pan per image from the project
+  **seed** (deterministic, re-rollable). Populate `MotionSpec.punchAtSec` from the timestamps of
+  **emphasized caption words** (use `activeWordInGroup`/word `emphasis`).
+- **UI:** Quick "Motion = Off / Subtle / Cinematic" → preset amounts + punch on/off; persist
+  `projects.motionPreset`. Customize: per-image direction/amount.
+- DoD: stills move with eased, alternating motion; emphasized words get a punch; Off is static.
+
+## III-4. E5 — Caption gallery + Submagic style (rounded active-word box)
+
+- **Model (`renderSpec.ts CaptionFrameModel`):** add
+  `highlightBox?: {enabled:boolean; boxColor:string; textColor:string; radius:number;
+  padding:number}` and a `wordsPerPage?: number` (generalizes `mode:'word'|'phrase'`). Add a
+  `'submagic'` preset id.
+- **Renderer (`src/render-worker/captions.ts`):** when `highlightBox.enabled`, measure the
+  **active word** (already found via `activeWordInGroup`) and draw a rounded rect (`boxColor`,
+  `radius`, `padding`) behind it, then the glyph in `textColor`; keep `highlightColor` for the
+  no-box case and the existing pop/scale.
+- **Grouping:** `groupWords()` in `electron/services/captions.ts` already controls words per
+  group — drive it from `wordsPerPage` (1–3 for Submagic) in the spec builder.
+- **Persistence:** `ensureColumn(d,'projects', 'captionBoxColor'|'captionHighlightColor'|
+  'captionWordsPerPage', …)`; thread through the spec builder.
+- **UI:** `CaptionGallery.tsx` renders each preset live (preview at a t where a caption is on
+  screen); inspector exposes highlight text colour, **box colour**, words-per-page, font, size,
+  position.
+- DoD: "Submagic" shows word-by-word with a coloured rounded box on the active word; box colour
+  is editable and renders identically in the final export.
+
+## III-5. E3/E4/E6 — Inspector, Timeline, Quick shell
+
+- **Compose shell (`src/screens/Compose.tsx`):** replace the 4 tabs with `QuickPanel.tsx` (the
+  5 rows from §II-G) + a **Customize** toggle that mounts `Inspector.tsx` (contextual to
+  selection) and `Timeline.tsx`. Re-bind the *existing* control logic into these components
+  (no logic rewrite — they already produce the same project fields).
+- **Selection model:** a `selection` state (`'project' | {kind,id}`); the inspector switches on
+  it (Resolve pattern). Timeline tracks: Visual (image/b-roll blocks), Captions (groups), Look
+  span, Audio waveform; clicking a block sets `selection` and seeks the preview.
+- Remove the `beta` gating for the now-core controls; keep API-key fields for stock B-roll.
+- Coachmarks + plain-language labels per §11; first-open gated by an `app_meta` marker.
+
+## III-6. New IPC surface (add in `electron/ipc/compose.ts` + `register.ts` + preload + `useData`)
+
+```
+compose:previewSpec(projectId, draftOverrides) -> GpuRenderSpec
+compose:posterFrame(path)                      -> dataURL
+compose:updateLook(projectId, {lut,strength,adjust})
+compose:updateMotion(projectId, {preset, perImage?})
+compose:updateCaptions(projectId, {preset,boxColor,highlightColor,wordsPerPage,...})
+looks:list()                                   -> [{id,name,defaultStrength}]
+```
+All persisted fields are additive `ensureColumn`s on `projects`; the final render already reads
+the project, so honouring them in `buildGpuRenderSpec()` makes preview == export.
+
+## III-7. Risk / performance
+- One shader pass per frame at preview size is sub-millisecond; debounce to rAF.
+- Preview == export holds **for image segments**; b-roll uses a poster still by design (§II-E).
+- WebGL2 fallback: if context creation fails, hide the live canvas and use the existing backend
+  `compose.preview` single-frame render.
+- Ship behind `features.videoEditorV2`; the LUT stage is a no-op when `grade.lut` is unset, so
+  the existing look is unchanged until a user picks one.
