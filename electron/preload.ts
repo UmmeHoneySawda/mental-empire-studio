@@ -106,6 +106,8 @@ const api: NativeApi = {
       ipcRenderer.invoke('compose:setRanges', projectId, ranges),
     setMedia: (projectId: string, patch: Partial<Project>) => ipcRenderer.invoke('compose:setMedia', projectId, patch),
     setCaptions: (projectId: string, patch: Partial<Project>) => ipcRenderer.invoke('compose:setCaptions', projectId, patch),
+    previewSpec: (projectId: string, draftOverrides?: Partial<Project>) => ipcRenderer.invoke('compose:previewSpec', projectId, draftOverrides),
+    posterFrame: (path: string) => ipcRenderer.invoke('compose:posterFrame', path),
     preview: (projectId: string) => ipcRenderer.invoke('compose:preview', projectId),
     sendToRender: (projectId: string) => ipcRenderer.invoke('compose:sendToRender', projectId)
   },

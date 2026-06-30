@@ -6,6 +6,7 @@ import type { BetaVideoOpts, Project, ProjectImage, TranscriptWord, VideoStyle }
 import { asBetaOpts } from '@shared/types'
 import { buildMasterPrompt, validateEffectPlan } from '@shared/effectPlan'
 import { isCssImageValue, mediaSrc, videoSrc } from '../lib/media'
+import { PreviewCanvas } from '../features/video-editor/PreviewCanvas'
 
 function Tab({ id, label, icon }: { id: 'media' | 'captions' | 'style' | 'advanced'; label: string; icon: JSX.Element }): JSX.Element {
   const composeTab = useStore((s) => s.composeTab)
@@ -563,6 +564,7 @@ export function Compose(): JSX.Element {
         <div style={{ flex: 1 }} />
         <button type="button" onClick={() => void sendToRender()} className="me-btn" style={{ display: 'flex', alignItems: 'center', gap: 7, border: '1px solid #262b34', background: '#15181f', borderRadius: 10, padding: '9px 16px', fontSize: 12.5, color: '#c4cad3', cursor: 'pointer' }}>Save &amp; send to render<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M5 12h14M13 6l6 6-6 6" /></svg></button>
       </div>
+      <PreviewCanvas />
       {error && <div style={{ marginBottom: 16, border: `1px solid ${error === 'Queued for render.' ? '#1f9c6b' : '#5a2530'}`, background: error === 'Queued for render.' ? 'rgba(31,156,107,.12)' : 'rgba(255,90,110,.1)', color: error === 'Queued for render.' ? '#4fd6a0' : '#ff8a96', borderRadius: 10, padding: '10px 12px', fontSize: 12 }}>{error}</div>}
       {composeTab === 'media' && <MediaTab />}
       {composeTab === 'captions' && <CaptionsTab />}

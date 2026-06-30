@@ -2,6 +2,8 @@
 // The native backend (yt-dlp, ffmpeg, scraper, scheduler) is wired in later milestones;
 // these types define the contract the UI is built against now.
 
+import type { GpuRenderSpec } from './renderSpec'
+
 export type AccentName = 'Amber' | 'Violet' | 'Emerald' | 'Crimson'
 
 export type ScreenKey =
@@ -818,6 +820,10 @@ export interface NativeApi {
     setRanges(projectId: string, ranges: { id: string; rangeStart: number; rangeEnd: number }[]): Promise<ProjectImage[]>
     setMedia(projectId: string, patch: Partial<Project>): Promise<Project>
     setCaptions(projectId: string, patch: Partial<Project>): Promise<Project>
+    /** serializable GPU compositor spec for the live still editor preview */
+    previewSpec(projectId: string, draftOverrides?: Partial<Project>): Promise<GpuRenderSpec>
+    /** extract/cache the first frame of a local video segment as a PNG data URL */
+    posterFrame(path: string): Promise<string>
     preview(projectId: string): Promise<string>
     sendToRender(projectId: string): Promise<void>
   }

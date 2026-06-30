@@ -28,6 +28,7 @@ import {
   type ThumbnailTemplate,
   type TranscriptWord
 } from '@shared/types'
+import type { GpuRenderSpec } from '@shared/renderSpec'
 
 function grad(a: string, b: string): string {
   return `linear-gradient(135deg,${a},${b})`
@@ -225,6 +226,52 @@ function installMock(): void {
     pushActivity(`Queued "${p.title}" for render`)
   }
 
+  const makePreviewSpec = (projectId: string): GpuRenderSpec => {
+    const p = projects.find((x) => x.id === projectId)
+    if (!p) throw new Error(`Project not found: ${projectId}`)
+    const aspect = p.captionAspect ?? '16:9'
+    const width = aspect === '9:16' ? 406 : aspect === '1:1' ? 720 : 1280
+    const height = aspect === '9:16' ? 720 : aspect === '1:1' ? 720 : 720
+    const imgs = projectImages.get(projectId) ?? []
+    const words = transcripts.get(projectId) ?? []
+    const groups = []
+    const perGroup = Math.max(1, (aspect === '16:9' ? 4 : 3) * (p.captionLines ?? 1))
+    for (let i = 0; i < words.length; i += perGroup) {
+      const chunk = words.slice(i, i + perGroup)
+      if (chunk.length) groups.push({
+        startSec: chunk[0].start,
+        endSec: Math.max(chunk[0].start + 0.3, chunk[chunk.length - 1].end),
+        words: chunk.map((w) => ({ text: w.word, startSec: w.start, endSec: w.end, emphasis: w.emphasis }))
+      })
+    }
+    const style = settings.beta.enabled ? (p.betaOpts?.style ?? 'None') : 'None'
+    return {
+      jobId: p.id,
+      width,
+      height,
+      fps: 24,
+      durationSec: p.durationSec,
+      images: imgs.map((im) => ({ path: im.path, startSec: im.rangeStart, endSec: im.rangeEnd })),
+      motion: { kenBurns: !!p.kenBurns, punchAtSec: words.filter((w) => w.emphasis).map((w) => w.start) },
+      grade: { style, saturation: style === 'Cinematic' ? 1.12 : 1, contrast: style === 'Cinematic' ? 1.06 : 1, brightness: style === 'Cinematic' ? -0.015 : 0, colorBalance: { r: style === 'Cinematic' ? 0.05 : 0, g: 0, b: style === 'Cinematic' ? -0.05 : 0 }, vignette: style === 'Cinematic' ? 0.55 : 0, sharpen: 0 },
+      grain: { strength: style === 'Cinematic' ? 0.03 : 0, temporal: style === 'Cinematic' },
+      overlayPath: undefined,
+      captions: {
+        groups,
+        preset: p.captionPreset,
+        font: p.captionFont || 'Anton',
+        animation: p.captionAnim || 'Pop-in',
+        mode: p.captionPace === 'phrase' ? 'phrase' : 'word',
+        position: p.captionPosition ?? 'bottom',
+        lines: p.captionLines ?? 1,
+        highlightColor: '#ffd93d'
+      },
+      audio: { voicePath: p.mp3Path },
+      encoder: { codec: 'avc', bitrateMbps: 6, keyIntervalSec: 2 },
+      out: { h264Path: '/Browser/preview.gpu.mp4', finalPath: '/Browser/preview.mp4' }
+    }
+  }
+
   const api = {
     platform: 'web',
     appVersion: '0.1.5 (browser mock)',
@@ -414,6 +461,8 @@ function installMock(): void {
       },
       setMedia: async (projectId: string, patch: Partial<Project>) => patchProject(projectId, patch),
       setCaptions: async (projectId: string, patch: Partial<Project>) => patchProject(projectId, patch),
+      previewSpec: async (projectId: string) => makePreviewSpec(projectId),
+      posterFrame: async () => '',
       preview: async (projectId: string) => `/Browser/MentalEmpire_out/${slug(projectId)}-preview.mp4`,
       sendToRender: async (projectId: string) => queueProject(projectId)
     }),

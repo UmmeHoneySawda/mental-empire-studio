@@ -19,6 +19,7 @@ import type {
   NichePoolHealth,
   SourceChannel
 } from '@shared/types'
+import type { GpuRenderSpec } from '@shared/renderSpec'
 import { dropIdleRenderProgress } from '../lib/renderProgress'
 
 // Live data layer — everything sourced from the SQLite DB / scrape / download /
@@ -40,6 +41,9 @@ interface DataState {
   activeProject: Project | null
   projectImages: ProjectImage[]
   transcript: TranscriptWord[]
+  previewSpec: GpuRenderSpec | null
+  previewLoading: boolean
+  previewError: string
   transcribing: boolean
   transcribeMessage: string
   transcribeError: string
@@ -71,6 +75,7 @@ interface DataState {
   openProject: (downloadId: string) => Promise<void>
   openProjectById: (projectId: string) => Promise<void>
   refreshActiveProjectSnapshot: (projectId?: string) => Promise<void>
+  loadPreviewSpec: (projectId?: string) => Promise<void>
   setProjectImages: (paths: string[]) => Promise<void>
   reorderProjectImages: (imageIds: string[]) => Promise<void>
   setMedia: (patch: Partial<Project>) => Promise<void>
@@ -138,6 +143,9 @@ export const useData = create<DataState>((set, get) => ({
   activeProject: null,
   projectImages: [],
   transcript: [],
+  previewSpec: null,
+  previewLoading: false,
+  previewError: '',
   transcribing: false,
   transcribeMessage: '',
   transcribeError: '',
@@ -284,7 +292,7 @@ export const useData = create<DataState>((set, get) => ({
     if (!a) return
     const project = await a.compose.createProject(downloadId)
     const [projectImages, transcript] = await Promise.all([a.compose.images(project.id), a.transcribe.get(project.id)])
-    set({ activeProject: project, projectImages, transcript, transcribeError: '', transcribeMessage: '' })
+    set({ activeProject: project, projectImages, transcript, previewSpec: null, previewError: '', transcribeError: '', transcribeMessage: '' })
   },
   openProjectById: async (projectId) => {
     const a = api()
@@ -292,7 +300,7 @@ export const useData = create<DataState>((set, get) => ({
     const project = await a.compose.get(projectId)
     if (!project) return
     const [projectImages, transcript] = await Promise.all([a.compose.images(projectId), a.transcribe.get(projectId)])
-    set({ activeProject: project, projectImages, transcript, transcribeError: '', transcribeMessage: '' })
+    set({ activeProject: project, projectImages, transcript, previewSpec: null, previewError: '', transcribeError: '', transcribeMessage: '' })
   },
   refreshActiveProjectSnapshot: async (projectId) => {
     const a = api()
@@ -314,6 +322,21 @@ export const useData = create<DataState>((set, get) => ({
       transcribeError: '',
       transcribeMessage: ''
     })
+  },
+  loadPreviewSpec: async (projectId) => {
+    const a = api()
+    const current = get().activeProject
+    const id = projectId ?? current?.id
+    if (!a || !id) return
+    set({ previewLoading: true, previewError: '' })
+    try {
+      const previewSpec = await a.compose.previewSpec(id)
+      if (get().activeProject?.id === id) set({ previewSpec, previewError: '' })
+    } catch (e) {
+      if (get().activeProject?.id === id) set({ previewSpec: null, previewError: (e as Error).message })
+    } finally {
+      if (get().activeProject?.id === id) set({ previewLoading: false })
+    }
   },
   setProjectImages: async (paths) => {
     const a = api()

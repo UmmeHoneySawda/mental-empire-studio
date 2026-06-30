@@ -1,8 +1,11 @@
 import { ipcMain } from 'electron'
-import { existsSync, mkdirSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { spawn } from 'node:child_process'
+import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import type { Project, ProjectImage, TranscribeProgress, TranscriptWord } from '../../shared/types'
 import { asBetaOpts } from '../../shared/types'
+import type { GpuRenderSpec } from '../../shared/renderSpec'
 import { safeName } from '../../shared/sanitize'
 import { deriveStylePlan, EMPTY_PLAN, styleCaptionLead, styleTransition, validateEffectPlan } from '../../shared/effectPlan'
 import { getSettings } from '../store/settings'
@@ -14,8 +17,10 @@ import { emit, hhmm, pushActivity } from './events'
 import { outputDir } from '../services/queue'
 import { itemDirForProject, itemImagesDir, itemThumbDir, cacheDir, ensureDir, writeProjectManifest, videoIdFromProjectId } from '../services/storage'
 import { buildAss } from '../services/captions'
-import { runRender } from '../services/render'
+import { overlayGradientPath, runRender } from '../services/render'
 import { probeRenderCapabilities } from '../services/engine/caps'
+import { buildGpuRenderSpec, gpuDimensions } from '../services/engine/gpu/spec'
+import { ffmpegPath } from '../services/bin'
 
 // Compose orchestration: build a project from a downloaded mp3, manage its image
 // ranges + caption recipe, run transcription (Groq), and push to the render queue.
@@ -191,6 +196,87 @@ async function runTranscribe(projectId: string): Promise<TranscriptWord[]> {
   }
 }
 
+function previewSpec(projectId: string, draftOverrides?: Partial<Project>): GpuRenderSpec {
+  const repos = getRepos()
+  const project = repos.getProject(projectId)
+  if (!project) throw new Error(`Unknown project: ${projectId}`)
+  validateDownloadedAudio(project.downloadId, project.mp3Path, project.durationSec)
+
+  const draftProject: Project = {
+    ...project,
+    ...(draftOverrides ?? {}),
+    id: project.id,
+    downloadId: project.downloadId,
+    mp3Path: project.mp3Path,
+    betaOpts: draftOverrides?.betaOpts ?? project.betaOpts
+  }
+  const settings = { ...getSettings(), quality: '720p' as const }
+  const beta = settings.beta?.enabled ? asBetaOpts(draftProject.betaOpts) : null
+  const words = repos.getTranscript(projectId)
+  const hookText = beta?.hook.enabled
+    ? (beta.hook.text.trim() || words.slice(0, 8).map((w) => w.word).join(' '))
+    : ''
+  const style = beta?.style ?? 'None'
+  const styleLead = beta ? styleCaptionLead(style) : undefined
+  const plan = beta
+    ? (beta.effectPlanJson.trim() ? validateEffectPlan(beta.effectPlanJson, draftProject.durationSec).plan : deriveStylePlan(words, style, draftProject.durationSec))
+    : EMPTY_PLAN
+  const { zoomHits } = buildAss(words, {
+    preset: draftProject.captionPreset,
+    font: draftProject.captionFont,
+    animation: draftProject.captionAnim,
+    aspect: draftProject.captionAspect,
+    lines: draftProject.captionLines ?? 1,
+    position: draftProject.captionPosition ?? 'bottom',
+    mode: draftProject.captionPace === 'word' ? 'word' : draftProject.captionPace === 'phrase' ? 'phrase' : undefined,
+    keywords: draftProject.keywords || !!beta?.autoHighlight,
+    hook: hookText ? { text: hookText, untilSec: 2.6 } : undefined,
+    styleLead,
+    textEffects: beta ? plan.textEffects : undefined
+  })
+  const dims = gpuDimensions(settings.quality, draftProject.captionAspect)
+  const overlayPath = beta ? overlayGradientPath(beta.overlay, dims.w, dims.h) : undefined
+  const dir = cacheDir('preview-specs')
+  mkdirSync(dir, { recursive: true })
+  const base = `${safeName(draftProject.title)}-${Date.now()}`
+  return buildGpuRenderSpec({
+    project: draftProject,
+    images: repos.getProjectImages(projectId),
+    words,
+    settings,
+    zoomHits,
+    overlayPath,
+    voicePath: draftProject.mp3Path,
+    hookText,
+    out: {
+      h264Path: join(dir, `${base}.gpu.mp4`),
+      finalPath: join(dir, `${base}.mp4`)
+    }
+  })
+}
+
+function posterFrame(videoPath: string): Promise<string> {
+  if (!videoPath || !existsSync(videoPath)) throw new Error(`Video not found: ${videoPath}`)
+  const dir = cacheDir('posters')
+  mkdirSync(dir, { recursive: true })
+  const hash = createHash('sha1').update(videoPath).digest('hex').slice(0, 24)
+  const out = join(dir, `${hash}.png`)
+  const read = (): string => `data:image/png;base64,${readFileSync(out).toString('base64')}`
+  if (existsSync(out)) return Promise.resolve(read())
+
+  return new Promise((resolve, reject) => {
+    const args = ['-y', '-hide_banner', '-loglevel', 'error', '-ss', '0', '-i', videoPath, '-frames:v', '1', '-vf', 'scale=640:-2', '-f', 'image2', out]
+    const child = spawn(ffmpegPath(), args, { windowsHide: true })
+    let err = ''
+    child.stderr.on('data', (d) => { err += String(d) })
+    child.on('error', reject)
+    child.on('close', (code) => {
+      if (code === 0 && existsSync(out)) resolve(read())
+      else reject(new Error(`poster frame ffmpeg ${code ?? 'failed'}: ${err.slice(-300)}`))
+    })
+  })
+}
+
 async function previewProject(projectId: string): Promise<string> {
   const repos = getRepos()
   const project = repos.getProject(projectId)
@@ -279,6 +365,8 @@ export function registerComposeIpc(): void {
   })
   ipcMain.handle('compose:setMedia', (_e, projectId: string, patch: Partial<Project>) => repos().updateProject(projectId, patch))
   ipcMain.handle('compose:setCaptions', (_e, projectId: string, patch: Partial<Project>) => repos().updateProject(projectId, patch))
+  ipcMain.handle('compose:previewSpec', (_e, projectId: string, draftOverrides?: Partial<Project>) => previewSpec(projectId, draftOverrides))
+  ipcMain.handle('compose:posterFrame', (_e, path: string) => posterFrame(path))
   ipcMain.handle('compose:preview', (_e, projectId: string) => previewProject(projectId))
   ipcMain.handle('compose:sendToRender', (_e, projectId: string) => sendToRender(projectId))
 

@@ -130,7 +130,7 @@ export class Compositor {
   private videoTexB: WebGLTexture
   private uniforms: Record<string, WebGLUniformLocation | null> = {}
 
-  constructor(public canvas: OffscreenCanvas, private spec: GpuRenderSpec) {
+  constructor(public canvas: HTMLCanvasElement | OffscreenCanvas, private spec: GpuRenderSpec) {
     const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true, premultipliedAlpha: false })
     if (!gl) throw new Error('WebGL2 unavailable in render worker')
     this.gl = gl
