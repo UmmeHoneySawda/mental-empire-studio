@@ -380,17 +380,51 @@ function TemplatesTab(): JSX.Element {
   const applyTemplate = useStore((s) => s.applyTemplate)
   const saveCurrentTemplate = useStore((s) => s.saveCurrentTemplate)
   const deleteTemplate = useStore((s) => s.deleteTemplate)
+  const [templatePreviews, setTemplatePreviews] = useState<Record<string, string>>({})
+  const templateKey = useMemo(() => templates.map((t) => `${t.id}:${JSON.stringify(t.layers)}`).join('|'), [templates])
+
+  useEffect(() => {
+    let cancelled = false
+    const ids = new Set(templates.map((t) => t.id))
+    setTemplatePreviews((prev) => Object.fromEntries(Object.entries(prev).filter(([id]) => ids.has(id))))
+    if (!templates.length) return () => { cancelled = true }
+
+    const render = async (): Promise<void> => {
+      const next: Record<string, string> = {}
+      for (const t of templates) {
+        try {
+          next[t.id] = await rasterizeLayers(t.layers)
+          if (cancelled) return
+          setTemplatePreviews((prev) => ({ ...prev, [t.id]: next[t.id] }))
+        } catch {
+          /* keep the skeleton for templates with missing image assets */
+        }
+      }
+    }
+    void render()
+    return () => { cancelled = true }
+  }, [templateKey, templates])
+
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div style={{ flex: 1, overflowY: 'auto', padding: '10px 10px 0' }}>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, marginBottom: 8 }}>
-          {templates.map((t) => (
-            <div key={t.id} onClick={() => applyTemplate(t)} className="me-card" style={{ position: 'relative', border: '1px solid #1d2129', background: '#12151b', borderRadius: 9, padding: 6, cursor: 'pointer' }}>
-              <div onClick={(e) => { e.stopPropagation(); if (window.confirm(`Delete "${t.name}"?`)) void deleteTemplate(t.id) }} style={{ position: 'absolute', top: 3, right: 3, zIndex: 2, width: 18, height: 18, borderRadius: 5, background: 'rgba(0,0,0,.55)', color: '#ff8a96', display: 'grid', placeItems: 'center', fontSize: 12, cursor: 'pointer' }}>×</div>
-              <div style={{ aspectRatio: '16/9', borderRadius: 5, background: 'linear-gradient(135deg,#2a2540,#46243a)', display: 'flex', alignItems: 'center', justifyContent: 'center' }}><span style={{ width: '50%', height: 4, borderRadius: 2, background: 'var(--accent)' }} /></div>
-              <div style={{ fontSize: 9.5, textAlign: 'center', marginTop: 5, color: '#cdd2da', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.name}</div>
-            </div>
-          ))}
+          {templates.map((t) => {
+            const preview = templatePreviews[t.id]
+            return (
+              <div key={t.id} onClick={() => applyTemplate(t)} className="me-card" style={{ position: 'relative', border: '1px solid #1d2129', background: '#12151b', borderRadius: 9, padding: 6, cursor: 'pointer' }}>
+                <div onClick={(e) => { e.stopPropagation(); if (window.confirm(`Delete "${t.name}"?`)) void deleteTemplate(t.id) }} style={{ position: 'absolute', top: 3, right: 3, zIndex: 2, width: 18, height: 18, borderRadius: 5, background: 'rgba(0,0,0,.55)', color: '#ff8a96', display: 'grid', placeItems: 'center', fontSize: 12, cursor: 'pointer' }}>×</div>
+                <div style={{ aspectRatio: '16/9', borderRadius: 5, background: 'linear-gradient(135deg,#2a2540,#46243a)', overflow: 'hidden', display: 'grid', placeItems: 'center' }}>
+                  {preview ? (
+                    <img src={preview} alt={`${t.name} template preview`} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                  ) : (
+                    <span style={{ width: '50%', height: 4, borderRadius: 2, background: 'var(--accent)' }} />
+                  )}
+                </div>
+                <div style={{ fontSize: 9.5, textAlign: 'center', marginTop: 5, color: '#cdd2da', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{t.name}</div>
+              </div>
+            )
+          })}
           {templates.length === 0 && <div style={{ gridColumn: '1/-1', fontSize: 10.5, color: '#5b616f', textAlign: 'center', padding: '20px 0' }}>No templates yet.</div>}
         </div>
       </div>
@@ -407,7 +441,6 @@ function CompareBar(): JSX.Element | null {
   const layers = useStore((s) => s.layers)
   const videoId = activeProject ? youtubeIdFromDownloadId(activeProject.downloadId) : ''
   const [quality, setQuality] = useState<YoutubeThumbQuality>('max')
-  const [compareTab, setCompareTab] = useState<'design' | 'original'>('design')
   const [previewUrl, setPreviewUrl] = useState('')
 
   useEffect(() => { setQuality('max') }, [videoId])
@@ -417,23 +450,28 @@ function CompareBar(): JSX.Element | null {
   const src = youtubeThumbUrl(videoId, quality)
 
   return (
-    <div style={{ marginTop: 12, border: '1px solid #1d2129', borderRadius: 12, background: '#12151b', overflow: 'hidden' }}>
-      <div style={{ display: 'flex', borderBottom: '1px solid #1d2129' }}>
-        {(['design', 'original'] as const).map((t) => (
-          <button key={t} type="button" onClick={() => setCompareTab(t)} style={{ flex: 1, padding: '8px 10px', background: compareTab === t ? 'var(--accent-soft)' : 'transparent', border: 'none', borderBottom: compareTab === t ? '2px solid var(--accent)' : '2px solid transparent', cursor: 'pointer', fontSize: 10.5, color: compareTab === t ? 'var(--accent)' : '#6a7180', fontWeight: compareTab === t ? 600 : 400, textTransform: 'capitalize' }}>
-            {t === 'design' ? '◎ Your design' : '📺 Original'}
-          </button>
-        ))}
-        {compareTab === 'original' && <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: 9, color: '#5b616f', alignSelf: 'center', paddingRight: 10 }}>{quality}</span>}
+    <div style={{ marginTop: 12, border: '1px solid #1d2129', borderRadius: 12, background: '#12151b', padding: 10 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 8 }}>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '.6px', color: '#5b616f' }}>THUMBNAIL REFERENCE</span>
+        <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: 9, color: '#5b616f' }}>original {quality}</span>
       </div>
-      <div style={{ aspectRatio: '16/9', background: '#0e1116' }}>
-        {compareTab === 'design' && previewUrl ? (
-          <img src={previewUrl} alt="Your design" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-        ) : compareTab === 'original' ? (
-          <img src={src} alt="Original YouTube thumbnail" onError={() => setQuality((q) => q === 'max' ? 'hq' : q === 'hq' ? 'mq' : 'default')} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-        ) : (
-          <div style={{ display: 'grid', placeItems: 'center', height: '100%', fontSize: 11, color: '#5b616f' }}>Preview renders on change…</div>
-        )}
+      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 10 }}>
+        <div>
+          <div style={{ aspectRatio: '16/9', borderRadius: 8, background: '#0e1116', overflow: 'hidden', border: '1px solid #1d2129' }}>
+            {previewUrl ? (
+              <img src={previewUrl} alt="Your design" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+            ) : (
+              <div style={{ display: 'grid', placeItems: 'center', height: '100%', fontSize: 11, color: '#5b616f' }}>Preview renders on change...</div>
+            )}
+          </div>
+          <div style={{ marginTop: 5, fontSize: 10, color: '#8a909c', textAlign: 'center' }}>Your design</div>
+        </div>
+        <div>
+          <div style={{ aspectRatio: '16/9', borderRadius: 8, background: '#0e1116', overflow: 'hidden', border: '1px solid #1d2129' }}>
+            <img src={src} alt="Original YouTube thumbnail" onError={() => setQuality((q) => q === 'max' ? 'hq' : q === 'hq' ? 'mq' : 'default')} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+          </div>
+          <div style={{ marginTop: 5, fontSize: 10, color: '#8a909c', textAlign: 'center' }}>Original thumbnail</div>
+        </div>
       </div>
     </div>
   )
