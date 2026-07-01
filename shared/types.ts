@@ -7,6 +7,7 @@ import type { GpuRenderSpec } from './renderSpec'
 export type AccentName = 'Amber' | 'Violet' | 'Emerald' | 'Crimson'
 
 export type ScreenKey =
+  | 'home'
   | 'library'
   | 'workspace'
   | 'channels'
@@ -697,7 +698,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   accent: 'Amber',
   ambientGlow: true,
   showActivityRail: true,
-  defaultScreen: 'library',
+  defaultScreen: 'home',
   namingTemplate: '{channel} - {title}',
   libraryFolder: '',
   outputFolder: '',

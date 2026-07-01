@@ -71,8 +71,8 @@ describe('nextStepFor / actionLabel', () => {
     expect(nextStepFor(wi({ downloadId: 'dl-z' }))).toEqual({ screen: 'compose', openProjectId: 'dl-z' })
     expect(actionLabel(wi({}))).toBe('Edit')
   })
-  it('not downloaded → download', () => {
-    expect(nextStepFor(wi({ downloaded: false, downloadId: undefined }))).toEqual({ screen: 'download' })
+  it('not downloaded → sources', () => {
+    expect(nextStepFor(wi({ downloaded: false, downloadId: undefined }))).toEqual({ screen: 'sources' })
     expect(actionLabel(wi({ downloaded: false }))).toBe('Download')
   })
 })

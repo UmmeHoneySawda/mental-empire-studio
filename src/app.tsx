@@ -3,8 +3,7 @@ import { useStore } from './store/useStore'
 import { useData } from './store/useData'
 import { TitleBar } from './components/TitleBar'
 import { Sidebar } from './components/Sidebar'
-import { Library } from './screens/Library'
-import { Workspace } from './screens/Workspace'
+import { Home } from './screens/Home'
 import { MyChannels } from './screens/MyChannels'
 import { Download } from './screens/Download'
 import { Compose } from './screens/Compose'
@@ -20,8 +19,9 @@ import type { ScreenKey } from '@shared/types'
 const Thumbnails = lazy(() => import('./screens/Thumbnails').then((m) => ({ default: m.Thumbnails })))
 
 const SCREENS: Record<ScreenKey, ComponentType> = {
-  library: Library,
-  workspace: Workspace,
+  home: Home,
+  library: Home,
+  workspace: Home,
   channels: MyChannels,
   sources: Download,
   download: Download,

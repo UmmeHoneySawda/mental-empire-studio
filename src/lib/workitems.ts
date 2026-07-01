@@ -65,10 +65,10 @@ export function resumeCandidate(items: WorkItem[]): WorkItem | null {
 }
 
 /** The next screen + (optional) project to open for an item, given its progress. */
-export function nextStepFor(w: WorkItem): { screen: 'render' | 'compose' | 'download'; openProjectId?: string } {
+export function nextStepFor(w: WorkItem): { screen: 'render' | 'compose' | 'sources'; openProjectId?: string } {
   if (w.rendered) return { screen: 'render' }
   if (w.downloaded && w.downloadId) return { screen: 'compose', openProjectId: w.downloadId }
-  return { screen: 'download' }
+  return { screen: 'sources' }
 }
 
 /** Short label for the primary action button of an item. */

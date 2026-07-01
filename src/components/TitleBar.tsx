@@ -4,8 +4,9 @@ import { clickableProps } from './primitives'
 import type { ScreenKey } from '@shared/types'
 
 const LABELS: Record<ScreenKey, string> = {
-  library: 'Library',
-  workspace: 'Workspace',
+  home: 'Home',
+  library: 'Home',
+  workspace: 'Home',
   channels: 'My Channels',
   sources: 'Sources',
   download: 'Download',

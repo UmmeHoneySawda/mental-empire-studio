@@ -143,9 +143,16 @@ function mirror(settings: AppSettings) {
   }
 }
 
+function normalizeScreenKey(screen?: ScreenKey | null): ScreenKey {
+  if (!screen) return 'home'
+  if (screen === 'library' || screen === 'workspace') return 'home'
+  if (screen === 'download') return 'sources'
+  return screen
+}
+
 export const useStore = create<AppState>((set, get) => ({
-  active: 'library',
-  setActive: (s) => set({ active: s }),
+  active: 'home',
+  setActive: (s) => set({ active: normalizeScreenKey(s) }),
   workspaceChannel: null,
   setWorkspaceChannel: (c) => {
     pushPatch({ lastWorkspaceChannel: c ?? '' })
@@ -153,14 +160,14 @@ export const useStore = create<AppState>((set, get) => ({
   },
   openWorkspace: (channel) => {
     if (channel !== undefined) pushPatch({ lastWorkspaceChannel: channel ?? '' })
-    set((s) => ({ active: 'workspace', workspaceChannel: channel !== undefined ? channel : s.workspaceChannel }))
+    set((s) => ({ active: 'home', workspaceChannel: channel !== undefined ? channel : s.workspaceChannel }))
   },
 
   settings: DEFAULT_SETTINGS,
   hydrated: false,
   hydrate: async () => {
     const persisted = await window.api?.settings?.get?.()
-    if (persisted) set({ ...mirror(persisted), active: persisted.defaultScreen, workspaceChannel: persisted.lastWorkspaceChannel || null, hydrated: true })
+    if (persisted) set({ ...mirror(persisted), active: normalizeScreenKey(persisted.defaultScreen), workspaceChannel: persisted.lastWorkspaceChannel || null, hydrated: true })
     else set({ hydrated: true })
   },
   updateSettings: (patch) => {

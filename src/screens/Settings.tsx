@@ -127,7 +127,7 @@ export function Settings(): JSX.Element {
         </Card>
         <Card label="DISPLAY">
           <Row on={ambientGlow} label="Ambient accent glow" onClick={toggleAmbientGlow} />
-          <Row on={showActivityRail} label="Show activity rail on Library" onClick={toggleActivityRail} />
+          <Row on={showActivityRail} label="Show activity rail on Home" onClick={toggleActivityRail} />
         </Card>
       </div>
     ),
