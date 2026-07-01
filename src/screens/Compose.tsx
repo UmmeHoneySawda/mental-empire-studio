@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store/useStore'
 import { useData } from '../store/useData'
 import { ScreenPad, Eyebrow, Title } from '../components/primitives'
@@ -8,6 +8,7 @@ import { buildMasterPrompt, validateEffectPlan } from '@shared/effectPlan'
 import { isCssImageValue, mediaSrc, videoSrc } from '../lib/media'
 import { PreviewCanvas } from '../features/video-editor/PreviewCanvas'
 import { LookGallery } from '../features/video-editor/LookGallery'
+import { EditorTimeline, type EditorSelection } from '../features/video-editor/EditorTimeline'
 
 function Tab({ id, label, icon }: { id: 'media' | 'captions' | 'style' | 'advanced'; label: string; icon: JSX.Element }): JSX.Element {
   const composeTab = useStore((s) => s.composeTab)
@@ -49,6 +50,20 @@ function overlayBackground(o?: BetaVideoOpts['overlay']): string {
   if (o.left) edges.push(`linear-gradient(90deg,rgba(0,0,0,${alpha}) 0%,rgba(0,0,0,0) ${stop})`)
   if (o.right) edges.push(`linear-gradient(270deg,rgba(0,0,0,${alpha}) 0%,rgba(0,0,0,0) ${stop})`)
   return edges.join(',')
+}
+
+function editorSelectionLabel(selection: EditorSelection, images: ProjectImage[], words: TranscriptWord[], project?: Project | null): string {
+  if (selection.kind === 'image') {
+    const image = images.find((im) => im.id === selection.id)
+    return image ? `Image · ${fmt(image.rangeStart)}-${fmt(image.rangeEnd)}` : 'Image segment'
+  }
+  if (selection.kind === 'caption') {
+    const word = words.find((w) => w.id === selection.id)
+    return word ? `Caption · ${word.word}` : 'Caption word'
+  }
+  if (selection.kind === 'look') return `Look · ${project?.lookLut ?? 'off'}`
+  if (selection.kind === 'audio') return 'Audio track'
+  return 'Project defaults'
 }
 
 function MediaTab(): JSX.Element {
@@ -610,11 +625,17 @@ function CaptionsTab(): JSX.Element {
 
 export function Compose(): JSX.Element {
   const composeTab = useStore((s) => s.composeTab)
+  const videoEditorV2 = useStore((s) => s.settings.features.videoEditorV2)
   const project = useData((s) => s.activeProject)
+  const images = useData((s) => s.projectImages)
+  const transcript = useData((s) => s.transcript)
   const downloads = useData((s) => s.downloads)
   const openProject = useData((s) => s.openProject)
   const sendActiveToRender = useData((s) => s.sendActiveToRender)
   const [error, setError] = useState('')
+  const [videoPlayheadSec, setVideoPlayheadSec] = useState(0)
+  const [videoSelection, setVideoSelection] = useState<EditorSelection>({ kind: 'project' })
+  const selectedLabel = useMemo(() => editorSelectionLabel(videoSelection, images, transcript, project), [videoSelection, images, transcript, project])
 
   // Auto-open only when there is one obvious choice. With multiple downloads,
   // keep the context explicit so Compose never silently swaps to the first item.
@@ -623,6 +644,11 @@ export function Compose(): JSX.Element {
       void openProject(downloads[0].id).catch((e) => setError((e as Error).message))
     }
   }, [project, downloads, openProject])
+
+  useEffect(() => {
+    setVideoPlayheadSec(0)
+    setVideoSelection({ kind: 'project' })
+  }, [project?.id])
 
   const sendToRender = async (): Promise<void> => {
     setError('')
@@ -662,7 +688,18 @@ export function Compose(): JSX.Element {
         <div style={{ flex: 1 }} />
         <button type="button" onClick={() => void sendToRender()} className="me-btn" style={{ display: 'flex', alignItems: 'center', gap: 7, border: '1px solid #262b34', background: '#15181f', borderRadius: 10, padding: '9px 16px', fontSize: 12.5, color: '#c4cad3', cursor: 'pointer' }}>Save &amp; send to render<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M5 12h14M13 6l6 6-6 6" /></svg></button>
       </div>
-      <PreviewCanvas />
+      <PreviewCanvas playheadSec={videoPlayheadSec} onPlayheadChange={setVideoPlayheadSec} selectedLabel={selectedLabel} />
+      {videoEditorV2 && project && (
+        <EditorTimeline
+          project={project}
+          images={images}
+          words={transcript}
+          playheadSec={videoPlayheadSec}
+          selection={videoSelection}
+          onSeek={setVideoPlayheadSec}
+          onSelect={setVideoSelection}
+        />
+      )}
       {error && <div style={{ marginBottom: 16, border: `1px solid ${error === 'Queued for render.' ? '#1f9c6b' : '#5a2530'}`, background: error === 'Queued for render.' ? 'rgba(31,156,107,.12)' : 'rgba(255,90,110,.1)', color: error === 'Queued for render.' ? '#4fd6a0' : '#ff8a96', borderRadius: 10, padding: '10px 12px', fontSize: 12 }}>{error}</div>}
       {composeTab === 'media' && <MediaTab />}
       {composeTab === 'captions' && <CaptionsTab />}

@@ -25,7 +25,13 @@ function TransportButton({ label, title, disabled, onClick }: { label: string; t
   )
 }
 
-export function PreviewCanvas(): JSX.Element | null {
+interface PreviewCanvasProps {
+  playheadSec?: number
+  onPlayheadChange?: (sec: number) => void
+  selectedLabel?: string
+}
+
+export function PreviewCanvas({ playheadSec: controlledPlayheadSec, onPlayheadChange, selectedLabel }: PreviewCanvasProps = {}): JSX.Element | null {
   const videoEditorV2 = useStore((s) => s.settings.features.videoEditorV2)
   const project = useData((s) => s.activeProject)
   const images = useData((s) => s.projectImages)
@@ -35,13 +41,12 @@ export function PreviewCanvas(): JSX.Element | null {
   const previewError = useData((s) => s.previewError)
   const loadPreviewSpec = useData((s) => s.loadPreviewSpec)
   const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [playheadSec, setPlayheadSec] = useState(0)
+  const [localPlayheadSec, setLocalPlayheadSec] = useState(0)
   const [playing, setPlaying] = useState(false)
   const [fallbackPath, setFallbackPath] = useState('')
   const [fallbackState, setFallbackState] = useState<'idle' | 'rendering' | 'ready' | 'error'>('idle')
   const [fallbackError, setFallbackError] = useState('')
   const [fallbackForKey, setFallbackForKey] = useState('')
-  const { status, error } = usePreviewCompositor(canvasRef, spec, playheadSec)
 
   const projectKey = useMemo(() => {
     if (!project) return ''
@@ -71,7 +76,15 @@ export function PreviewCanvas(): JSX.Element | null {
   const imagesKey = useMemo(() => images.map((im) => `${im.id}:${im.path}:${im.thumb}:${im.rangeStart}:${im.rangeEnd}`).join('|'), [images])
   const transcriptKey = useMemo(() => transcript.map((w) => `${w.id}:${w.word}:${w.start}:${w.end}:${w.emphasis ? 1 : 0}`).join('|'), [transcript])
   const durationSec = Math.max(0.05, spec?.durationSec ?? project?.durationSec ?? 0.05)
+  const playheadSec = controlledPlayheadSec ?? localPlayheadSec
+  const { status, error } = usePreviewCompositor(canvasRef, spec, playheadSec)
   const canDraw = !!project && !!spec && status !== 'error'
+  const setPreviewPlayhead = (next: number | ((current: number) => number)): void => {
+    const value = typeof next === 'function' ? next(playheadSec) : next
+    const clamped = Math.max(0, Math.min(durationSec, value))
+    if (controlledPlayheadSec == null) setLocalPlayheadSec(clamped)
+    onPlayheadChange?.(clamped)
+  }
 
   useEffect(() => {
     if (!videoEditorV2 || !project) return
@@ -112,7 +125,7 @@ export function PreviewCanvas(): JSX.Element | null {
   }, [videoEditorV2, project?.id, project, error, fallbackKey, fallbackForKey, fallbackState])
 
   useEffect(() => {
-    setPlayheadSec((t) => Math.min(t, durationSec))
+    if (playheadSec > durationSec) setPreviewPlayhead(durationSec)
   }, [durationSec])
 
   useEffect(() => {
@@ -122,7 +135,7 @@ export function PreviewCanvas(): JSX.Element | null {
     const tick = (now: number): void => {
       const dt = Math.min(0.25, (now - last) / 1000)
       last = now
-      setPlayheadSec((t) => {
+      setPreviewPlayhead((t) => {
         const next = t + dt
         if (next >= durationSec) {
           setPlaying(false)
@@ -134,7 +147,7 @@ export function PreviewCanvas(): JSX.Element | null {
     }
     raf = requestAnimationFrame(tick)
     return () => cancelAnimationFrame(raf)
-  }, [playing, canDraw, durationSec])
+  }, [playing, canDraw, durationSec, playheadSec])
 
   if (!videoEditorV2) return null
 
@@ -162,11 +175,11 @@ export function PreviewCanvas(): JSX.Element | null {
           {(previewError || fallbackError || (error && fallbackState !== 'rendering' && !fallbackMediaSrc)) && <div title={previewError || fallbackError || error} style={{ position: 'absolute', left: 12, right: 12, bottom: 12, border: '1px solid #5a2530', borderRadius: 9, padding: '8px 10px', fontSize: 11, color: '#ff8a96', background: 'rgba(20,10,14,.86)' }}>{previewError || fallbackError || error}</div>}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderTop: '1px solid #1d2129' }}>
-          <TransportButton label="|<" title="Start" disabled={!canDraw} onClick={() => setPlayheadSec(0)} />
-          <TransportButton label="<" title="Back 1 second" disabled={!canDraw} onClick={() => setPlayheadSec((t) => Math.max(0, t - 1))} />
+          <TransportButton label="|<" title="Start" disabled={!canDraw} onClick={() => setPreviewPlayhead(0)} />
+          <TransportButton label="<" title="Back 1 second" disabled={!canDraw} onClick={() => setPreviewPlayhead((t) => Math.max(0, t - 1))} />
           <TransportButton label={playing ? 'II' : '>'} title={playing ? 'Pause' : 'Play timing preview'} disabled={!canDraw} onClick={() => setPlaying((p) => !p)} />
-          <TransportButton label=">" title="Forward 1 second" disabled={!canDraw} onClick={() => setPlayheadSec((t) => Math.min(durationSec, t + 1))} />
-          <TransportButton label=">|" title="End" disabled={!canDraw} onClick={() => setPlayheadSec(durationSec)} />
+          <TransportButton label=">" title="Forward 1 second" disabled={!canDraw} onClick={() => setPreviewPlayhead((t) => Math.min(durationSec, t + 1))} />
+          <TransportButton label=">|" title="End" disabled={!canDraw} onClick={() => setPreviewPlayhead(durationSec)} />
           <input
             type="range"
             min={0}
@@ -174,7 +187,7 @@ export function PreviewCanvas(): JSX.Element | null {
             step={1 / Math.max(1, spec?.fps ?? 24)}
             value={Math.min(playheadSec, durationSec)}
             disabled={!canDraw}
-            onChange={(e) => setPlayheadSec(Number(e.target.value))}
+            onChange={(e) => setPreviewPlayhead(Number(e.target.value))}
             style={{ flex: 1, accentColor: 'var(--accent)', cursor: canDraw ? 'pointer' : 'not-allowed' }}
           />
           <span style={{ width: 86, textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: 10.5, color: '#8a909c' }}>{fmt(playheadSec)} / {fmt(durationSec)}</span>
@@ -189,6 +202,7 @@ export function PreviewCanvas(): JSX.Element | null {
           <span style={{ border: '1px solid #262b34', borderRadius: 999, padding: '3px 8px', fontSize: 10, color: '#aab0bb', fontFamily: 'var(--font-mono)' }}>{spec ? `${spec.width}x${spec.height}` : 'no spec'}</span>
           <span style={{ border: '1px solid #262b34', borderRadius: 999, padding: '3px 8px', fontSize: 10, color: status === 'ready' ? '#36c98e' : '#8a909c', fontFamily: 'var(--font-mono)' }}>{statusText}</span>
           {spec?.grade.style && <span style={{ border: '1px solid #262b34', borderRadius: 999, padding: '3px 8px', fontSize: 10, color: '#aab0bb', fontFamily: 'var(--font-mono)' }}>{spec.grade.style}</span>}
+          {selectedLabel && <span title={selectedLabel} style={{ border: '1px solid #262b34', borderRadius: 999, padding: '3px 8px', fontSize: 10, color: 'var(--accent)', fontFamily: 'var(--font-mono)', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selectedLabel}</span>}
         </div>
         <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 11.5, color: '#8a909c' }}>
           <div style={{ border: '1px solid #1d2129', borderRadius: 9, padding: 9, background: '#0e1116' }}><b style={{ color: '#cdd2da' }}>{spec?.images.length ?? 0}</b><br />image windows</div>
