@@ -52,6 +52,10 @@ const api: NativeApi = {
     generate: (projectId: string, style: string) => ipcRenderer.invoke('effects:generate', projectId, style)
   },
 
+  looks: {
+    list: () => ipcRenderer.invoke('looks:list')
+  },
+
   db: {
     myChannels: () => ipcRenderer.invoke('db:myChannels'),
     sourceChannels: () => ipcRenderer.invoke('db:sourceChannels'),
@@ -117,6 +121,7 @@ const api: NativeApi = {
       ipcRenderer.invoke('compose:setRanges', projectId, ranges),
     setMedia: (projectId: string, patch: Partial<Project>) => ipcRenderer.invoke('compose:setMedia', projectId, patch),
     setCaptions: (projectId: string, patch: Partial<Project>) => ipcRenderer.invoke('compose:setCaptions', projectId, patch),
+    updateLook: (projectId: string, patch: Parameters<NativeApi['compose']['updateLook']>[1]) => ipcRenderer.invoke('compose:updateLook', projectId, patch),
     previewSpec: (projectId: string, draftOverrides?: Partial<Project>) => ipcRenderer.invoke('compose:previewSpec', projectId, draftOverrides),
     posterFrame: (path: string) => ipcRenderer.invoke('compose:posterFrame', path),
     preview: (projectId: string) => ipcRenderer.invoke('compose:preview', projectId),

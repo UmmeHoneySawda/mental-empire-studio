@@ -3,11 +3,12 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
-import type { Project, ProjectImage, TranscribeProgress, TranscriptWord } from '../../shared/types'
+import type { LookAdjust, Project, ProjectImage, TranscribeProgress, TranscriptWord } from '../../shared/types'
 import { asBetaOpts } from '../../shared/types'
 import type { GpuRenderSpec } from '../../shared/renderSpec'
 import { safeName } from '../../shared/sanitize'
 import { deriveStylePlan, EMPTY_PLAN, styleCaptionLead, styleTransition, validateEffectPlan } from '../../shared/effectPlan'
+import { LOOKS, lookById } from '../../shared/looks'
 import { getSettings } from '../store/settings'
 import { getRepos } from '../db'
 import { splitRanges } from '../services/audio'
@@ -158,6 +159,56 @@ function sendToRender(projectId: string): void {
   repos.createRenderJob({ id: `job-${projectId}`, title: project.title, channel: project.channel, projectId })
   repos.updateProject(projectId, { stage: 'queued' })
   pushActivity({ t: hhmm(), icon: '→', color: '#f5b323', text: `Queued ${project.title} for render` })
+}
+
+function clamp(n: unknown, min: number, max: number, fallback: number): number {
+  const v = typeof n === 'number' ? n : Number(n)
+  return Math.max(min, Math.min(max, Number.isFinite(v) ? v : fallback))
+}
+
+function cleanLookAdjust(adjust: LookAdjust | undefined): LookAdjust | undefined {
+  if (!adjust) return undefined
+  const rawColor = adjust.colorBalance
+  const colorBalance = rawColor
+    ? {
+        r: rawColor.r == null ? undefined : clamp(rawColor.r, -0.5, 0.5, 0),
+        g: rawColor.g == null ? undefined : clamp(rawColor.g, -0.5, 0.5, 0),
+        b: rawColor.b == null ? undefined : clamp(rawColor.b, -0.5, 0.5, 0)
+      }
+    : undefined
+  const next: LookAdjust = {
+    brightness: adjust.brightness == null ? undefined : clamp(adjust.brightness, -0.4, 0.4, 0),
+    contrast: adjust.contrast == null ? undefined : clamp(adjust.contrast, 0.4, 2, 1),
+    saturation: adjust.saturation == null ? undefined : clamp(adjust.saturation, 0, 2.5, 1),
+    colorBalance,
+    vignette: adjust.vignette == null ? undefined : clamp(adjust.vignette, 0, 1, 0),
+    sharpen: adjust.sharpen == null ? undefined : clamp(adjust.sharpen, 0, 1, 0),
+    grain: adjust.grain == null ? undefined : clamp(adjust.grain, 0, 0.2, 0)
+  }
+  const hasValue = (Object.entries(next) as Array<[keyof LookAdjust, unknown]>).some(([k, v]) => {
+    if (k !== 'colorBalance') return v != null
+    return !!v && Object.values(v as NonNullable<LookAdjust['colorBalance']>).some((n) => n != null)
+  })
+  return hasValue ? next : undefined
+}
+
+function updateLook(projectId: string, patch: { lut?: string; strength?: number; adjust?: LookAdjust }): Project {
+  const repos = getRepos()
+  const project = repos.getProject(projectId)
+  if (!project) throw new Error(`Unknown project: ${projectId}`)
+  const nextLook = patch.lut === undefined ? lookById(project.lookLut) : lookById(patch.lut)
+  const strength = patch.strength === undefined
+    ? project.lookStrength
+    : clamp(patch.strength, 0, 1, nextLook.defaultStrength)
+  const adjust = patch.adjust === undefined ? project.lookAdjust : cleanLookAdjust(patch.adjust)
+  const dbPatch = {
+    lookLut: nextLook.id,
+    lookStrength: nextLook.id === 'off' ? 0 : (strength ?? nextLook.defaultStrength),
+    lookAdjust: patch.adjust === undefined ? adjust : (adjust ?? null)
+  } as Partial<Project>
+  const updated = repos.updateProject(projectId, dbPatch)
+  if (!updated) throw new Error(`Unknown project: ${projectId}`)
+  return updated
 }
 
 async function runTranscribe(projectId: string): Promise<TranscriptWord[]> {
@@ -353,6 +404,7 @@ async function previewProject(projectId: string): Promise<string> {
 
 export function registerComposeIpc(): void {
   const repos = () => getRepos()
+  ipcMain.handle('looks:list', () => LOOKS)
   ipcMain.handle('compose:createProject', (_e, downloadId: string) => createProject(downloadId))
   ipcMain.handle('compose:get', (_e, id: string) => repos().getProject(id) ?? null)
   ipcMain.handle('compose:list', () => repos().listProjects())
@@ -365,6 +417,7 @@ export function registerComposeIpc(): void {
   })
   ipcMain.handle('compose:setMedia', (_e, projectId: string, patch: Partial<Project>) => repos().updateProject(projectId, patch))
   ipcMain.handle('compose:setCaptions', (_e, projectId: string, patch: Partial<Project>) => repos().updateProject(projectId, patch))
+  ipcMain.handle('compose:updateLook', (_e, projectId: string, patch: { lut?: string; strength?: number; adjust?: LookAdjust }) => updateLook(projectId, patch))
   ipcMain.handle('compose:previewSpec', (_e, projectId: string, draftOverrides?: Partial<Project>) => previewSpec(projectId, draftOverrides))
   ipcMain.handle('compose:posterFrame', (_e, path: string) => posterFrame(path))
   ipcMain.handle('compose:preview', (_e, projectId: string) => previewProject(projectId))

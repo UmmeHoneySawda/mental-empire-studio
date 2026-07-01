@@ -14,6 +14,7 @@ import {
   type AutomationEvent,
   type DownloadProgress,
   type DownloadedVideo,
+  type LookAdjust,
   type MyChannel,
   type NativeApi,
   type Profile,
@@ -29,6 +30,7 @@ import {
   type TranscriptWord
 } from '@shared/types'
 import type { GpuRenderSpec } from '@shared/renderSpec'
+import { LOOKS, lookById } from '@shared/looks'
 
 function grad(a: string, b: string): string {
   return `linear-gradient(135deg,${a},${b})`
@@ -226,9 +228,16 @@ function installMock(): void {
     pushActivity(`Queued "${p.title}" for render`)
   }
 
-  const makePreviewSpec = (projectId: string): GpuRenderSpec => {
-    const p = projects.find((x) => x.id === projectId)
-    if (!p) throw new Error(`Project not found: ${projectId}`)
+  const makePreviewSpec = (projectId: string, draftOverrides?: Partial<Project>): GpuRenderSpec => {
+    const baseProject = projects.find((x) => x.id === projectId)
+    if (!baseProject) throw new Error(`Project not found: ${projectId}`)
+    const p: Project = {
+      ...baseProject,
+      ...(draftOverrides ?? {}),
+      id: baseProject.id,
+      downloadId: baseProject.downloadId,
+      mp3Path: baseProject.mp3Path
+    }
     const aspect = p.captionAspect ?? '16:9'
     const width = aspect === '9:16' ? 406 : aspect === '1:1' ? 720 : 1280
     const height = aspect === '9:16' ? 720 : aspect === '1:1' ? 720 : 720
@@ -245,6 +254,17 @@ function installMock(): void {
       })
     }
     const style = settings.beta.enabled ? (p.betaOpts?.style ?? 'None') : 'None'
+    const look = lookById(p.lookLut)
+    const lutStrength = look.id === 'off' ? 0 : Math.max(0, Math.min(1, p.lookStrength ?? look.defaultStrength))
+    const adjust = p.lookAdjust
+    const baseGrade = {
+      saturation: style === 'Cinematic' ? 1.12 : 1,
+      contrast: style === 'Cinematic' ? 1.06 : 1,
+      brightness: style === 'Cinematic' ? -0.015 : 0,
+      colorBalance: { r: style === 'Cinematic' ? 0.05 : 0, g: 0, b: style === 'Cinematic' ? -0.05 : 0 },
+      vignette: style === 'Cinematic' ? 0.55 : 0,
+      sharpen: 0
+    }
     return {
       jobId: p.id,
       width,
@@ -253,8 +273,22 @@ function installMock(): void {
       durationSec: p.durationSec,
       images: imgs.map((im) => ({ path: im.path, startSec: im.rangeStart, endSec: im.rangeEnd })),
       motion: { kenBurns: !!p.kenBurns, punchAtSec: words.filter((w) => w.emphasis).map((w) => w.start) },
-      grade: { style, saturation: style === 'Cinematic' ? 1.12 : 1, contrast: style === 'Cinematic' ? 1.06 : 1, brightness: style === 'Cinematic' ? -0.015 : 0, colorBalance: { r: style === 'Cinematic' ? 0.05 : 0, g: 0, b: style === 'Cinematic' ? -0.05 : 0 }, vignette: style === 'Cinematic' ? 0.55 : 0, sharpen: 0 },
-      grain: { strength: style === 'Cinematic' ? 0.03 : 0, temporal: style === 'Cinematic' },
+      grade: {
+        style,
+        lut: lutStrength > 0 ? look.id : undefined,
+        lutStrength,
+        saturation: adjust?.saturation ?? baseGrade.saturation,
+        contrast: adjust?.contrast ?? baseGrade.contrast,
+        brightness: adjust?.brightness ?? baseGrade.brightness,
+        colorBalance: {
+          r: adjust?.colorBalance?.r ?? baseGrade.colorBalance.r,
+          g: adjust?.colorBalance?.g ?? baseGrade.colorBalance.g,
+          b: adjust?.colorBalance?.b ?? baseGrade.colorBalance.b
+        },
+        vignette: adjust?.vignette ?? baseGrade.vignette,
+        sharpen: adjust?.sharpen ?? baseGrade.sharpen
+      },
+      grain: { strength: adjust?.grain ?? (style === 'Cinematic' ? 0.03 : 0), temporal: style === 'Cinematic' },
       overlayPath: undefined,
       captions: {
         groups,
@@ -504,7 +538,16 @@ function installMock(): void {
       },
       setMedia: async (projectId: string, patch: Partial<Project>) => patchProject(projectId, patch),
       setCaptions: async (projectId: string, patch: Partial<Project>) => patchProject(projectId, patch),
-      previewSpec: async (projectId: string) => makePreviewSpec(projectId),
+      updateLook: async (projectId: string, patch: { lut?: string; strength?: number; adjust?: LookAdjust }) => {
+        const p = projects.find((x) => x.id === projectId)
+        if (!p) throw new Error(`Project not found: ${projectId}`)
+        const look = patch.lut === undefined ? lookById(p.lookLut) : lookById(patch.lut)
+        p.lookLut = look.id
+        p.lookStrength = look.id === 'off' ? 0 : Math.max(0, Math.min(1, patch.strength ?? p.lookStrength ?? look.defaultStrength))
+        if (patch.adjust !== undefined) p.lookAdjust = Object.keys(patch.adjust).length ? patch.adjust : undefined
+        return p
+      },
+      previewSpec: async (projectId: string, draftOverrides?: Partial<Project>) => makePreviewSpec(projectId, draftOverrides),
       posterFrame: async () => '',
       preview: async (projectId: string) => `/Browser/MentalEmpire_out/${slug(projectId)}-preview.mp4`,
       sendToRender: async (projectId: string) => queueProject(projectId)
@@ -593,6 +636,9 @@ function installMock(): void {
         transitions: [{ atSec: 3, type: 'fadeblack', durationSec: 0.5 }, { atSec: 8, type: 'zoomin', durationSec: 0.6 }],
         textEffects: [{ scope: 'hook', preset: 'cinematic-pop' }, { word: 'discipline', preset: 'intense-zoom' }]
       }, null, 2)
+    }),
+    looks: ns({
+      list: async () => LOOKS
     }),
     automation: ns({
       runProfile: async (profileId: string) => {

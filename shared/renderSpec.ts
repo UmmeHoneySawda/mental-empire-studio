@@ -13,6 +13,8 @@ export interface GradeParams {
   style: VideoStyle
   /** optional baked 3D LUT (.cube) asset id; when absent the shader uses the math below */
   lut?: string
+  /** blend amount for the LUT in [0,1] */
+  lutStrength?: number
   /** master saturation multiplier (1 = unchanged) */
   saturation: number
   /** master contrast multiplier (1 = unchanged) */

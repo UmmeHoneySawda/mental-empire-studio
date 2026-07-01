@@ -163,6 +163,21 @@ describe('buildGpuRenderSpec', () => {
       if (style === 'Clean' || style === 'None') expect(spec.grade.vignette).toBe(0)
     }
   })
+  it('carries the saved project look into the GPU grade model', () => {
+    const spec = buildGpuRenderSpec({
+      project: project({ lookLut: 'gold', lookStrength: 0.42, lookAdjust: { saturation: 1.35, grain: 0.05 } }),
+      images,
+      words,
+      settings: settings(),
+      zoomHits: [],
+      voicePath: '/x/a.mp3',
+      out: { h264Path: '/x/look.gpu.mp4', finalPath: '/x/look.mp4' }
+    })
+    expect(spec.grade.lut).toBe('gold')
+    expect(spec.grade.lutStrength).toBeCloseTo(0.42)
+    expect(spec.grade.saturation).toBeCloseTo(1.35)
+    expect(spec.grain.strength).toBeCloseTo(0.05)
+  })
 })
 
 describe('caption/image timing helpers', () => {

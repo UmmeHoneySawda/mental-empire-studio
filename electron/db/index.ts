@@ -71,7 +71,9 @@ CREATE TABLE IF NOT EXISTS projects (
   imageMode TEXT, poolSize INTEGER, kenBurns INTEGER, seed INTEGER, crossfade INTEGER,
   captionPreset TEXT, captionFont TEXT, captionAnim TEXT, captionAspect TEXT, captionLines INTEGER, captionPosition TEXT, captionPace TEXT,
   emphasis INTEGER, keywords INTEGER, punchZoom INTEGER,
-  stage TEXT, createdAt TEXT
+  stage TEXT, thumbPath TEXT, thumbnailTemplateId TEXT,
+  lookLut TEXT, lookStrength REAL, lookAdjust TEXT,
+  betaOpts TEXT, createdAt TEXT
 );
 CREATE TABLE IF NOT EXISTS project_images (
   id TEXT PRIMARY KEY, projectId TEXT, ord INTEGER, path TEXT, thumb TEXT,
@@ -176,6 +178,9 @@ function migrate(d: Database.Database): void {
   // M8: per-project saved thumbnail path
   ensureColumn(d, 'projects', 'thumbPath', 'TEXT')
   ensureColumn(d, 'projects', 'thumbnailTemplateId', 'TEXT')
+  ensureColumn(d, 'projects', 'lookLut', 'TEXT')
+  ensureColumn(d, 'projects', 'lookStrength', 'REAL')
+  ensureColumn(d, 'projects', 'lookAdjust', 'TEXT')
   ensureColumn(d, 'projects', 'captionLines', 'INTEGER')
   ensureColumn(d, 'projects', 'captionPosition', 'TEXT')
   ensureColumn(d, 'projects', 'captionPace', 'TEXT')
@@ -224,6 +229,16 @@ function parseBetaOpts(r: Record<string, unknown>): import('../../shared/types')
     autoHighlight: !!r.keywords,
     autoZoom: { atStart: !!r.kenBurns, atKeyPhrases: !!r.punchZoom }
   })
+}
+
+function parseLookAdjust(raw: unknown): Project['lookAdjust'] {
+  if (typeof raw !== 'string' || !raw.trim()) return undefined
+  try {
+    const v = JSON.parse(raw) as Project['lookAdjust']
+    return v && typeof v === 'object' ? v : undefined
+  } catch {
+    return undefined
+  }
 }
 
 export interface ChannelStatsPatch {
@@ -883,13 +898,13 @@ function buildRepositories(d: Database.Database): Repositories {
 const PROJECT_BOOL_KEYS = new Set(['kenBurns', 'emphasis', 'keywords', 'punchZoom'])
 
 function projectToRow(p: Project): Record<string, unknown> {
-  return { ...p, captionLines: p.captionLines ?? 1, captionPosition: p.captionPosition ?? 'bottom', captionPace: p.captionPace ?? 'auto', kenBurns: p.kenBurns ? 1 : 0, crossfade: p.crossfade ?? 0.8, emphasis: p.emphasis ? 1 : 0, keywords: p.keywords ? 1 : 0, punchZoom: p.punchZoom ? 1 : 0, betaOpts: JSON.stringify(p.betaOpts ?? DEFAULT_BETA_OPTS) }
+  return { ...p, captionLines: p.captionLines ?? 1, captionPosition: p.captionPosition ?? 'bottom', captionPace: p.captionPace ?? 'auto', kenBurns: p.kenBurns ? 1 : 0, crossfade: p.crossfade ?? 0.8, emphasis: p.emphasis ? 1 : 0, keywords: p.keywords ? 1 : 0, punchZoom: p.punchZoom ? 1 : 0, betaOpts: JSON.stringify(p.betaOpts ?? DEFAULT_BETA_OPTS), lookAdjust: p.lookAdjust ? JSON.stringify(p.lookAdjust) : null }
 }
 function projectPatchToRow(patch: Partial<Project>): Record<string, unknown> {
   const out: Record<string, unknown> = {}
   for (const [k, v] of Object.entries(patch)) {
     if (v === undefined || k === 'id') continue
-    if (k === 'betaOpts') out[k] = JSON.stringify(v)
+    if (k === 'betaOpts' || k === 'lookAdjust') out[k] = v == null ? null : JSON.stringify(v)
     else out[k] = PROJECT_BOOL_KEYS.has(k) ? (v ? 1 : 0) : v
   }
   return out
@@ -909,7 +924,7 @@ function rowToProject(r: Record<string, unknown>): Project {
   const captionLines = rawLines === 2 || rawLines === 3 ? rawLines : 1
   const rawPace = r.captionPace as Project['captionPace']
   const captionPace = rawPace === 'word' || rawPace === 'phrase' ? rawPace : 'auto'
-  return { ...(r as unknown as Project), captionLines, captionPosition: (r.captionPosition as Project['captionPosition']) ?? 'bottom', captionPace, durationSec: coerceNum(r.durationSec, 0), poolSize: coerceNum(r.poolSize, 10), kenBurns: !!r.kenBurns, crossfade: coerceNum(r.crossfade, 0.8) || 0.8, emphasis: !!r.emphasis, keywords: !!r.keywords, punchZoom: !!r.punchZoom, betaOpts: parseBetaOpts(r) }
+  return { ...(r as unknown as Project), captionLines, captionPosition: (r.captionPosition as Project['captionPosition']) ?? 'bottom', captionPace, durationSec: coerceNum(r.durationSec, 0), poolSize: coerceNum(r.poolSize, 10), kenBurns: !!r.kenBurns, crossfade: coerceNum(r.crossfade, 0.8) || 0.8, emphasis: !!r.emphasis, keywords: !!r.keywords, punchZoom: !!r.punchZoom, lookStrength: r.lookStrength == null ? undefined : coerceNum(r.lookStrength, 0), lookAdjust: parseLookAdjust(r.lookAdjust), betaOpts: parseBetaOpts(r) }
 }
 function rowToImage(r: Record<string, unknown>): ProjectImage {
   return { ...(r as unknown as ProjectImage), manual: !!r.manual }

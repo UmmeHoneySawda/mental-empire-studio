@@ -7,6 +7,7 @@ import { asBetaOpts } from '@shared/types'
 import { buildMasterPrompt, validateEffectPlan } from '@shared/effectPlan'
 import { isCssImageValue, mediaSrc, videoSrc } from '../lib/media'
 import { PreviewCanvas } from '../features/video-editor/PreviewCanvas'
+import { LookGallery } from '../features/video-editor/LookGallery'
 
 function Tab({ id, label, icon }: { id: 'media' | 'captions' | 'style' | 'advanced'; label: string; icon: JSX.Element }): JSX.Element {
   const composeTab = useStore((s) => s.composeTab)
@@ -270,7 +271,8 @@ function StyleTab(): JSX.Element {
   }
 
   return (
-    <div style={{ maxWidth: 480 }}>
+    <div style={{ maxWidth: 760, display: 'flex', flexDirection: 'column', gap: 14 }}>
+      <LookGallery />
       <div style={{ position: 'relative', border: '1px solid #1d2129', borderRadius: 14, padding: 15, background: '#12151b', display: 'flex', flexDirection: 'column', gap: 13 }}>
         <BetaHeader betaOn={betaOn} />
         <div>

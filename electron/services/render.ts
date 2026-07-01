@@ -283,7 +283,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
     if (overlayPath) inputs.push('-loop', '1', '-i', overlayPath)
 
     const parts: string[] = []
-    const grade = gradeChain(beta?.style).replace(/,+$/, '')
+    const grade = gradeChain(beta?.style, project).replace(/,+$/, '')
     const punch = punchZoomFilter(project, beta, w, h, allowCpuMotion)
     pushFinishedVideo(parts, '[0:v]', useCudaFinal
       ? [`scale_cuda=w=${w}:h=${h}:force_original_aspect_ratio=increase`, 'hwdownload', 'format=nv12', `crop=${w}:${h}`, 'setsar=1', `fps=${FPS}`, grade]
@@ -348,7 +348,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
       }
     }
 
-    const grade = gradeChain(beta?.style).replace(/,+$/, '')
+    const grade = gradeChain(beta?.style, project).replace(/,+$/, '')
     const punch = punchZoomFilter(project, beta, w, h, allowCpuMotion)
     pushFinishedVideo(parts, `[${last}]`, [grade], { overlayIdx, assPath, punch, prefix: 'bd' })
     const aMap = audioWithSfx(parts, audioIdx, sfxIdx)
@@ -372,7 +372,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
   // Beta auto-B-roll fallback: a single full-length video bed replaces the still-image track.
   if (inp.videoBedPath) {
     const overlayPath = beta ? overlayGradientPath(beta.overlay, w, h) : undefined
-    const grade = gradeChain(beta?.style).replace(/,+$/, '')
+    const grade = gradeChain(beta?.style, project).replace(/,+$/, '')
     const punch = punchZoomFilter(project, beta, w, h, allowCpuMotion)
     const crfBed = crfFor(settings.quality)
     const bedParts: string[] = []
@@ -453,7 +453,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
   }
 
   // Beta darkening gradient goes under the captions (applied before the subtitles burn).
-  const grade = gradeChain(beta?.style).replace(/,+$/, '')
+  const grade = gradeChain(beta?.style, project).replace(/,+$/, '')
   // Burn captions; punch-zoom adds a subtle pulse when enabled (project flag or beta key-phrases).
   const punch = punchZoomFilter(project, beta, w, h, allowCpuMotion)
   pushFinishedVideo(parts, `[${last}]`, [grade], { overlayIdx, assPath, punch, prefix: 'img' })

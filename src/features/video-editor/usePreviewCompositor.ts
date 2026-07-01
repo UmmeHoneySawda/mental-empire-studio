@@ -2,6 +2,7 @@ import { useEffect, useRef, useState, type RefObject } from 'react'
 import type { GpuRenderSpec, RenderImageSpec } from '@shared/renderSpec'
 import { Compositor } from '../../render-worker/compositor'
 import { CaptionLayer } from '../../render-worker/captions'
+import { lutTextureById } from '../../render-worker/lut'
 import { isCssImageValue, mediaSrc } from '../../lib/media'
 
 type PreviewStatus = 'idle' | 'loading' | 'ready' | 'error'
@@ -128,6 +129,7 @@ export function usePreviewCompositor(
         }
         compositor.setImages(bitmaps)
         compositor.setOverlay(overlay)
+        compositor.setLut(lutTextureById(preview.spec.grade.lut))
         const captions = new CaptionLayer(preview.spec.captions, preview.spec.width, preview.spec.height)
         runtimeRef.current = { compositor, captions, bitmaps, overlay }
         setStatus('ready')

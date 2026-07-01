@@ -7,7 +7,7 @@ import type {
   RenderImageSpec
 } from '../../../../shared/renderSpec'
 import { groupWords, resolutionFor } from '../../captions'
-import { gradeParams } from '../grade'
+import { gradeParamsForProject } from '../grade'
 import { FPS, LONG_FORM_FAST_SEC, CAPTION_PHRASE_WORD_COUNT, gpuBitrateMbpsFor, GPU_KEY_INTERVAL_SEC } from '../render-config'
 import type { BrollManifestSegment } from '../../broll'
 
@@ -104,7 +104,7 @@ export function buildGpuRenderSpec(inp: GpuSpecInputs): GpuRenderSpec {
   const beta = settings.beta?.enabled ? asBetaOpts(project.betaOpts) : null
   const { w, h } = gpuDimensions(settings.quality, project.captionAspect)
   const longForm = project.durationSec >= LONG_FORM_FAST_SEC
-  const { grade, grain } = gradeParams(beta?.style)
+  const { grade, grain } = gradeParamsForProject(beta?.style, project)
 
   // Motion mirrors render.ts gating: Ken Burns / punch zoom are disabled on long-form.
   const kenBurns = !longForm && (project.kenBurns || !!beta?.autoZoom.atStart)

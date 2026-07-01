@@ -24,6 +24,9 @@ extraResources:
   - from: resources/icons
     to: icons
     filter: ["**/*"]
+  - from: resources/luts
+    to: luts
+    filter: ["**/*"]
 
 # Publish to GitHub Releases (consumed by electron-updater).
 publish:

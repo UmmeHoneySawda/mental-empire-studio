@@ -14,6 +14,7 @@ import type {
   RenderQueueRow,
   RenderProgress,
   Profile,
+  LookAdjust,
   WorkItem,
   Niche,
   NichePoolHealth,
@@ -93,6 +94,7 @@ interface DataState {
   reorderProjectImages: (imageIds: string[]) => Promise<void>
   setMedia: (patch: Partial<Project>) => Promise<void>
   setCaptions: (patch: Partial<Project>) => Promise<void>
+  setLook: (patch: { lut?: string; strength?: number; adjust?: LookAdjust }) => Promise<void>
   runTranscribe: () => Promise<void>
   toggleWordEmphasis: (wordId: string) => Promise<void>
   setWordsEmphasis: (wordIds: string[], emphasis: boolean) => Promise<void>
@@ -431,6 +433,13 @@ export const useData = create<DataState>((set, get) => ({
     if (!a || !p) return
     const project = await a.compose.setCaptions(p.id, patch)
     if (project) set({ activeProject: project })
+  },
+  setLook: async (patch) => {
+    const a = api()
+    const p = get().activeProject
+    if (!a || !p) return
+    const project = await a.compose.updateLook(p.id, patch)
+    if (project) set({ activeProject: project, previewSpec: null, previewError: '' })
   },
   runTranscribe: async () => {
     const a = api()

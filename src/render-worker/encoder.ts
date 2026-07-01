@@ -4,6 +4,7 @@ import { Compositor } from './compositor'
 import { CaptionLayer } from './captions'
 import { VideoMuxer, type StreamingWriteHandle } from './mux'
 import { SegmentDecoder } from './decoder'
+import { lutTextureById } from './lut'
 
 // Pull-based (not real-time) WebCodecs encode loop. For every output frame we compose on
 // the GPU, wrap the canvas in a VideoFrame, and hand it to the hardware H.264 encoder.
@@ -67,6 +68,7 @@ export async function encodeSpec(
   const compositor = new Compositor(canvas, spec)
   compositor.setImages(images)
   compositor.setOverlay(overlay)
+  compositor.setLut(lutTextureById(spec.grade.lut))
   const captions = new CaptionLayer(spec.captions, spec.width, spec.height)
   const muxer = new VideoMuxer({ width: spec.width, height: spec.height, fps: spec.fps, handle })
 

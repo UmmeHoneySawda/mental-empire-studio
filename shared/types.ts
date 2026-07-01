@@ -420,6 +420,16 @@ export interface BetaVideoOpts {
   effectPlanJson: string
 }
 
+export interface LookAdjust {
+  brightness?: number
+  contrast?: number
+  saturation?: number
+  colorBalance?: { r?: number; g?: number; b?: number }
+  vignette?: number
+  sharpen?: number
+  grain?: number
+}
+
 export const DEFAULT_BETA_OPTS: BetaVideoOpts = {
   hook: { enabled: false, text: '' },
   autoHighlight: false,
@@ -518,6 +528,12 @@ export interface Project {
   thumbPath?: string
   /** thumbnail template attached by an automation profile; applied when Thumbnail studio opens */
   thumbnailTemplateId?: string
+  /** selected LUT look id from shared/looks; "off" disables LUT blending */
+  lookLut?: string
+  /** selected LUT blend in [0,1] */
+  lookStrength?: number
+  /** parametric grade overrides layered on top of the selected look */
+  lookAdjust?: LookAdjust
   createdAt: string
   /** beta-feature options (hook/highlight/overlay/zoom/b-roll/style). Always present
    *  from the DB; optional on the type so construction-site literals stay terse. */
@@ -768,6 +784,9 @@ export interface NativeApi {
     /** beta: generate a validated effect-plan JSON for a project via Groq */
     generate(projectId: string, style: VideoStyle): Promise<string>
   }
+  looks: {
+    list(): Promise<import('./looks').LookPreset[]>
+  }
   db: {
     myChannels(): Promise<MyChannel[]>
     sourceChannels(): Promise<SourceChannel[]>
@@ -846,6 +865,7 @@ export interface NativeApi {
     setRanges(projectId: string, ranges: { id: string; rangeStart: number; rangeEnd: number }[]): Promise<ProjectImage[]>
     setMedia(projectId: string, patch: Partial<Project>): Promise<Project>
     setCaptions(projectId: string, patch: Partial<Project>): Promise<Project>
+    updateLook(projectId: string, patch: { lut?: string; strength?: number; adjust?: LookAdjust }): Promise<Project>
     /** serializable GPU compositor spec for the live still editor preview */
     previewSpec(projectId: string, draftOverrides?: Partial<Project>): Promise<GpuRenderSpec>
     /** extract/cache the first frame of a local video segment as a PNG data URL */

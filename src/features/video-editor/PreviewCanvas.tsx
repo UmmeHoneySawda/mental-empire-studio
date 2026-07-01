@@ -58,6 +58,9 @@ export function PreviewCanvas(): JSX.Element | null {
       project.kenBurns,
       project.punchZoom,
       project.keywords,
+      project.lookLut,
+      project.lookStrength,
+      JSON.stringify(project.lookAdjust ?? {}),
       JSON.stringify(project.betaOpts ?? {})
     ].join('|')
   }, [project])

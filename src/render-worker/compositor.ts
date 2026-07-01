@@ -1,5 +1,6 @@
 import type { GpuRenderSpec } from '@shared/renderSpec'
 import { activeImageIndex } from '@shared/renderSpec'
+import type { LutTexture } from './lut'
 
 // WebGL2 compositor: one full-screen quad, one fragment shader that applies the whole
 // look in a single GPU pass per frame (no readback between effects):
@@ -24,10 +25,13 @@ uniform sampler2D u_imgA;
 uniform sampler2D u_imgB;
 uniform sampler2D u_overlay;
 uniform sampler2D u_caption;
+uniform sampler2D u_lut;
 
 uniform float u_mix;          // crossfade A->B
 uniform vec2  u_scaleA;       // ken-burns/punch zoom for A
 uniform vec2  u_scaleB;
+uniform float u_lutSize;
+uniform float u_lutStrength;
 uniform float u_saturation;
 uniform float u_contrast;
 uniform float u_brightness;
@@ -38,6 +42,7 @@ uniform float u_grainSeed;
 uniform float u_sharpen;
 uniform vec2  u_texel;
 uniform bool  u_hasOverlay;
+uniform bool  u_hasLut;
 
 vec2 zoomUv(vec2 uv, vec2 scale) {
   return (uv - 0.5) / scale + 0.5;
@@ -53,6 +58,24 @@ vec3 baseColor(vec2 uv) {
   vec3 a = texture(u_imgA, zoomUv(uv, u_scaleA)).rgb;
   vec3 b = texture(u_imgB, zoomUv(uv, u_scaleB)).rgb;
   return mix(a, b, u_mix);
+}
+
+vec3 sampleLut(vec3 rgb) {
+  float size = u_lutSize;
+  vec3 c = clamp(rgb, 0.0, 1.0);
+  float blue = c.b * (size - 1.0);
+  float b0 = floor(blue);
+  float b1 = min(size - 1.0, b0 + 1.0);
+  float f = blue - b0;
+  vec2 uv0 = vec2(
+    (b0 * size + c.r * (size - 1.0) + 0.5) / (size * size),
+    (c.g * (size - 1.0) + 0.5) / size
+  );
+  vec2 uv1 = vec2(
+    (b1 * size + c.r * (size - 1.0) + 0.5) / (size * size),
+    (c.g * (size - 1.0) + 0.5) / size
+  );
+  return mix(texture(u_lut, uv0).rgb, texture(u_lut, uv1).rgb, f);
 }
 
 void main() {
@@ -94,6 +117,10 @@ void main() {
 
   col = clamp(col, 0.0, 1.0);
 
+  if (u_hasLut && u_lutStrength > 0.0 && u_lutSize > 1.0) {
+    col = mix(col, sampleLut(col), clamp(u_lutStrength, 0.0, 1.0));
+  }
+
   // overlay (darkening gradient PNG/PAM)
   if (u_hasOverlay) {
     vec4 ov = texture(u_overlay, v_uv);
@@ -125,6 +152,8 @@ export class Compositor {
   private program: WebGLProgram
   private imgTextures: WebGLTexture[] = []
   private overlayTex: WebGLTexture | null = null
+  private lutTex: WebGLTexture | null = null
+  private lutSize = 0
   private captionTex: WebGLTexture
   private videoTexA: WebGLTexture
   private videoTexB: WebGLTexture
@@ -156,7 +185,7 @@ export class Compositor {
     gl.enableVertexAttribArray(loc)
     gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0)
 
-    for (const name of ['u_imgA', 'u_imgB', 'u_overlay', 'u_caption', 'u_mix', 'u_scaleA', 'u_scaleB', 'u_saturation', 'u_contrast', 'u_brightness', 'u_colorBalance', 'u_vignette', 'u_grain', 'u_grainSeed', 'u_sharpen', 'u_texel', 'u_hasOverlay']) {
+    for (const name of ['u_imgA', 'u_imgB', 'u_overlay', 'u_caption', 'u_lut', 'u_mix', 'u_scaleA', 'u_scaleB', 'u_lutSize', 'u_lutStrength', 'u_saturation', 'u_contrast', 'u_brightness', 'u_colorBalance', 'u_vignette', 'u_grain', 'u_grainSeed', 'u_sharpen', 'u_texel', 'u_hasOverlay', 'u_hasLut']) {
       this.uniforms[name] = gl.getUniformLocation(program, name)
     }
 
@@ -201,6 +230,18 @@ export class Compositor {
     this.overlayTex = this.newTexture()
     gl.bindTexture(gl.TEXTURE_2D, this.overlayTex)
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, bitmap)
+  }
+
+  setLut(lut: LutTexture | null): void {
+    const gl = this.gl
+    if (this.lutTex) gl.deleteTexture(this.lutTex)
+    this.lutTex = null
+    this.lutSize = 0
+    if (!lut) return
+    this.lutTex = this.newTexture()
+    this.lutSize = lut.size
+    gl.bindTexture(gl.TEXTURE_2D, this.lutTex)
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, lut.width, lut.height, 0, gl.RGBA, gl.UNSIGNED_BYTE, lut.data)
   }
 
   /** Re-upload the caption canvas (only when it changed). */
@@ -276,12 +317,18 @@ export class Compositor {
     gl.activeTexture(gl.TEXTURE3)
     gl.bindTexture(gl.TEXTURE_2D, this.captionTex)
     gl.uniform1i(this.uniforms.u_caption, 3)
+    gl.activeTexture(gl.TEXTURE4)
+    gl.bindTexture(gl.TEXTURE_2D, this.lutTex ?? (this.imgTextures.length ? this.imgTextures[0] : this.videoTexA))
+    gl.uniform1i(this.uniforms.u_lut, 4)
 
     const [sax, say] = this.scaleAt(idx, timeSec)
     const [sbx, sby] = this.scaleAt(nextIdx, timeSec)
+    const lutStrength = g.lut ? (g.lutStrength ?? 1) : 0
     gl.uniform1f(this.uniforms.u_mix, mix)
     gl.uniform2f(this.uniforms.u_scaleA, sax, say)
     gl.uniform2f(this.uniforms.u_scaleB, sbx, sby)
+    gl.uniform1f(this.uniforms.u_lutSize, this.lutSize)
+    gl.uniform1f(this.uniforms.u_lutStrength, lutStrength)
     gl.uniform1f(this.uniforms.u_saturation, g.saturation)
     gl.uniform1f(this.uniforms.u_contrast, g.contrast)
     gl.uniform1f(this.uniforms.u_brightness, g.brightness)
@@ -292,6 +339,7 @@ export class Compositor {
     gl.uniform1f(this.uniforms.u_sharpen, g.sharpen)
     gl.uniform2f(this.uniforms.u_texel, 1 / this.canvas.width, 1 / this.canvas.height)
     gl.uniform1i(this.uniforms.u_hasOverlay, this.overlayTex ? 1 : 0)
+    gl.uniform1i(this.uniforms.u_hasLut, this.lutTex && lutStrength > 0 ? 1 : 0)
 
     gl.drawArrays(gl.TRIANGLES, 0, 6)
   }
