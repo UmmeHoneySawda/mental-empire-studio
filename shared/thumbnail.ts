@@ -310,6 +310,17 @@ export interface AutoArrangeResult {
   lines: { text: string; size: number }[]
 }
 
+export interface ThumbnailSnapGuide {
+  axis: 'x' | 'y'
+  value: number
+  source: 'canvas' | 'safe' | 'layer'
+}
+
+export interface ThumbnailSnapResult {
+  frame: LayerFrame
+  guides: ThumbnailSnapGuide[]
+}
+
 export function scaleTextLayerBy(layer: TextLayer, scale: number, framePatch: Partial<LayerFrame> = {}): Pick<TextLayer, 'frame' | 'lines'> {
   const factor = clamp(finite(scale, 1), 0.1, 5)
   const lines = layer.lines.map((line) => ({
@@ -320,6 +331,97 @@ export function scaleTextLayerBy(layer: TextLayer, scale: number, framePatch: Pa
     frame: normalizeFrame({ ...layer.frame, ...framePatch }, layer.frame),
     lines
   }
+}
+
+function frameAnchors(frame: Pick<LayerFrame, 'x' | 'y' | 'width' | 'height'>): { x: Array<{ key: 'left' | 'center' | 'right'; value: number }>; y: Array<{ key: 'top' | 'middle' | 'bottom'; value: number }> } {
+  return {
+    x: [
+      { key: 'left', value: frame.x },
+      { key: 'center', value: frame.x + frame.width / 2 },
+      { key: 'right', value: frame.x + frame.width }
+    ],
+    y: [
+      { key: 'top', value: frame.y },
+      { key: 'middle', value: frame.y + frame.height / 2 },
+      { key: 'bottom', value: frame.y + frame.height }
+    ]
+  }
+}
+
+function offsetForX(anchor: 'left' | 'center' | 'right', frame: Pick<LayerFrame, 'width'>): number {
+  if (anchor === 'center') return frame.width / 2
+  if (anchor === 'right') return frame.width
+  return 0
+}
+
+function offsetForY(anchor: 'top' | 'middle' | 'bottom', frame: Pick<LayerFrame, 'height'>): number {
+  if (anchor === 'middle') return frame.height / 2
+  if (anchor === 'bottom') return frame.height
+  return 0
+}
+
+/**
+ * Snap a thumbnail layer frame to common editor guides: canvas edges/centre, title-safe
+ * inset, and other visible layers. Pure so the Konva editor can be unit-tested.
+ */
+export function snapFrameToGuides(
+  frame: LayerFrame,
+  layers: ThumbnailLayer[],
+  opts: { stage?: StageSize; excludeIds?: string[]; threshold?: number } = {}
+): ThumbnailSnapResult {
+  const stage = opts.stage ?? { w: THUMB_W, h: THUMB_H }
+  const threshold = Math.max(0, opts.threshold ?? 8)
+  const exclude = new Set(opts.excludeIds ?? [])
+  const safe = Math.round(stage.w * SAFE_INSET)
+  const xGuides: ThumbnailSnapGuide[] = [
+    { axis: 'x', value: 0, source: 'canvas' },
+    { axis: 'x', value: stage.w / 2, source: 'canvas' },
+    { axis: 'x', value: stage.w, source: 'canvas' },
+    { axis: 'x', value: safe, source: 'safe' },
+    { axis: 'x', value: stage.w - safe, source: 'safe' }
+  ]
+  const yGuides: ThumbnailSnapGuide[] = [
+    { axis: 'y', value: 0, source: 'canvas' },
+    { axis: 'y', value: stage.h / 2, source: 'canvas' },
+    { axis: 'y', value: stage.h, source: 'canvas' },
+    { axis: 'y', value: safe, source: 'safe' },
+    { axis: 'y', value: stage.h - safe, source: 'safe' }
+  ]
+
+  for (const layer of layers) {
+    if (exclude.has(layer.id) || !layer.visible || layer.kind === 'background') continue
+    const anchors = frameAnchors(layer.frame)
+    xGuides.push(...anchors.x.map((a) => ({ axis: 'x' as const, value: a.value, source: 'layer' as const })))
+    yGuides.push(...anchors.y.map((a) => ({ axis: 'y' as const, value: a.value, source: 'layer' as const })))
+  }
+
+  const anchors = frameAnchors(frame)
+  let bestX: { dist: number; guide: ThumbnailSnapGuide; anchor: typeof anchors.x[number]['key'] } | null = null
+  let bestY: { dist: number; guide: ThumbnailSnapGuide; anchor: typeof anchors.y[number]['key'] } | null = null
+  for (const anchor of anchors.x) {
+    for (const guide of xGuides) {
+      const dist = Math.abs(anchor.value - guide.value)
+      if (dist <= threshold && (!bestX || dist < bestX.dist)) bestX = { dist, guide, anchor: anchor.key }
+    }
+  }
+  for (const anchor of anchors.y) {
+    for (const guide of yGuides) {
+      const dist = Math.abs(anchor.value - guide.value)
+      if (dist <= threshold && (!bestY || dist < bestY.dist)) bestY = { dist, guide, anchor: anchor.key }
+    }
+  }
+
+  const next = { ...frame }
+  const guides: ThumbnailSnapGuide[] = []
+  if (bestX) {
+    next.x = Math.round(bestX.guide.value - offsetForX(bestX.anchor, frame))
+    guides.push(bestX.guide)
+  }
+  if (bestY) {
+    next.y = Math.round(bestY.guide.value - offsetForY(bestY.anchor, frame))
+    guides.push(bestY.guide)
+  }
+  return { frame: next, guides }
 }
 
 /**

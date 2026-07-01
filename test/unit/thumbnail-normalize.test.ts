@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeThumbnailLayer, normalizeThumbnailLayers, autoArrangeText, scaleTextLayerBy } from '../../shared/thumbnail'
+import { normalizeThumbnailLayer, normalizeThumbnailLayers, autoArrangeText, scaleTextLayerBy, snapFrameToGuides } from '../../shared/thumbnail'
 import { asBetaOpts } from '../../shared/types'
 
 describe('normalizeThumbnailLayer', () => {
@@ -124,6 +124,47 @@ describe('normalizeThumbnailLayer', () => {
     expect(scaled.lines.map((l) => l.size)).toEqual([120, 72])
     expect(scaled.frame.width).toBe(450)
     expect(scaled.frame.height).toBe(180)
+  })
+
+  it('snaps a layer to canvas center and reports visible guides', () => {
+    const layer = normalizeThumbnailLayer({
+      id: 'snap-text',
+      kind: 'text',
+      text: 'Snap me',
+      frame: { x: 496, y: 316, width: 280, height: 80, rotation: 0 }
+    })
+    if (!layer) throw new Error('expected layer')
+
+    const result = snapFrameToGuides(layer.frame, [layer], { excludeIds: [layer.id], threshold: 8 })
+
+    expect(result.frame.x + result.frame.width / 2).toBe(640)
+    expect(result.frame.y + result.frame.height / 2).toBe(360)
+    expect(result.guides).toEqual([
+      { axis: 'x', value: 640, source: 'canvas' },
+      { axis: 'y', value: 360, source: 'canvas' }
+    ])
+  })
+
+  it('snaps to title-safe inset and other layer edges', () => {
+    const moving = normalizeThumbnailLayer({
+      id: 'moving',
+      kind: 'shape',
+      frame: { x: 75, y: 215, width: 120, height: 90, rotation: 0 }
+    })
+    const target = normalizeThumbnailLayer({
+      id: 'target',
+      kind: 'subject',
+      frame: { x: 420, y: 300, width: 200, height: 220, rotation: 0 }
+    })
+    if (!moving || !target) throw new Error('expected layers')
+
+    const safeResult = snapFrameToGuides(moving.frame, [moving, target], { excludeIds: [moving.id], threshold: 8 })
+    expect(safeResult.frame.x).toBe(77)
+    expect(safeResult.guides.some((g) => g.axis === 'x' && g.source === 'safe')).toBe(true)
+
+    const layerResult = snapFrameToGuides({ ...moving.frame, x: 294, y: 215 }, [moving, target], { excludeIds: [moving.id], threshold: 8 })
+    expect(layerResult.frame.x + layerResult.frame.width).toBe(420)
+    expect(layerResult.guides.some((g) => g.axis === 'x' && g.value === 420 && g.source === 'layer')).toBe(true)
   })
 })
 

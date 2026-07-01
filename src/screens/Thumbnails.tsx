@@ -686,7 +686,7 @@ export function Thumbnails(): JSX.Element {
           <ThumbCanvas />
           <CompareBar />
           <div style={{ fontSize: 11.5, color: '#6a7180', marginTop: 10, lineHeight: 1.5 }}>
-            Drag or resize selected layers · dashed = title-safe zone
+            Drag or resize selected layers · dashed = title-safe zone · gold/green = snap guides
           </div>
         </div>
 

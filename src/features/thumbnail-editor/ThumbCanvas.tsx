@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import Konva from 'konva'
 import { useStore } from '../../store/useStore'
 import { THUMB_W, THUMB_H, type TextLayer } from '@shared/types'
-import { scaleTextLayerBy } from '@shared/thumbnail'
+import { snapFrameToGuides, scaleTextLayerBy, type ThumbnailSnapGuide } from '@shared/thumbnail'
 import { buildLayerGroup, loadImage, type LayerImages } from './render'
 
 // On-screen Konva editor. Renders the layer stack imperatively (reusing the shared
@@ -153,6 +153,45 @@ export function ThumbCanvas(): JSX.Element {
       // Build the new content first, then swap it in — destroying the old children
       // only once the replacement is ready avoids an empty (black) frame on edits.
       const group = buildLayerGroup(layers, images)
+      let guideNodes: Konva.Line[] = []
+      const clearGuides = (): void => {
+        guideNodes.forEach((line) => line.destroy())
+        guideNodes = []
+      }
+      const drawGuides = (guides: ThumbnailSnapGuide[]): void => {
+        clearGuides()
+        for (const guide of guides) {
+          guideNodes.push(new Konva.Line({
+            points: guide.axis === 'x' ? [guide.value, 0, guide.value, THUMB_H] : [0, guide.value, THUMB_W, guide.value],
+            stroke: guide.source === 'layer' ? '#36c98e' : '#f5b323',
+            strokeWidth: guide.source === 'safe' ? 1.5 : 1,
+            dash: guide.source === 'safe' ? [6, 5] : undefined,
+            opacity: guide.source === 'layer' ? 0.9 : 0.8,
+            listening: false
+          }))
+        }
+        guideNodes.forEach((line) => {
+          klayer.add(line)
+          line.moveToTop()
+        })
+        klayer.batchDraw()
+      }
+      const snapNodePosition = (id: string, node: Konva.Node): ReturnType<typeof snapFrameToGuides> => {
+        const layer = layers.find((l) => l.id === id)
+        const excludeIds = selectedLayerIds.includes(id) ? selectedLayerIds : [id]
+        const result = snapFrameToGuides(
+          {
+            ...(layer?.frame ?? { x: node.x(), y: node.y(), width: node.width(), height: node.height(), rotation: node.rotation() }),
+            x: node.x(),
+            y: node.y(),
+            rotation: node.rotation()
+          },
+          layers,
+          { excludeIds }
+        )
+        node.position({ x: result.frame.x, y: result.frame.y })
+        return result
+      }
       group.getChildren().forEach((node) => {
         const id = node.getAttr('layerId') as string
         const layer = layers.find((l) => l.id === id)
@@ -171,7 +210,15 @@ export function ThumbCanvas(): JSX.Element {
         }
         if (!layer.locked) {
           node.draggable(true)
-          node.on('dragend', () => updateGeometry(id, { x: node.x(), y: node.y() }))
+          node.on('dragmove', () => {
+            const result = snapNodePosition(id, node)
+            drawGuides(result.guides)
+          })
+          node.on('dragend', () => {
+            clearGuides()
+            const result = snapNodePosition(id, node)
+            updateGeometry(id, { x: result.frame.x, y: result.frame.y })
+          })
         }
       })
       klayer.destroyChildren()
@@ -267,6 +314,21 @@ export function ThumbCanvas(): JSX.Element {
         })
         klayer.add(tr)
         selectedNodes.forEach((selNode) => {
+          selNode.on('transform', () => {
+            const id = selNode.getAttr('layerId') as string
+            const layer = layers.find((l) => l.id === id)
+            if (!layer) return
+            const sx = Math.abs(selNode.scaleX() || 1)
+            const sy = Math.abs(selNode.scaleY() || 1)
+            const result = snapFrameToGuides({
+              x: selNode.x(),
+              y: selNode.y(),
+              rotation: selNode.rotation(),
+              width: Math.max(20, (layer.frame.width || selNode.width()) * sx),
+              height: Math.max(20, (layer.frame.height || selNode.height()) * sy)
+            }, layers, { excludeIds: selectedLayerIds.includes(id) ? selectedLayerIds : [id] })
+            drawGuides(result.guides)
+          })
           selNode.on('transformend', () => {
             const id = selNode.getAttr('layerId') as string
             const layer = layers.find((l) => l.id === id)
@@ -280,11 +342,13 @@ export function ThumbCanvas(): JSX.Element {
               width: Math.max(20, (layer.frame.width || selNode.width()) * sx),
               height: Math.max(20, (layer.frame.height || selNode.height()) * sy)
             }
+            const snapped = snapFrameToGuides(frame, layers, { excludeIds: selectedLayerIds.includes(id) ? selectedLayerIds : [id] }).frame
+            clearGuides()
             if (layer.kind === 'text') {
               const fontScale = Math.sqrt(sx * sy)
-              updateLayer(id, scaleTextLayerBy(layer as TextLayer, fontScale, frame) as Partial<TextLayer>)
+              updateLayer(id, scaleTextLayerBy(layer as TextLayer, fontScale, snapped) as Partial<TextLayer>)
             } else {
-              updateGeometry(id, frame)
+              updateGeometry(id, snapped)
             }
             selNode.scale({ x: 1, y: 1 })
           })
