@@ -1,5 +1,7 @@
-import type { Project, ProjectImage, TranscriptWord } from '@shared/types'
+import type { MotionPreset, Project, ProjectImage, TranscriptWord } from '@shared/types'
+import { LOOKS } from '@shared/looks'
 import type { MouseEvent, ReactNode } from 'react'
+import { useData } from '../../store/useData'
 import {
   buildCaptionTimeline,
   buildVisualTimeline,
@@ -17,6 +19,11 @@ function fmt(sec: number): string {
 
 function selectionKey(selection: EditorSelection): string {
   return selection.kind === 'image' || selection.kind === 'caption' ? `${selection.kind}:${selection.id}` : selection.kind
+}
+
+function clampValue(value: number, min: number, max: number): number {
+  if (!Number.isFinite(value)) return min
+  return Math.max(min, Math.min(max, value))
 }
 
 function Track({
@@ -88,6 +95,95 @@ function Block({
   )
 }
 
+function MiniButton({
+  children,
+  active,
+  title,
+  onClick
+}: {
+  children: ReactNode
+  active?: boolean
+  title?: string
+  onClick: () => void
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={onClick}
+      style={{
+        border: active ? '1px solid var(--accent)' : '1px solid #23272f',
+        color: active ? 'var(--accent)' : '#aab0bb',
+        background: active ? 'var(--accent-soft)' : '#0b0d12',
+        borderRadius: 7,
+        padding: '6px 8px',
+        fontSize: 10.5,
+        fontWeight: 700,
+        cursor: 'pointer',
+        minHeight: 28
+      }}
+    >
+      {children}
+    </button>
+  )
+}
+
+function NumberField({
+  label,
+  value,
+  min,
+  max,
+  step,
+  onChange
+}: {
+  label: string
+  value: number
+  min: number
+  max: number
+  step: number
+  onChange: (value: number) => void
+}): JSX.Element {
+  return (
+    <label style={{ display: 'grid', gridTemplateColumns: '54px minmax(0,1fr)', alignItems: 'center', gap: 8, fontSize: 10.5, color: '#6a7180' }}>
+      <span>{label}</span>
+      <input
+        type="number"
+        min={min}
+        max={max}
+        step={step}
+        value={Number.isFinite(value) ? Number(value.toFixed(2)) : 0}
+        onChange={(e) => {
+          const next = Number(e.target.value)
+          if (Number.isFinite(next)) onChange(next)
+        }}
+        style={{ width: '100%', boxSizing: 'border-box', border: '1px solid #23272f', borderRadius: 7, background: '#0b0d12', color: '#dde0e5', padding: '5px 7px', fontFamily: 'var(--font-mono)', fontSize: 10.5 }}
+      />
+    </label>
+  )
+}
+
+function ColorField({
+  label,
+  value,
+  onChange
+}: {
+  label: string
+  value: string
+  onChange: (value: string) => void
+}): JSX.Element {
+  return (
+    <label style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 10.5, color: '#6a7180' }}>
+      {label}
+      <input
+        type="color"
+        value={value}
+        onChange={(e) => onChange(e.target.value)}
+        style={{ width: '100%', height: 30, border: '1px solid #23272f', borderRadius: 7, background: '#0b0d12', cursor: 'pointer' }}
+      />
+    </label>
+  )
+}
+
 function Inspector({
   project,
   images,
@@ -99,8 +195,20 @@ function Inspector({
   words: TranscriptWord[]
   selection: EditorSelection
 }): JSX.Element {
+  const setImageRanges = useData((s) => s.setImageRanges)
+  const setMedia = useData((s) => s.setMedia)
+  const setCaptions = useData((s) => s.setCaptions)
+  const setLook = useData((s) => s.setLook)
+  const setWordsEmphasis = useData((s) => s.setWordsEmphasis)
   const image = selection.kind === 'image' ? images.find((im) => im.id === selection.id) : undefined
   const word = selection.kind === 'caption' ? words.find((w) => w.id === selection.id) : undefined
+  const durationSec = Math.max(0.05, project.durationSec || 0.05)
+  const minSpan = Math.min(0.05, durationSec)
+  const motionPreset: MotionPreset = project.motionPreset ?? (project.kenBurns ? 'subtle' : 'off')
+  const selectedLook = LOOKS.find((look) => look.id === (project.lookLut ?? 'off')) ?? LOOKS[0]
+  const lookStrength = selectedLook.id === 'off' ? 0 : clampValue(project.lookStrength ?? selectedLook.defaultStrength, 0, 1)
+  const captionHighlightColor = /^#[0-9a-f]{6}$/i.test(project.captionHighlightColor ?? '') ? project.captionHighlightColor! : project.captionPreset === 'Submagic' ? '#111111' : '#ffd93d'
+  const captionBoxColor = /^#[0-9a-f]{6}$/i.test(project.captionBoxColor ?? '') ? project.captionBoxColor! : '#ffd93d'
   const title = image
     ? 'Image segment'
     : word
@@ -115,26 +223,117 @@ function Inspector({
     : word
       ? `${fmt(word.start)}-${fmt(word.end)} · ${word.emphasis ? 'emphasized' : 'normal'}`
       : selection.kind === 'look'
-        ? `${project.lookLut ?? 'off'} · ${Math.round((project.lookStrength ?? 0) * 100)}%`
+        ? `${selectedLook.name} · ${Math.round(lookStrength * 100)}%`
         : selection.kind === 'audio'
           ? `${fmt(project.durationSec)} narration`
           : `${project.captionAspect} · ${project.captionPreset} captions`
-  const hint = image
-    ? 'Open Audio + Image to reorder or change motion for this segment.'
-    : word
-      ? 'Open Captions to toggle emphasis, style, and Submagic box settings.'
-      : selection.kind === 'look'
-        ? 'Open Style to adjust look intensity, grade, overlay, motion, and B-roll.'
-        : selection.kind === 'audio'
-          ? 'Audio length drives the full timeline and render duration.'
-          : 'Click a timeline block to edit that part of the video.'
+  const setImageRange = (rangeStart: number, rangeEnd: number): void => {
+    if (!image) return
+    const start = clampValue(rangeStart, 0, Math.max(0, durationSec - minSpan))
+    const end = clampValue(rangeEnd, start + minSpan, durationSec)
+    void setImageRanges([{ id: image.id, rangeStart: start, rangeEnd: end }])
+  }
+  const setImageDuration = (seconds: number): void => {
+    if (!image) return
+    const span = clampValue(seconds, minSpan, durationSec)
+    const start = clampValue(image.rangeStart, 0, Math.max(0, durationSec - minSpan))
+    setImageRange(start, start + span)
+  }
+  const selectCaptionPreset = (captionPreset: string): void => {
+    const patch: Partial<Project> = { captionPreset }
+    if (captionPreset === 'Submagic') {
+      patch.captionPace = 'word'
+      patch.captionLines = 1
+      patch.captionFont = project.captionFont || 'Anton'
+      patch.captionHighlightColor = project.captionHighlightColor ?? '#111111'
+      patch.captionBoxColor = project.captionBoxColor ?? '#ffd93d'
+      patch.captionWordsPerPage = project.captionWordsPerPage ?? 1
+    }
+    void setCaptions(patch)
+  }
 
   return (
     <div style={{ border: '1px solid #1d2129', borderRadius: 12, background: '#0e1116', padding: 12, minHeight: 112 }}>
       <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, color: 'var(--accent)', marginBottom: 7 }}>SELECTION</div>
       <div style={{ fontFamily: 'var(--font-display)', fontSize: 15, fontWeight: 700, color: '#eef0f3' }}>{title}</div>
       <div title={detail} className="me-ellipsis" style={{ marginTop: 5, fontSize: 11, color: '#aab0bb', fontFamily: 'var(--font-mono)' }}>{detail}</div>
-      <div style={{ marginTop: 9, fontSize: 10.5, color: '#6a7180', lineHeight: 1.4 }}>{hint}</div>
+      {image && (
+        <div style={{ marginTop: 11, display: 'flex', flexDirection: 'column', gap: 8 }}>
+          <NumberField label="Start" value={image.rangeStart} min={0} max={Math.max(0, image.rangeEnd - minSpan)} step={0.05} onChange={(v) => setImageRange(v, image.rangeEnd)} />
+          <NumberField label="End" value={image.rangeEnd} min={image.rangeStart + minSpan} max={durationSec} step={0.05} onChange={(v) => setImageRange(image.rangeStart, v)} />
+          <NumberField label="Secs" value={Math.max(minSpan, image.rangeEnd - image.rangeStart)} min={minSpan} max={durationSec} step={0.05} onChange={setImageDuration} />
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 6 }}>
+            {([
+              { id: 'off', label: 'Static' },
+              { id: 'subtle', label: 'Subtle' },
+              { id: 'cinematic', label: 'Cinema' }
+            ] as Array<{ id: MotionPreset; label: string }>).map((preset) => (
+              <MiniButton key={preset.id} active={motionPreset === preset.id} onClick={() => void setMedia({ motionPreset: preset.id, kenBurns: preset.id !== 'off' })}>
+                {preset.label}
+              </MiniButton>
+            ))}
+          </div>
+        </div>
+      )}
+      {word && (
+        <div style={{ marginTop: 11, display: 'flex', flexDirection: 'column', gap: 9 }}>
+          <MiniButton active={!!word.emphasis} onClick={() => void setWordsEmphasis([word.id], !word.emphasis)}>
+            {word.emphasis ? 'Emphasis on' : 'Emphasis off'}
+          </MiniButton>
+          <ColorField label={project.captionPreset === 'Submagic' ? 'Text colour' : 'Highlight'} value={captionHighlightColor} onChange={(captionHighlightColor) => void setCaptions({ captionHighlightColor })} />
+          {project.captionPreset === 'Submagic' && (
+            <div style={{ border: '1px solid var(--accent)', borderRadius: 9, padding: 9, background: 'var(--accent-soft)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+              <ColorField label="Box colour" value={captionBoxColor} onChange={(captionBoxColor) => void setCaptions({ captionBoxColor })} />
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 6 }}>
+                {[1, 2, 3].map((n) => (
+                  <MiniButton key={n} active={(project.captionWordsPerPage ?? 1) === n} onClick={() => void setCaptions({ captionWordsPerPage: n as 1 | 2 | 3 })}>
+                    {n}
+                  </MiniButton>
+                ))}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+      {selection.kind === 'look' && (
+        <div style={{ marginTop: 11, display: 'flex', flexDirection: 'column', gap: 9 }}>
+          <label style={{ display: 'grid', gridTemplateColumns: '56px minmax(0,1fr) 34px', alignItems: 'center', gap: 8, fontSize: 10.5, color: '#6a7180' }}>
+            <span>Power</span>
+            <input type="range" min={0} max={100} value={Math.round(lookStrength * 100)} onChange={(e) => void setLook({ lut: selectedLook.id === 'off' ? 'clean' : selectedLook.id, strength: clampValue(Number(e.target.value), 0, 100) / 100 })} style={{ width: '100%', accentColor: 'var(--accent)' }} />
+            <span style={{ fontFamily: 'var(--font-mono)', color: '#cdd2da', textAlign: 'right' }}>{Math.round(lookStrength * 100)}%</span>
+          </label>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 6 }}>
+            {LOOKS.slice(0, 5).map((look) => (
+              <MiniButton key={look.id} active={selectedLook.id === look.id} title={look.description} onClick={() => void setLook({ lut: look.id, strength: look.id === 'off' ? 0 : look.defaultStrength })}>
+                {look.name}
+              </MiniButton>
+            ))}
+          </div>
+        </div>
+      )}
+      {selection.kind === 'audio' && (
+        <div style={{ marginTop: 9, fontSize: 10.5, color: '#6a7180', lineHeight: 1.45 }}>
+          The narration length anchors this project. Trim image segments or caption timing around it from the visual and captions tracks.
+        </div>
+      )}
+      {selection.kind === 'project' && (
+        <div style={{ marginTop: 11, display: 'flex', flexDirection: 'column', gap: 9 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 6 }}>
+            {(['16:9', '1:1', '9:16'] as Project['captionAspect'][]).map((aspect) => (
+              <MiniButton key={aspect} active={project.captionAspect === aspect} onClick={() => void setCaptions({ captionAspect: aspect })}>
+                {aspect}
+              </MiniButton>
+            ))}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 6 }}>
+            {['Hormozi', 'Submagic', 'Pop', 'Minimal'].map((preset) => (
+              <MiniButton key={preset} active={project.captionPreset === preset} onClick={() => selectCaptionPreset(preset)}>
+                {preset}
+              </MiniButton>
+            ))}
+          </div>
+        </div>
+      )}
     </div>
   )
 }

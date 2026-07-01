@@ -92,6 +92,7 @@ interface DataState {
   loadPreviewSpec: (projectId?: string) => Promise<void>
   setProjectImages: (paths: string[]) => Promise<void>
   reorderProjectImages: (imageIds: string[]) => Promise<void>
+  setImageRanges: (ranges: { id: string; rangeStart: number; rangeEnd: number }[]) => Promise<void>
   setMedia: (patch: Partial<Project>) => Promise<void>
   setCaptions: (patch: Partial<Project>) => Promise<void>
   setLook: (patch: { lut?: string; strength?: number; adjust?: LookAdjust }) => Promise<void>
@@ -419,6 +420,13 @@ export const useData = create<DataState>((set, get) => ({
     if (!a || !p) return
     const projectImages = await a.compose.reorderImages(p.id, imageIds)
     set({ projectImages })
+  },
+  setImageRanges: async (ranges) => {
+    const a = api()
+    const p = get().activeProject
+    if (!a || !p || ranges.length === 0) return
+    const projectImages = await a.compose.setRanges(p.id, ranges)
+    set({ projectImages, previewSpec: null, previewError: '' })
   },
   setMedia: async (patch) => {
     const a = api()
