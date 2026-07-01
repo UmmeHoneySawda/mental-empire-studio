@@ -98,15 +98,18 @@ export function Settings(): JSX.Element {
             ? `NVIDIA GPU detected (${nvidiaName}), but this ffmpeg build does not list h264_nvenc. Recheck after updating ffmpeg/driver; CPU fallback stays disabled.`
             : 'NVIDIA NVENC not listed by ffmpeg'
     },
-    { value: 'qsv' as const, label: 'QSV', enabled: !!(caps?.hasQsv || caps?.hasQsvListed), warning: !!(caps?.hasQsvListed && !caps?.hasQsv), note: caps?.hasQsv ? 'Intel QSV available' : 'Intel QSV not confirmed' },
-    { value: 'amf' as const, label: 'AMF', enabled: !!(caps?.hasAmf || caps?.hasAmfListed), warning: !!(caps?.hasAmfListed && !caps?.hasAmf), note: caps?.hasAmf ? 'AMD AMF available' : 'AMD AMF not confirmed' },
+    { value: 'qsv' as const, label: 'QSV', enabled: !!caps?.hasQsv, warning: !!(caps?.hasQsvListed && !caps?.hasQsv), note: caps?.hasQsv ? 'Intel QSV ready' : caps?.hasQsvListed ? 'Intel QSV is listed by ffmpeg, but the live probe failed on this machine.' : 'Intel QSV not listed by ffmpeg' },
+    { value: 'amf' as const, label: 'AMF', enabled: !!caps?.hasAmf, warning: !!(caps?.hasAmfListed && !caps?.hasAmf), note: caps?.hasAmf ? 'AMD AMF ready' : caps?.hasAmfListed ? 'AMD AMF is listed by ffmpeg, but the live probe failed on this machine.' : 'AMD AMF not listed by ffmpeg' },
   ]
   const selectedEncoder = encoders.find((e) => e.value === (settings.encoder ?? 'cpu')) ?? encoders[0]
   const confirmFloor = settings.detection.confirmBand[0] ?? 0.6
   const confirmCeil = settings.detection.confirmBand[1] ?? 0.82
   const chooseEncoder = (enc: typeof encoders[number]): void => {
+    if (!enc.enabled && enc.value !== 'cpu') {
+      void refreshCaps(true)
+      return
+    }
     saved({ encoder: enc.value, renderEngine: enc.value === 'cpu' ? 'ffmpeg' : 'gpu' })
-    if (!enc.enabled && enc.value !== 'cpu') void refreshCaps(true)
   }
 
   const CONTENT: Record<Section, JSX.Element> = {
@@ -159,7 +162,7 @@ export function Settings(): JSX.Element {
                 <button type="button" onClick={() => void refreshCaps(true)} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 7, padding: '3px 7px', fontSize: 10, color: '#8a909c', cursor: 'pointer' }}>{checkingCaps ? 'Checking…' : 'Recheck'}</button>
               </div>
               <div style={{ display: 'flex', border: '1px solid #23272f', borderRadius: 8, overflow: 'hidden', fontSize: 11.5 }}>
-                {encoders.map((enc) => { const on = (settings.encoder ?? 'cpu') === enc.value; return <div key={enc.value} title={enc.note} onClick={() => chooseEncoder(enc)} style={{ padding: '8px 12px', cursor: 'pointer', background: on ? 'var(--accent)' : undefined, color: on ? 'var(--accent-ink)' : enc.warning ? '#f5b323' : enc.enabled ? '#8a909c' : '#737a86', fontWeight: on ? 600 : undefined }}>{enc.label}</div> })}
+                {encoders.map((enc) => { const on = (settings.encoder ?? 'cpu') === enc.value; const disabled = !enc.enabled && enc.value !== 'cpu'; return <div key={enc.value} title={disabled ? `${enc.note} Click to recheck hardware.` : enc.note} onClick={() => chooseEncoder(enc)} style={{ padding: '8px 12px', cursor: disabled ? 'not-allowed' : 'pointer', background: on ? 'var(--accent)' : undefined, color: on ? 'var(--accent-ink)' : enc.warning ? '#f5b323' : enc.enabled ? '#8a909c' : '#737a86', fontWeight: on ? 600 : undefined, opacity: disabled ? 0.7 : 1 }}>{enc.label}</div> })}
               </div>
               <div className="me-clamp-2" style={{ fontSize: 10, color: selectedEncoder.warning || (!selectedEncoder.enabled && selectedEncoder.value !== 'cpu') ? '#f5b323' : '#6a7180', marginTop: 5 }}>{checkingCaps ? 'Checking ffmpeg GPU capabilities…' : caps ? selectedEncoder.note : 'Could not check capabilities — encoder choice is saved.'}</div>
             </div>
