@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { normalizeThumbnailLayer, normalizeThumbnailLayers, autoArrangeText } from '../../shared/thumbnail'
+import { normalizeThumbnailLayer, normalizeThumbnailLayers, autoArrangeText, scaleTextLayerBy } from '../../shared/thumbnail'
 import { asBetaOpts } from '../../shared/types'
 
 describe('normalizeThumbnailLayer', () => {
@@ -107,6 +107,23 @@ describe('normalizeThumbnailLayer', () => {
     expect(layer?.kind).toBe('text')
     if (layer?.kind !== 'text') throw new Error('expected text layer')
     expect(layer.lines.map((l) => l.text)).toEqual(['Line one', 'Line two'])
+  })
+
+  it('commits text transformer scale into real line font sizes', () => {
+    const layer = normalizeThumbnailLayer({
+      id: 'resize-text',
+      kind: 'text',
+      text: 'Big\nSmall',
+      lines: [{ text: 'Big', size: 80 }, { text: 'Small', size: 48 }],
+      frame: { x: 10, y: 20, width: 300, height: 120, rotation: 0 }
+    })
+
+    expect(layer?.kind).toBe('text')
+    if (layer?.kind !== 'text') throw new Error('expected text layer')
+    const scaled = scaleTextLayerBy(layer, 1.5, { width: 450, height: 180 })
+    expect(scaled.lines.map((l) => l.size)).toEqual([120, 72])
+    expect(scaled.frame.width).toBe(450)
+    expect(scaled.frame.height).toBe(180)
   })
 })
 

@@ -435,25 +435,58 @@ function CaptionsTab(): JSX.Element {
   const [previewPath, setPreviewPath] = useState('')
   const [previewState, setPreviewState] = useState<'idle' | 'rendering' | 'ready' | 'error'>('idle')
   const [previewError, setPreviewError] = useState('')
+  const previewRunRef = useRef(0)
+  const previewTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null)
   const previewing = previewState === 'rendering'
   const previewMediaSrc = videoSrc(previewPath)
 
+  const clearPreviewTimeout = (): void => {
+    if (previewTimeoutRef.current) clearTimeout(previewTimeoutRef.current)
+    previewTimeoutRef.current = null
+  }
+
+  useEffect(() => () => clearPreviewTimeout(), [])
+
   const renderPreview = async (): Promise<void> => {
     if (!project || previewing) return
+    const runId = ++previewRunRef.current
+    clearPreviewTimeout()
     setPreviewState('rendering')
     setPreviewError('')
     const projectId = project.id
+    previewTimeoutRef.current = setTimeout(() => {
+      if (previewRunRef.current !== runId) return
+      previewRunRef.current += 1
+      void window.api.render.cancel(`preview-${projectId}`).catch(() => undefined)
+      setPreviewState('error')
+      setPreviewError('Preview timed out after 30 seconds and was cancelled. Your images and captions were kept intact.')
+      void refreshActiveProjectSnapshot(projectId)
+    }, 30_000)
     try {
       // Preview is read-only, but a long IPC call can leave the renderer with stale
       // arrays. Refresh with a guarded merge so empty delayed reads never wipe edits.
       const p = await window.api.compose.preview(projectId)
+      if (previewRunRef.current !== runId) return
       setPreviewPath(p)
       await refreshActiveProjectSnapshot(projectId)
       setPreviewState('ready')
     } catch (e) {
+      if (previewRunRef.current !== runId) return
       setPreviewError((e as Error).message)
       setPreviewState('error')
+    } finally {
+      if (previewRunRef.current === runId) clearPreviewTimeout()
     }
+  }
+
+  const cancelPreview = async (): Promise<void> => {
+    if (!project || !previewing) return
+    previewRunRef.current += 1
+    clearPreviewTimeout()
+    await window.api.render.cancel(`preview-${project.id}`).catch(() => undefined)
+    await refreshActiveProjectSnapshot(project.id).catch(() => undefined)
+    setPreviewState('idle')
+    setPreviewError('Preview cancelled. Your images and captions were kept intact.')
   }
 
   const selectCaptionPreset = (name: string): void => {
@@ -523,7 +556,7 @@ function CaptionsTab(): JSX.Element {
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}><span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#6a7180' }}>PREVIEW</span><span style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, background: 'var(--accent-soft)', color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: 10, padding: '2px 8px' }}>{project?.captionAspect ?? '16:9'}</span></div>
         <CaptionPreview words={transcript} aspect={project?.captionAspect ?? '16:9'} lines={project?.captionLines ?? 1} position={project?.captionPosition ?? 'bottom'} font={project?.captionFont ?? 'Anton'} animation={project?.captionAnim ?? 'Pop-in'} preset={preset} highlightColor={captionHighlightColor} boxColor={captionBoxColor} imagePath={images[0]?.thumb || images[0]?.path} overlay={betaOpts.overlay} />
         <div style={{ fontSize: 10, color: '#6a7180', textAlign: 'center', marginTop: 9, lineHeight: 1.4 }}>{isSubmagic ? 'Boxed active word' : 'Active word'} · uniform pop ({preset})</div>
-        <button type="button" disabled={!project || previewing} onClick={() => void renderPreview()} className="me-btn" style={{ width: '100%', marginTop: 10, border: '1px solid #262b34', background: '#15181f', borderRadius: 9, padding: '8px 10px', fontSize: 11.5, color: '#c4cad3', cursor: project && !previewing ? 'pointer' : 'not-allowed', opacity: project && !previewing ? 1 : 0.55 }}>{previewing ? 'Rendering…' : 'Render preview'}</button>
+        <button type="button" disabled={!project} onClick={() => void (previewing ? cancelPreview() : renderPreview())} className="me-btn" style={{ width: '100%', marginTop: 10, border: previewing ? '1px solid #4a3540' : '1px solid #262b34', background: previewing ? '#1b1217' : '#15181f', borderRadius: 9, padding: '8px 10px', fontSize: 11.5, color: previewing ? '#ff8a96' : '#c4cad3', cursor: project ? 'pointer' : 'not-allowed', opacity: project ? 1 : 0.55 }}>{previewing ? 'Cancel preview' : 'Render preview'}</button>
         {previewPath && (
           <div style={{ marginTop: 10 }}>
             {previewMediaSrc ? (

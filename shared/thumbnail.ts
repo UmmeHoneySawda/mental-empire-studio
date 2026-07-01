@@ -310,6 +310,18 @@ export interface AutoArrangeResult {
   lines: { text: string; size: number }[]
 }
 
+export function scaleTextLayerBy(layer: TextLayer, scale: number, framePatch: Partial<LayerFrame> = {}): Pick<TextLayer, 'frame' | 'lines'> {
+  const factor = clamp(finite(scale, 1), 0.1, 5)
+  const lines = layer.lines.map((line) => ({
+    ...line,
+    size: clamp(Math.round(line.size * factor), 8, 260)
+  }))
+  return {
+    frame: normalizeFrame({ ...layer.frame, ...framePatch }, layer.frame),
+    lines
+  }
+}
+
 /**
  * Compute a fresh layout for a headline text layer. Returns the new frame +
  * per-line sizes; deterministic so it can be asserted headlessly.

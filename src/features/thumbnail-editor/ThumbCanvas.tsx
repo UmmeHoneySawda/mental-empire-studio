@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import Konva from 'konva'
 import { useStore } from '../../store/useStore'
 import { THUMB_W, THUMB_H, type TextLayer } from '@shared/types'
+import { scaleTextLayerBy } from '@shared/thumbnail'
 import { buildLayerGroup, loadImage, type LayerImages } from './render'
 
 // On-screen Konva editor. Renders the layer stack imperatively (reusing the shared
@@ -270,13 +271,21 @@ export function ThumbCanvas(): JSX.Element {
             const id = selNode.getAttr('layerId') as string
             const layer = layers.find((l) => l.id === id)
             if (!layer) return
-            updateGeometry(id, {
+            const sx = Math.abs(selNode.scaleX() || 1)
+            const sy = Math.abs(selNode.scaleY() || 1)
+            const frame = {
               x: selNode.x(),
               y: selNode.y(),
               rotation: selNode.rotation(),
-              width: Math.max(20, (layer.frame.width || selNode.width()) * selNode.scaleX()),
-              height: Math.max(20, (layer.frame.height || selNode.height()) * selNode.scaleY())
-            })
+              width: Math.max(20, (layer.frame.width || selNode.width()) * sx),
+              height: Math.max(20, (layer.frame.height || selNode.height()) * sy)
+            }
+            if (layer.kind === 'text') {
+              const fontScale = Math.sqrt(sx * sy)
+              updateLayer(id, scaleTextLayerBy(layer as TextLayer, fontScale, frame) as Partial<TextLayer>)
+            } else {
+              updateGeometry(id, frame)
+            }
             selNode.scale({ x: 1, y: 1 })
           })
         })
@@ -288,7 +297,7 @@ export function ThumbCanvas(): JSX.Element {
       cancelled = true
       stage.off('.thumbselect')
     }
-  }, [layers, selectedLayerId, selectedLayerIds, selectLayer, setSelection, clearSelection, updateGeometry, thumbEditorV2])
+  }, [layers, selectedLayerId, selectedLayerIds, selectLayer, setSelection, clearSelection, updateLayer, updateGeometry, thumbEditorV2])
 
   return (
     <div

@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
@@ -337,6 +337,39 @@ function posterFrame(videoPath: string): Promise<string> {
   })
 }
 
+function previewStillPath(imagePath: string, dir: string): Promise<string> {
+  if (!imagePath || !existsSync(imagePath)) return Promise.resolve(imagePath)
+  let key = ''
+  try {
+    const st = statSync(imagePath)
+    key = createHash('sha1').update(`${imagePath}:${st.size}:${st.mtimeMs}`).digest('hex').slice(0, 24)
+  } catch {
+    key = createHash('sha1').update(imagePath).digest('hex').slice(0, 24)
+  }
+  const out = join(dir, `preview-still-${key}.jpg`)
+  if (existsSync(out)) return Promise.resolve(out)
+
+  return new Promise((resolve) => {
+    const args = [
+      '-y',
+      '-hide_banner',
+      '-loglevel', 'error',
+      '-i', imagePath,
+      '-frames:v', '1',
+      '-vf', 'scale=640:-2:force_original_aspect_ratio=decrease',
+      '-q:v', '6',
+      out
+    ]
+    const child = spawn(ffmpegPath(), args, { windowsHide: true })
+    child.stderr.resume()
+    child.on('error', () => resolve(imagePath))
+    child.on('close', (code) => {
+      if (code === 0 && existsSync(out)) resolve(out)
+      else resolve(imagePath)
+    })
+  })
+}
+
 async function previewProject(projectId: string): Promise<string> {
   const repos = getRepos()
   const project = repos.getProject(projectId)
@@ -388,11 +421,14 @@ async function previewProject(projectId: string): Promise<string> {
   writeFileSync(assPath, ass)
 
   const existingImages = repos.getProjectImages(projectId)
+  const previewImagePath = existingImages[0]
+    ? await previewStillPath(existingImages[0].thumb || existingImages[0].path, dir)
+    : ''
   const images: ProjectImage[] = existingImages[0]
     ? [{
         ...existingImages[0],
-        path: existingImages[0].thumb || existingImages[0].path,
-        thumb: existingImages[0].thumb || existingImages[0].path,
+        path: previewImagePath,
+        thumb: previewImagePath,
         rangeStart: 0,
         rangeEnd: previewSec
       }]
