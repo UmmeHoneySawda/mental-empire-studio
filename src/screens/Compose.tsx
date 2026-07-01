@@ -4,6 +4,7 @@ import { useData } from '../store/useData'
 import { ScreenPad, Eyebrow, Title } from '../components/primitives'
 import type { BetaVideoOpts, MotionPreset, Project, ProjectImage, TranscriptWord, VideoStyle } from '@shared/types'
 import { asBetaOpts } from '@shared/types'
+import { LOOKS } from '@shared/looks'
 import { buildMasterPrompt, validateEffectPlan } from '@shared/effectPlan'
 import { isCssImageValue, mediaSrc, videoSrc } from '../lib/media'
 import { PreviewCanvas } from '../features/video-editor/PreviewCanvas'
@@ -429,6 +430,135 @@ function AdvancedTab(): JSX.Element {
   )
 }
 
+function QuickButton({
+  children,
+  active,
+  title,
+  onClick
+}: {
+  children: React.ReactNode
+  active?: boolean
+  title?: string
+  onClick: () => void
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={onClick}
+      className="me-btn"
+      style={{
+        border: active ? '1px solid var(--accent)' : '1px solid #23272f',
+        background: active ? 'var(--accent-soft)' : '#0e1116',
+        color: active ? 'var(--accent)' : '#aab0bb',
+        borderRadius: 8,
+        padding: '8px 10px',
+        fontSize: 11,
+        fontWeight: 700,
+        cursor: 'pointer',
+        minHeight: 34
+      }}
+    >
+      {children}
+    </button>
+  )
+}
+
+function QuickPanel({ customizeOpen, onCustomizeToggle }: { customizeOpen: boolean; onCustomizeToggle: () => void }): JSX.Element | null {
+  const project = useData((s) => s.activeProject)
+  const setCaptions = useData((s) => s.setCaptions)
+  const setMedia = useData((s) => s.setMedia)
+  const setLook = useData((s) => s.setLook)
+  const betaOn = useStore((s) => s.settings.beta.enabled)
+  const updateSettings = useStore((s) => s.updateSettings)
+  if (!project) return null
+
+  const betaOpts = asBetaOpts(project.betaOpts)
+  const selectedLook = LOOKS.find((look) => look.id === (project.lookLut ?? 'off')) ?? LOOKS[0]
+  const lookStrength = selectedLook.id === 'off' ? 0 : Math.max(0, Math.min(1, project.lookStrength ?? selectedLook.defaultStrength))
+  const motionPreset: MotionPreset = project.motionPreset ?? (project.kenBurns ? 'subtle' : 'off')
+  const patchBeta = (patch: Partial<BetaVideoOpts>): void => {
+    if (!betaOn) updateSettings({ beta: { enabled: true } })
+    void setCaptions({ betaOpts: { ...betaOpts, ...patch } })
+  }
+  const setMotion = (preset: MotionPreset): void => {
+    void setMedia({ motionPreset: preset, kenBurns: preset !== 'off' })
+  }
+  const selectCaptionPreset = (captionPreset: string): void => {
+    const patch: Partial<Project> = { captionPreset }
+    if (captionPreset === 'Submagic') {
+      patch.captionPace = 'word'
+      patch.captionLines = 1
+      patch.captionFont = project.captionFont || 'Anton'
+      patch.captionHighlightColor = project.captionHighlightColor ?? '#111111'
+      patch.captionBoxColor = project.captionBoxColor ?? '#ffd93d'
+      patch.captionWordsPerPage = project.captionWordsPerPage ?? 1
+    }
+    void setCaptions(patch)
+  }
+
+  return (
+    <div style={{ border: '1px solid #1d2129', borderRadius: 14, background: '#12151b', marginBottom: 18, padding: 14, display: 'grid', gridTemplateColumns: 'minmax(0,1.1fr) minmax(0,1fr)', gap: 14 }}>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 7 }}>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, color: '#5b616f' }}>LOOK</span>
+            <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: 9.5, color: '#8a909c' }}>{selectedLook.name} · {Math.round(lookStrength * 100)}%</span>
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,minmax(0,1fr))', gap: 6 }}>
+            {LOOKS.slice(0, 5).map((look) => (
+              <QuickButton key={look.id} active={selectedLook.id === look.id} title={look.description} onClick={() => void setLook({ lut: look.id, strength: look.id === 'off' ? 0 : look.defaultStrength })}>{look.name}</QuickButton>
+            ))}
+          </div>
+          <div style={{ display: 'grid', gridTemplateColumns: '72px minmax(0,1fr) 40px', alignItems: 'center', gap: 8, marginTop: 8, fontSize: 10.5, color: '#8a909c' }}>
+            <span>Intensity</span>
+            <input type="range" min={0} max={100} value={Math.round(lookStrength * 100)} onChange={(e) => void setLook({ lut: selectedLook.id === 'off' ? 'clean' : selectedLook.id, strength: Math.max(0, Math.min(100, Number(e.target.value))) / 100 })} style={{ width: '100%', accentColor: 'var(--accent)' }} />
+            <span style={{ fontFamily: 'var(--font-mono)', textAlign: 'right' }}>{Math.round(lookStrength * 100)}%</span>
+          </div>
+        </div>
+        <div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, color: '#5b616f', marginBottom: 7 }}>CAPTIONS</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(0,1fr))', gap: 6 }}>
+            {['Hormozi', 'Submagic', 'Pop', 'Minimal'].map((preset) => (
+              <QuickButton key={preset} active={(project.captionPreset ?? 'Hormozi') === preset} onClick={() => selectCaptionPreset(preset)}>{preset}</QuickButton>
+            ))}
+          </div>
+        </div>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+        <div>
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, color: '#5b616f', marginBottom: 7 }}>MOTION</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 6 }}>
+            {(['off', 'subtle', 'cinematic'] as MotionPreset[]).map((preset) => (
+              <QuickButton key={preset} active={motionPreset === preset} onClick={() => setMotion(preset)}>{preset === 'off' ? 'Off' : preset === 'subtle' ? 'Subtle' : 'Cinema'}</QuickButton>
+            ))}
+          </div>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 10 }}>
+          <div>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, color: '#5b616f', marginBottom: 7 }}>B-ROLL</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 6 }}>
+              <QuickButton active={betaOpts.broll.enabled} onClick={() => patchBeta({ broll: { ...betaOpts.broll, enabled: !betaOpts.broll.enabled } })}>{betaOpts.broll.enabled ? 'Auto on' : 'Off'}</QuickButton>
+              <QuickButton active={betaOpts.broll.density === 'sparse'} onClick={() => patchBeta({ broll: { ...betaOpts.broll, enabled: true, density: betaOpts.broll.density === 'sparse' ? 'full' : 'sparse' } })}>{betaOpts.broll.density === 'sparse' ? 'Sparse' : 'Full'}</QuickButton>
+            </div>
+          </div>
+          <div>
+            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, color: '#5b616f', marginBottom: 7 }}>ASPECT</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 6 }}>
+              {CAPTION_ASPECTS.map((aspect) => (
+                <QuickButton key={aspect} active={(project.captionAspect ?? '16:9') === aspect} onClick={() => void setCaptions({ captionAspect: aspect })}>{aspect}</QuickButton>
+              ))}
+            </div>
+          </div>
+        </div>
+        <button type="button" onClick={onCustomizeToggle} className="me-btn" style={{ alignSelf: 'flex-start', border: customizeOpen ? '1px solid var(--accent)' : '1px solid #262b34', background: customizeOpen ? 'var(--accent-soft)' : '#15181f', borderRadius: 9, padding: '8px 13px', fontSize: 11.5, color: customizeOpen ? 'var(--accent)' : '#c4cad3', fontWeight: 700, cursor: 'pointer' }}>
+          {customizeOpen ? 'Hide customize' : 'Customize'}
+        </button>
+      </div>
+    </div>
+  )
+}
+
 function CaptionsTab(): JSX.Element {
   const project = useData((s) => s.activeProject)
   const transcript = useData((s) => s.transcript)
@@ -635,7 +765,9 @@ export function Compose(): JSX.Element {
   const [error, setError] = useState('')
   const [videoPlayheadSec, setVideoPlayheadSec] = useState(0)
   const [videoSelection, setVideoSelection] = useState<EditorSelection>({ kind: 'project' })
+  const [videoCustomizeOpen, setVideoCustomizeOpen] = useState(false)
   const selectedLabel = useMemo(() => editorSelectionLabel(videoSelection, images, transcript, project), [videoSelection, images, transcript, project])
+  const showDeepEditor = !videoEditorV2 || videoCustomizeOpen || !project
 
   // Auto-open only when there is one obvious choice. With multiple downloads,
   // keep the context explicit so Compose never silently swaps to the first item.
@@ -648,6 +780,7 @@ export function Compose(): JSX.Element {
   useEffect(() => {
     setVideoPlayheadSec(0)
     setVideoSelection({ kind: 'project' })
+    setVideoCustomizeOpen(false)
   }, [project?.id])
 
   const sendToRender = async (): Promise<void> => {
@@ -680,16 +813,34 @@ export function Compose(): JSX.Element {
           <div style={{ fontSize: 12, color: '#6a7180' }}>{project ? `${project.title} · ${Math.floor((project.durationSec || 0) / 60)}:${String(Math.round((project.durationSec || 0) % 60)).padStart(2, '0')}` : 'No project — download a clip first'}</div>
         )}
       </div>
-      <div style={{ display: 'flex', gap: 9, marginBottom: 22, flexWrap: 'wrap' }}>
-        <Tab id="media" label="Audio + Image" icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="5" width="18" height="14" rx="2.5" /><circle cx="8.5" cy="10" r="1.7" /><path d="M4 17l5-4 4 3 2-2 5 4" /></svg>} />
-        <Tab id="captions" label="Captions" icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="5" width="18" height="14" rx="2.5" /><path d="M7 14h4" /><path d="M14 14h3" /></svg>} />
-        <Tab id="style" label="Style" icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2z" /></svg>} />
-        <Tab id="advanced" label="Advanced" icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M4 6h16M4 12h16M4 18h7" /></svg>} />
+      <div style={{ display: 'flex', gap: 9, marginBottom: videoEditorV2 && project ? 14 : 22, flexWrap: 'wrap', alignItems: 'center' }}>
+        {videoEditorV2 && project ? (
+          <>
+            <button type="button" onClick={() => setVideoCustomizeOpen(false)} className="me-btn" style={{ border: !videoCustomizeOpen ? '1px solid var(--accent)' : '1px solid #1d2129', background: !videoCustomizeOpen ? 'var(--accent-soft)' : 'transparent', color: !videoCustomizeOpen ? 'var(--accent)' : '#8a909c', borderRadius: 10, padding: '9px 16px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>Quick</button>
+            <button type="button" onClick={() => setVideoCustomizeOpen(true)} className="me-btn" style={{ border: videoCustomizeOpen ? '1px solid var(--accent)' : '1px solid #1d2129', background: videoCustomizeOpen ? 'var(--accent-soft)' : 'transparent', color: videoCustomizeOpen ? 'var(--accent)' : '#8a909c', borderRadius: 10, padding: '9px 16px', fontSize: 12.5, fontWeight: 700, cursor: 'pointer' }}>Customize</button>
+            {videoCustomizeOpen && (
+              <>
+                <Tab id="media" label="Media" icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="5" width="18" height="14" rx="2.5" /><circle cx="8.5" cy="10" r="1.7" /><path d="M4 17l5-4 4 3 2-2 5 4" /></svg>} />
+                <Tab id="captions" label="Captions" icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="5" width="18" height="14" rx="2.5" /><path d="M7 14h4" /><path d="M14 14h3" /></svg>} />
+                <Tab id="style" label="Style" icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2z" /></svg>} />
+                <Tab id="advanced" label="Advanced" icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M4 6h16M4 12h16M4 18h7" /></svg>} />
+              </>
+            )}
+          </>
+        ) : (
+          <>
+            <Tab id="media" label="Audio + Image" icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="5" width="18" height="14" rx="2.5" /><circle cx="8.5" cy="10" r="1.7" /><path d="M4 17l5-4 4 3 2-2 5 4" /></svg>} />
+            <Tab id="captions" label="Captions" icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><rect x="3" y="5" width="18" height="14" rx="2.5" /><path d="M7 14h4" /><path d="M14 14h3" /></svg>} />
+            <Tab id="style" label="Style" icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M12 3l2 5 5 2-5 2-2 5-2-5-5-2 5-2z" /></svg>} />
+            <Tab id="advanced" label="Advanced" icon={<svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="1.8"><path d="M4 6h16M4 12h16M4 18h7" /></svg>} />
+          </>
+        )}
         <div style={{ flex: 1 }} />
         <button type="button" onClick={() => void sendToRender()} className="me-btn" style={{ display: 'flex', alignItems: 'center', gap: 7, border: '1px solid #262b34', background: '#15181f', borderRadius: 10, padding: '9px 16px', fontSize: 12.5, color: '#c4cad3', cursor: 'pointer' }}>Save &amp; send to render<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M5 12h14M13 6l6 6-6 6" /></svg></button>
       </div>
       <PreviewCanvas playheadSec={videoPlayheadSec} onPlayheadChange={setVideoPlayheadSec} selectedLabel={selectedLabel} />
-      {videoEditorV2 && project && (
+      {videoEditorV2 && project && <QuickPanel customizeOpen={videoCustomizeOpen} onCustomizeToggle={() => setVideoCustomizeOpen((open) => !open)} />}
+      {videoEditorV2 && project && videoCustomizeOpen && (
         <EditorTimeline
           project={project}
           images={images}
@@ -701,10 +852,10 @@ export function Compose(): JSX.Element {
         />
       )}
       {error && <div style={{ marginBottom: 16, border: `1px solid ${error === 'Queued for render.' ? '#1f9c6b' : '#5a2530'}`, background: error === 'Queued for render.' ? 'rgba(31,156,107,.12)' : 'rgba(255,90,110,.1)', color: error === 'Queued for render.' ? '#4fd6a0' : '#ff8a96', borderRadius: 10, padding: '10px 12px', fontSize: 12 }}>{error}</div>}
-      {composeTab === 'media' && <MediaTab />}
-      {composeTab === 'captions' && <CaptionsTab />}
-      {composeTab === 'style' && <StyleTab />}
-      {composeTab === 'advanced' && <AdvancedTab />}
+      {showDeepEditor && composeTab === 'media' && <MediaTab />}
+      {showDeepEditor && composeTab === 'captions' && <CaptionsTab />}
+      {showDeepEditor && composeTab === 'style' && <StyleTab />}
+      {showDeepEditor && composeTab === 'advanced' && <AdvancedTab />}
     </ScreenPad>
   )
 }
