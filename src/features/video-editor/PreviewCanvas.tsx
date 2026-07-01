@@ -56,6 +56,7 @@ export function PreviewCanvas(): JSX.Element | null {
       project.captionPosition,
       project.captionPace,
       project.kenBurns,
+      project.motionPreset,
       project.punchZoom,
       project.keywords,
       project.lookLut,

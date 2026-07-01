@@ -30,6 +30,8 @@ uniform sampler2D u_lut;
 uniform float u_mix;          // crossfade A->B
 uniform vec2  u_scaleA;       // ken-burns/punch zoom for A
 uniform vec2  u_scaleB;
+uniform vec2  u_panA;
+uniform vec2  u_panB;
 uniform float u_lutSize;
 uniform float u_lutStrength;
 uniform float u_saturation;
@@ -44,8 +46,8 @@ uniform vec2  u_texel;
 uniform bool  u_hasOverlay;
 uniform bool  u_hasLut;
 
-vec2 zoomUv(vec2 uv, vec2 scale) {
-  return (uv - 0.5) / scale + 0.5;
+vec2 zoomUv(vec2 uv, vec2 scale, vec2 pan) {
+  return (uv - 0.5) / scale + 0.5 - pan;
 }
 
 float hash(vec2 p) {
@@ -55,8 +57,8 @@ float hash(vec2 p) {
 }
 
 vec3 baseColor(vec2 uv) {
-  vec3 a = texture(u_imgA, zoomUv(uv, u_scaleA)).rgb;
-  vec3 b = texture(u_imgB, zoomUv(uv, u_scaleB)).rgb;
+  vec3 a = texture(u_imgA, zoomUv(uv, u_scaleA, u_panA)).rgb;
+  vec3 b = texture(u_imgB, zoomUv(uv, u_scaleB, u_panB)).rgb;
   return mix(a, b, u_mix);
 }
 
@@ -185,7 +187,7 @@ export class Compositor {
     gl.enableVertexAttribArray(loc)
     gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0)
 
-    for (const name of ['u_imgA', 'u_imgB', 'u_overlay', 'u_caption', 'u_lut', 'u_mix', 'u_scaleA', 'u_scaleB', 'u_lutSize', 'u_lutStrength', 'u_saturation', 'u_contrast', 'u_brightness', 'u_colorBalance', 'u_vignette', 'u_grain', 'u_grainSeed', 'u_sharpen', 'u_texel', 'u_hasOverlay', 'u_hasLut']) {
+    for (const name of ['u_imgA', 'u_imgB', 'u_overlay', 'u_caption', 'u_lut', 'u_mix', 'u_scaleA', 'u_scaleB', 'u_panA', 'u_panB', 'u_lutSize', 'u_lutStrength', 'u_saturation', 'u_contrast', 'u_brightness', 'u_colorBalance', 'u_vignette', 'u_grain', 'u_grainSeed', 'u_sharpen', 'u_texel', 'u_hasOverlay', 'u_hasLut']) {
       this.uniforms[name] = gl.getUniformLocation(program, name)
     }
 
@@ -264,21 +266,36 @@ export class Compositor {
     }
   }
 
-  /** Ken Burns / punch zoom scale for the image at index i at time t. */
-  private scaleAt(i: number, timeSec: number): [number, number] {
+  private ease(p: number, ease?: string): number {
+    const t = Math.min(1, Math.max(0, p))
+    if (ease === 'easeInOutCubic') return t < 0.5 ? 4 * t * t * t : 1 - Math.pow(-2 * t + 2, 3) / 2
+    return t
+  }
+
+  /** Ken Burns / punch zoom transform for the image at index i at time t. */
+  private transformAt(i: number, timeSec: number): [number, number, number, number] {
     let s = 1
+    let panX = 0
+    let panY = 0
     const isBroll = this.spec.broll && this.spec.broll.length > 0
     const img = isBroll ? null : this.spec.images[i]
     if (this.spec.motion.kenBurns && img) {
       const span = Math.max(0.5, img.endSec - img.startSec)
       const p = Math.min(1, Math.max(0, (timeSec - img.startSec) / span))
-      s = 1 + 0.12 * p // slow zoom-in across the still
+      if (img.motion) {
+        const e = this.ease(p, img.motion.ease)
+        s = img.motion.zoomFrom + (img.motion.zoomTo - img.motion.zoomFrom) * e
+        panX = img.motion.panX * e
+        panY = img.motion.panY * e
+      } else {
+        s = 1 + 0.12 * p
+      }
     }
     for (const at of this.spec.motion.punchAtSec) {
       const d = timeSec - at
       if (d >= 0 && d < 0.4) s *= 1 + 0.06 * (1 - d / 0.4)
     }
-    return [s, s]
+    return [s, s, panX, panY]
   }
 
   /** Draw one frame at time `t`. Assumes updateCaption() already ran for this frame. */
@@ -321,12 +338,14 @@ export class Compositor {
     gl.bindTexture(gl.TEXTURE_2D, this.lutTex ?? (this.imgTextures.length ? this.imgTextures[0] : this.videoTexA))
     gl.uniform1i(this.uniforms.u_lut, 4)
 
-    const [sax, say] = this.scaleAt(idx, timeSec)
-    const [sbx, sby] = this.scaleAt(nextIdx, timeSec)
+    const [sax, say, pax, pay] = this.transformAt(idx, timeSec)
+    const [sbx, sby, pbx, pby] = this.transformAt(nextIdx, timeSec)
     const lutStrength = g.lut ? (g.lutStrength ?? 1) : 0
     gl.uniform1f(this.uniforms.u_mix, mix)
     gl.uniform2f(this.uniforms.u_scaleA, sax, say)
     gl.uniform2f(this.uniforms.u_scaleB, sbx, sby)
+    gl.uniform2f(this.uniforms.u_panA, pax, pay)
+    gl.uniform2f(this.uniforms.u_panB, pbx, pby)
     gl.uniform1f(this.uniforms.u_lutSize, this.lutSize)
     gl.uniform1f(this.uniforms.u_lutStrength, lutStrength)
     gl.uniform1f(this.uniforms.u_saturation, g.saturation)

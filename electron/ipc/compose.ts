@@ -42,6 +42,7 @@ function defaultProject(downloadId: string, title: string, channel: string, mp3P
     imageMode: 'sequence',
     poolSize: 10,
     kenBurns: true,
+    motionPreset: 'subtle',
     seed: Math.floor(Math.random() * 9000) + 1000,
     crossfade: 0.8,
     captionPreset: 'Hormozi',

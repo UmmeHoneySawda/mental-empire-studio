@@ -35,16 +35,20 @@ function longFormFastPath(project: Pick<Project, 'durationSec'>): boolean {
 }
 
 function punchZoomFilter(project: Project, beta: ReturnType<typeof asBetaOpts> | null, w: number, h: number, allowCpuMotion: boolean): string {
-  const requested = project.punchZoom || !!beta?.autoZoom.atKeyPhrases
+  const preset = project.motionPreset ?? (project.kenBurns ? 'subtle' : 'off')
+  const requested = preset !== 'off' && (project.punchZoom || !!beta?.autoZoom.atKeyPhrases)
   return requested && !longFormFastPath(project) && allowCpuMotion
     ? `,zoompan=z='min(zoom+0.0015,1.08)':d=1:s=${w}x${h}:fps=${FPS}`
     : ''
 }
 
 function stillMotionFilter(project: Project, beta: ReturnType<typeof asBetaOpts> | null, index: number, frames: number, w: number, h: number, allowCpuMotion: boolean): string {
-  const requested = project.kenBurns || (beta?.autoZoom.atStart && index === 0)
+  const preset = project.motionPreset ?? (project.kenBurns ? 'subtle' : 'off')
+  const requested = preset !== 'off' || (beta?.autoZoom.atStart && index === 0)
+  const maxZoom = preset === 'cinematic' ? 1.2 : 1.1
+  const inc = ((maxZoom - 1) / Math.max(1, frames)).toFixed(7)
   return requested && !longFormFastPath(project) && allowCpuMotion
-    ? `,zoompan=z='min(zoom+0.0009,1.15)':d=${frames}:s=${w}x${h}:fps=${FPS}`
+    ? `,zoompan=z='min(zoom+${inc},${maxZoom.toFixed(2)})':d=${frames}:s=${w}x${h}:fps=${FPS}`
     : `,fps=${FPS}`
 }
 

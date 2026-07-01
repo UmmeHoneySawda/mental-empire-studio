@@ -400,6 +400,7 @@ export interface TranscriptWord {
 // phase 2 = b-roll pool; phase 3 = style + effect plan.
 export type VideoStyle = 'None' | 'Cinematic' | 'Intense' | 'Heartfelt' | 'Clean'
 export type BrollDensity = 'full' | 'sparse' | 'keywords'
+export type MotionPreset = 'off' | 'subtle' | 'cinematic'
 const VIDEO_STYLES: VideoStyle[] = ['None', 'Cinematic', 'Intense', 'Heartfelt', 'Clean']
 const BROLL_DENSITIES: BrollDensity[] = ['full', 'sparse', 'keywords']
 
@@ -534,6 +535,8 @@ export interface Project {
   lookStrength?: number
   /** parametric grade overrides layered on top of the selected look */
   lookAdjust?: LookAdjust
+  /** smart still motion preset; undefined keeps legacy kenBurns behavior */
+  motionPreset?: MotionPreset
   createdAt: string
   /** beta-feature options (hook/highlight/overlay/zoom/b-roll/style). Always present
    *  from the DB; optional on the type so construction-site literals stay terse. */

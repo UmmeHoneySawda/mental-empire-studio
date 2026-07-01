@@ -38,10 +38,20 @@ export interface GrainParams {
 }
 
 /** One slideshow still and the time window it is on screen. */
+export interface ImageMotionSpec {
+  zoomFrom: number
+  zoomTo: number
+  panX: number
+  panY: number
+  ease: 'linear' | 'easeInOutCubic'
+}
+
 export interface RenderImageSpec {
   path: string
   startSec: number
   endSec: number
+  /** deterministic per-still smart motion, omitted when static */
+  motion?: ImageMotionSpec
 }
 
 /** A single caption group (phrase or word) with its on-screen window + emphasis. */

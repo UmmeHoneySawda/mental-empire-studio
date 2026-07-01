@@ -15,6 +15,7 @@ import {
   type DownloadProgress,
   type DownloadedVideo,
   type LookAdjust,
+  type MotionPreset,
   type MyChannel,
   type NativeApi,
   type Profile,
@@ -30,6 +31,7 @@ import {
   type TranscriptWord
 } from '@shared/types'
 import type { GpuRenderSpec } from '@shared/renderSpec'
+import type { ImageMotionSpec } from '@shared/renderSpec'
 import { LOOKS, lookById } from '@shared/looks'
 
 function grad(a: string, b: string): string {
@@ -66,6 +68,24 @@ function deepMerge<T extends object>(base: T, patch: Partial<T>): T {
       : v
   }
   return out as T
+}
+
+function effectiveMotionPreset(p: Project): MotionPreset {
+  return p.motionPreset ?? (p.kenBurns ? 'subtle' : 'off')
+}
+
+function mockImageMotion(index: number, seed: number, preset: MotionPreset): ImageMotionSpec | undefined {
+  if (preset === 'off') return undefined
+  const amount = preset === 'cinematic' ? 0.18 : 0.08
+  const pan = preset === 'cinematic' ? 0.06 : 0.03
+  const push = index % 2 === 0
+  return {
+    zoomFrom: push ? 1 : 1 + amount,
+    zoomTo: push ? 1 + amount : 1,
+    panX: (index % 3 === 0 ? -1 : 1) * pan,
+    panY: (index % 2 === 0 ? 1 : -1) * pan * 0.75,
+    ease: 'easeInOutCubic'
+  }
 }
 
 function splitImages(projectId: string, paths: string[], durationSec: number): ProjectImage[] {
@@ -182,6 +202,7 @@ function installMock(): void {
       kenBurns: true,
       seed: 4821,
       crossfade: 0.8,
+      motionPreset: 'subtle',
       captionPreset: 'Hormozi',
       captionFont: 'Anton',
       captionAnim: 'Pop-in',
@@ -254,6 +275,7 @@ function installMock(): void {
       })
     }
     const style = settings.beta.enabled ? (p.betaOpts?.style ?? 'None') : 'None'
+    const motionPreset = effectiveMotionPreset(p)
     const look = lookById(p.lookLut)
     const lutStrength = look.id === 'off' ? 0 : Math.max(0, Math.min(1, p.lookStrength ?? look.defaultStrength))
     const adjust = p.lookAdjust
@@ -271,8 +293,11 @@ function installMock(): void {
       height,
       fps: 24,
       durationSec: p.durationSec,
-      images: imgs.map((im) => ({ path: im.path, startSec: im.rangeStart, endSec: im.rangeEnd })),
-      motion: { kenBurns: !!p.kenBurns, punchAtSec: words.filter((w) => w.emphasis).map((w) => w.start) },
+      images: imgs.map((im) => {
+        const row = { path: im.path, startSec: im.rangeStart, endSec: im.rangeEnd, motion: mockImageMotion(im.ord, p.seed, motionPreset) }
+        return row.motion ? row : { path: row.path, startSec: row.startSec, endSec: row.endSec }
+      }),
+      motion: { kenBurns: motionPreset !== 'off', punchAtSec: words.filter((w) => w.emphasis).map((w) => w.start) },
       grade: {
         style,
         lut: lutStrength > 0 ? look.id : undefined,

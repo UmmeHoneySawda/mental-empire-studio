@@ -1,9 +1,10 @@
-import type { AppSettings, Project, ProjectImage, TranscriptWord } from '../../../../shared/types'
+import type { AppSettings, MotionPreset, Project, ProjectImage, TranscriptWord } from '../../../../shared/types'
 import { asBetaOpts } from '../../../../shared/types'
 import type {
   CaptionFrameModel,
   CaptionGroupModel,
   GpuRenderSpec,
+  ImageMotionSpec,
   RenderImageSpec
 } from '../../../../shared/renderSpec'
 import { groupWords, resolutionFor } from '../../captions'
@@ -66,14 +67,50 @@ export function buildCaptionModel(
   }
 }
 
+export function effectiveMotionPreset(project: Pick<Project, 'kenBurns' | 'motionPreset'>, betaAutoStart = false): MotionPreset {
+  if (project.motionPreset) return project.motionPreset
+  return project.kenBurns || betaAutoStart ? 'subtle' : 'off'
+}
+
+function seededUnit(seed: number, index: number, salt: number): number {
+  let x = (seed || 1) ^ Math.imul(index + 1, 0x9e3779b1) ^ Math.imul(salt + 1, 0x85ebca6b)
+  x ^= x >>> 16
+  x = Math.imul(x, 0x7feb352d)
+  x ^= x >>> 15
+  x = Math.imul(x, 0x846ca68b)
+  x ^= x >>> 16
+  return (x >>> 0) / 0xffffffff
+}
+
+export function imageMotionFor(index: number, seed: number, preset: MotionPreset): ImageMotionSpec | undefined {
+  if (preset === 'off') return undefined
+  const amount = preset === 'cinematic' ? 0.18 : 0.08
+  const panAmount = preset === 'cinematic' ? 0.07 : 0.035
+  const push = index % 2 === 0
+  const xSign = seededUnit(seed, index, 0) > 0.5 ? 1 : -1
+  const ySign = seededUnit(seed, index, 1) > 0.5 ? 1 : -1
+  return {
+    zoomFrom: push ? 1 : 1 + amount,
+    zoomTo: push ? 1 + amount : 1,
+    panX: xSign * panAmount * (0.55 + seededUnit(seed, index, 2) * 0.45),
+    panY: ySign * panAmount * (0.55 + seededUnit(seed, index, 3) * 0.45),
+    ease: 'easeInOutCubic'
+  }
+}
+
 /** Slideshow image windows (pure). Empty list → one full-duration solid frame slot. */
-export function buildImageSpecs(images: ProjectImage[], durationSec: number): RenderImageSpec[] {
+export function buildImageSpecs(images: ProjectImage[], durationSec: number, motion?: { preset: MotionPreset; seed: number }): RenderImageSpec[] {
   if (!images.length) return []
-  return images.map((im) => ({
-    path: im.path,
-    startSec: Math.max(0, im.rangeStart),
-    endSec: Math.max(im.rangeStart + 0.5, im.rangeEnd)
-  }))
+  return images.map((im) => {
+    const out: RenderImageSpec = {
+      path: im.path,
+      startSec: Math.max(0, im.rangeStart),
+      endSec: Math.max(im.rangeStart + 0.5, im.rangeEnd)
+    }
+    const smartMotion = motion ? imageMotionFor(im.ord, motion.seed, motion.preset) : undefined
+    if (smartMotion) out.motion = smartMotion
+    return out
+  })
 }
 
 export interface GpuSpecInputs {
@@ -107,8 +144,12 @@ export function buildGpuRenderSpec(inp: GpuSpecInputs): GpuRenderSpec {
   const { grade, grain } = gradeParamsForProject(beta?.style, project)
 
   // Motion mirrors render.ts gating: Ken Burns / punch zoom are disabled on long-form.
-  const kenBurns = !longForm && (project.kenBurns || !!beta?.autoZoom.atStart)
-  const punchEnabled = !longForm && (project.punchZoom || !!beta?.autoZoom.atKeyPhrases)
+  const motionPreset = longForm ? 'off' : effectiveMotionPreset(project, !!beta?.autoZoom.atStart)
+  const kenBurns = motionPreset !== 'off'
+  const punchEnabled = motionPreset !== 'off' && (project.punchZoom || !!beta?.autoZoom.atKeyPhrases)
+  const punchAtSec = punchEnabled
+    ? [...new Set([...inp.zoomHits, ...inp.words.filter((w) => w.emphasis).map((w) => w.start)])].sort((a, b) => a - b)
+    : []
 
   const captions = buildCaptionModel(inp.words, project, {
     highlightColor: '#ffd93d',
@@ -121,13 +162,13 @@ export function buildGpuRenderSpec(inp: GpuSpecInputs): GpuRenderSpec {
     height: h,
     fps: FPS,
     durationSec: project.durationSec,
-    images: buildImageSpecs(inp.images, project.durationSec),
+    images: buildImageSpecs(inp.images, project.durationSec, { preset: motionPreset, seed: project.seed }),
     broll: inp.brollSegments?.map((s) => ({
       path: s.normalizedPath,
       startSec: s.start,
       endSec: s.end
     })),
-    motion: { kenBurns, punchAtSec: punchEnabled ? [...inp.zoomHits] : [] },
+    motion: { kenBurns, punchAtSec },
     grade,
     grain,
     overlayPath: inp.overlayPath,

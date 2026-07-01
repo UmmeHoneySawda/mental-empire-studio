@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react'
 import { useStore } from '../store/useStore'
 import { useData } from '../store/useData'
 import { ScreenPad, Eyebrow, Title } from '../components/primitives'
-import type { BetaVideoOpts, Project, ProjectImage, TranscriptWord, VideoStyle } from '@shared/types'
+import type { BetaVideoOpts, MotionPreset, Project, ProjectImage, TranscriptWord, VideoStyle } from '@shared/types'
 import { asBetaOpts } from '@shared/types'
 import { buildMasterPrompt, validateEffectPlan } from '@shared/effectPlan'
 import { isCssImageValue, mediaSrc, videoSrc } from '../lib/media'
@@ -117,7 +117,10 @@ function MediaTab(): JSX.Element {
               <div style={{ position: 'absolute', left: '9%', bottom: 0, width: '36%', height: '88%', background: 'linear-gradient(180deg,#3a4150,#23262e)', borderRadius: '80px 80px 0 0' }} />
             )}
             <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.45))' }} />
-            <div onClick={() => void setMedia({ kenBurns: !(project?.kenBurns ?? true) })} title="Slow zoom/pan across each image. On CPU this adds a full-length filter pass and slows renders — turn off for fast renders. Automatically skipped on GPU encoders and long-form (10 min+) videos." style={{ position: 'absolute', top: 14, left: 14, border: project?.kenBurns ?? true ? '1px solid var(--accent)' : '1px dashed rgba(255,255,255,.3)', borderRadius: 7, padding: '5px 9px', fontSize: 10, color: project?.kenBurns ?? true ? 'var(--accent)' : '#cdd2da', fontFamily: 'var(--font-mono)', background: project?.kenBurns ?? true ? 'var(--accent-soft)' : 'transparent', cursor: 'pointer' }}>⤢ Ken Burns {project?.kenBurns ?? true ? 'on' : 'off'}</div>
+            <div onClick={() => {
+              const nextOn = !(project?.kenBurns ?? true)
+              void setMedia({ kenBurns: nextOn, motionPreset: nextOn ? (project?.motionPreset === 'off' ? 'subtle' : project?.motionPreset ?? 'subtle') : 'off' })
+            }} title="Smart motion across each image. GPU preview/render uses eased zoom and pan; CPU fallback keeps a simpler zoom only." style={{ position: 'absolute', top: 14, left: 14, border: project?.kenBurns ?? true ? '1px solid var(--accent)' : '1px dashed rgba(255,255,255,.3)', borderRadius: 7, padding: '5px 9px', fontSize: 10, color: project?.kenBurns ?? true ? 'var(--accent)' : '#cdd2da', fontFamily: 'var(--font-mono)', background: project?.kenBurns ?? true ? 'var(--accent-soft)' : 'transparent', cursor: 'pointer' }}>Motion {project?.kenBurns ?? true ? 'on' : 'off'}</div>
             <div style={{ position: 'absolute', bottom: 12, left: 14, right: 14, height: 6, borderRadius: 4, background: 'rgba(255,255,255,.18)', overflow: 'hidden' }}><div style={{ width: '35%', height: '100%', background: 'var(--accent)' }} /></div>
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
@@ -256,10 +259,15 @@ function StyleTab(): JSX.Element {
   const updateSettings = useStore((s) => s.updateSettings)
   const project = useData((s) => s.activeProject)
   const setCaptions = useData((s) => s.setCaptions)
+  const setMedia = useData((s) => s.setMedia)
   const o = asBetaOpts(project?.betaOpts)
   const patch = (p: Partial<BetaVideoOpts>): void => {
     if (!betaOn) updateSettings({ beta: { enabled: true } })
     void setCaptions({ betaOpts: { ...o, ...p } })
+  }
+  const motionPreset: MotionPreset = project?.motionPreset ?? (project?.kenBurns ? 'subtle' : 'off')
+  const setMotion = (preset: MotionPreset): void => {
+    void setMedia({ motionPreset: preset, kenBurns: preset !== 'off' })
   }
   const styles: VideoStyle[] = ['None', 'Cinematic', 'Intense', 'Heartfelt', 'Clean']
   const styleTips: Record<VideoStyle, string> = {
@@ -275,6 +283,24 @@ function StyleTab(): JSX.Element {
       <LookGallery />
       <div style={{ position: 'relative', border: '1px solid #1d2129', borderRadius: 14, padding: 15, background: '#12151b', display: 'flex', flexDirection: 'column', gap: 13 }}>
         <BetaHeader betaOn={betaOn} />
+        <div>
+          <div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 7 }}>Motion</div>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 7 }}>
+            {([
+              { id: 'off', title: 'Static stills' },
+              { id: 'subtle', title: 'Eased push/pull with slight pan' },
+              { id: 'cinematic', title: 'Larger living-still movement' }
+            ] as Array<{ id: MotionPreset; title: string }>).map((m) => {
+              const on = motionPreset === m.id
+              return (
+                <button key={m.id} type="button" title={m.title} onClick={() => setMotion(m.id)} className="me-btn" style={{ border: on ? '1px solid var(--accent)' : '1px solid #23272f', color: on ? 'var(--accent)' : '#8a909c', background: on ? 'var(--accent-soft)' : '#0e1116', borderRadius: 8, padding: '8px 9px', fontSize: 11, fontWeight: 700, cursor: 'pointer', textTransform: 'capitalize' }}>{m.id}</button>
+              )
+            })}
+          </div>
+          <div style={{ marginTop: 8 }}>
+            <BetaRow label="Punch on emphasized words" on={!!project?.punchZoom} set={() => void setMedia({ punchZoom: !project?.punchZoom })} hint="Short zoom pulse on highlighted transcript hits" />
+          </div>
+        </div>
         <div>
           <BetaRow label="Hook (intro card)" on={o.hook.enabled} set={() => patch({ hook: { ...o.hook, enabled: !o.hook.enabled } })} hint="Big line for the first ~2.5s" />
           {o.hook.enabled && <input value={o.hook.text} onChange={(e) => patch({ hook: { ...o.hook, text: e.target.value } })} placeholder="Auto from transcript — or type a hook" style={{ width: '100%', boxSizing: 'border-box', marginTop: 7, border: '1px solid #23272f', borderRadius: 7, padding: '6px 9px', fontSize: 11, color: '#dde0e5', background: '#0e1116' }} />}

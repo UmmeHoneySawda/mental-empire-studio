@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { gradeParams } from '../../electron/services/engine/grade'
-import { buildGpuRenderSpec, buildCaptionModel, buildImageSpecs, gpuCaptionMode, gpuDimensions } from '../../electron/services/engine/gpu/spec'
+import { buildGpuRenderSpec, buildCaptionModel, buildImageSpecs, effectiveMotionPreset, gpuCaptionMode, gpuDimensions, imageMotionFor } from '../../electron/services/engine/gpu/spec'
 import { activeCaptionGroup, activeWordInGroup, activeImageIndex, totalFrames } from '../../shared/renderSpec'
 import { DEFAULT_SETTINGS, DEFAULT_BETA_OPTS, type AppSettings, type Project, type ProjectImage, type TranscriptWord } from '../../shared/types'
 
@@ -96,6 +96,28 @@ describe('buildImageSpecs', () => {
   it('returns empty list when there are no images', () => {
     expect(buildImageSpecs([], 12)).toEqual([])
   })
+  it('adds deterministic smart motion when a motion preset is provided', () => {
+    const subtle = buildImageSpecs(images, 12, { preset: 'subtle', seed: 42 })
+    const subtleAgain = buildImageSpecs(images, 12, { preset: 'subtle', seed: 42 })
+    expect(subtle[0].motion).toEqual(subtleAgain[0].motion)
+    expect(subtle[0].motion?.ease).toBe('easeInOutCubic')
+    expect(subtle[0].motion?.zoomTo).toBeGreaterThan(subtle[0].motion?.zoomFrom ?? 0)
+    expect(subtle[1].motion?.zoomFrom).toBeGreaterThan(subtle[1].motion?.zoomTo ?? 0)
+    expect(buildImageSpecs(images, 12, { preset: 'off', seed: 42 })[0].motion).toBeUndefined()
+  })
+})
+
+describe('smart motion helpers', () => {
+  it('maps legacy kenBurns to subtle unless explicitly overridden', () => {
+    expect(effectiveMotionPreset({ kenBurns: true, motionPreset: undefined })).toBe('subtle')
+    expect(effectiveMotionPreset({ kenBurns: true, motionPreset: 'off' })).toBe('off')
+    expect(effectiveMotionPreset({ kenBurns: false, motionPreset: undefined })).toBe('off')
+  })
+  it('uses stronger motion for cinematic', () => {
+    const subtle = imageMotionFor(0, 7, 'subtle')!
+    const cinematic = imageMotionFor(0, 7, 'cinematic')!
+    expect(cinematic.zoomTo - cinematic.zoomFrom).toBeGreaterThan(subtle.zoomTo - subtle.zoomFrom)
+  })
 })
 
 describe('buildCaptionModel', () => {
@@ -144,6 +166,32 @@ describe('buildGpuRenderSpec', () => {
     })
     expect(spec.motion.kenBurns).toBe(false)
     expect(spec.motion.punchAtSec).toEqual([])
+  })
+  it('keeps Motion Off static even when legacy flags are enabled', () => {
+    const spec = buildGpuRenderSpec({
+      project: project({ motionPreset: 'off', kenBurns: true, punchZoom: true }),
+      images,
+      words,
+      settings: settings(),
+      zoomHits: [0.8],
+      voicePath: '/x/a.mp3',
+      out: { h264Path: '/x/static.gpu.mp4', finalPath: '/x/static.mp4' }
+    })
+    expect(spec.motion.kenBurns).toBe(false)
+    expect(spec.motion.punchAtSec).toEqual([])
+    expect(spec.images.some((im) => im.motion)).toBe(false)
+  })
+  it('derives punch hits from emphasized transcript words', () => {
+    const spec = buildGpuRenderSpec({
+      project: project({ motionPreset: 'subtle', punchZoom: true }),
+      images,
+      words,
+      settings: settings(),
+      zoomHits: [],
+      voicePath: '/x/a.mp3',
+      out: { h264Path: '/x/punch.gpu.mp4', finalPath: '/x/punch.mp4' }
+    })
+    expect(spec.motion.punchAtSec).toContain(0.8)
   })
   it('carries every editing style into the GPU grade model', () => {
     const styles = ['None', 'Clean', 'Cinematic', 'Intense', 'Heartfelt'] as const
