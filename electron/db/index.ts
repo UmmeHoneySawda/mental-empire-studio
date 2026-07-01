@@ -70,6 +70,7 @@ CREATE TABLE IF NOT EXISTS projects (
   mp3Path TEXT, durationSec INTEGER,
   imageMode TEXT, poolSize INTEGER, kenBurns INTEGER, seed INTEGER, crossfade INTEGER,
   captionPreset TEXT, captionFont TEXT, captionAnim TEXT, captionAspect TEXT, captionLines INTEGER, captionPosition TEXT, captionPace TEXT,
+  captionHighlightColor TEXT, captionBoxColor TEXT, captionWordsPerPage INTEGER,
   emphasis INTEGER, keywords INTEGER, punchZoom INTEGER,
   stage TEXT, thumbPath TEXT, thumbnailTemplateId TEXT,
   lookLut TEXT, lookStrength REAL, lookAdjust TEXT,
@@ -168,6 +169,9 @@ function migrate(d: Database.Database): void {
   ensureColumn(d, 'profiles', 'captionLines', 'INTEGER')
   ensureColumn(d, 'profiles', 'captionPosition', 'TEXT')
   ensureColumn(d, 'profiles', 'captionPace', 'TEXT')
+  ensureColumn(d, 'profiles', 'captionHighlightColor', 'TEXT')
+  ensureColumn(d, 'profiles', 'captionBoxColor', 'TEXT')
+  ensureColumn(d, 'profiles', 'captionWordsPerPage', 'INTEGER')
   ensureColumn(d, 'profiles', 'outputFolder', 'TEXT')
   ensureColumn(d, 'profiles', 'lastSeenVideoId', 'TEXT')
   ensureColumn(d, 'profiles', 'lastRunAt', 'TEXT')
@@ -185,6 +189,9 @@ function migrate(d: Database.Database): void {
   ensureColumn(d, 'projects', 'captionLines', 'INTEGER')
   ensureColumn(d, 'projects', 'captionPosition', 'TEXT')
   ensureColumn(d, 'projects', 'captionPace', 'TEXT')
+  ensureColumn(d, 'projects', 'captionHighlightColor', 'TEXT')
+  ensureColumn(d, 'projects', 'captionBoxColor', 'TEXT')
+  ensureColumn(d, 'projects', 'captionWordsPerPage', 'INTEGER')
   ensureColumn(d, 'downloaded_videos', 'error', 'TEXT')
   ensureColumn(d, 'work_item_state', 'uploadConfidence', 'TEXT')
 
@@ -629,8 +636,8 @@ function buildRepositories(d: Database.Database): Repositories {
 
     createProject: (p) => {
       d.prepare(
-        `INSERT INTO projects (id,downloadId,title,channel,mp3Path,durationSec,imageMode,poolSize,kenBurns,seed,crossfade,captionPreset,captionFont,captionAnim,captionAspect,captionLines,captionPosition,captionPace,emphasis,keywords,punchZoom,motionPreset,stage,createdAt,betaOpts)
-         VALUES (@id,@downloadId,@title,@channel,@mp3Path,@durationSec,@imageMode,@poolSize,@kenBurns,@seed,@crossfade,@captionPreset,@captionFont,@captionAnim,@captionAspect,@captionLines,@captionPosition,@captionPace,@emphasis,@keywords,@punchZoom,@motionPreset,@stage,@createdAt,@betaOpts)`
+        `INSERT INTO projects (id,downloadId,title,channel,mp3Path,durationSec,imageMode,poolSize,kenBurns,seed,crossfade,captionPreset,captionFont,captionAnim,captionAspect,captionLines,captionPosition,captionPace,captionHighlightColor,captionBoxColor,captionWordsPerPage,emphasis,keywords,punchZoom,motionPreset,stage,createdAt,betaOpts)
+         VALUES (@id,@downloadId,@title,@channel,@mp3Path,@durationSec,@imageMode,@poolSize,@kenBurns,@seed,@crossfade,@captionPreset,@captionFont,@captionAnim,@captionAspect,@captionLines,@captionPosition,@captionPace,@captionHighlightColor,@captionBoxColor,@captionWordsPerPage,@emphasis,@keywords,@punchZoom,@motionPreset,@stage,@createdAt,@betaOpts)`
       ).run(projectToRow(p))
     },
     getProject: (id) => {
@@ -902,7 +909,7 @@ function parseMotionPreset(raw: unknown): Project['motionPreset'] {
 }
 
 function projectToRow(p: Project): Record<string, unknown> {
-  return { ...p, captionLines: p.captionLines ?? 1, captionPosition: p.captionPosition ?? 'bottom', captionPace: p.captionPace ?? 'auto', kenBurns: p.kenBurns ? 1 : 0, crossfade: p.crossfade ?? 0.8, emphasis: p.emphasis ? 1 : 0, keywords: p.keywords ? 1 : 0, punchZoom: p.punchZoom ? 1 : 0, motionPreset: p.motionPreset ?? null, betaOpts: JSON.stringify(p.betaOpts ?? DEFAULT_BETA_OPTS), lookAdjust: p.lookAdjust ? JSON.stringify(p.lookAdjust) : null }
+  return { ...p, captionLines: p.captionLines ?? 1, captionPosition: p.captionPosition ?? 'bottom', captionPace: p.captionPace ?? 'auto', captionHighlightColor: p.captionHighlightColor ?? null, captionBoxColor: p.captionBoxColor ?? null, captionWordsPerPage: p.captionWordsPerPage ?? null, kenBurns: p.kenBurns ? 1 : 0, crossfade: p.crossfade ?? 0.8, emphasis: p.emphasis ? 1 : 0, keywords: p.keywords ? 1 : 0, punchZoom: p.punchZoom ? 1 : 0, motionPreset: p.motionPreset ?? null, betaOpts: JSON.stringify(p.betaOpts ?? DEFAULT_BETA_OPTS), lookAdjust: p.lookAdjust ? JSON.stringify(p.lookAdjust) : null }
 }
 function projectPatchToRow(patch: Partial<Project>): Record<string, unknown> {
   const out: Record<string, unknown> = {}
@@ -928,7 +935,11 @@ function rowToProject(r: Record<string, unknown>): Project {
   const captionLines = rawLines === 2 || rawLines === 3 ? rawLines : 1
   const rawPace = r.captionPace as Project['captionPace']
   const captionPace = rawPace === 'word' || rawPace === 'phrase' ? rawPace : 'auto'
-  return { ...(r as unknown as Project), captionLines, captionPosition: (r.captionPosition as Project['captionPosition']) ?? 'bottom', captionPace, durationSec: coerceNum(r.durationSec, 0), poolSize: coerceNum(r.poolSize, 10), kenBurns: !!r.kenBurns, crossfade: coerceNum(r.crossfade, 0.8) || 0.8, emphasis: !!r.emphasis, keywords: !!r.keywords, punchZoom: !!r.punchZoom, lookStrength: r.lookStrength == null ? undefined : coerceNum(r.lookStrength, 0), lookAdjust: parseLookAdjust(r.lookAdjust), motionPreset: parseMotionPreset(r.motionPreset), betaOpts: parseBetaOpts(r) }
+  const rawWordsPerPage = Number(r.captionWordsPerPage ?? 0)
+  const captionWordsPerPage = rawWordsPerPage === 1 || rawWordsPerPage === 2 || rawWordsPerPage === 3 ? rawWordsPerPage as 1 | 2 | 3 : undefined
+  const captionHighlightColor = typeof r.captionHighlightColor === 'string' && r.captionHighlightColor ? r.captionHighlightColor : undefined
+  const captionBoxColor = typeof r.captionBoxColor === 'string' && r.captionBoxColor ? r.captionBoxColor : undefined
+  return { ...(r as unknown as Project), captionLines, captionPosition: (r.captionPosition as Project['captionPosition']) ?? 'bottom', captionPace, captionHighlightColor, captionBoxColor, captionWordsPerPage, durationSec: coerceNum(r.durationSec, 0), poolSize: coerceNum(r.poolSize, 10), kenBurns: !!r.kenBurns, crossfade: coerceNum(r.crossfade, 0.8) || 0.8, emphasis: !!r.emphasis, keywords: !!r.keywords, punchZoom: !!r.punchZoom, lookStrength: r.lookStrength == null ? undefined : coerceNum(r.lookStrength, 0), lookAdjust: parseLookAdjust(r.lookAdjust), motionPreset: parseMotionPreset(r.motionPreset), betaOpts: parseBetaOpts(r) }
 }
 function rowToImage(r: Record<string, unknown>): ProjectImage {
   return { ...(r as unknown as ProjectImage), manual: !!r.manual }
@@ -941,6 +952,7 @@ const PROFILE_COLS = [
   'id', 'name', 'mono', 'avatar', 'rule', 'images', 'thumb', 'cap', 'out', 'autoWatch', 'autoQueueRender', 'thumbnailTemplateId',
   'linkedSourceId', 'sourceUrl', 'sourceOrder', 'sourceCount', 'imageMode', 'poolSize', 'kenBurns',
   'captionPreset', 'captionFont', 'captionAnim', 'captionAspect', 'captionLines', 'captionPosition', 'captionPace',
+  'captionHighlightColor', 'captionBoxColor', 'captionWordsPerPage',
   'outputFolder', 'lastSeenVideoId', 'lastRunAt', 'betaOpts'
 ]
 
@@ -955,6 +967,9 @@ function profileToRow(p: Profile): Record<string, unknown> {
     captionLines: p.captionLines ?? 1,
     captionPosition: p.captionPosition ?? 'bottom',
     captionPace: p.captionPace ?? 'auto',
+    captionHighlightColor: p.captionHighlightColor ?? null,
+    captionBoxColor: p.captionBoxColor ?? null,
+    captionWordsPerPage: p.captionWordsPerPage ?? null,
     thumbnailTemplateId: p.thumbnailTemplateId ?? null,
     linkedSourceId: p.linkedSourceId ?? null,
     outputFolder: p.outputFolder ?? null,
@@ -970,6 +985,8 @@ function rowToProfile(r: Record<string, unknown>): Profile {
   const captionLines = rawLines === 2 || rawLines === 3 ? rawLines : 1
   const rawPace = r.captionPace as Profile['captionPace']
   const captionPace = rawPace === 'word' || rawPace === 'phrase' ? rawPace : 'auto'
+  const rawWordsPerPage = Number(r.captionWordsPerPage ?? 0)
+  const captionWordsPerPage = rawWordsPerPage === 1 || rawWordsPerPage === 2 || rawWordsPerPage === 3 ? rawWordsPerPage as 1 | 2 | 3 : undefined
   return {
     ...(r as unknown as Profile),
     autoWatch: !!r.autoWatch,
@@ -987,6 +1004,9 @@ function rowToProfile(r: Record<string, unknown>): Profile {
     captionLines,
     captionPosition: (r.captionPosition as Profile['captionPosition']) ?? 'bottom',
     captionPace,
+    captionHighlightColor: typeof r.captionHighlightColor === 'string' && r.captionHighlightColor ? r.captionHighlightColor : undefined,
+    captionBoxColor: typeof r.captionBoxColor === 'string' && r.captionBoxColor ? r.captionBoxColor : undefined,
+    captionWordsPerPage,
     betaOpts: parseBetaOpts(r)
   }
 }

@@ -68,6 +68,21 @@ function ProfileEditor({ profile, onClose }: { profile: Profile; onClose: () => 
     })
     onClose()
   }
+  const setCaptionPreset = (preset: string): void => {
+    if (preset === 'Submagic') {
+      set({
+        captionPreset: preset,
+        captionPace: 'word',
+        captionLines: 1,
+        captionFont: p.captionFont ?? 'Anton',
+        captionHighlightColor: p.captionHighlightColor ?? '#111111',
+        captionBoxColor: p.captionBoxColor ?? '#ffd93d',
+        captionWordsPerPage: p.captionWordsPerPage ?? 1
+      })
+      return
+    }
+    set({ captionPreset: preset })
+  }
 
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12, height: '100%', overflowY: 'auto' }}>
@@ -93,8 +108,8 @@ function ProfileEditor({ profile, onClose }: { profile: Profile; onClose: () => 
       </div>
       <div style={{ display: 'flex', gap: 9 }}>
         <div style={{ flex: 1 }}><div style={label}>CAPTION</div>
-          <select value={p.captionPreset} onChange={(e) => set({ captionPreset: e.target.value })} style={field}>
-            {['Pop', 'Bold', 'Hormozi', 'Word', 'Neon', 'Minimal'].map((c) => <option key={c}>{c}</option>)}
+          <select value={p.captionPreset} onChange={(e) => setCaptionPreset(e.target.value)} style={field}>
+            {['Hormozi', 'Submagic', 'Pop', 'Bold', 'Word', 'Neon', 'Minimal'].map((c) => <option key={c}>{c}</option>)}
           </select>
         </div>
         <div style={{ width: 92 }}><div style={label}>ASPECT</div>
@@ -112,6 +127,15 @@ function ProfileEditor({ profile, onClose }: { profile: Profile; onClose: () => 
           <select value={p.captionPace ?? 'auto'} onChange={(e) => set({ captionPace: e.target.value as NonNullable<Profile['captionPace']> })} style={smallSelect}>{CAPTION_PACES.map((pace) => <option key={pace.value} value={pace.value}>{pace.label}</option>)}</select>
         </div>
       </div>
+      {p.captionPreset === 'Submagic' && (
+        <div style={{ border: '1px solid var(--accent)', borderRadius: 10, padding: 10, background: 'var(--accent-soft)', display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
+          <div><div style={label}>WORDS</div>
+            <select value={p.captionWordsPerPage ?? 1} onChange={(e) => set({ captionWordsPerPage: Number(e.target.value) as 1 | 2 | 3 })} style={smallSelect}><option value={1}>1</option><option value={2}>2</option><option value={3}>3</option></select>
+          </div>
+          <div><div style={label}>BOX</div><input type="color" value={p.captionBoxColor ?? '#ffd93d'} onChange={(e) => set({ captionBoxColor: e.target.value })} style={{ ...smallSelect, height: 32, padding: 2 }} /></div>
+          <div><div style={label}>TEXT</div><input type="color" value={p.captionHighlightColor ?? '#111111'} onChange={(e) => set({ captionHighlightColor: e.target.value })} style={{ ...smallSelect, height: 32, padding: 2 }} /></div>
+        </div>
+      )}
       <div style={{ border: '1px solid #1d2129', borderRadius: 10, padding: 11, background: '#0e1116', opacity: betaOn ? 1 : 0.5 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 7, marginBottom: 9 }}>
           <span style={{ ...label, marginBottom: 0 }}>EFFECTS / B-ROLL</span>
@@ -160,6 +184,7 @@ function newProfile(): Profile {
     autoWatch: false, sourceUrl: '', sourceOrder: 'Latest', sourceCount: 5, imageMode: 'pool', poolSize: 10,
     kenBurns: true, captionPreset: 'Hormozi', captionFont: 'Montserrat', captionAnim: 'Pop-in',
     captionAspect: '16:9', captionLines: 2, captionPosition: 'bottom', captionPace: 'auto',
+    captionHighlightColor: '#ffd93d', captionBoxColor: '#ffd93d', captionWordsPerPage: 1,
     betaOpts: { ...DEFAULT_BETA_OPTS }
   }
 }

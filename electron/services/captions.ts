@@ -30,6 +30,12 @@ export interface CaptionOptions {
   textEffects?: PlanTextEffect[]
   /** vertical caption placement */
   position?: Project['captionPosition']
+  /** active/highlighted word text colour, as #rrggbb */
+  highlightColor?: string
+  /** active-word box settings, used by the Submagic preset */
+  highlightBox?: { enabled: boolean; boxColor: string; textColor: string; radius?: number; padding?: number }
+  /** Submagic phrase-window size */
+  wordsPerPage?: 1 | 2 | 3
 }
 
 export interface AssResult {
@@ -59,6 +65,7 @@ const PRESETS: Record<string, PresetStyle> = {
   Pop: { font: 'Anton', size: 96, primary: '&H003DD9FF', secondary: '&H00FFFFFF', outline: '&H00000000', back: '&H00000000', bold: 1, borderStyle: 1, outlineW: 4, shadow: 2, emphasis: '&H003DD9FF' },
   Bold: { font: 'Anton', size: 104, primary: '&H003DD9FF', secondary: '&H00FFFFFF', outline: '&H00000000', back: '&HA0000000', bold: 1, borderStyle: 3, outlineW: 5, shadow: 0, emphasis: '&H003DD9FF' },
   Hormozi: { font: 'Anton', size: 112, primary: '&H003DD9FF', secondary: '&H00FFFFFF', outline: '&H00000000', back: '&H00000000', bold: 1, borderStyle: 1, outlineW: 4, shadow: 1.5, emphasis: '&H003DD9FF' },
+  Submagic: { font: 'Anton', size: 108, primary: '&H00111111', secondary: '&H00FFFFFF', outline: '&H00000000', back: '&H003DD9FF', bold: 1, borderStyle: 3, outlineW: 7, shadow: 0, emphasis: '&H00111111' },
   Word: { font: 'Anton', size: 130, primary: '&H003DD9FF', secondary: '&H00FFFFFF', outline: '&H00000000', back: '&H00000000', bold: 1, borderStyle: 1, outlineW: 5, shadow: 2, emphasis: '&H003DD9FF' },
   Neon: { font: 'Montserrat', size: 98, primary: '&H00FFFF00', secondary: '&H00AAAA00', outline: '&H00FF00CC', back: '&H00000000', bold: 1, borderStyle: 1, outlineW: 4, shadow: 0, emphasis: '&H00FF00CC' },
   Minimal: { font: 'Hanken Grotesk', size: 78, primary: '&H003DD9FF', secondary: '&H00FFFFFF', outline: '&H00000000', back: '&H00000000', bold: 1, borderStyle: 1, outlineW: 3, shadow: 1, emphasis: '&H003DD9FF' }
@@ -88,6 +95,17 @@ function escapeAss(text: string): string {
 function safeFontName(font: string | undefined, fallback: string): string {
   const cleaned = (font ?? '').replace(/[,\r\n]/g, ' ').replace(/\s+/g, ' ').trim()
   return cleaned || fallback
+}
+
+function hexToAssColor(hex: string | undefined, fallback: string): string {
+  const m = (hex ?? '').trim().match(/^#?([0-9a-f]{6})$/i)
+  if (!m) return fallback
+  const s = m[1].toUpperCase()
+  return `&H00${s.slice(4, 6)}${s.slice(2, 4)}${s.slice(0, 2)}`
+}
+
+function clampWordsPerPage(v: unknown): 1 | 2 | 3 {
+  return v === 2 || v === 3 ? v : 1
 }
 
 /** Is this word a keyword worth emphasizing (explicit flag, or a long non-stopword)? */
@@ -165,11 +183,22 @@ export function buildAss(words: TranscriptWord[], opts: CaptionOptions): AssResu
   const rawPreset = PRESETS[opts.preset] ?? PRESETS.Hormozi
   const { w, h } = resolutionFor(opts.aspect)
   const fontPx = Math.round(Math.max(64, Math.min(opts.aspect === '9:16' ? h * 0.11 : h * 0.085, opts.aspect === '9:16' ? 150 : 108)))
-  const preset = { ...rawPreset, font: safeFontName(opts.font, rawPreset.font), size: opts.preset === 'Word' ? Math.round(fontPx * 1.12) : fontPx }
-  const lines = clampLines(opts.lines)
+  const hasHighlightBox = opts.preset === 'Submagic' || !!opts.highlightBox?.enabled
+  const preset = {
+    ...rawPreset,
+    font: safeFontName(opts.font, rawPreset.font),
+    size: opts.preset === 'Word' ? Math.round(fontPx * 1.12) : opts.preset === 'Submagic' ? Math.round(fontPx * 1.04) : fontPx,
+    primary: hasHighlightBox ? hexToAssColor(opts.highlightBox?.textColor ?? opts.highlightColor, rawPreset.primary) : rawPreset.primary,
+    emphasis: hasHighlightBox ? hexToAssColor(opts.highlightBox?.textColor ?? opts.highlightColor, rawPreset.emphasis) : hexToAssColor(opts.highlightColor, rawPreset.emphasis),
+    back: hasHighlightBox ? hexToAssColor(opts.highlightBox?.boxColor, rawPreset.back) : rawPreset.back,
+    borderStyle: hasHighlightBox ? 3 as const : rawPreset.borderStyle,
+    outlineW: hasHighlightBox ? Math.max(rawPreset.outlineW, 7) : rawPreset.outlineW,
+    shadow: hasHighlightBox ? 0 : rawPreset.shadow
+  }
+  const lines = hasHighlightBox ? 1 : clampLines(opts.lines)
   const wordsPerLine = opts.aspect === '9:16' ? 3 : opts.aspect === '1:1' ? 3 : 4
   const defaultGroup = wordsPerLine * lines
-  const perGroup = opts.preset === 'Word' && lines === 1 ? 1 : Math.max(1, opts.perGroup ?? defaultGroup)
+  const perGroup = hasHighlightBox ? clampWordsPerPage(opts.wordsPerPage) : opts.preset === 'Word' && lines === 1 ? 1 : Math.max(1, opts.perGroup ?? defaultGroup)
   const position = opts.position ?? 'bottom'
   const alignment: 2 | 5 | 8 = position === 'top' ? 8 : position === 'middle' ? 5 : 2
   const marginV = position === 'middle'
@@ -216,7 +245,7 @@ export function buildAss(words: TranscriptWord[], opts: CaptionOptions): AssResu
         return `${fx}{\\1c${color}${pop}}${body}{\\fscx100\\fscy100}`
   }
 
-  const mode = opts.mode ?? 'word'
+  const mode = hasHighlightBox ? 'word' : (opts.mode ?? 'word')
   const dialogues = mode === 'phrase'
     ? groups.map((g) => {
       const lineStart = g.start
@@ -228,7 +257,7 @@ export function buildAss(words: TranscriptWord[], opts: CaptionOptions): AssResu
       g.words.map((activeWord, activeIdx) => {
       const lineStart = activeWord.start
       const lineEnd = Math.max(lineStart + 0.05, g.words[activeIdx + 1]?.start ?? g.end)
-      const visibleWords = opts.animation === 'Type' ? g.words.slice(0, activeIdx + 1) : g.words
+      const visibleWords = hasHighlightBox ? [activeWord] : opts.animation === 'Type' ? g.words.slice(0, activeIdx + 1) : g.words
       const text = wordsWithLineBreaks(visibleWords.map((word) => wordText(word, word.id === activeWord.id)), lines)
       // Fade the line in only on the first word and out only on the last word of the
       // group. Mid-group word swaps carry no \fad, so libass updates the active word in

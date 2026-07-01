@@ -71,6 +71,9 @@ export async function runProfile(profileId: string, headless = false): Promise<s
           captionLines: profile.captionLines ?? 1,
           captionPosition: profile.captionPosition ?? 'bottom',
           captionPace: profile.captionPace ?? 'auto',
+          captionHighlightColor: profile.captionHighlightColor,
+          captionBoxColor: profile.captionBoxColor,
+          captionWordsPerPage: profile.captionWordsPerPage,
           // Inherit the profile's beta-feature defaults (hook/highlight/overlay/zoom/b-roll/style).
           ...(profile.betaOpts ? { betaOpts: profile.betaOpts } : {}),
           ...(template ? { thumbnailTemplateId: template.id } : {})

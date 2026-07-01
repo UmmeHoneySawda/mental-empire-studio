@@ -246,7 +246,12 @@ export async function runJob(job: RenderJob): Promise<void> {
     keywords: renderProject.keywords || !!beta?.autoHighlight,
     hook: hookText ? { text: hookText, untilSec: 2.6 } : undefined,
     styleLead,
-    textEffects: beta ? plan.textEffects : undefined
+    textEffects: beta ? plan.textEffects : undefined,
+    highlightColor: renderProject.captionHighlightColor,
+    highlightBox: renderProject.captionPreset === 'Submagic'
+      ? { enabled: true, boxColor: renderProject.captionBoxColor ?? '#ffd93d', textColor: renderProject.captionHighlightColor ?? '#111111' }
+      : undefined,
+    wordsPerPage: renderProject.captionWordsPerPage
   })
   writeFileSync(assPath, ass)
   const dialogueCount = (ass.match(/^Dialogue:/gm) ?? []).length

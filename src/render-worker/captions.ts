@@ -30,6 +30,7 @@ export class CaptionLayer {
     const aspectTall = this.height > this.width
     const base = aspectTall ? this.height * 0.11 : this.height * 0.085
     const px = Math.round(Math.max(64, Math.min(aspectTall ? 150 : 108, base)))
+    if (this.model.preset === 'Submagic') return Math.round(px * 1.04)
     return this.model.preset === 'Word' ? Math.round(px * 1.12) : px
   }
 
@@ -45,6 +46,7 @@ export class CaptionLayer {
   /** Split a group's words into the requested number of lines. */
   private toLines(group: CaptionGroupModel): string[][] {
     const words = group.words.map((w) => w.text.toUpperCase())
+    if (this.model.wordsPerPage && words.length <= this.model.wordsPerPage) return [words]
     const lines = this.model.lines
     if (lines <= 1 || words.length <= 2) return [words]
     const perLine = Math.ceil(words.length / lines)
@@ -77,7 +79,7 @@ export class CaptionLayer {
       return true
     }
     const group = this.model.groups[gi]
-    const wi = this.model.mode === 'word' ? activeWordInGroup(group, timeSec) : -1
+    const wi = this.model.mode === 'word' || this.model.highlightBox?.enabled ? activeWordInGroup(group, timeSec) : -1
     const key = `${gi}:${wi}`
     if (key === this.lastKey) return false
     this.lastKey = key
@@ -107,6 +109,22 @@ export class CaptionLayer {
     ctx.strokeText(text, cx, cy)
     ctx.fillText(text, cx, cy)
     ctx.restore()
+  }
+
+  private roundedRect(x: number, y: number, w: number, h: number, radius: number): void {
+    const ctx = this.ctx
+    const r = Math.max(0, Math.min(radius, w / 2, h / 2))
+    ctx.beginPath()
+    ctx.moveTo(x + r, y)
+    ctx.lineTo(x + w - r, y)
+    ctx.quadraticCurveTo(x + w, y, x + w, y + r)
+    ctx.lineTo(x + w, y + h - r)
+    ctx.quadraticCurveTo(x + w, y + h, x + w - r, y + h)
+    ctx.lineTo(x + r, y + h)
+    ctx.quadraticCurveTo(x, y + h, x, y + h - r)
+    ctx.lineTo(x, y + r)
+    ctx.quadraticCurveTo(x, y, x + r, y)
+    ctx.closePath()
   }
 
   private drawGroup(group: CaptionGroupModel, activeWordIdx: number): void {
@@ -140,11 +158,22 @@ export class CaptionLayer {
         const emphasized = !!wordModel?.emphasis
         const wx = x + widths[wi] / 2
         const scale = isActive ? 1.12 : 1
+        const box = this.model.highlightBox
+        const boxed = isActive && !!box?.enabled
         ctx.save()
         ctx.translate(wx, y)
         ctx.scale(scale, scale)
-        ctx.strokeStyle = 'rgba(0,0,0,0.9)'
-        ctx.fillStyle = isActive || emphasized ? this.model.highlightColor : '#ffffff'
+        if (boxed) {
+          const pad = Math.max(0, box?.padding ?? 0)
+          const boxW = widths[wi] + pad * 2
+          const boxH = size * 1.04 + pad * 1.25
+          this.roundedRect(-boxW / 2, -boxH / 2, boxW, boxH, box?.radius ?? 0)
+          ctx.fillStyle = box?.boxColor ?? this.model.highlightColor
+          ctx.fill()
+        }
+        ctx.lineWidth = boxed ? Math.max(1.5, size * 0.035) : size * 0.12
+        ctx.strokeStyle = boxed ? 'rgba(0,0,0,0.25)' : 'rgba(0,0,0,0.9)'
+        ctx.fillStyle = boxed ? (box?.textColor ?? '#111111') : isActive || emphasized ? this.model.highlightColor : '#ffffff'
         ctx.strokeText(word, 0, 0)
         ctx.fillText(word, 0, 0)
         ctx.restore()

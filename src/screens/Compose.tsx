@@ -27,7 +27,7 @@ function fmt(sec: number): string {
 }
 
 const IMG_GRADS = ['linear-gradient(135deg,#2a2540,#46243a)', 'linear-gradient(135deg,#1a2e3a,#0f3a32)', 'linear-gradient(135deg,#23304a,#1a2438)', 'linear-gradient(135deg,#2e2440,#3a1f2e)']
-const CAPTION_PRESETS = ['Hormozi', 'Pop', 'Bold', 'Word', 'Neon', 'Minimal']
+const CAPTION_PRESETS = ['Hormozi', 'Submagic', 'Pop', 'Bold', 'Word', 'Neon', 'Minimal']
 const CAPTION_ASPECTS: Project['captionAspect'][] = ['16:9', '1:1', '9:16']
 const CAPTION_LINES: Array<NonNullable<Project['captionLines']>> = [1, 2, 3]
 const CAPTION_POSITIONS: Array<NonNullable<Project['captionPosition']>> = ['bottom', 'middle', 'top']
@@ -189,7 +189,7 @@ function MiniToggle({ on, onClick }: { on: boolean; onClick: () => void }): JSX.
   return <div onClick={onClick} style={{ width: 32, height: 18, borderRadius: 11, background: on ? 'var(--accent)' : '#2b303b', position: 'relative', cursor: 'pointer', flex: 'none' }}><span style={{ position: 'absolute', top: 2, right: on ? 2 : 16, width: 14, height: 14, borderRadius: '50%', background: '#fff' }} /></div>
 }
 
-function CaptionPreview({ words, aspect, lines, position, font, animation, imagePath, overlay }: { words: TranscriptWord[]; aspect: string; lines: 1 | 2 | 3; position: NonNullable<Project['captionPosition']>; font: string; animation: string; imagePath?: string; overlay?: BetaVideoOpts['overlay'] }): JSX.Element {
+function CaptionPreview({ words, aspect, lines, position, font, animation, preset, highlightColor, boxColor, imagePath, overlay }: { words: TranscriptWord[]; aspect: string; lines: 1 | 2 | 3; position: NonNullable<Project['captionPosition']>; font: string; animation: string; preset: string; highlightColor: string; boxColor: string; imagePath?: string; overlay?: BetaVideoOpts['overlay'] }): JSX.Element {
   const sample = (words.length ? words : [
     { id: 'p1', projectId: '', ord: 0, word: 'you', start: 0, end: 0.25, emphasis: false },
     { id: 'p2', projectId: '', ord: 1, word: 'are', start: 0.25, end: 0.45, emphasis: false },
@@ -207,6 +207,7 @@ function CaptionPreview({ words, aspect, lines, position, font, animation, image
   const rows = Array.from({ length: lines }, (_, i) => sample.slice(i * perLine, (i + 1) * perLine)).filter((r) => r.length > 0)
   const imageSrc = mediaSrc(imagePath)
   const background = isCssImageValue(imagePath) ? imagePath : 'linear-gradient(135deg,#23262e,#15171d)'
+  const boxed = preset === 'Submagic'
   return (
     <div style={{ width: '100%', maxWidth: 230, margin: '0 auto', border: '1px solid #1d2129', borderRadius: 12, aspectRatio: ratio, background, position: 'relative', display: 'flex', alignItems, justifyContent: 'center', padding, overflow: 'hidden' }}>
       {imageSrc ? <img src={imageSrc} style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', opacity: 0.72 }} /> : !isCssImageValue(imagePath) && <div style={{ position: 'absolute', left: '14%', bottom: 0, width: '34%', height: '80%', background: 'linear-gradient(180deg,#3a4150,#23262e)', borderRadius: '50px 50px 0 0' }} />}
@@ -224,7 +225,8 @@ function CaptionPreview({ words, aspect, lines, position, font, animation, image
                     ? 'translateY(-2px)'
                     : 'scale(1.12)'
                 : undefined
-              return <span key={w.id} style={{ display: 'inline-block', color: active || w.emphasis ? '#FFD93D' : '#fff', transform, margin: '0 3px' }}>{w.word}</span>
+              const activeBox = boxed && active
+              return <span key={w.id} style={{ display: 'inline-block', color: activeBox ? highlightColor : active || w.emphasis ? '#FFD93D' : '#fff', background: activeBox ? boxColor : undefined, WebkitTextStroke: activeBox ? '0 transparent' : undefined, borderRadius: activeBox ? 6 : undefined, padding: activeBox ? '2px 7px' : undefined, transform, margin: '0 3px' }}>{w.word}</span>
             })}
           </div>
         ))}
@@ -425,6 +427,10 @@ function CaptionsTab(): JSX.Element {
   const refreshActiveProjectSnapshot = useData((s) => s.refreshActiveProjectSnapshot)
   const images = useData((s) => s.projectImages)
   const preset = project?.captionPreset ?? 'Hormozi'
+  const isSubmagic = preset === 'Submagic'
+  const captionHighlightColor = project?.captionHighlightColor ?? (isSubmagic ? '#111111' : '#ffd93d')
+  const captionBoxColor = project?.captionBoxColor ?? '#ffd93d'
+  const captionWordsPerPage = project?.captionWordsPerPage ?? 1
   const betaOpts = asBetaOpts(project?.betaOpts)
   const [previewPath, setPreviewPath] = useState('')
   const [previewState, setPreviewState] = useState<'idle' | 'rendering' | 'ready' | 'error'>('idle')
@@ -450,6 +456,19 @@ function CaptionsTab(): JSX.Element {
     }
   }
 
+  const selectCaptionPreset = (name: string): void => {
+    const patch: Partial<Project> = { captionPreset: name }
+    if (name === 'Submagic') {
+      patch.captionPace = 'word'
+      patch.captionLines = 1
+      patch.captionFont = project?.captionFont || 'Anton'
+      patch.captionHighlightColor = project?.captionHighlightColor ?? '#111111'
+      patch.captionBoxColor = project?.captionBoxColor ?? '#ffd93d'
+      patch.captionWordsPerPage = project?.captionWordsPerPage ?? 1
+    }
+    void setCaptions(patch)
+  }
+
   return (
     <div style={{ display: 'flex', gap: 18 }}>
       <div style={{ flex: 'none', width: 284, display: 'flex', flexDirection: 'column', gap: 16 }}>
@@ -458,7 +477,7 @@ function CaptionsTab(): JSX.Element {
           <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
             {CAPTION_PRESETS.map((name) => {
               const on = name === preset
-              return <div key={name} onClick={() => void setCaptions({ captionPreset: name })} className="me-card" style={{ border: on ? '1px solid var(--accent)' : '1px solid #1d2129', background: on ? 'var(--accent-soft)' : '#0e1116', borderRadius: 9, padding: '11px 5px', textAlign: 'center', cursor: 'pointer' }}><div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 12, color: on ? '#f2f4f7' : '#8a909c' }}>{name}</div></div>
+              return <div key={name} onClick={() => selectCaptionPreset(name)} className="me-card" style={{ border: on ? '1px solid var(--accent)' : '1px solid #1d2129', background: on ? 'var(--accent-soft)' : '#0e1116', borderRadius: 9, padding: '11px 5px', textAlign: 'center', cursor: 'pointer' }}><div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 12, color: on ? '#f2f4f7' : '#8a909c' }}>{name}</div></div>
             })}
           </div>
         </div>
@@ -474,6 +493,24 @@ function CaptionsTab(): JSX.Element {
           <div><div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 7 }}>Lines</div><div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, fontSize: 10.5 }}>{CAPTION_LINES.map((n) => chip(`${n} line${n > 1 ? 's' : ''}`, (project?.captionLines ?? 1) === n, () => void setCaptions({ captionLines: n }), String(n)))}</div></div>
           <div><div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 7 }}>Position</div><div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, fontSize: 10.5 }}>{CAPTION_POSITIONS.map((p) => chip(p[0].toUpperCase() + p.slice(1), (project?.captionPosition ?? 'bottom') === p, () => void setCaptions({ captionPosition: p }), p))}</div></div>
           <div><div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 7 }}>Pace</div><div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, fontSize: 10.5 }}>{CAPTION_PACES.map((p) => chip(p.label, (project?.captionPace ?? 'auto') === p.value, () => void setCaptions({ captionPace: p.value }), p.value))}</div></div>
+          {isSubmagic && (
+            <div style={{ border: '1px solid var(--accent)', borderRadius: 10, padding: 10, background: 'var(--accent-soft)' }}>
+              <div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 7 }}>Words per page</div>
+              <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, fontSize: 10.5, marginBottom: 10 }}>
+                {[1, 2, 3].map((n) => chip(String(n), captionWordsPerPage === n, () => void setCaptions({ captionWordsPerPage: n as 1 | 2 | 3 }), String(n)))}
+              </div>
+              <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8 }}>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 10.5, color: '#6a7180' }}>
+                  Box colour
+                  <input type="color" value={captionBoxColor} onChange={(e) => void setCaptions({ captionBoxColor: e.target.value })} style={{ width: '100%', height: 30, border: '1px solid #23272f', borderRadius: 7, background: '#0e1116', cursor: 'pointer' }} />
+                </label>
+                <label style={{ display: 'flex', flexDirection: 'column', gap: 5, fontSize: 10.5, color: '#6a7180' }}>
+                  Text colour
+                  <input type="color" value={captionHighlightColor} onChange={(e) => void setCaptions({ captionHighlightColor: e.target.value })} style={{ width: '100%', height: 30, border: '1px solid #23272f', borderRadius: 7, background: '#0e1116', cursor: 'pointer' }} />
+                </label>
+              </div>
+            </div>
+          )}
           <div style={{ display: 'flex', gap: 9 }}>
             <div onClick={() => void setCaptions({ keywords: !project?.keywords })} style={{ flex: 1, border: '1px solid #1d2129', borderRadius: 9, padding: 9, background: '#0e1116', cursor: 'pointer' }}><div style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ fontSize: 11, fontWeight: 600, color: '#dde0e5' }}>Keywords</span><span style={{ marginLeft: 'auto', fontSize: 8.5, fontWeight: 700, background: project?.keywords ? '#1f9c6b' : '#2b303b', color: '#fff', borderRadius: 9, padding: '1px 6px' }}>{project?.keywords ? 'ON' : 'OFF'}</span></div><div style={{ fontSize: 9, color: '#6a7180', marginTop: 4 }}>Auto-highlight</div></div>
             <div onClick={() => void setCaptions({ punchZoom: !project?.punchZoom })} style={{ flex: 1, border: '1px solid #1d2129', borderRadius: 9, padding: 9, background: '#0e1116', cursor: 'pointer' }}><div style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ fontSize: 11, fontWeight: 600, color: '#dde0e5' }}>Punch</span><span style={{ marginLeft: 'auto', fontSize: 8.5, fontWeight: 700, background: project?.punchZoom ? '#1f9c6b' : '#2b303b', color: '#fff', borderRadius: 9, padding: '1px 6px' }}>{project?.punchZoom ? 'ON' : 'OFF'}</span></div><div style={{ fontSize: 9, color: '#6a7180', marginTop: 4 }}>Zoom on hit</div></div>
@@ -484,8 +521,8 @@ function CaptionsTab(): JSX.Element {
 
       <div style={{ flex: 'none', width: 230 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 10 }}><span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#6a7180' }}>PREVIEW</span><span style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, background: 'var(--accent-soft)', color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: 10, padding: '2px 8px' }}>{project?.captionAspect ?? '16:9'}</span></div>
-        <CaptionPreview words={transcript} aspect={project?.captionAspect ?? '16:9'} lines={project?.captionLines ?? 1} position={project?.captionPosition ?? 'bottom'} font={project?.captionFont ?? 'Anton'} animation={project?.captionAnim ?? 'Pop-in'} imagePath={images[0]?.thumb || images[0]?.path} overlay={betaOpts.overlay} />
-        <div style={{ fontSize: 10, color: '#6a7180', textAlign: 'center', marginTop: 9, lineHeight: 1.4 }}>Yellow active word · uniform pop ({preset})</div>
+        <CaptionPreview words={transcript} aspect={project?.captionAspect ?? '16:9'} lines={project?.captionLines ?? 1} position={project?.captionPosition ?? 'bottom'} font={project?.captionFont ?? 'Anton'} animation={project?.captionAnim ?? 'Pop-in'} preset={preset} highlightColor={captionHighlightColor} boxColor={captionBoxColor} imagePath={images[0]?.thumb || images[0]?.path} overlay={betaOpts.overlay} />
+        <div style={{ fontSize: 10, color: '#6a7180', textAlign: 'center', marginTop: 9, lineHeight: 1.4 }}>{isSubmagic ? 'Boxed active word' : 'Active word'} · uniform pop ({preset})</div>
         <button type="button" disabled={!project || previewing} onClick={() => void renderPreview()} className="me-btn" style={{ width: '100%', marginTop: 10, border: '1px solid #262b34', background: '#15181f', borderRadius: 9, padding: '8px 10px', fontSize: 11.5, color: '#c4cad3', cursor: project && !previewing ? 'pointer' : 'not-allowed', opacity: project && !previewing ? 1 : 0.55 }}>{previewing ? 'Rendering…' : 'Render preview'}</button>
         {previewPath && (
           <div style={{ marginTop: 10 }}>

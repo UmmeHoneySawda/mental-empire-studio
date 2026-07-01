@@ -39,15 +39,17 @@ export function gpuCaptionMode(project: Pick<Project, 'durationSec' | 'captionPa
  *  path's word grouping so timing is identical; the worker draws them on a canvas. */
 export function buildCaptionModel(
   words: TranscriptWord[],
-  project: Pick<Project, 'durationSec' | 'captionPace' | 'captionPreset' | 'captionFont' | 'captionAnim' | 'captionAspect' | 'captionLines' | 'captionPosition'>,
-  opts: { highlightColor: string; hook?: { text: string; untilSec: number } }
+  project: Pick<Project, 'durationSec' | 'captionPace' | 'captionPreset' | 'captionFont' | 'captionAnim' | 'captionAspect' | 'captionLines' | 'captionPosition' | 'captionWordsPerPage'>,
+  opts: { highlightColor: string; highlightBox?: CaptionFrameModel['highlightBox']; hook?: { text: string; untilSec: number } }
 ): CaptionFrameModel {
-  const mode = gpuCaptionMode(project, words.length)
+  const isSubmagic = project.captionPreset === 'Submagic'
+  const mode = isSubmagic ? 'word' : gpuCaptionMode(project, words.length)
   const aspect = project.captionAspect
-  const lines = (project.captionLines === 2 || project.captionLines === 3 ? project.captionLines : 1)
+  const lines = isSubmagic ? 1 : (project.captionLines === 2 || project.captionLines === 3 ? project.captionLines : 1)
   const wordsPerLine = aspect === '9:16' ? 3 : aspect === '1:1' ? 3 : 4
   const isWordPreset = project.captionPreset === 'Word' && lines === 1
-  const perGroup = isWordPreset ? 1 : Math.max(1, wordsPerLine * lines)
+  const wordsPerPage = project.captionWordsPerPage === 2 || project.captionWordsPerPage === 3 ? project.captionWordsPerPage : 1
+  const perGroup = isSubmagic ? wordsPerPage : isWordPreset ? 1 : Math.max(1, wordsPerLine * lines)
   const rawGroups = groupWords(words, perGroup)
   const groups: CaptionGroupModel[] = rawGroups.map((g) => ({
     startSec: g.start,
@@ -63,6 +65,8 @@ export function buildCaptionModel(
     position: project.captionPosition ?? 'bottom',
     lines,
     highlightColor: opts.highlightColor,
+    highlightBox: opts.highlightBox,
+    wordsPerPage: isSubmagic ? wordsPerPage : undefined,
     hook: opts.hook && opts.hook.text.trim() ? { text: opts.hook.text.trim(), untilSec: opts.hook.untilSec } : undefined
   }
 }
@@ -152,7 +156,16 @@ export function buildGpuRenderSpec(inp: GpuSpecInputs): GpuRenderSpec {
     : []
 
   const captions = buildCaptionModel(inp.words, project, {
-    highlightColor: '#ffd93d',
+    highlightColor: project.captionHighlightColor ?? (project.captionPreset === 'Submagic' ? '#111111' : '#ffd93d'),
+    highlightBox: project.captionPreset === 'Submagic'
+      ? {
+          enabled: true,
+          boxColor: project.captionBoxColor ?? '#ffd93d',
+          textColor: project.captionHighlightColor ?? '#111111',
+          radius: 14,
+          padding: 12
+        }
+      : undefined,
     hook: inp.hookText ? { text: inp.hookText, untilSec: 2.6 } : undefined
   })
 

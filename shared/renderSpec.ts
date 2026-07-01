@@ -62,6 +62,14 @@ export interface CaptionGroupModel {
   words: Array<{ text: string; startSec: number; endSec: number; emphasis: boolean }>
 }
 
+export interface CaptionHighlightBoxModel {
+  enabled: boolean
+  boxColor: string
+  textColor: string
+  radius: number
+  padding: number
+}
+
 /** GPU caption plan — replaces libass. Drawn to a 2D canvas, uploaded as a texture and
  *  composited in the WebGL pass. Drive by frame index, never wall-clock. */
 export interface CaptionFrameModel {
@@ -75,6 +83,10 @@ export interface CaptionFrameModel {
   lines: 1 | 2 | 3
   /** highlight colour for the active/emphasized word, as #rrggbb */
   highlightColor: string
+  /** optional active-word rounded box, used by Submagic-style captions */
+  highlightBox?: CaptionHighlightBoxModel
+  /** phrase-window size for one-to-three-word active caption pages */
+  wordsPerPage?: 1 | 2 | 3
   /** optional intro hook card shown for the first untilSec seconds */
   hook?: { text: string; untilSec: number }
 }

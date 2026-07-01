@@ -208,6 +208,9 @@ function installMock(): void {
       captionAnim: 'Pop-in',
       captionAspect: '16:9',
       captionPosition: 'bottom',
+      captionHighlightColor: '#ffd93d',
+      captionBoxColor: '#ffd93d',
+      captionWordsPerPage: 1,
       emphasis: true,
       keywords: true,
       punchZoom: true,
@@ -265,7 +268,9 @@ function installMock(): void {
     const imgs = projectImages.get(projectId) ?? []
     const words = transcripts.get(projectId) ?? []
     const groups = []
-    const perGroup = Math.max(1, (aspect === '16:9' ? 4 : 3) * (p.captionLines ?? 1))
+    const isSubmagic = p.captionPreset === 'Submagic'
+    const wordsPerPage = p.captionWordsPerPage === 2 || p.captionWordsPerPage === 3 ? p.captionWordsPerPage : 1
+    const perGroup = isSubmagic ? wordsPerPage : Math.max(1, (aspect === '16:9' ? 4 : 3) * (p.captionLines ?? 1))
     for (let i = 0; i < words.length; i += perGroup) {
       const chunk = words.slice(i, i + perGroup)
       if (chunk.length) groups.push({
@@ -322,8 +327,16 @@ function installMock(): void {
         animation: p.captionAnim || 'Pop-in',
         mode: p.captionPace === 'phrase' ? 'phrase' : 'word',
         position: p.captionPosition ?? 'bottom',
-        lines: p.captionLines ?? 1,
-        highlightColor: '#ffd93d'
+        lines: isSubmagic ? 1 : p.captionLines ?? 1,
+        highlightColor: p.captionHighlightColor ?? (isSubmagic ? '#111111' : '#ffd93d'),
+        highlightBox: isSubmagic ? {
+          enabled: true,
+          boxColor: p.captionBoxColor ?? '#ffd93d',
+          textColor: p.captionHighlightColor ?? '#111111',
+          radius: 14,
+          padding: 12
+        } : undefined,
+        wordsPerPage: isSubmagic ? wordsPerPage : undefined
       },
       audio: { voicePath: p.mp3Path },
       encoder: { codec: 'avc', bitrateMbps: 6, keyIntervalSec: 2 },

@@ -52,6 +52,9 @@ function defaultProject(downloadId: string, title: string, channel: string, mp3P
     captionLines: 2,
     captionPosition: 'bottom',
     captionPace: 'auto',
+    captionHighlightColor: '#ffd93d',
+    captionBoxColor: '#ffd93d',
+    captionWordsPerPage: 1,
     emphasis: true,
     keywords: true,
     punchZoom: true,
@@ -284,7 +287,12 @@ function previewSpec(projectId: string, draftOverrides?: Partial<Project>): GpuR
     keywords: draftProject.keywords || !!beta?.autoHighlight,
     hook: hookText ? { text: hookText, untilSec: 2.6 } : undefined,
     styleLead,
-    textEffects: beta ? plan.textEffects : undefined
+    textEffects: beta ? plan.textEffects : undefined,
+    highlightColor: draftProject.captionHighlightColor,
+    highlightBox: draftProject.captionPreset === 'Submagic'
+      ? { enabled: true, boxColor: draftProject.captionBoxColor ?? '#ffd93d', textColor: draftProject.captionHighlightColor ?? '#111111' }
+      : undefined,
+    wordsPerPage: draftProject.captionWordsPerPage
   })
   const dims = gpuDimensions(settings.quality, draftProject.captionAspect)
   const overlayPath = beta ? overlayGradientPath(beta.overlay, dims.w, dims.h) : undefined
@@ -370,7 +378,12 @@ async function previewProject(projectId: string): Promise<string> {
     keywords: project.keywords || !!beta?.autoHighlight,
     hook: hookText ? { text: hookText, untilSec: Math.min(2.6, previewSec) } : undefined,
     styleLead,
-    textEffects: beta ? plan.textEffects : undefined
+    textEffects: beta ? plan.textEffects : undefined,
+    highlightColor: project.captionHighlightColor,
+    highlightBox: project.captionPreset === 'Submagic'
+      ? { enabled: true, boxColor: project.captionBoxColor ?? '#ffd93d', textColor: project.captionHighlightColor ?? '#111111' }
+      : undefined,
+    wordsPerPage: project.captionWordsPerPage
   })
   writeFileSync(assPath, ass)
 

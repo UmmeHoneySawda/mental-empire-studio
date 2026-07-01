@@ -35,4 +35,21 @@ describe('buildAss — caption flicker fix (G1)', () => {
     const { ass } = buildAss(words(4), { ...base, mode: 'phrase', perGroup: 4 })
     expect(dialogueLines(ass).length).toBe(1)
   })
+
+  it('Submagic uses an active-word box and keeps ffmpeg fallback word-by-word', () => {
+    const { ass } = buildAss(words(3), {
+      ...base,
+      preset: 'Submagic',
+      mode: 'phrase',
+      wordsPerPage: 2,
+      highlightBox: { enabled: true, boxColor: '#00ff00', textColor: '#111111' }
+    })
+    const lines = dialogueLines(ass)
+    expect(lines.length).toBe(3)
+    expect(ass).toContain('&H0000FF00')
+    expect(ass).toContain('&H00111111')
+    expect(ass).toContain(',3,7,0,')
+    expect(lines[0]).toContain('WORD0')
+    expect(lines[0]).not.toContain('WORD1')
+  })
 })

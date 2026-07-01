@@ -217,6 +217,12 @@ export interface Profile {
   captionLines?: 1 | 2 | 3
   captionPosition?: 'top' | 'middle' | 'bottom'
   captionPace?: 'auto' | 'word' | 'phrase'
+  /** active/highlighted caption text colour (#rrggbb); Submagic uses this inside the box */
+  captionHighlightColor?: string
+  /** active-word caption box colour (#rrggbb), used by Submagic-style captions */
+  captionBoxColor?: string
+  /** Submagic phrase window size: 1-3 words per page */
+  captionWordsPerPage?: 1 | 2 | 3
   outputFolder?: string
   /** newest source video id already processed — the auto-watch cursor */
   lastSeenVideoId?: string
@@ -521,6 +527,12 @@ export interface Project {
   captionLines?: 1 | 2 | 3
   captionPosition?: 'top' | 'middle' | 'bottom'
   captionPace?: 'auto' | 'word' | 'phrase'
+  /** active/highlighted caption text colour (#rrggbb); Submagic uses this inside the box */
+  captionHighlightColor?: string
+  /** active-word caption box colour (#rrggbb), used by Submagic-style captions */
+  captionBoxColor?: string
+  /** Submagic phrase window size: 1-3 words per page */
+  captionWordsPerPage?: 1 | 2 | 3
   emphasis: boolean
   keywords: boolean
   punchZoom: boolean

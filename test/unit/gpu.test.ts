@@ -138,6 +138,18 @@ describe('buildCaptionModel', () => {
     const m = buildCaptionModel(words, project(), { highlightColor: '#fff', hook: { text: 'wait', untilSec: 2 } })
     expect(m.hook?.text).toBe('wait')
   })
+  it('builds Submagic rounded-box caption pages', () => {
+    const m = buildCaptionModel(
+      words,
+      project({ captionPreset: 'Submagic', captionPace: 'phrase', captionLines: 3, captionWordsPerPage: 2 }),
+      { highlightColor: '#111111', highlightBox: { enabled: true, boxColor: '#ffd93d', textColor: '#111111', radius: 14, padding: 12 } }
+    )
+    expect(m.mode).toBe('word')
+    expect(m.lines).toBe(1)
+    expect(m.wordsPerPage).toBe(2)
+    expect(m.highlightBox?.boxColor).toBe('#ffd93d')
+    expect(m.groups[0].words).toHaveLength(2)
+  })
 })
 
 describe('buildGpuRenderSpec', () => {
