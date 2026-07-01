@@ -288,10 +288,12 @@ function LayersTab(): JSX.Element {
   const duplicateLayer = useStore((s) => s.duplicateLayer)
   const toggleLayerVisible = useStore((s) => s.toggleLayerVisible)
   const deleteLayer = useStore((s) => s.deleteLayer)
+  const reorderLayer = useStore((s) => s.reorderLayer)
   const addTextLayer = useStore((s) => s.addTextLayer)
   const addShapeLayer = useStore((s) => s.addShapeLayer)
   const updateGeometry = useStore((s) => s.updateGeometry)
   const runAutoArrange = useStore((s) => s.runAutoArrange)
+  const dragLayerId = useRef<string | null>(null)
   const selectedLayers = layers.filter((l) => selectedLayerIds.includes(l.id) && !l.locked)
   const align = (kind: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom'): void => {
     if (selectedLayers.length < 2) return
@@ -336,11 +338,20 @@ function LayersTab(): JSX.Element {
           </div>
         )}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 8 }}>
-          {layers.map((l) => {
+          {layers.map((l, index) => {
             const on = selectedLayerIds.includes(l.id) || l.id === selectedLayerId
             return (
-              <div key={l.id} onClick={(e) => selectLayer(l.id, e.shiftKey || e.ctrlKey || e.metaKey)} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 8px', border: on ? '1px solid var(--accent)' : '1px solid #1d2129', borderRadius: 8, background: on ? 'var(--accent-soft)' : 'transparent', fontSize: 11.5, color: on ? '#eef0f3' : '#aab0bb', cursor: 'pointer' }}>
-                <span style={{ fontWeight: l.kind === 'text' ? 700 : 400, flex: 'none' }}>{layerGlyph(l)}</span>
+              <div
+                key={l.id}
+                draggable={!l.locked}
+                onDragStart={() => { dragLayerId.current = l.id }}
+                onDragOver={(e) => { if (dragLayerId.current && dragLayerId.current !== l.id) e.preventDefault() }}
+                onDrop={(e) => { e.preventDefault(); const from = dragLayerId.current; dragLayerId.current = null; if (from && from !== l.id) reorderLayer(from, index) }}
+                onDragEnd={() => { dragLayerId.current = null }}
+                onClick={(e) => selectLayer(l.id, e.shiftKey || e.ctrlKey || e.metaKey)}
+                style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 8px', border: on ? '1px solid var(--accent)' : '1px solid #1d2129', borderRadius: 8, background: on ? 'var(--accent-soft)' : 'transparent', fontSize: 11.5, color: on ? '#eef0f3' : '#aab0bb', cursor: l.locked ? 'pointer' : 'grab' }}
+              >
+                <span title={l.locked ? undefined : 'Drag to reorder'} style={{ fontWeight: l.kind === 'text' ? 700 : 400, flex: 'none', color: l.locked ? undefined : '#6a7180' }}>{l.locked ? layerGlyph(l) : '↕'}</span>
                 <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.name}</span>
                 {!l.locked && <span onClick={(e) => { e.stopPropagation(); duplicateLayer(l.id) }} style={{ color: '#5b616f', cursor: 'pointer', flex: 'none' }}>⧉</span>}
                 <span onClick={(e) => { e.stopPropagation(); toggleLayerVisible(l.id) }} style={{ color: '#5b616f', cursor: 'pointer', flex: 'none', opacity: l.visible ? 1 : 0.4 }}>👁</span>
@@ -482,15 +493,27 @@ function BatchExport(): JSX.Element {
 export function Thumbnails(): JSX.Element {
   const layers = useStore((s) => s.layers)
   const selectedLayerId = useStore((s) => s.selectedLayerId)
+  const selectedLayerIds = useStore((s) => s.selectedLayerIds)
+  const thumbnailPast = useStore((s) => s.thumbnailPast)
+  const thumbnailFuture = useStore((s) => s.thumbnailFuture)
   const templates = useStore((s) => s.templates)
   const loadTemplates = useStore((s) => s.loadTemplates)
   const applyTemplate = useStore((s) => s.applyTemplate)
+  const undoThumbnail = useStore((s) => s.undoThumbnail)
+  const redoThumbnail = useStore((s) => s.redoThumbnail)
+  const nudgeSelection = useStore((s) => s.nudgeSelection)
+  const deleteLayer = useStore((s) => s.deleteLayer)
+  const duplicateLayer = useStore((s) => s.duplicateLayer)
+  const selectAllUnlockedLayers = useStore((s) => s.selectAllUnlockedLayers)
+  const clearSelection = useStore((s) => s.clearSelection)
   const activeProject = useData((s) => s.activeProject)
   const [leftTab, setLeftTab] = useState<'layers' | 'templates'>('layers')
   const [saved, setSaved] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
   const appliedTemplate = useRef('')
+  const canUndo = thumbnailPast.length > 0
+  const canRedo = thumbnailFuture.length > 0
 
   useEffect(() => { void loadTemplates() }, [loadTemplates])
   useEffect(() => {
@@ -506,6 +529,64 @@ export function Thumbnails(): JSX.Element {
     applyTemplate(template)
     appliedTemplate.current = key
   }, [activeProject?.id, activeProject?.thumbnailTemplateId, templates, applyTemplate, loadTemplates])
+
+  useEffect(() => {
+    const isTypingTarget = (target: EventTarget | null): boolean => {
+      if (!(target instanceof HTMLElement)) return false
+      const tag = target.tagName.toLowerCase()
+      return target.isContentEditable || tag === 'input' || tag === 'textarea' || tag === 'select'
+    }
+    const onKeyDown = (e: KeyboardEvent): void => {
+      if (isTypingTarget(e.target)) return
+      const mod = e.ctrlKey || e.metaKey
+      if (mod && e.key.toLowerCase() === 'z') {
+        e.preventDefault()
+        if (e.shiftKey) redoThumbnail()
+        else undoThumbnail()
+        return
+      }
+      if (mod && e.key.toLowerCase() === 'y') {
+        e.preventDefault()
+        redoThumbnail()
+        return
+      }
+      if (mod && e.key.toLowerCase() === 'a') {
+        e.preventDefault()
+        selectAllUnlockedLayers()
+        return
+      }
+      if (mod && e.key.toLowerCase() === 'd') {
+        if (!selectedLayerIds.length) return
+        e.preventDefault()
+        duplicateLayer(selectedLayerIds[0])
+        return
+      }
+      if (e.key === 'Escape') {
+        clearSelection()
+        return
+      }
+      if (e.key === 'Delete' || e.key === 'Backspace') {
+        if (!selectedLayerIds.length) return
+        e.preventDefault()
+        deleteLayer(selectedLayerIds[0])
+        return
+      }
+      const step = e.shiftKey ? 10 : 1
+      const deltas: Record<string, [number, number]> = {
+        ArrowLeft: [-step, 0],
+        ArrowRight: [step, 0],
+        ArrowUp: [0, -step],
+        ArrowDown: [0, step]
+      }
+      const delta = deltas[e.key]
+      if (delta && selectedLayerIds.length) {
+        e.preventDefault()
+        nudgeSelection(delta[0], delta[1])
+      }
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [clearSelection, deleteLayer, duplicateLayer, nudgeSelection, redoThumbnail, selectAllUnlockedLayers, selectedLayerIds, undoThumbnail])
 
   const saveThumbnail = async (): Promise<void> => {
     if (!activeProject) return
@@ -536,6 +617,8 @@ export function Thumbnails(): JSX.Element {
         </div>
         <div style={{ flex: 1 }} />
         <div style={{ display: 'flex', gap: 9 }}>
+          <button type="button" disabled={!canUndo} onClick={undoThumbnail} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 9, padding: '8px 12px', fontSize: 11.5, color: '#c4cad3', cursor: canUndo ? 'pointer' : 'not-allowed', opacity: canUndo ? 1 : 0.45 }}>Undo</button>
+          <button type="button" disabled={!canRedo} onClick={redoThumbnail} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 9, padding: '8px 12px', fontSize: 11.5, color: '#c4cad3', cursor: canRedo ? 'pointer' : 'not-allowed', opacity: canRedo ? 1 : 0.45 }}>Redo</button>
           {activeProject && (
             <div onClick={() => { if (!saving) void saveThumbnail() }} className="me-btn" style={{ display: 'flex', alignItems: 'center', gap: 6, border: '1px solid var(--accent)', background: 'var(--accent-soft)', borderRadius: 9, padding: '8px 14px', fontSize: 12, color: 'var(--accent)', fontWeight: 600, cursor: saving ? 'wait' : 'pointer', opacity: saving ? 0.7 : 1 }}>
               <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M5 3h11l3 3v15H5z" /><path d="M8 3v6h7" /></svg>
@@ -565,7 +648,7 @@ export function Thumbnails(): JSX.Element {
           <ThumbCanvas />
           <CompareBar />
           <div style={{ fontSize: 11.5, color: '#6a7180', marginTop: 10, lineHeight: 1.5 }}>
-            Drag any layer · resize handles on the selected subject/shape · dashed = title-safe zone
+            Drag or resize selected layers · dashed = title-safe zone
           </div>
         </div>
 

@@ -62,16 +62,23 @@ interface AppState {
   layers: ThumbnailLayer[]
   selectedLayerId: string
   selectedLayerIds: string[]
+  thumbnailPast: ThumbnailLayer[][]
+  thumbnailFuture: ThumbnailLayer[][]
   /** incremented by requestFocusTextEditor; ThumbCanvas dblclick → Thumbnails inspector textarea */
   textEditorFocusTrigger: number
   templates: ThumbnailTemplate[]
   selectLayer: (id: string, additive?: boolean) => void
   setSelection: (ids: string[]) => void
   clearSelection: () => void
+  selectAllUnlockedLayers: () => void
+  undoThumbnail: () => void
+  redoThumbnail: () => void
   requestFocusTextEditor: () => void
   toggleLayerVisible: (id: string) => void
   duplicateLayer: (id: string) => void
   deleteLayer: (id: string) => void
+  reorderLayer: (id: string, toIndex: number) => void
+  nudgeSelection: (dx: number, dy: number) => void
   addTextLayer: () => void
   addShapeLayer: (shape: ShapeLayer['shape']) => void
   updateLayer: (id: string, patch: Partial<ThumbnailLayer>) => void
@@ -86,9 +93,28 @@ interface AppState {
 }
 
 const FULL_FRAME: LayerFrame = { x: 0, y: 0, width: THUMB_W, height: THUMB_H, rotation: 0 }
+const THUMB_HISTORY_LIMIT = 80
 
 let layerSeq = 100
 const safeInitialLayers = normalizeThumbnailLayers(initialLayers)
+
+function cloneLayers(layers: ThumbnailLayer[]): ThumbnailLayer[] {
+  return JSON.parse(JSON.stringify(layers)) as ThumbnailLayer[]
+}
+
+function selectionPatch(s: AppState, layers: ThumbnailLayer[]): Pick<AppState, 'selectedLayerId' | 'selectedLayerIds'> {
+  const live = new Set(layers.map((l) => l.id))
+  const selectedLayerIds = s.selectedLayerIds.filter((id) => live.has(id))
+  return { selectedLayerIds, selectedLayerId: selectedLayerIds[0] ?? '' }
+}
+
+function historyPatch(s: AppState, patch: Partial<AppState>): Partial<AppState> {
+  return {
+    ...patch,
+    thumbnailPast: [...s.thumbnailPast, cloneLayers(s.layers)].slice(-THUMB_HISTORY_LIMIT),
+    thumbnailFuture: []
+  }
+}
 
 /** Fire-and-forget persist through the native bridge (absent in plain-web contexts). */
 function pushPatch(patch: DeepPartial<AppSettings>): void {
@@ -178,6 +204,8 @@ export const useStore = create<AppState>((set, get) => ({
   layers: safeInitialLayers,
   selectedLayerId: safeInitialLayers.find((l) => l.kind === 'text')?.id ?? safeInitialLayers[0]?.id ?? '',
   selectedLayerIds: [safeInitialLayers.find((l) => l.kind === 'text')?.id ?? safeInitialLayers[0]?.id ?? ''].filter(Boolean),
+  thumbnailPast: [],
+  thumbnailFuture: [],
   textEditorFocusTrigger: 0,
   templates: [],
   selectLayer: (id, additive = false) =>
@@ -194,9 +222,30 @@ export const useStore = create<AppState>((set, get) => ({
       return { selectedLayerIds, selectedLayerId: selectedLayerIds[0] ?? '' }
     }),
   clearSelection: () => set({ selectedLayerId: '', selectedLayerIds: [] }),
+  selectAllUnlockedLayers: () =>
+    set((s) => {
+      const ids = s.layers.filter((l) => !l.locked).map((l) => l.id)
+      return { selectedLayerIds: ids, selectedLayerId: ids[0] ?? '' }
+    }),
+  undoThumbnail: () =>
+    set((s) => {
+      if (s.thumbnailPast.length === 0) return s
+      const layers = cloneLayers(s.thumbnailPast[s.thumbnailPast.length - 1])
+      const thumbnailPast = s.thumbnailPast.slice(0, -1)
+      const thumbnailFuture = [cloneLayers(s.layers), ...s.thumbnailFuture].slice(0, THUMB_HISTORY_LIMIT)
+      return { layers, thumbnailPast, thumbnailFuture, ...selectionPatch(s, layers) }
+    }),
+  redoThumbnail: () =>
+    set((s) => {
+      if (s.thumbnailFuture.length === 0) return s
+      const layers = cloneLayers(s.thumbnailFuture[0])
+      const thumbnailPast = [...s.thumbnailPast, cloneLayers(s.layers)].slice(-THUMB_HISTORY_LIMIT)
+      const thumbnailFuture = s.thumbnailFuture.slice(1)
+      return { layers, thumbnailPast, thumbnailFuture, ...selectionPatch(s, layers) }
+    }),
   requestFocusTextEditor: () => set((s) => ({ textEditorFocusTrigger: s.textEditorFocusTrigger + 1 })),
   toggleLayerVisible: (id) =>
-    set((s) => ({
+    set((s) => historyPatch(s, {
       layers: s.layers.map((l) => (l.id === id ? { ...l, visible: !l.visible } : l))
     })),
   duplicateLayer: (id) =>
@@ -220,7 +269,7 @@ export const useStore = create<AppState>((set, get) => ({
         next.splice(idx, 0, copy)
         copyIds.push(copy.id)
       }
-      return copyIds.length ? { layers: next, selectedLayerId: copyIds[0], selectedLayerIds: copyIds } : s
+      return copyIds.length ? historyPatch(s, { layers: next, selectedLayerId: copyIds[0], selectedLayerIds: copyIds }) : s
     }),
   deleteLayer: (id) =>
     set((s) => {
@@ -229,7 +278,31 @@ export const useStore = create<AppState>((set, get) => ({
       if (deleteIds.size === 0) return s
       const next = s.layers.filter((l) => !deleteIds.has(l.id))
       const selectedLayerId = next[0]?.id ?? ''
-      return { layers: next, selectedLayerId, selectedLayerIds: selectedLayerId ? [selectedLayerId] : [] }
+      return historyPatch(s, { layers: next, selectedLayerId, selectedLayerIds: selectedLayerId ? [selectedLayerId] : [] })
+    }),
+  reorderLayer: (id, toIndex) =>
+    set((s) => {
+      const from = s.layers.findIndex((l) => l.id === id)
+      const layer = s.layers[from]
+      if (from < 0 || !layer || layer.locked) return s
+      const next = [...s.layers]
+      const [moved] = next.splice(from, 1)
+      const target = Math.max(0, Math.min(next.length, toIndex))
+      next.splice(target, 0, moved)
+      if (next.map((l) => l.id).join('|') === s.layers.map((l) => l.id).join('|')) return s
+      return historyPatch(s, { layers: next })
+    }),
+  nudgeSelection: (dx, dy) =>
+    set((s) => {
+      const ids = new Set(s.selectedLayerIds)
+      if (!ids.size || (dx === 0 && dy === 0)) return s
+      let changed = false
+      const layers = s.layers.map((l, i) => {
+        if (!ids.has(l.id) || l.locked) return l
+        changed = true
+        return normalizeThumbnailLayer({ ...l, frame: { ...l.frame, x: l.frame.x + dx, y: l.frame.y + dy } }, i) ?? l
+      })
+      return changed ? historyPatch(s, { layers }) : s
     }),
   addTextLayer: () =>
     set((s) => {
@@ -256,7 +329,7 @@ export const useStore = create<AppState>((set, get) => ({
           caps: true
         }
       }
-      return { layers: [layer, ...s.layers], selectedLayerId: id, selectedLayerIds: [id] }
+      return historyPatch(s, { layers: [layer, ...s.layers], selectedLayerId: id, selectedLayerIds: [id] })
     }),
   addShapeLayer: (shape) =>
     set((s) => {
@@ -271,25 +344,25 @@ export const useStore = create<AppState>((set, get) => ({
         shape,
         color: '#e8403a'
       }
-      return { layers: [layer, ...s.layers], selectedLayerId: id, selectedLayerIds: [id] }
+      return historyPatch(s, { layers: [layer, ...s.layers], selectedLayerId: id, selectedLayerIds: [id] })
     }),
   updateLayer: (id, patch) =>
-    set((s) => ({
+    set((s) => historyPatch(s, {
       layers: s.layers.map((l, i) => {
         if (l.id !== id) return l
         return normalizeThumbnailLayer({ ...l, ...patch }, i) ?? l
       })
     })),
   updateGeometry: (id, frame) =>
-    set((s) => ({
+    set((s) => historyPatch(s, {
       layers: s.layers.map((l, i) => (l.id === id ? (normalizeThumbnailLayer({ ...l, frame: { ...l.frame, ...frame } }, i) ?? l) : l))
     })),
   setSubjectImage: (src) =>
-    set((s) => ({
+    set((s) => historyPatch(s, {
       layers: s.layers.map((l, i) => (l.kind === 'subject' ? (normalizeThumbnailLayer({ ...(l as SubjectLayer), src }, i) ?? l) : l))
     })),
   setBackground: (patch) =>
-    set((s) => ({
+    set((s) => historyPatch(s, {
       layers: s.layers.map((l, i) => (l.kind === 'background' ? (normalizeThumbnailLayer({ ...(l as BackgroundLayer), ...patch }, i) ?? l) : l))
     })),
   runAutoArrange: () =>
@@ -300,11 +373,11 @@ export const useStore = create<AppState>((set, get) => ({
       if (!target) return s
       const subject = layers.find((l) => l.kind === 'subject')
       const { frame, lines } = autoArrangeText(target, { w: THUMB_W, h: THUMB_H }, subject?.frame ?? null)
-      return {
+      return historyPatch(s, {
         layers: layers.map((l, i) => (l.id === target.id ? (normalizeThumbnailLayer({ ...(l as TextLayer), frame, lines }, i) ?? l) : l)),
         selectedLayerId: target.id,
         selectedLayerIds: [target.id]
-      }
+      })
     }),
   loadTemplates: async () => {
     const templates = (await window.api?.thumbnails?.templates?.()) ?? []
@@ -324,6 +397,6 @@ export const useStore = create<AppState>((set, get) => ({
     set(() => {
       const layers = normalizeThumbnailLayers(t.layers)
       const selectedLayerId = layers.find((l) => l.kind === 'text')?.id ?? layers[0]?.id ?? ''
-      return { layers, selectedLayerId, selectedLayerIds: selectedLayerId ? [selectedLayerId] : [] }
+      return historyPatch(get(), { layers, selectedLayerId, selectedLayerIds: selectedLayerId ? [selectedLayerId] : [] })
     })
 }))
