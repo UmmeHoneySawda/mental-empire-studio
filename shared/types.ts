@@ -308,10 +308,9 @@ export interface TextLayer extends BaseLayer {
   color: string
   fontFamily: string
   align: 'left' | 'center' | 'right'
-  /** Custom gap between lines in px (0 = auto-calculated). @deprecated prefer lineHeight. */
+  /** Custom gap between uniform line boxes in px. undefined = auto-calculated. */
   lineGap?: number
-  /** Uniform line-height multiplier (× the largest line's size). Makes stacked lines of
-   *  mixed sizes space evenly. 0/undefined = auto (≈1.12, or derived from legacy lineGap). */
+  /** Legacy uniform line-height multiplier (× the largest line's size). */
   lineHeight?: number
   effects: { shadow: FxShadow; stroke: FxOutline; glow: FxGlow; caps: boolean }
 }

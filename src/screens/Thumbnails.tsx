@@ -185,6 +185,8 @@ function LayerInspector(): JSX.Element {
   if (!layer) return <div />
   const swatches = ['#ffffff', '#111111', '#f2c200', '#e8403a', '#19c3d6', '#8b7cff', '#36c98e']
   const highlight: TextHighlight = layer.highlight ?? { ...DEFAULT_TEXT_HIGHLIGHT, enabled: layer.highlightSquare, boxColor: layer.highlightColor }
+  const maxLineSize = Math.max(1, ...layer.lines.map((ln) => ln.size))
+  const lineGap = Math.round(layer.lineGap ?? Math.max(0, maxLineSize * ((layer.lineHeight && layer.lineHeight > 0 ? layer.lineHeight : 1.12) - 1)))
   const setHighlights = (words: string[]): void => { const clean = words.map((w) => w.trim()).filter(Boolean); updateLayer(layer.id, { highlightWords: clean, highlightWord: clean[0] ?? '' } as Partial<TextLayer>) }
   const toggleHighlight = (word: string): void => { const key = normWord(word); if (!key) return; setHighlights(highlightKeys.has(key) ? highlightWords.filter((w) => normWord(w) !== key) : [...highlightWords, word]) }
   const setHighlight = (patch: Partial<TextHighlight>): void => {
@@ -208,9 +210,9 @@ function LayerInspector(): JSX.Element {
           </div>
         ))}
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginTop: 4 }}>
-          <span style={{ fontSize: 10.5, color: '#8a909c', width: 64 }}>Line height</span>
-          <input type="range" min={90} max={220} value={Math.round((layer.lineHeight && layer.lineHeight > 0 ? layer.lineHeight : 1.12) * 100)} onChange={(e) => updateLayer(layer.id, { lineHeight: Number(e.target.value) / 100 } as Partial<TextLayer>)} style={{ flex: 1, accentColor: 'var(--accent)' }} />
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#8a909c', width: 52, textAlign: 'right' }}>{(layer.lineHeight && layer.lineHeight > 0 ? layer.lineHeight : 1.12).toFixed(2)}×</span>
+          <span style={{ fontSize: 10.5, color: '#8a909c', width: 64 }}>Line gap</span>
+          <input type="range" min={0} max={80} value={lineGap} onChange={(e) => updateLayer(layer.id, { lineGap: Number(e.target.value), lineHeight: undefined } as Partial<TextLayer>)} style={{ flex: 1, accentColor: 'var(--accent)' }} />
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#8a909c', width: 52, textAlign: 'right' }}>{lineGap}px</span>
         </div>
       </CollapseSection>
       <CollapseSection label="Highlighted words">

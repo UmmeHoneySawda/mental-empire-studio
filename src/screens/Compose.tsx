@@ -131,7 +131,7 @@ function MediaTab(): JSX.Element {
             ) : !isCssImageValue(heroImage) && (
               <div style={{ position: 'absolute', left: '9%', bottom: 0, width: '36%', height: '88%', background: 'linear-gradient(180deg,#3a4150,#23262e)', borderRadius: '80px 80px 0 0' }} />
             )}
-            <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.45))' }} />
+            <div style={{ position: 'absolute', inset: 0, background: overlayBackground(betaOpts.overlay) }} />
             <div onClick={() => {
               const nextOn = !(project?.kenBurns ?? true)
               void setMedia({ kenBurns: nextOn, motionPreset: nextOn ? (project?.motionPreset === 'off' ? 'subtle' : project?.motionPreset ?? 'subtle') : 'off' })

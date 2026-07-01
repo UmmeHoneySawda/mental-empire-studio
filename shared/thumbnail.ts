@@ -448,11 +448,12 @@ export function autoArrangeText(
   const lines = grouped.map((g) => ({ text: g.join(' '), size: base }))
 
   const blockW = Math.max(...lines.map((l) => Math.round(l.text.length * CHAR_W * l.size)))
-  // Match render.ts: a uniform line box = base × factor (lineHeight, else legacy lineGap).
-  const factor = layer.lineHeight && layer.lineHeight > 0
-    ? layer.lineHeight
-    : (layer.lineGap && layer.lineGap > 0 ? 1 + layer.lineGap / base : 1.12)
-  const blockH = Math.round(lines.length * base * factor)
+  // Match render.ts: a uniform line box = base + explicit px gap, otherwise an
+  // auto line-height factor.
+  const lineBox = typeof layer.lineGap === 'number'
+    ? base + Math.max(0, layer.lineGap)
+    : base * (layer.lineHeight && layer.lineHeight > 0 ? layer.lineHeight : 1.12)
+  const blockH = Math.round(lines.length * lineBox)
 
   // Place the block opposite the subject (largest empty region), bottom-aligned.
   const subjectCenter = subjectBounds ? subjectBounds.x + subjectBounds.width / 2 : stage.w

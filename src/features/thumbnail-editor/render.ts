@@ -211,13 +211,11 @@ function drawText(l: TextLayer): Konva.Group {
   const hl = l.highlight ?? { ...DEFAULT_TEXT_HIGHLIGHT, enabled: l.highlightSquare, boxColor: l.highlightColor }
   const sizes = l.lines.map((ln) => ln.size)
   const maxSize = sizes.length ? Math.max(...sizes) : 72
-  // Uniform line box: advance every line by the SAME height (largest line × factor) and
-  // vertically center each line inside it. Previously cy advanced by each line's own
-  // size + gap, so a big line then a small line produced wildly uneven spacing.
-  const factor = l.lineHeight && l.lineHeight > 0
-    ? l.lineHeight
-    : (l.lineGap && l.lineGap > 0 ? 1 + l.lineGap / maxSize : 1.12)
-  const lineBox = maxSize * factor
+  // Uniform line box: advance every line by the SAME height and vertically center
+  // each line inside it. A pixel gap lets mixed-size lines stay visually even.
+  const lineBox = typeof l.lineGap === 'number'
+    ? maxSize + Math.max(0, l.lineGap)
+    : maxSize * (l.lineHeight && l.lineHeight > 0 ? l.lineHeight : 1.12)
   let cy = 0
   for (const line of l.lines) {
     const text = caps ? line.text.toUpperCase() : line.text

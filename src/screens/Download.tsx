@@ -2,7 +2,8 @@ import { useMemo, useState, type CSSProperties } from 'react'
 import { ScreenPad, Eyebrow, Title } from '../components/primitives'
 import { useData } from '../store/useData'
 import { useStore } from '../store/useStore'
-import type { ScrapedVideo, ScrapeOrder, SourceChannel } from '@shared/types'
+import { DEFAULT_BETA_OPTS } from '@shared/types'
+import type { Profile, ScrapedVideo, ScrapeOrder, SourceChannel } from '@shared/types'
 import { youtubeIdFromDownloadId, youtubeThumbUrl, type YoutubeThumbQuality } from '@shared/youtube'
 import { sourceVideoBadge, type SourceVideoBadge } from '../lib/workitems'
 
@@ -70,6 +71,74 @@ function SourceAvatar({ source }: { source: SourceChannel }): JSX.Element {
   )
 }
 
+function normUrl(url?: string): string {
+  return (url ?? '').trim().replace(/\/+$/, '').toLowerCase()
+}
+
+function sourceMono(source: SourceChannel): string {
+  const name = source.name || source.handle || 'Source'
+  const parts = name.replace(/^@/, '').split(/\s+/).filter(Boolean)
+  if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase()
+  return name.replace(/[^a-z0-9]/gi, '').slice(0, 2).toUpperCase() || 'SO'
+}
+
+function sourceAutomationProfile(source: SourceChannel, profiles: Profile[]): Profile | undefined {
+  return profiles.find((p) => p.linkedSourceId === source.id)
+    ?? profiles.find((p) => normUrl(p.sourceUrl) === normUrl(source.url))
+}
+
+function automationSummary(profile: Profile, groqReady: boolean): string {
+  const caption = `${profile.captionPreset || 'Hormozi'} ${profile.captionAspect || '16:9'}`
+  const queue = profile.autoQueueRender ? 'auto-renders' : 'stages for edit'
+  return `Watches ${profile.sourceOrder} ${profile.sourceCount} · ${caption} · ${groqReady ? 'auto captions' : 'manual captions'} · ${queue}`
+}
+
+function sourceAutomationDefaults(source: SourceChannel, existing: Profile | undefined, autoWatch: boolean): Profile {
+  const name = source.name || source.handle || 'Source automation'
+  const base: Profile = existing ?? {
+    id: `src-auto-${source.id}`,
+    name: `${name} automation`,
+    mono: sourceMono(source),
+    avatar: 'linear-gradient(135deg,var(--accent),var(--accent-deep))',
+    rule: 'Latest · 5 videos',
+    images: 'Pool of 10 · shuffle',
+    thumb: 'None',
+    cap: 'Hormozi · 16:9 · 1L · auto',
+    out: '',
+    autoWatch: false,
+    sourceUrl: source.url,
+    sourceOrder: 'Latest',
+    sourceCount: 5,
+    imageMode: 'pool',
+    poolSize: 10,
+    kenBurns: true,
+    captionPreset: 'Hormozi',
+    captionFont: 'Montserrat',
+    captionAnim: 'Pop-in',
+    captionAspect: '16:9',
+    captionLines: 1,
+    captionPosition: 'bottom',
+    captionPace: 'auto',
+    captionHighlightColor: '#ffd93d',
+    captionBoxColor: '#ffd93d',
+    captionWordsPerPage: 1,
+    betaOpts: { ...DEFAULT_BETA_OPTS }
+  }
+  const lines = base.captionLines ?? 1
+  const pace = base.captionPace ?? 'auto'
+  return {
+    ...base,
+    linkedSourceId: source.id,
+    sourceUrl: source.url,
+    name: base.name || `${name} automation`,
+    mono: base.mono || sourceMono(source),
+    autoWatch,
+    rule: `${base.sourceOrder} · ${base.sourceCount} videos`,
+    images: base.imageMode === 'pool' ? `Pool of ${base.poolSize} · shuffle` : 'Sequence',
+    cap: `${base.captionPreset} · ${base.captionAspect} · ${lines}L · ${pace === 'phrase' ? 'steady' : pace}`
+  }
+}
+
 type SourceFilter = 'new' | 'not-downloaded' | 'not-uploaded' | 'all'
 
 const FILTERS: Array<{ id: SourceFilter; label: string }> = [
@@ -108,6 +177,7 @@ export function Download(): JSX.Element {
   const downloads = useData((s) => s.downloads)
   const workItems = useData((s) => s.workItems)
   const channels = useData((s) => s.channels)
+  const profiles = useData((s) => s.profiles)
   const sourceChannels = useData((s) => s.sourceChannels)
   const dlProgress = useData((s) => s.dlProgress)
   const fetching = useData((s) => s.fetching)
@@ -122,9 +192,11 @@ export function Download(): JSX.Element {
   const deleteDownload = useData((s) => s.deleteDownload)
   const setItemUploaded = useData((s) => s.setItemUploaded)
   const openProject = useData((s) => s.openProject)
+  const saveProfile = useData((s) => s.saveProfile)
   const setActive = useStore((s) => s.setActive)
   const allowReupload = useStore((s) => s.settings.dedup.allowReupload)
   const workflowP1 = useStore((s) => s.settings.features.workflowP1)
+  const groqReady = useStore((s) => !!s.settings.transcription.apiKey.trim())
 
   const [url, setUrl] = useState('')
   const [order, setOrder] = useState<ScrapeOrder>('Popular')
@@ -175,6 +247,10 @@ export function Download(): JSX.Element {
     setUrl(source.url)
     setSel(new Set())
     await openSource(source.id)
+  }
+  const toggleSourceAutomation = async (source: SourceChannel): Promise<void> => {
+    const existing = sourceAutomationProfile(source, profiles)
+    await saveProfile(sourceAutomationDefaults(source, existing, !existing?.autoWatch))
   }
   const listedVideos = useMemo(() => orderCachedVideos(sourceVideos, order, qty), [sourceVideos, order, qty])
   const visibleVideos = listedVideos.filter((v) => {
@@ -236,6 +312,8 @@ export function Download(): JSX.Element {
           )}
           {sourceChannels.map((source) => {
             const linked = channels.find((c) => c.id === source.linkedMyChannelId)
+            const automation = sourceAutomationProfile(source, profiles)
+            const watching = !!automation?.autoWatch
             return (
               <div key={source.id} className="me-card" style={{ border: '1px solid #1d2129', borderRadius: 12, background: '#12151b', padding: 14, display: 'flex', flexDirection: 'column', gap: 13 }}>
                 <div style={{ display: 'flex', gap: 12, minWidth: 0 }}>
@@ -250,6 +328,23 @@ export function Download(): JSX.Element {
                   <span style={{ border: `1px solid ${(source.newVideoCount ?? 0) > 0 ? 'rgba(245,179,35,.45)' : '#262b34'}`, borderRadius: 999, padding: '3px 8px', color: (source.newVideoCount ?? 0) > 0 ? '#f5b323' : '#8a909c', fontSize: 10.5 }}>{source.newVideoCount ?? 0} new</span>
                   <span style={{ border: '1px solid #262b34', borderRadius: 999, padding: '3px 8px', color: '#8a909c', fontSize: 10.5 }}>checked {fmtAgo(source.lastScrapedAt)}</span>
                   {linked && <span style={{ border: '1px solid rgba(54,201,142,.35)', borderRadius: 999, padding: '3px 8px', color: '#4fd6a0', fontSize: 10.5 }}>{linked.handle || linked.name}</span>}
+                </div>
+                <div style={{ border: `1px solid ${watching ? 'rgba(54,201,142,.38)' : '#23272f'}`, borderRadius: 10, padding: '9px 10px', background: watching ? 'rgba(54,201,142,.08)' : '#0e1116' }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                    <span style={{ color: watching ? '#dffbed' : '#8a909c', fontSize: 11.5, fontWeight: watching ? 700 : 500, flex: 1 }}>{watching ? 'Automation watching' : 'Automation off'}</span>
+                    <button
+                      type="button"
+                      onClick={(e) => { e.stopPropagation(); void toggleSourceAutomation(source) }}
+                      title={watching ? 'Pause hands-free watching for this source' : 'Create or enable hands-free watching for this source'}
+                      className="me-btn"
+                      style={{ width: 36, height: 20, border: 0, borderRadius: 999, background: watching ? '#36c98e' : '#2b303b', cursor: 'pointer', position: 'relative', padding: 0, flex: 'none' }}
+                    >
+                      <span style={{ position: 'absolute', top: 2, right: watching ? 2 : 18, width: 16, height: 16, borderRadius: '50%', background: '#fff', transition: 'right .15s ease' }} />
+                    </button>
+                  </div>
+                  <div className="me-clamp-2" style={{ color: watching ? '#8fcfb3' : '#6a7180', fontSize: 10.5, lineHeight: 1.35, marginTop: 6 }}>
+                    {automation ? automationSummary(automation, groqReady) : 'Turn on to watch this source with sensible defaults; details appear in Automations.'}
+                  </div>
                 </div>
                 <div style={{ display: 'flex', gap: 8, marginTop: 'auto' }}>
                   <button type="button" onClick={() => void openSavedSource(source)} className="me-btn" style={{ flex: 1, border: 0, background: 'var(--accent)', color: 'var(--accent-ink)', borderRadius: 9, padding: '8px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Open</button>
