@@ -2,8 +2,8 @@ import React, { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store/useStore'
 import { useData } from '../store/useData'
 import { ScreenPad } from '../components/primitives'
-import type { BackgroundLayer, FxGlow, FxOutline, FxShadow, ShapeLayer, SubjectLayer, TextHighlight, TextLayer, ThumbnailLayer } from '@shared/types'
-import { asGlow, asOutline, asShadow, DEFAULT_SCRIM, DEFAULT_TEXT_HIGHLIGHT } from '@shared/types'
+import type { BackgroundLayer, FxGlow, FxOutline, FxShadow, LayerFrame, ShapeLayer, SubjectLayer, TextHighlight, TextLayer, ThumbnailLayer } from '@shared/types'
+import { asGlow, asOutline, asShadow, DEFAULT_SCRIM, DEFAULT_TEXT_HIGHLIGHT, THUMB_H, THUMB_W } from '@shared/types'
 import { ThumbCanvas } from '../features/thumbnail-editor/ThumbCanvas'
 import { rasterizeLayers, withHeadline } from '../features/thumbnail-editor/render'
 import { youtubeIdFromDownloadId, youtubeThumbUrl, type YoutubeThumbQuality } from '@shared/youtube'
@@ -32,6 +32,49 @@ function wordsFromLayer(layer: TextLayer): string[] {
 }
 
 const FX_SWATCHES = ['#ffffff', '#000000', '#f2c200', '#e8403a', '#19c3d6', '#8b7cff', '#36c98e']
+
+function clampNum(n: number, min: number, max: number): number {
+  return Math.max(min, Math.min(max, Number.isFinite(n) ? n : min))
+}
+
+function selectedBounds(layers: ThumbnailLayer[]): LayerFrame | null {
+  if (!layers.length) return null
+  const minX = Math.min(...layers.map((l) => l.frame.x))
+  const minY = Math.min(...layers.map((l) => l.frame.y))
+  const maxX = Math.max(...layers.map((l) => l.frame.x + l.frame.width))
+  const maxY = Math.max(...layers.map((l) => l.frame.y + l.frame.height))
+  return { x: minX, y: minY, width: maxX - minX, height: maxY - minY, rotation: 0 }
+}
+
+function firstHighlightWords(layer: TextLayer): string[] {
+  const words = layer.lines.flatMap((line) => line.text.split(/\s+/)).map((w) => w.trim().replace(/^[^\w']+|[^\w']+$/g, '')).filter(Boolean)
+  return words.slice(0, Math.min(2, words.length))
+}
+
+function ToolbarButton({ children, title, active, danger, onClick }: { children: React.ReactNode; title: string; active?: boolean; danger?: boolean; onClick: () => void }): JSX.Element {
+  return (
+    <button
+      type="button"
+      title={title}
+      onClick={onClick}
+      className="me-btn"
+      style={{
+        minWidth: 30,
+        height: 30,
+        border: active ? '1px solid var(--accent)' : danger ? '1px solid #4a3540' : '1px solid #262b34',
+        borderRadius: 7,
+        background: active ? 'var(--accent-soft)' : danger ? '#1b1217' : '#15181f',
+        color: active ? 'var(--accent)' : danger ? '#ff8a96' : '#c4cad3',
+        fontSize: 10.5,
+        fontWeight: 800,
+        cursor: 'pointer',
+        padding: '0 9px'
+      }}
+    >
+      {children}
+    </button>
+  )
+}
 
 function FxSlider({ label, value, min, max, suffix, onChange }: { label: string; value: number; min: number; max: number; suffix?: string; onChange: (n: number) => void }): JSX.Element {
   return (
@@ -276,6 +319,139 @@ function LayerInspector(): JSX.Element {
       <div style={{ borderTop: '1px solid #1d2129', paddingTop: 12, marginTop: 4 }}>
         <div onClick={() => !layer.locked && deleteLayer(layer.id)} className="me-btn" style={{ border: '1px solid #3a2025', background: '#1a1216', borderRadius: 8, padding: '7px 10px', textAlign: 'center', fontSize: 11.5, color: '#ff8a96', cursor: 'pointer', opacity: layer.locked ? 0.4 : 1 }}>🗑 Delete layer</div>
       </div>
+    </div>
+  )
+}
+
+function SelectionToolbar(): JSX.Element | null {
+  const layers = useStore((s) => s.layers)
+  const selectedLayerIds = useStore((s) => s.selectedLayerIds)
+  const updateLayer = useStore((s) => s.updateLayer)
+  const updateGeometry = useStore((s) => s.updateGeometry)
+  const duplicateLayer = useStore((s) => s.duplicateLayer)
+  const deleteLayer = useStore((s) => s.deleteLayer)
+  const thumbEditorV2 = useStore((s) => s.settings.features.thumbEditorV2)
+  const selected = layers.filter((l) => selectedLayerIds.includes(l.id) && !l.locked && l.visible)
+  const bounds = selectedBounds(selected)
+  if (!thumbEditorV2 || !bounds || selected.length === 0) return null
+
+  const selectedText = selected.filter((l): l is TextLayer => l.kind === 'text')
+  const selectedColourLayers = selected.filter((l): l is TextLayer | ShapeLayer => l.kind === 'text' || l.kind === 'shape')
+  const hasText = selectedText.length > 0
+  const allCaps = hasText && selectedText.every((l) => l.effects.caps)
+  const hasHighlight = hasText && selectedText.some((l) => l.highlight?.enabled ?? l.highlightSquare)
+  const centerPct = clampNum(((bounds.x + bounds.width / 2) / THUMB_W) * 100, 18, 82)
+  const topPct = (bounds.y / THUMB_H) * 100
+  const bottomPct = ((bounds.y + bounds.height) / THUMB_H) * 100
+  const top = bounds.y > 58 ? `calc(${topPct}% - 42px)` : `calc(${bottomPct}% + 8px)`
+
+  const changeTextSize = (delta: number): void => {
+    selectedText.forEach((layer) => {
+      const lines = layer.lines.map((line) => ({ ...line, size: clampNum(line.size + delta, 8, 260) }))
+      updateLayer(layer.id, { lines } as Partial<TextLayer>)
+    })
+  }
+
+  const applyColour = (color: string): void => {
+    selectedColourLayers.forEach((layer) => {
+      if (layer.kind === 'text') updateLayer(layer.id, { color } as Partial<TextLayer>)
+      else updateLayer(layer.id, { color } as Partial<ShapeLayer>)
+    })
+  }
+
+  const toggleCaps = (): void => {
+    selectedText.forEach((layer) => {
+      updateLayer(layer.id, { effects: { ...layer.effects, caps: !allCaps } } as Partial<TextLayer>)
+    })
+  }
+
+  const toggleHighlight = (): void => {
+    const enabled = !hasHighlight
+    selectedText.forEach((layer) => {
+      const highlight = layer.highlight ?? { ...DEFAULT_TEXT_HIGHLIGHT, enabled: layer.highlightSquare, boxColor: layer.highlightColor }
+      const existing = layer.highlightWords?.length ? layer.highlightWords : layer.highlightWord ? [layer.highlightWord] : []
+      const highlightWords = existing.length ? existing : firstHighlightWords(layer)
+      updateLayer(layer.id, {
+        highlight: { ...highlight, enabled },
+        highlightSquare: enabled,
+        highlightWords,
+        highlightWord: highlightWords[0] ?? ''
+      } as Partial<TextLayer>)
+    })
+  }
+
+  const moveGroup = (dx: number, dy: number): void => {
+    if (dx === 0 && dy === 0) return
+    selected.forEach((layer) => updateGeometry(layer.id, { x: layer.frame.x + dx, y: layer.frame.y + dy }))
+  }
+
+  const alignGroup = (kind: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom'): void => {
+    if (kind === 'left') moveGroup(-bounds.x, 0)
+    else if (kind === 'center') moveGroup((THUMB_W - bounds.width) / 2 - bounds.x, 0)
+    else if (kind === 'right') moveGroup(THUMB_W - (bounds.x + bounds.width), 0)
+    else if (kind === 'top') moveGroup(0, -bounds.y)
+    else if (kind === 'middle') moveGroup(0, (THUMB_H - bounds.height) / 2 - bounds.y)
+    else moveGroup(0, THUMB_H - (bounds.y + bounds.height))
+  }
+
+  const firstSelectedId = selected[0]?.id
+
+  return (
+    <div
+      style={{
+        position: 'absolute',
+        left: `${centerPct}%`,
+        top,
+        transform: 'translateX(-50%)',
+        zIndex: 8,
+        display: 'flex',
+        alignItems: 'center',
+        gap: 6,
+        maxWidth: 'calc(100% - 18px)',
+        padding: 7,
+        border: '1px solid #262b34',
+        borderRadius: 8,
+        background: 'rgba(12,14,19,.94)',
+        boxShadow: '0 14px 36px rgba(0,0,0,.35)',
+        backdropFilter: 'blur(8px)',
+        overflowX: 'auto'
+      }}
+    >
+      {hasText && (
+        <>
+          <ToolbarButton title="Smaller text" onClick={() => changeTextSize(-6)}>A-</ToolbarButton>
+          <ToolbarButton title="Larger text" onClick={() => changeTextSize(6)}>A+</ToolbarButton>
+          <ToolbarButton title="Highlight words" active={hasHighlight} onClick={toggleHighlight}>H</ToolbarButton>
+          <ToolbarButton title="Caps" active={allCaps} onClick={toggleCaps}>B</ToolbarButton>
+        </>
+      )}
+      {selectedColourLayers.length > 0 && (
+        <div style={{ display: 'flex', gap: 5, alignItems: 'center', padding: '0 2px' }}>
+          {FX_SWATCHES.slice(0, 7).map((color) => (
+            <button
+              key={color}
+              type="button"
+              title={`Apply ${color}`}
+              onClick={() => applyColour(color)}
+              style={{ width: 20, height: 20, borderRadius: 6, border: '1px solid rgba(255,255,255,.18)', background: color, cursor: 'pointer', padding: 0 }}
+            />
+          ))}
+        </div>
+      )}
+      <div style={{ width: 1, alignSelf: 'stretch', background: '#262b34', flex: 'none' }} />
+      <ToolbarButton title="Align left" onClick={() => alignGroup('left')}>L</ToolbarButton>
+      <ToolbarButton title="Align center" onClick={() => alignGroup('center')}>C</ToolbarButton>
+      <ToolbarButton title="Align right" onClick={() => alignGroup('right')}>R</ToolbarButton>
+      <ToolbarButton title="Align top" onClick={() => alignGroup('top')}>T</ToolbarButton>
+      <ToolbarButton title="Align middle" onClick={() => alignGroup('middle')}>M</ToolbarButton>
+      <ToolbarButton title="Align bottom" onClick={() => alignGroup('bottom')}>B</ToolbarButton>
+      {firstSelectedId && (
+        <>
+          <div style={{ width: 1, alignSelf: 'stretch', background: '#262b34', flex: 'none' }} />
+          <ToolbarButton title="Duplicate" onClick={() => duplicateLayer(firstSelectedId)}>Copy</ToolbarButton>
+          <ToolbarButton title="Delete" danger onClick={() => deleteLayer(firstSelectedId)}>Del</ToolbarButton>
+        </>
+      )}
     </div>
   )
 }
@@ -685,7 +861,10 @@ export function Thumbnails(): JSX.Element {
 
         {/* CENTER — Canvas + compare bar */}
         <div style={{ minWidth: 0 }}>
-          <ThumbCanvas />
+          <div style={{ position: 'relative' }}>
+            <ThumbCanvas />
+            <SelectionToolbar />
+          </div>
           <CompareBar />
           <div style={{ fontSize: 11.5, color: '#6a7180', marginTop: 10, lineHeight: 1.5 }}>
             Drag or resize selected layers · dashed = title-safe zone · gold/green = snap guides

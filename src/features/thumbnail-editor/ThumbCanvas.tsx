@@ -26,6 +26,7 @@ interface InlineTextEdit {
 export function ThumbCanvas(): JSX.Element {
   const containerRef = useRef<HTMLDivElement>(null)
   const stageRef = useRef<Konva.Stage | null>(null)
+  const inlineTextRef = useRef<HTMLTextAreaElement>(null)
   const skipInlineCommitRef = useRef(false)
   // Cache decoded images by src so edits don't reload subject/background from disk
   // on every change — reloading is what caused the canvas to flash black.
@@ -42,6 +43,43 @@ export function ThumbCanvas(): JSX.Element {
   const requestFocusTextEditor = useStore((s) => s.requestFocusTextEditor)
   const thumbEditorV2 = useStore((s) => s.settings.features.thumbEditorV2)
   const [editing, setEditing] = useState<InlineTextEdit | null>(null)
+
+  const addInlineHighlight = (): void => {
+    if (!editing) return
+    const textarea = inlineTextRef.current
+    const layer = useStore.getState().layers.find((l) => l.id === editing.id)
+    if (!textarea || !layer || layer.kind !== 'text') return
+    const start = textarea.selectionStart
+    const end = textarea.selectionEnd
+    let picked = editing.value.slice(Math.min(start, end), Math.max(start, end)).trim()
+    if (!picked) {
+      const before = editing.value.slice(0, start)
+      const after = editing.value.slice(start)
+      const left = before.match(/[A-Za-z0-9']+$/)?.[0] ?? ''
+      const right = after.match(/^[A-Za-z0-9']+/)?.[0] ?? ''
+      picked = `${left}${right}`.trim()
+    }
+    const words = picked.split(/\s+/).map((w) => w.trim().replace(/^[^\w']+|[^\w']+$/g, '')).filter(Boolean)
+    if (!words.length) return
+    const existing = layer.highlightWords ?? (layer.highlightWord ? [layer.highlightWord] : [])
+    const seen = new Set(existing.map((w) => w.toLowerCase()))
+    const nextWords = [...existing]
+    for (const word of words) {
+      const key = word.toLowerCase()
+      if (!seen.has(key)) {
+        seen.add(key)
+        nextWords.push(word)
+      }
+    }
+    const highlight = layer.highlight ?? { enabled: layer.highlightSquare, boxColor: layer.highlightColor, textColor: '#111111', radius: 0, padding: 6, opacity: 1 }
+    updateLayer(layer.id, {
+      highlightWords: nextWords,
+      highlightWord: nextWords[0] ?? '',
+      highlight: { ...highlight, enabled: true },
+      highlightSquare: true
+    } as Partial<TextLayer>)
+    textarea.focus()
+  }
 
   const openInlineEditor = (layer: TextLayer): void => {
     const stage = stageRef.current
@@ -369,51 +407,68 @@ export function ThumbCanvas(): JSX.Element {
     >
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
       {editing && (
-        <textarea
-          autoFocus
-          value={editing.value}
-          onChange={(e) => setEditing({ ...editing, value: e.target.value })}
-          onKeyDown={(e) => {
-            if (e.key === 'Escape') {
-              e.preventDefault()
-              skipInlineCommitRef.current = true
-              setEditing(null)
-            } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
-              e.preventDefault()
+        <>
+          <div
+            style={{
+              position: 'absolute',
+              left: editing.x,
+              top: Math.max(6, editing.y - 36),
+              display: 'flex',
+              gap: 6,
+              zIndex: 6
+            }}
+            onMouseDown={(e) => e.preventDefault()}
+          >
+            <button type="button" title="Highlight selected text" onClick={addInlineHighlight} style={{ border: '1px solid var(--accent)', borderRadius: 7, padding: '5px 9px', background: 'var(--accent-soft)', color: 'var(--accent)', fontSize: 10.5, fontWeight: 700, cursor: 'pointer' }}>H</button>
+            <button type="button" title="Commit text edit" onClick={() => commitInlineEditor()} style={{ border: '1px solid #262b34', borderRadius: 7, padding: '5px 9px', background: '#15181f', color: '#c4cad3', fontSize: 10.5, fontWeight: 700, cursor: 'pointer' }}>OK</button>
+          </div>
+          <textarea
+            ref={inlineTextRef}
+            autoFocus
+            value={editing.value}
+            onChange={(e) => setEditing({ ...editing, value: e.target.value })}
+            onKeyDown={(e) => {
+              if (e.key === 'Escape') {
+                e.preventDefault()
+                skipInlineCommitRef.current = true
+                setEditing(null)
+              } else if (e.key === 'Enter' && (e.ctrlKey || e.metaKey)) {
+                e.preventDefault()
+                commitInlineEditor()
+              }
+            }}
+            onBlur={() => {
+              if (skipInlineCommitRef.current) {
+                skipInlineCommitRef.current = false
+                return
+              }
               commitInlineEditor()
-            }
-          }}
-          onBlur={() => {
-            if (skipInlineCommitRef.current) {
-              skipInlineCommitRef.current = false
-              return
-            }
-            commitInlineEditor()
-          }}
-          style={{
-            position: 'absolute',
-            left: editing.x,
-            top: editing.y,
-            width: editing.width,
-            minHeight: editing.minHeight,
-            transform: `rotate(${editing.rotation}deg)`,
-            transformOrigin: 'top left',
-            boxSizing: 'border-box',
-            border: '1px solid var(--accent)',
-            borderRadius: 8,
-            padding: 8,
-            color: editing.color,
-            background: 'rgba(8,10,14,.86)',
-            outline: 'none',
-            resize: 'both',
-            fontFamily: editing.fontFamily,
-            fontSize: editing.fontSize,
-            lineHeight: 1.08,
-            textAlign: editing.align,
-            textTransform: 'uppercase',
-            zIndex: 5
-          }}
-        />
+            }}
+            style={{
+              position: 'absolute',
+              left: editing.x,
+              top: editing.y,
+              width: editing.width,
+              minHeight: editing.minHeight,
+              transform: `rotate(${editing.rotation}deg)`,
+              transformOrigin: 'top left',
+              boxSizing: 'border-box',
+              border: '1px solid var(--accent)',
+              borderRadius: 8,
+              padding: 8,
+              color: editing.color,
+              background: 'rgba(8,10,14,.86)',
+              outline: 'none',
+              resize: 'both',
+              fontFamily: editing.fontFamily,
+              fontSize: editing.fontSize,
+              lineHeight: 1.08,
+              textAlign: editing.align,
+              textTransform: 'uppercase',
+              zIndex: 5
+            }}
+          />
+        </>
       )}
     </div>
   )
