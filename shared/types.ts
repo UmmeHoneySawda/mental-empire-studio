@@ -10,6 +10,7 @@ export type ScreenKey =
   | 'library'
   | 'workspace'
   | 'channels'
+  | 'sources'
   | 'download'
   | 'compose'
   | 'thumb'
@@ -49,6 +50,14 @@ export interface SourceChannel {
   url: string
   handle: string
   name: string
+  avatar?: string
+  lastScrapedAt?: string
+  lastVisitedAt?: string
+  lastSeenVideoId?: string
+  linkedMyChannelId?: string
+  videoCount?: number
+  cachedVideoCount?: number
+  newVideoCount?: number
   /** assigned b-roll niche pool (id of a Niche); videos from this channel use its pool */
   nicheId?: string
 }
@@ -794,6 +803,22 @@ export interface NativeApi {
     all(): Promise<MyChannel[]>
     /** fetch a source channel's videos for the Download picker (cached to DB) */
     sourceVideos(url: string, order: ScrapeOrder, count: number): Promise<ScrapedVideo[]>
+  }
+  sources: {
+    /** saved source-channel list enriched with cache/new counts */
+    list(): Promise<SourceChannel[]>
+    /** scrape once, persist the source row + cached videos, and return the saved row */
+    add(url: string): Promise<SourceChannel>
+    /** refresh one saved source's cached video list */
+    refresh(id: string): Promise<SourceChannel>
+    /** read cached videos only; no network */
+    videos(id: string): Promise<ScrapedVideo[]>
+    /** record that the user opened this source, setting the cursor to the current newest video */
+    markVisited(id: string): Promise<SourceChannel[]>
+    /** remove the source and its cached videos */
+    remove(id: string): Promise<SourceChannel[]>
+    /** optionally link a source to one owned channel for dedup/status context */
+    setLinkedMyChannel(id: string, myChannelId: string | null): Promise<SourceChannel[]>
   }
   reminders: {
     /** evaluate behind-pace channels, firing desktop notifications */

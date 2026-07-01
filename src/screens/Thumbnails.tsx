@@ -283,21 +283,63 @@ function LayerInspector(): JSX.Element {
 function LayersTab(): JSX.Element {
   const layers = useStore((s) => s.layers)
   const selectedLayerId = useStore((s) => s.selectedLayerId)
+  const selectedLayerIds = useStore((s) => s.selectedLayerIds)
   const selectLayer = useStore((s) => s.selectLayer)
   const duplicateLayer = useStore((s) => s.duplicateLayer)
   const toggleLayerVisible = useStore((s) => s.toggleLayerVisible)
   const deleteLayer = useStore((s) => s.deleteLayer)
   const addTextLayer = useStore((s) => s.addTextLayer)
   const addShapeLayer = useStore((s) => s.addShapeLayer)
+  const updateGeometry = useStore((s) => s.updateGeometry)
   const runAutoArrange = useStore((s) => s.runAutoArrange)
+  const selectedLayers = layers.filter((l) => selectedLayerIds.includes(l.id) && !l.locked)
+  const align = (kind: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom'): void => {
+    if (selectedLayers.length < 2) return
+    const minX = Math.min(...selectedLayers.map((l) => l.frame.x))
+    const maxX = Math.max(...selectedLayers.map((l) => l.frame.x + l.frame.width))
+    const minY = Math.min(...selectedLayers.map((l) => l.frame.y))
+    const maxY = Math.max(...selectedLayers.map((l) => l.frame.y + l.frame.height))
+    selectedLayers.forEach((l) => {
+      if (kind === 'left') updateGeometry(l.id, { x: minX })
+      else if (kind === 'center') updateGeometry(l.id, { x: (minX + maxX - l.frame.width) / 2 })
+      else if (kind === 'right') updateGeometry(l.id, { x: maxX - l.frame.width })
+      else if (kind === 'top') updateGeometry(l.id, { y: minY })
+      else if (kind === 'middle') updateGeometry(l.id, { y: (minY + maxY - l.frame.height) / 2 })
+      else updateGeometry(l.id, { y: maxY - l.frame.height })
+    })
+  }
+  const distribute = (axis: 'x' | 'y'): void => {
+    if (selectedLayers.length < 3) return
+    const sorted = [...selectedLayers].sort((a, b) => axis === 'x' ? a.frame.x - b.frame.x : a.frame.y - b.frame.y)
+    const first = sorted[0]
+    const last = sorted[sorted.length - 1]
+    const start = axis === 'x' ? first.frame.x : first.frame.y
+    const end = axis === 'x' ? last.frame.x : last.frame.y
+    const step = (end - start) / (sorted.length - 1)
+    sorted.slice(1, -1).forEach((l, i) => updateGeometry(l.id, axis === 'x' ? { x: start + step * (i + 1) } : { y: start + step * (i + 1) }))
+  }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>
       <div style={{ flex: 1, overflowY: 'auto', padding: '10px 10px 0' }}>
+        {selectedLayers.length > 1 && (
+          <div style={{ border: '1px solid #262b34', borderRadius: 9, background: '#0e1116', padding: 8, marginBottom: 8 }}>
+            <div style={{ fontSize: 10.5, color: '#cdd2da', marginBottom: 7, fontWeight: 700 }}>{selectedLayers.length} layers selected</div>
+            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 5, marginBottom: 5 }}>
+              {(['left', 'center', 'right', 'top', 'middle', 'bottom'] as const).map((kind) => (
+                <button key={kind} type="button" onClick={() => align(kind)} className="me-btn" style={{ border: '1px solid #23272f', background: '#15181f', borderRadius: 6, padding: '5px 0', color: '#aab0bb', fontSize: 10, cursor: 'pointer', textTransform: 'capitalize' }}>{kind}</button>
+              ))}
+            </div>
+            <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 5 }}>
+              <button type="button" disabled={selectedLayers.length < 3} onClick={() => distribute('x')} className="me-btn" style={{ border: '1px solid #23272f', background: '#15181f', borderRadius: 6, padding: '5px 0', color: '#aab0bb', fontSize: 10, cursor: selectedLayers.length >= 3 ? 'pointer' : 'not-allowed', opacity: selectedLayers.length >= 3 ? 1 : 0.45 }}>Distribute H</button>
+              <button type="button" disabled={selectedLayers.length < 3} onClick={() => distribute('y')} className="me-btn" style={{ border: '1px solid #23272f', background: '#15181f', borderRadius: 6, padding: '5px 0', color: '#aab0bb', fontSize: 10, cursor: selectedLayers.length >= 3 ? 'pointer' : 'not-allowed', opacity: selectedLayers.length >= 3 ? 1 : 0.45 }}>Distribute V</button>
+            </div>
+          </div>
+        )}
         <div style={{ display: 'flex', flexDirection: 'column', gap: 5, marginBottom: 8 }}>
           {layers.map((l) => {
-            const on = l.id === selectedLayerId
+            const on = selectedLayerIds.includes(l.id) || l.id === selectedLayerId
             return (
-              <div key={l.id} onClick={() => selectLayer(l.id)} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 8px', border: on ? '1px solid var(--accent)' : '1px solid #1d2129', borderRadius: 8, background: on ? 'var(--accent-soft)' : 'transparent', fontSize: 11.5, color: on ? '#eef0f3' : '#aab0bb', cursor: 'pointer' }}>
+              <div key={l.id} onClick={(e) => selectLayer(l.id, e.shiftKey || e.ctrlKey || e.metaKey)} style={{ display: 'flex', alignItems: 'center', gap: 7, padding: '7px 8px', border: on ? '1px solid var(--accent)' : '1px solid #1d2129', borderRadius: 8, background: on ? 'var(--accent-soft)' : 'transparent', fontSize: 11.5, color: on ? '#eef0f3' : '#aab0bb', cursor: 'pointer' }}>
                 <span style={{ fontWeight: l.kind === 'text' ? 700 : 400, flex: 'none' }}>{layerGlyph(l)}</span>
                 <span style={{ flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{l.name}</span>
                 {!l.locked && <span onClick={(e) => { e.stopPropagation(); duplicateLayer(l.id) }} style={{ color: '#5b616f', cursor: 'pointer', flex: 'none' }}>⧉</span>}

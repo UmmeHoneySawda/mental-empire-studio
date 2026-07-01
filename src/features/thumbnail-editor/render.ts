@@ -200,6 +200,8 @@ function drawShape(l: ShapeLayer): Konva.Group {
 /** A headline text layer: each line stacked, with an optional highlighted word box. */
 function drawText(l: TextLayer): Konva.Group {
   const group = new Konva.Group({ x: l.frame.x, y: l.frame.y, rotation: l.frame.rotation })
+  group.width(l.frame.width)
+  group.height(l.frame.height)
   const caps = l.effects.caps
   const highlights = highlightWordsFor(l)
   // Coerce so legacy boolean templates still render.

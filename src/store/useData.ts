@@ -76,6 +76,11 @@ interface DataState {
   deleteChannel: (id: string) => Promise<void>
   rescrapeAll: () => Promise<void>
   updateGoals: (id: string, patch: { weekGoal?: number; monthGoal?: number; reminder?: string; reminderNote?: string }) => Promise<void>
+  loadSources: () => Promise<void>
+  addSource: (url: string) => Promise<SourceChannel | null>
+  refreshSource: (id: string) => Promise<void>
+  removeSource: (id: string) => Promise<void>
+  openSource: (id: string) => Promise<void>
   fetchSource: (url: string, order: ScrapeOrder, count: number) => Promise<void>
   startDownload: (videos: ScrapedVideo[], sourceUrl: string, bitrate: number) => Promise<DownloadedVideo[]>
   resumeDownload: (id: string) => Promise<void>
@@ -176,7 +181,7 @@ export const useData = create<DataState>((set, get) => ({
       set({ ready: true })
       return
     }
-    await Promise.all([get().loadChannels(), get().loadDownloads(), get().loadActivity(), get().loadProfiles(), get().loadRenderJobs(), get().loadWorkItems(), get().loadNiches()])
+    await Promise.all([get().loadChannels(), get().loadDownloads(), get().loadActivity(), get().loadProfiles(), get().loadRenderJobs(), get().loadWorkItems(), get().loadNiches(), get().loadSources()])
     set({ ready: true })
     a.reminders.check().catch(() => {})
 
@@ -261,6 +266,58 @@ export const useData = create<DataState>((set, get) => ({
     set({ channels })
   },
 
+  loadSources: async () => {
+    const a = api()
+    if (!a) return
+    set({ sourceChannels: await a.sources.list() })
+  },
+  addSource: async (url) => {
+    const a = api()
+    if (!a || !url.trim()) return null
+    set({ fetching: true, sourceError: '' })
+    try {
+      const source = await a.sources.add(url.trim())
+      await get().loadSources()
+      return source
+    } catch (e) {
+      set({ sourceError: (e as Error).message || 'Could not add this source.' })
+      return null
+    } finally {
+      set({ fetching: false })
+    }
+  },
+  refreshSource: async (id) => {
+    const a = api()
+    if (!a) return
+    set({ fetching: true, sourceError: '' })
+    try {
+      await a.sources.refresh(id)
+      const sourceVideos = await a.sources.videos(id)
+      set({ sourceVideos, sourceError: '' })
+      await get().loadSources()
+    } catch (e) {
+      set({ sourceError: (e as Error).message || 'Could not refresh this source.' })
+    } finally {
+      set({ fetching: false })
+    }
+  },
+  removeSource: async (id) => {
+    const a = api()
+    if (!a) return
+    const sourceChannels = await a.sources.remove(id)
+    set({ sourceChannels, sourceVideos: [] })
+  },
+  openSource: async (id) => {
+    const a = api()
+    if (!a) return
+    set({ sourceError: '' })
+    const sourceVideos = await a.sources.videos(id)
+    set({ sourceVideos })
+    const sourceChannels = await a.sources.markVisited(id)
+    set({ sourceChannels })
+    void get().refreshSource(id)
+  },
+
   fetchSource: async (url, order, count) => {
     const a = api()
     if (!a || !url.trim()) return
@@ -268,6 +325,7 @@ export const useData = create<DataState>((set, get) => ({
     try {
       const sourceVideos = await a.scrape.sourceVideos(url.trim(), order, count)
       set({ sourceVideos, sourceError: '' })
+      await get().loadSources()
     } catch (e) {
       const msg = (e as Error).message || 'Could not fetch videos from this source.'
       set({ sourceVideos: [], sourceError: msg })
@@ -543,7 +601,7 @@ export const useData = create<DataState>((set, get) => ({
   loadNiches: async () => {
     const a = api()
     if (!a) return
-    const [niches, nichePools, sourceChannels] = await Promise.all([a.niche.list(), a.niche.poolHealth(), a.db.sourceChannels()])
+    const [niches, nichePools, sourceChannels] = await Promise.all([a.niche.list(), a.niche.poolHealth(), a.sources.list()])
     set({ niches, nichePools, sourceChannels })
   },
   saveNiche: async (n) => {

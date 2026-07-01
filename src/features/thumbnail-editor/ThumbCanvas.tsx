@@ -32,7 +32,10 @@ export function ThumbCanvas(): JSX.Element {
 
   const layers = useStore((s) => s.layers)
   const selectedLayerId = useStore((s) => s.selectedLayerId)
+  const selectedLayerIds = useStore((s) => s.selectedLayerIds)
   const selectLayer = useStore((s) => s.selectLayer)
+  const setSelection = useStore((s) => s.setSelection)
+  const clearSelection = useStore((s) => s.clearSelection)
   const updateLayer = useStore((s) => s.updateLayer)
   const updateGeometry = useStore((s) => s.updateGeometry)
   const requestFocusTextEditor = useStore((s) => s.requestFocusTextEditor)
@@ -153,7 +156,11 @@ export function ThumbCanvas(): JSX.Element {
         const id = node.getAttr('layerId') as string
         const layer = layers.find((l) => l.id === id)
         if (!layer) return
-        node.on('mousedown tap', () => selectLayer(id))
+        node.on('mousedown tap', (e) => {
+          e.cancelBubble = true
+          const evt = e.evt as MouseEvent | KeyboardEvent
+          selectLayer(id, !!(evt.shiftKey || evt.ctrlKey || evt.metaKey))
+        })
         if (layer.kind === 'text') {
           node.on('dblclick dbltap', () => {
             selectLayer(id)
@@ -169,6 +176,65 @@ export function ThumbCanvas(): JSX.Element {
       klayer.destroyChildren()
       klayer.add(group)
 
+      let selecting = false
+      let selectStart = { x: 0, y: 0 }
+      let selectionRect: Konva.Rect | null = null
+      stage.off('.thumbselect')
+      stage.on('mousedown.thumbselect touchstart.thumbselect', (e) => {
+        if (e.target !== stage && e.target.getClassName() !== 'Layer') return
+        const pos = stage.getPointerPosition()
+        if (!pos) return
+        selecting = true
+        selectStart = pos
+        clearSelection()
+        selectionRect = new Konva.Rect({
+          x: pos.x / stage.scaleX(),
+          y: pos.y / stage.scaleY(),
+          width: 0,
+          height: 0,
+          fill: 'rgba(245,179,35,.10)',
+          stroke: '#f5b323',
+          dash: [6, 4],
+          listening: false
+        })
+        klayer.add(selectionRect)
+      })
+      stage.on('mousemove.thumbselect touchmove.thumbselect', () => {
+        if (!selecting || !selectionRect) return
+        const pos = stage.getPointerPosition()
+        if (!pos) return
+        const sx = stage.scaleX() || 1
+        const sy = stage.scaleY() || 1
+        const x1 = selectStart.x / sx
+        const y1 = selectStart.y / sy
+        const x2 = pos.x / sx
+        const y2 = pos.y / sy
+        selectionRect.setAttrs({
+          x: Math.min(x1, x2),
+          y: Math.min(y1, y2),
+          width: Math.abs(x2 - x1),
+          height: Math.abs(y2 - y1)
+        })
+        klayer.batchDraw()
+      })
+      stage.on('mouseup.thumbselect touchend.thumbselect', () => {
+        if (!selecting) return
+        selecting = false
+        if (!selectionRect) return
+        const box = selectionRect.getClientRect()
+        const ids = group.getChildren()
+          .filter((node) => {
+            const id = node.getAttr('layerId') as string
+            const layer = layers.find((l) => l.id === id)
+            return !!layer && !layer.locked && Konva.Util.haveIntersection(box, node.getClientRect())
+          })
+          .map((node) => node.getAttr('layerId') as string)
+        selectionRect.destroy()
+        selectionRect = null
+        setSelection(ids)
+        klayer.batchDraw()
+      })
+
       // title-safe dashed inset overlay (non-interactive)
       const inset = Math.round(THUMB_W * 0.06)
       klayer.add(
@@ -183,12 +249,15 @@ export function ThumbCanvas(): JSX.Element {
         })
       )
 
-      // transformer for the selected subject/shape (text is drag-only to avoid reflow loss)
-      const selLayer = layers.find((l) => l.id === selectedLayerId)
-      const selNode = group.getChildren().find((n) => n.getAttr('layerId') === selectedLayerId)
-      if (selNode && selLayer && !selLayer.locked && (selLayer.kind === 'subject' || selLayer.kind === 'shape')) {
+      // T2: one transformer can operate over every selected unlocked layer, including text.
+      const selectedNodes = group.getChildren().filter((node) => {
+        const id = node.getAttr('layerId') as string
+        const layer = layers.find((l) => l.id === id)
+        return selectedLayerIds.includes(id) && !!layer && !layer.locked
+      })
+      if (selectedNodes.length > 0) {
         const tr = new Konva.Transformer({
-          nodes: [selNode],
+          nodes: selectedNodes,
           rotateEnabled: true,
           borderStroke: '#f5b323',
           anchorStroke: '#f5b323',
@@ -196,15 +265,20 @@ export function ThumbCanvas(): JSX.Element {
           anchorSize: 10
         })
         klayer.add(tr)
-        selNode.on('transformend', () => {
-          updateGeometry(selectedLayerId, {
-            x: selNode.x(),
-            y: selNode.y(),
-            rotation: selNode.rotation(),
-            width: Math.max(20, selNode.width() * selNode.scaleX()),
-            height: Math.max(20, selNode.height() * selNode.scaleY())
+        selectedNodes.forEach((selNode) => {
+          selNode.on('transformend', () => {
+            const id = selNode.getAttr('layerId') as string
+            const layer = layers.find((l) => l.id === id)
+            if (!layer) return
+            updateGeometry(id, {
+              x: selNode.x(),
+              y: selNode.y(),
+              rotation: selNode.rotation(),
+              width: Math.max(20, (layer.frame.width || selNode.width()) * selNode.scaleX()),
+              height: Math.max(20, (layer.frame.height || selNode.height()) * selNode.scaleY())
+            })
+            selNode.scale({ x: 1, y: 1 })
           })
-          selNode.scale({ x: 1, y: 1 })
         })
       }
       klayer.draw()
@@ -212,8 +286,9 @@ export function ThumbCanvas(): JSX.Element {
 
     return () => {
       cancelled = true
+      stage.off('.thumbselect')
     }
-  }, [layers, selectedLayerId, selectLayer, updateGeometry, thumbEditorV2])
+  }, [layers, selectedLayerId, selectedLayerIds, selectLayer, setSelection, clearSelection, updateGeometry, thumbEditorV2])
 
   return (
     <div

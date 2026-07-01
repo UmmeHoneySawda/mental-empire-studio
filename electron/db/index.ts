@@ -132,6 +132,12 @@ function migrate(d: Database.Database): void {
   ensureColumn(d, 'my_channels', 'lastScrapedAt', 'TEXT')
   ensureColumn(d, 'source_channels', 'lastScrapedAt', 'TEXT')
   ensureColumn(d, 'source_channels', 'nicheId', 'TEXT')
+  ensureColumn(d, 'source_channels', 'avatar', 'TEXT')
+  ensureColumn(d, 'source_channels', 'lastVisitedAt', 'TEXT')
+  ensureColumn(d, 'source_channels', 'lastSeenVideoId', 'TEXT')
+  ensureColumn(d, 'source_channels', 'linkedMyChannelId', 'TEXT')
+  ensureColumn(d, 'source_channels', 'videoCount', 'INTEGER')
+  ensureColumn(d, 'source_videos', 'ord', 'INTEGER')
   ensureColumn(d, 'downloaded_videos', 'matchedUploadId', 'TEXT')
   // M4: real download bookkeeping
   ensureColumn(d, 'downloaded_videos', 'filePath', 'TEXT')
@@ -241,6 +247,10 @@ export interface Repositories {
   sourceChannels(): SourceChannel[]
   sourceChannelByUrl(url: string): SourceChannel | undefined
   upsertSourceChannel(s: SourceChannel): void
+  setSourceCursor(id: string, patch: { lastSeenVideoId?: string | null; lastVisitedAt?: string }): void
+  deleteSourceChannel(id: string): void
+  newVideoCountForSource(id: string): number
+  setSourceLinkedMyChannel(id: string, myChannelId: string | null): void
   downloads(): DownloadedVideo[]
   getDownloadsBySource(sourceId: string): DownloadedVideo[]
   profiles(): Profile[]
@@ -387,15 +397,62 @@ function buildRepositories(d: Database.Database): Repositories {
       ).run({ linkedSourceId: null, lastScrapedAt: null, ...c })
     },
 
-    sourceChannels: () => d.prepare('SELECT id,url,handle,name,nicheId FROM source_channels').all() as SourceChannel[],
+    sourceChannels: () => d.prepare('SELECT id,url,handle,name,nicheId,avatar,lastScrapedAt,lastVisitedAt,lastSeenVideoId,linkedMyChannelId,videoCount FROM source_channels ORDER BY COALESCE(lastVisitedAt,lastScrapedAt,name) DESC').all() as SourceChannel[],
     sourceChannelByUrl: (url) =>
-      d.prepare('SELECT id,url,handle,name FROM source_channels WHERE url=?').get(url) as SourceChannel | undefined,
+      d.prepare('SELECT id,url,handle,name,nicheId,avatar,lastScrapedAt,lastVisitedAt,lastSeenVideoId,linkedMyChannelId,videoCount FROM source_channels WHERE url=?').get(url) as SourceChannel | undefined,
     upsertSourceChannel: (s) => {
       d.prepare(
-        `INSERT INTO source_channels (id,url,handle,name) VALUES (@id,@url,@handle,@name)
-         ON CONFLICT(id) DO UPDATE SET url=@url, handle=@handle, name=@name`
-      ).run(s)
+        `INSERT INTO source_channels (id,url,handle,name,nicheId,avatar,lastScrapedAt,lastVisitedAt,lastSeenVideoId,linkedMyChannelId,videoCount)
+         VALUES (@id,@url,@handle,@name,@nicheId,@avatar,@lastScrapedAt,@lastVisitedAt,@lastSeenVideoId,@linkedMyChannelId,@videoCount)
+         ON CONFLICT(id) DO UPDATE SET
+           url=@url,
+           handle=@handle,
+           name=@name,
+           nicheId=COALESCE(@nicheId,nicheId),
+           avatar=COALESCE(@avatar,avatar),
+           lastScrapedAt=COALESCE(@lastScrapedAt,lastScrapedAt),
+           lastVisitedAt=COALESCE(@lastVisitedAt,lastVisitedAt),
+           lastSeenVideoId=COALESCE(@lastSeenVideoId,lastSeenVideoId),
+           linkedMyChannelId=COALESCE(@linkedMyChannelId,linkedMyChannelId),
+           videoCount=COALESCE(@videoCount,videoCount)`
+      ).run({
+        nicheId: null,
+        avatar: null,
+        lastScrapedAt: null,
+        lastVisitedAt: null,
+        lastSeenVideoId: null,
+        linkedMyChannelId: null,
+        videoCount: null,
+        ...s
+      })
     },
+    setSourceCursor: (id, patch) => {
+      d.prepare(
+        `UPDATE source_channels
+         SET lastVisitedAt=COALESCE(@lastVisitedAt,lastVisitedAt),
+             lastSeenVideoId=COALESCE(@lastSeenVideoId,lastSeenVideoId)
+         WHERE id=@id`
+      ).run({ id, lastVisitedAt: patch.lastVisitedAt ?? null, lastSeenVideoId: patch.lastSeenVideoId ?? null })
+    },
+    deleteSourceChannel: (id) => {
+      const tx = d.transaction(() => {
+        d.prepare('DELETE FROM source_videos WHERE sourceId=?').run(id)
+        d.prepare('UPDATE my_channels SET linkedSourceId=NULL, source="" WHERE linkedSourceId=?').run(id)
+        d.prepare('DELETE FROM source_channels WHERE id=?').run(id)
+      })
+      tx()
+    },
+    newVideoCountForSource: (id) => {
+      const row = d.prepare('SELECT lastSeenVideoId FROM source_channels WHERE id=?').get(id) as { lastSeenVideoId?: string } | undefined
+      const videos = d.prepare('SELECT id FROM source_videos WHERE sourceId=? ORDER BY COALESCE(ord,999999), scrapedAt DESC').all(id) as Array<{ id: string }>
+      if (!videos.length) return 0
+      const cursor = row?.lastSeenVideoId
+      if (!cursor) return videos.length
+      const idx = videos.findIndex((v) => v.id === cursor)
+      return idx < 0 ? videos.length : idx
+    },
+    setSourceLinkedMyChannel: (id, myChannelId) =>
+      d.prepare('UPDATE source_channels SET linkedMyChannelId=? WHERE id=?').run(myChannelId, id),
 
     downloads: () => d.prepare('SELECT * FROM downloaded_videos').all() as DownloadedVideo[],
     getDownloadsBySource: (sourceId) =>
@@ -481,15 +538,16 @@ function buildRepositories(d: Database.Database): Repositories {
         // INSERT OR REPLACE: the same video id can surface under more than one source
         // (the id is a global PK) — replace rather than collide.
         const ins = d.prepare(
-          `INSERT OR REPLACE INTO source_videos (id,sourceId,title,durationSec,views,uploadDate,thumb,scrapedAt)
-           VALUES (@id,@sourceId,@title,@durationSec,@views,@uploadDate,@thumb,@scrapedAt)`
+          `INSERT OR REPLACE INTO source_videos (id,sourceId,title,durationSec,views,uploadDate,thumb,scrapedAt,ord)
+           VALUES (@id,@sourceId,@title,@durationSec,@views,@uploadDate,@thumb,@scrapedAt,@ord)`
         )
-        rows.forEach((r) => ins.run({ ...r, sourceId, scrapedAt: now }))
+        rows.forEach((r, ord) => ins.run({ ...r, sourceId, scrapedAt: now, ord }))
+        d.prepare('UPDATE source_channels SET lastScrapedAt=?, videoCount=? WHERE id=?').run(now, rows.length, sourceId)
       })
       tx()
     },
     getSourceVideos: (sourceId) =>
-      d.prepare('SELECT id,title,durationSec,views,uploadDate,thumb FROM source_videos WHERE sourceId=?').all(sourceId) as ScrapedVideo[],
+      d.prepare('SELECT id,title,durationSec,views,uploadDate,thumb FROM source_videos WHERE sourceId=? ORDER BY COALESCE(ord,999999), scrapedAt DESC').all(sourceId) as ScrapedVideo[],
 
     setChannelStats: (id, patch) => {
       d.prepare('UPDATE my_channels SET views=@views, subs=@subs, total=@total, lastScrapedAt=@lastScrapedAt WHERE id=@id').run({ id, ...patch })

@@ -83,6 +83,17 @@ const api: NativeApi = {
       ipcRenderer.invoke('scrape:sourceVideos', url, order, count)
   },
 
+  sources: {
+    list: () => ipcRenderer.invoke('sources:list'),
+    add: (url: string) => ipcRenderer.invoke('sources:add', url),
+    refresh: (id: string) => ipcRenderer.invoke('sources:refresh', id),
+    videos: (id: string) => ipcRenderer.invoke('sources:videos', id),
+    markVisited: (id: string) => ipcRenderer.invoke('sources:markVisited', id),
+    remove: (id: string) => ipcRenderer.invoke('sources:remove', id),
+    setLinkedMyChannel: (id: string, myChannelId: string | null) =>
+      ipcRenderer.invoke('sources:setLinkedMyChannel', id, myChannelId)
+  } satisfies NativeApi['sources'],
+
   reminders: {
     check: () => ipcRenderer.invoke('reminders:check')
   },

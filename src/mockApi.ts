@@ -91,8 +91,8 @@ function installMock(): void {
   } as Partial<AppSettings>)
 
   const sourceChannels: SourceChannel[] = [
-    { id: 'src-pw', url: 'https://www.youtube.com/@powerwithinofficial-q7d', handle: '@powerwithinofficial-q7d', name: 'Power Within Official' },
-    { id: 'src-nar', url: 'https://www.youtube.com/@narceo05', handle: '@narceo05', name: 'Narceo' }
+    { id: 'src-pw', url: 'https://www.youtube.com/@powerwithinofficial-q7d', handle: '@powerwithinofficial-q7d', name: 'Power Within Official', lastScrapedAt: new Date().toISOString(), videoCount: 5 },
+    { id: 'src-nar', url: 'https://www.youtube.com/@narceo05', handle: '@narceo05', name: 'Narceo', lastScrapedAt: new Date().toISOString(), videoCount: 5 }
   ]
 
   const channels: MyChannel[] = [
@@ -393,6 +393,49 @@ function installMock(): void {
         return vids.slice(0, count)
       }
     }),
+    sources: ns({
+      list: async () => sourceChannels.map(sourceSummary),
+      add: async (url: string) => {
+        const source = ensureSource(url)
+        const videos = catalogFor(source.handle)
+        source.lastScrapedAt = new Date().toISOString()
+        source.videoCount = videos.length
+        pushActivity(`Saved source ${source.handle}`)
+        return sourceSummary(source)
+      },
+      refresh: async (id: string) => {
+        const source = sourceChannels.find((s) => s.id === id)
+        if (!source) throw new Error(`Source not found: ${id}`)
+        const videos = catalogFor(source.handle || source.url)
+        source.lastScrapedAt = new Date().toISOString()
+        source.videoCount = videos.length
+        pushActivity(`Checked ${source.handle} for new videos`)
+        return sourceSummary(source)
+      },
+      videos: async (id: string) => {
+        const source = sourceChannels.find((s) => s.id === id)
+        return source ? catalogFor(source.handle || source.url) : []
+      },
+      markVisited: async (id: string) => {
+        const source = sourceChannels.find((s) => s.id === id)
+        if (source) {
+          const videos = catalogFor(source.handle || source.url)
+          source.lastVisitedAt = new Date().toISOString()
+          source.lastSeenVideoId = videos[0]?.id
+        }
+        return sourceChannels.map(sourceSummary)
+      },
+      remove: async (id: string) => {
+        const idx = sourceChannels.findIndex((s) => s.id === id)
+        if (idx >= 0) sourceChannels.splice(idx, 1)
+        return sourceChannels.map(sourceSummary)
+      },
+      setLinkedMyChannel: async (id: string, myChannelId: string | null) => {
+        const source = sourceChannels.find((s) => s.id === id)
+        if (source) source.linkedMyChannelId = myChannelId ?? undefined
+        return sourceChannels.map(sourceSummary)
+      }
+    }),
     reminders: ns({ check: async () => [] }),
     download: ns({
       start: async (vids: ScrapedVideo[], opts: { sourceUrl: string }) => {
@@ -600,11 +643,25 @@ function installMock(): void {
     ].map((title, i) => ({ id: `${slug(handle)}-${i}`, title, durationSec: 620 + i * 60, views: 10000 + i * 5000, uploadDate: `2026-06-${10 + i}`, thumb: grad('#23304a', '#15171d') }))
   }
 
-  function ensureSource(url: string): void {
-    const handle = handleFromUrl(url)
-    if (!sourceChannels.some((s) => s.handle.toLowerCase() === handle.toLowerCase())) {
-      sourceChannels.push({ id: `src-${slug(handle)}`, url, handle, name: nameFromHandle(handle) })
+  function sourceSummary(source: SourceChannel): SourceChannel {
+    const videos = catalogFor(source.handle || source.url)
+    const cursor = source.lastSeenVideoId
+    const idx = cursor ? videos.findIndex((v) => v.id === cursor) : -1
+    return {
+      ...source,
+      cachedVideoCount: videos.length,
+      videoCount: source.videoCount ?? videos.length,
+      newVideoCount: cursor ? (idx < 0 ? videos.length : idx) : videos.length
     }
+  }
+
+  function ensureSource(url: string): SourceChannel {
+    const handle = handleFromUrl(url)
+    const existing = sourceChannels.find((s) => s.handle.toLowerCase() === handle.toLowerCase())
+    if (existing) return existing
+    const source = { id: `src-${slug(handle)}`, url, handle, name: nameFromHandle(handle), lastScrapedAt: new Date().toISOString(), videoCount: catalogFor(handle).length }
+    sourceChannels.push(source)
+    return source
   }
 
   function patchProject(projectId: string, patch: Partial<Project>): Project {

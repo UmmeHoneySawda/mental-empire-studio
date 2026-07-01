@@ -61,10 +61,13 @@ interface AppState {
   // thumbnail editor
   layers: ThumbnailLayer[]
   selectedLayerId: string
+  selectedLayerIds: string[]
   /** incremented by requestFocusTextEditor; ThumbCanvas dblclick → Thumbnails inspector textarea */
   textEditorFocusTrigger: number
   templates: ThumbnailTemplate[]
-  selectLayer: (id: string) => void
+  selectLayer: (id: string, additive?: boolean) => void
+  setSelection: (ids: string[]) => void
+  clearSelection: () => void
   requestFocusTextEditor: () => void
   toggleLayerVisible: (id: string) => void
   duplicateLayer: (id: string) => void
@@ -174,9 +177,23 @@ export const useStore = create<AppState>((set, get) => ({
 
   layers: safeInitialLayers,
   selectedLayerId: safeInitialLayers.find((l) => l.kind === 'text')?.id ?? safeInitialLayers[0]?.id ?? '',
+  selectedLayerIds: [safeInitialLayers.find((l) => l.kind === 'text')?.id ?? safeInitialLayers[0]?.id ?? ''].filter(Boolean),
   textEditorFocusTrigger: 0,
   templates: [],
-  selectLayer: (id) => set({ selectedLayerId: id }),
+  selectLayer: (id, additive = false) =>
+    set((s) => {
+      if (!additive) return { selectedLayerId: id, selectedLayerIds: [id] }
+      const exists = s.selectedLayerIds.includes(id)
+      const selectedLayerIds = exists ? s.selectedLayerIds.filter((x) => x !== id) : [...s.selectedLayerIds, id]
+      return { selectedLayerIds, selectedLayerId: selectedLayerIds[0] ?? '' }
+    }),
+  setSelection: (ids) =>
+    set((s) => {
+      const live = new Set(s.layers.map((l) => l.id))
+      const selectedLayerIds = [...new Set(ids)].filter((id) => live.has(id))
+      return { selectedLayerIds, selectedLayerId: selectedLayerIds[0] ?? '' }
+    }),
+  clearSelection: () => set({ selectedLayerId: '', selectedLayerIds: [] }),
   requestFocusTextEditor: () => set((s) => ({ textEditorFocusTrigger: s.textEditorFocusTrigger + 1 })),
   toggleLayerVisible: (id) =>
     set((s) => ({
@@ -184,28 +201,35 @@ export const useStore = create<AppState>((set, get) => ({
     })),
   duplicateLayer: (id) =>
     set((s) => {
-      const src = s.layers.find((l) => l.id === id)
-      if (!src) return s
-      const normalized = normalizeThumbnailLayer(src, s.layers.findIndex((l) => l.id === id))
-      if (!normalized) return s
-      const copy = normalizeThumbnailLayer({
-        ...normalized,
-        id: `${src.kind}-${layerSeq++}`,
-        name: `${src.name} copy`,
-        frame: { ...src.frame, x: src.frame.x + 24, y: src.frame.y + 24 }
-      }, s.layers.length)
-      if (!copy) return s
-      const idx = s.layers.findIndex((l) => l.id === id)
+      const ids = s.selectedLayerIds.includes(id) && s.selectedLayerIds.length > 1 ? s.selectedLayerIds : [id]
       const next = [...s.layers]
-      next.splice(idx, 0, copy)
-      return { layers: next, selectedLayerId: copy.id }
+      const copyIds: string[] = []
+      for (const selectedId of ids) {
+        const src = s.layers.find((l) => l.id === selectedId)
+        if (!src || src.locked) continue
+        const normalized = normalizeThumbnailLayer(src, s.layers.findIndex((l) => l.id === selectedId))
+        if (!normalized) continue
+        const copy = normalizeThumbnailLayer({
+          ...normalized,
+          id: `${src.kind}-${layerSeq++}`,
+          name: `${src.name} copy`,
+          frame: { ...src.frame, x: src.frame.x + 24, y: src.frame.y + 24 }
+        }, next.length)
+        if (!copy) continue
+        const idx = Math.max(0, next.findIndex((l) => l.id === selectedId))
+        next.splice(idx, 0, copy)
+        copyIds.push(copy.id)
+      }
+      return copyIds.length ? { layers: next, selectedLayerId: copyIds[0], selectedLayerIds: copyIds } : s
     }),
   deleteLayer: (id) =>
     set((s) => {
-      const layer = s.layers.find((l) => l.id === id)
-      if (!layer || layer.locked) return s
-      const next = s.layers.filter((l) => l.id !== id)
-      return { layers: next, selectedLayerId: next[0]?.id ?? '' }
+      const ids = s.selectedLayerIds.includes(id) && s.selectedLayerIds.length > 1 ? s.selectedLayerIds : [id]
+      const deleteIds = new Set(ids.filter((selectedId) => !s.layers.find((l) => l.id === selectedId)?.locked))
+      if (deleteIds.size === 0) return s
+      const next = s.layers.filter((l) => !deleteIds.has(l.id))
+      const selectedLayerId = next[0]?.id ?? ''
+      return { layers: next, selectedLayerId, selectedLayerIds: selectedLayerId ? [selectedLayerId] : [] }
     }),
   addTextLayer: () =>
     set((s) => {
@@ -232,7 +256,7 @@ export const useStore = create<AppState>((set, get) => ({
           caps: true
         }
       }
-      return { layers: [layer, ...s.layers], selectedLayerId: id }
+      return { layers: [layer, ...s.layers], selectedLayerId: id, selectedLayerIds: [id] }
     }),
   addShapeLayer: (shape) =>
     set((s) => {
@@ -247,7 +271,7 @@ export const useStore = create<AppState>((set, get) => ({
         shape,
         color: '#e8403a'
       }
-      return { layers: [layer, ...s.layers], selectedLayerId: id }
+      return { layers: [layer, ...s.layers], selectedLayerId: id, selectedLayerIds: [id] }
     }),
   updateLayer: (id, patch) =>
     set((s) => ({
@@ -278,7 +302,8 @@ export const useStore = create<AppState>((set, get) => ({
       const { frame, lines } = autoArrangeText(target, { w: THUMB_W, h: THUMB_H }, subject?.frame ?? null)
       return {
         layers: layers.map((l, i) => (l.id === target.id ? (normalizeThumbnailLayer({ ...(l as TextLayer), frame, lines }, i) ?? l) : l)),
-        selectedLayerId: target.id
+        selectedLayerId: target.id,
+        selectedLayerIds: [target.id]
       }
     }),
   loadTemplates: async () => {
@@ -298,6 +323,7 @@ export const useStore = create<AppState>((set, get) => ({
   applyTemplate: (t) =>
     set(() => {
       const layers = normalizeThumbnailLayers(t.layers)
-      return { layers, selectedLayerId: layers.find((l) => l.kind === 'text')?.id ?? layers[0]?.id ?? '' }
+      const selectedLayerId = layers.find((l) => l.kind === 'text')?.id ?? layers[0]?.id ?? ''
+      return { layers, selectedLayerId, selectedLayerIds: selectedLayerId ? [selectedLayerId] : [] }
     })
 }))

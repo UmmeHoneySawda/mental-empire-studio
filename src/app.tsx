@@ -23,6 +23,7 @@ const SCREENS: Record<ScreenKey, ComponentType> = {
   library: Library,
   workspace: Workspace,
   channels: MyChannels,
+  sources: Download,
   download: Download,
   compose: Compose,
   thumb: Thumbnails,

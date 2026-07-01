@@ -1,8 +1,8 @@
-import { useState, type CSSProperties } from 'react'
+import { useMemo, useState, type CSSProperties } from 'react'
 import { ScreenPad, Eyebrow, Title } from '../components/primitives'
 import { useData } from '../store/useData'
 import { useStore } from '../store/useStore'
-import type { ScrapedVideo, ScrapeOrder } from '@shared/types'
+import type { ScrapedVideo, ScrapeOrder, SourceChannel } from '@shared/types'
 import { youtubeIdFromDownloadId, youtubeThumbUrl, type YoutubeThumbQuality } from '@shared/youtube'
 import { sourceVideoBadge, type SourceVideoBadge } from '../lib/workitems'
 
@@ -36,6 +36,36 @@ function YouTubeThumb({ videoId, alt, fallback, selected }: { videoId: string; a
       {selected != null && (
         <div className="me-vidsel" style={{ position: 'absolute', top: 8, left: 8, width: 22, height: 22, borderRadius: 6, border: `1.5px solid ${selected ? 'var(--accent)' : 'rgba(255,255,255,.5)'}`, background: selected ? 'var(--accent)' : 'rgba(0,0,0,.45)', display: 'grid', placeItems: 'center', color: 'var(--accent-ink)' }}>{selected ? '✓' : ''}</div>
       )}
+    </div>
+  )
+}
+
+function fmtAgo(iso?: string): string {
+  if (!iso) return 'never'
+  const ms = Date.now() - new Date(iso).getTime()
+  if (!Number.isFinite(ms) || ms < 0) return 'just now'
+  const mins = Math.floor(ms / 60000)
+  if (mins < 1) return 'just now'
+  if (mins < 60) return `${mins}m ago`
+  const hrs = Math.floor(mins / 60)
+  if (hrs < 24) return `${hrs}h ago`
+  return `${Math.floor(hrs / 24)}d ago`
+}
+
+function orderCachedVideos(videos: ScrapedVideo[], order: ScrapeOrder, count: number): ScrapedVideo[] {
+  const ordered = [...videos]
+  if (order === 'Popular') ordered.sort((a, b) => b.views - a.views)
+  else if (order === 'Oldest') ordered.sort((a, b) => (a.uploadDate || '99999999').localeCompare(b.uploadDate || '99999999'))
+  else ordered.sort((a, b) => (b.uploadDate || '').localeCompare(a.uploadDate || ''))
+  return ordered.slice(0, Math.max(1, count))
+}
+
+function SourceAvatar({ source }: { source: SourceChannel }): JSX.Element {
+  const [failed, setFailed] = useState(false)
+  const fallback = 'linear-gradient(135deg,#23304a,#15171d)'
+  return (
+    <div style={{ width: 48, height: 48, borderRadius: 12, overflow: 'hidden', background: fallback, display: 'grid', placeItems: 'center', color: '#f2f4f7', fontFamily: 'var(--font-display)', fontWeight: 700, flex: 'none' }}>
+      {source.avatar && !failed ? <img src={source.avatar} alt="" onError={() => setFailed(true)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : (source.name || source.handle || '?').slice(0, 2).toUpperCase()}
     </div>
   )
 }
@@ -78,10 +108,14 @@ export function Download(): JSX.Element {
   const downloads = useData((s) => s.downloads)
   const workItems = useData((s) => s.workItems)
   const channels = useData((s) => s.channels)
+  const sourceChannels = useData((s) => s.sourceChannels)
   const dlProgress = useData((s) => s.dlProgress)
   const fetching = useData((s) => s.fetching)
   const sourceError = useData((s) => s.sourceError)
-  const fetchSource = useData((s) => s.fetchSource)
+  const addSource = useData((s) => s.addSource)
+  const refreshSource = useData((s) => s.refreshSource)
+  const removeSource = useData((s) => s.removeSource)
+  const openSource = useData((s) => s.openSource)
   const startDownload = useData((s) => s.startDownload)
   const resumeDownload = useData((s) => s.resumeDownload)
   const cancelDownload = useData((s) => s.cancelDownload)
@@ -102,7 +136,9 @@ export function Download(): JSX.Element {
   const [historyOpen, setHistoryOpen] = useState(false)
   const [filter, setFilter] = useState<SourceFilter>('new')
   const [overrideReupload, setOverrideReupload] = useState<Set<string>>(new Set())
+  const [activeSourceId, setActiveSourceId] = useState('')
 
+  const activeSource = sourceChannels.find((s) => s.id === activeSourceId)
   const byVideo = new Map(workItems.map((w) => [w.videoId, w]))
   const badgeFor = (video: ScrapedVideo): SourceVideoBadge => workflowP1 ? sourceVideoBadge(byVideo.get(video.id), channels) : { kind: 'new', label: 'NEW', tone: 'neutral' }
   const isBlocked = (video: ScrapedVideo): boolean => {
@@ -124,8 +160,24 @@ export function Download(): JSX.Element {
   }
 
   const canFetch = url.trim().length > 0 && !fetching
-  const fetchVids = (): void => { if (!canFetch) return; setMessage(''); void fetchSource(url, order, qty) }
-  const visibleVideos = sourceVideos.filter((v) => {
+  const fetchVids = async (): Promise<void> => {
+    if (!canFetch) return
+    setMessage('')
+    const source = await addSource(url)
+    if (source) {
+      setUrl('')
+      setActiveSourceId(source.id)
+      await openSource(source.id)
+    }
+  }
+  const openSavedSource = async (source: SourceChannel): Promise<void> => {
+    setActiveSourceId(source.id)
+    setUrl(source.url)
+    setSel(new Set())
+    await openSource(source.id)
+  }
+  const listedVideos = useMemo(() => orderCachedVideos(sourceVideos, order, qty), [sourceVideos, order, qty])
+  const visibleVideos = listedVideos.filter((v) => {
     if (!workflowP1) return true
     const wi = byVideo.get(v.id)
     const badge = badgeFor(v)
@@ -142,7 +194,7 @@ export function Download(): JSX.Element {
     setBusy(true)
     setMessage(toCompose ? 'Downloading selected audio…' : 'Starting download…')
     try {
-      const rows = await startDownload(selected, url, bitrate)
+      const rows = await startDownload(selected, activeSource?.url || url, bitrate)
       const succeeded = rows.filter((d) => d.filePath && (d.durationSec ?? 0) > 0)
       const failed = rows.filter((d) => d.stage === 'Failed')
       if (toCompose) {
@@ -165,20 +217,66 @@ export function Download(): JSX.Element {
 
   return (
     <ScreenPad style={{ position: 'relative' }}>
-      <div style={{ marginBottom: 18 }}><Eyebrow>SOURCE</Eyebrow><Title>Download audio from a channel</Title></div>
+      <div style={{ marginBottom: 18 }}><Eyebrow>SOURCES</Eyebrow><Title>Source channels</Title></div>
 
-      {/* Row 1: URL + Fetch */}
+      {/* Row 1: URL + Add source */}
       <div style={{ display: 'flex', gap: 11, marginBottom: 10 }}>
         <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 10, background: '#12151b', border: '1px solid #23272f', borderRadius: 11, padding: '12px 15px' }}>
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5b616f" strokeWidth="2"><path d="M10 13a5 5 0 007 0l2-2a5 5 0 00-7-7l-1 1" /><path d="M14 11a5 5 0 00-7 0l-2 2a5 5 0 007 7l1-1" /></svg>
-          <input value={url} onChange={(e) => setUrl(e.target.value)} onKeyDown={(e) => e.key === 'Enter' && fetchVids()} placeholder="youtube.com/@PowerWithinOfficial" style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', fontSize: 13, color: '#dde0e5', fontFamily: 'var(--font-mono)' }} />
+          <input value={url} onChange={(e) => setUrl(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void fetchVids() }} placeholder="youtube.com/@PowerWithinOfficial" style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', fontSize: 13, color: '#dde0e5', fontFamily: 'var(--font-mono)' }} />
         </div>
-        <button type="button" disabled={!canFetch} onClick={fetchVids} className="me-btn" style={{ border: 0, background: 'linear-gradient(180deg,var(--accent),var(--accent-deep))', color: 'var(--accent-ink)', fontWeight: 600, fontSize: 13, padding: '0 20px', borderRadius: 11, cursor: canFetch ? 'pointer' : 'not-allowed', boxShadow: '0 4px 16px -4px var(--accent-glow)', opacity: canFetch ? 1 : 0.5 }}>{fetching ? 'Fetching…' : 'Fetch ▶'}</button>
+        <button type="button" disabled={!canFetch} onClick={() => void fetchVids()} className="me-btn" style={{ border: 0, background: 'linear-gradient(180deg,var(--accent),var(--accent-deep))', color: 'var(--accent-ink)', fontWeight: 600, fontSize: 13, padding: '0 20px', borderRadius: 11, cursor: canFetch ? 'pointer' : 'not-allowed', boxShadow: '0 4px 16px -4px var(--accent-glow)', opacity: canFetch ? 1 : 0.5 }}>{fetching ? 'Saving…' : '+ Add source'}</button>
       </div>
       {sourceError && <div title={sourceError} className="me-clamp-2" style={{ marginBottom: 12, border: '1px solid #4a2530', background: 'rgba(255,90,110,.08)', color: '#ff8a96', borderRadius: 10, padding: '9px 12px', fontSize: 12, lineHeight: 1.4 }}>{sourceError}</div>}
 
+      {!activeSource && (
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))', gap: 14, marginTop: 18 }}>
+          {sourceChannels.length === 0 && (
+            <div style={{ gridColumn: '1 / -1', padding: '34px 0', textAlign: 'center', fontSize: 12.5, color: '#5b616f', border: '1.5px dashed #23272f', borderRadius: 12 }}>Add a source once; its videos stay cached here.</div>
+          )}
+          {sourceChannels.map((source) => {
+            const linked = channels.find((c) => c.id === source.linkedMyChannelId)
+            return (
+              <div key={source.id} className="me-card" style={{ border: '1px solid #1d2129', borderRadius: 12, background: '#12151b', padding: 14, display: 'flex', flexDirection: 'column', gap: 13 }}>
+                <div style={{ display: 'flex', gap: 12, minWidth: 0 }}>
+                  <SourceAvatar source={source} />
+                  <div style={{ minWidth: 0, flex: 1 }}>
+                    <div title={source.name} style={{ color: '#eef0f3', fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{source.name || source.handle}</div>
+                    <div title={source.handle} style={{ color: '#8a909c', fontFamily: 'var(--font-mono)', fontSize: 10.5, marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{source.handle}</div>
+                  </div>
+                </div>
+                <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
+                  <span style={{ border: '1px solid #262b34', borderRadius: 999, padding: '3px 8px', color: '#aab0bb', fontSize: 10.5 }}>{source.cachedVideoCount ?? source.videoCount ?? 0} videos</span>
+                  <span style={{ border: `1px solid ${(source.newVideoCount ?? 0) > 0 ? 'rgba(245,179,35,.45)' : '#262b34'}`, borderRadius: 999, padding: '3px 8px', color: (source.newVideoCount ?? 0) > 0 ? '#f5b323' : '#8a909c', fontSize: 10.5 }}>{source.newVideoCount ?? 0} new</span>
+                  <span style={{ border: '1px solid #262b34', borderRadius: 999, padding: '3px 8px', color: '#8a909c', fontSize: 10.5 }}>checked {fmtAgo(source.lastScrapedAt)}</span>
+                  {linked && <span style={{ border: '1px solid rgba(54,201,142,.35)', borderRadius: 999, padding: '3px 8px', color: '#4fd6a0', fontSize: 10.5 }}>{linked.handle || linked.name}</span>}
+                </div>
+                <div style={{ display: 'flex', gap: 8, marginTop: 'auto' }}>
+                  <button type="button" onClick={() => void openSavedSource(source)} className="me-btn" style={{ flex: 1, border: 0, background: 'var(--accent)', color: 'var(--accent-ink)', borderRadius: 9, padding: '8px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Open</button>
+                  <button type="button" onClick={() => void refreshSource(source.id)} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', color: '#c4cad3', borderRadius: 9, padding: '8px 10px', fontSize: 12, cursor: 'pointer' }}>Check</button>
+                  <button type="button" onClick={() => { if (window.confirm(`Remove ${source.handle || source.name}? Cached source videos will be deleted.`)) void removeSource(source.id) }} className="me-btn" style={{ border: '1px solid #3a2025', background: '#1a1216', color: '#ff8a96', borderRadius: 9, padding: '8px 10px', fontSize: 12, cursor: 'pointer' }}>Remove</button>
+                </div>
+              </div>
+            )
+          })}
+        </div>
+      )}
+
+      {activeSource && (
+        <div style={{ display: 'flex', alignItems: 'center', gap: 12, margin: '14px 0 14px', border: '1px solid #1d2129', borderRadius: 12, background: '#12151b', padding: '12px 14px' }}>
+          <button type="button" onClick={() => { setActiveSourceId(''); setSel(new Set()) }} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', color: '#c4cad3', borderRadius: 9, padding: '7px 10px', fontSize: 12, cursor: 'pointer' }}>← Sources</button>
+          <SourceAvatar source={activeSource} />
+          <div style={{ minWidth: 0, flex: 1 }}>
+            <div style={{ color: '#eef0f3', fontFamily: 'var(--font-display)', fontWeight: 600 }}>{activeSource.name || activeSource.handle}</div>
+            <div style={{ color: '#6a7180', fontSize: 10.5, fontFamily: 'var(--font-mono)' }}>{activeSource.handle} · cached {sourceVideos.length} · checked {fmtAgo(activeSource.lastScrapedAt)}</div>
+          </div>
+          {fetching && <span style={{ border: '1px solid rgba(245,179,35,.35)', color: '#f5b323', borderRadius: 999, padding: '4px 9px', fontSize: 10.5 }}>checking for new…</span>}
+          <button type="button" onClick={() => void refreshSource(activeSource.id)} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', color: '#c4cad3', borderRadius: 9, padding: '8px 12px', fontSize: 12, cursor: 'pointer' }}>Check for new</button>
+        </div>
+      )}
+
       {/* Row 2: Filter bar — only after videos load */}
-      {videosLoaded && (
+      {activeSource && videosLoaded && (
         <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 18, padding: '10px 14px', background: '#12151b', border: '1px solid #1d2129', borderRadius: 11 }}>
           <div style={{ fontSize: 11.5, color: '#8a909c' }}><b style={{ color: '#cdd2da' }}>{visibleVideos.length}</b> of {sourceVideos.length}</div>
           {workflowP1 && (
@@ -204,13 +302,13 @@ export function Download(): JSX.Element {
 
       {/* 3-column video grid — larger thumbnails */}
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 14, marginBottom: selected.length > 0 ? 80 : 20 }}>
-        {sourceVideos.length === 0 && (
+        {activeSource && sourceVideos.length === 0 && (
           <div style={{ gridColumn: '1 / -1', padding: '34px 0', textAlign: 'center', fontSize: 12.5, color: '#5b616f', border: '1.5px dashed #23272f', borderRadius: 12 }}>Fetch a channel to list its videos.</div>
         )}
-        {sourceVideos.length > 0 && visibleVideos.length === 0 && (
+        {activeSource && sourceVideos.length > 0 && visibleVideos.length === 0 && (
           <div style={{ gridColumn: '1 / -1', padding: '34px 0', textAlign: 'center', fontSize: 12.5, color: '#5b616f', border: '1.5px dashed #23272f', borderRadius: 12 }}>No videos match this filter.</div>
         )}
-        {visibleVideos.map((v, i) => {
+        {activeSource && visibleVideos.map((v, i) => {
           const on = sel.has(v.id)
           const badge = badgeFor(v)
           const blocked = isBlocked(v)

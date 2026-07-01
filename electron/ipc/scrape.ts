@@ -5,6 +5,8 @@ import type {
   ScrapeOrder,
   ScrapeProgress,
   ScrapedChannel,
+  ScrapedVideo,
+  SourceChannel,
   Upload
 } from '../../shared/types'
 import { getSettings } from '../store/settings'
@@ -49,6 +51,51 @@ function emitProgress(p: ScrapeProgress): void {
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
 const BROLL_LIBRARY_TITLE_COUNT = 80
 const warmingSources = new Set<string>()
+
+function sourceIdFor(handle: string, fallbackUrl: string): string {
+  const seed = (handle || fallbackUrl).replace(/^@/, '')
+  return `src-${seed.replace(/[^A-Za-z0-9]+/g, '_')}`
+}
+
+function enrichSource(source: SourceChannel): SourceChannel {
+  const repos = getRepos()
+  const cachedVideoCount = repos.getSourceVideos(source.id).length
+  return {
+    ...source,
+    cachedVideoCount,
+    videoCount: source.videoCount ?? cachedVideoCount,
+    newVideoCount: repos.newVideoCountForSource(source.id)
+  }
+}
+
+function listSources(): SourceChannel[] {
+  return getRepos().sourceChannels().map(enrichSource)
+}
+
+async function scrapeAndSaveSource(url: string, sourceId?: string): Promise<SourceChannel> {
+  const repos = getRepos()
+  const settings = getSettings()
+  const ch = await scrapeChannel(url, settings, { flat: false, limit: 50 })
+  const normalizedUrl = channelUrl(url)
+  const existing = sourceId
+    ? repos.sourceChannels().find((s) => s.id === sourceId)
+    : repos.sourceChannelByUrl(normalizedUrl)
+  const id = existing?.id ?? sourceIdFor(ch.handle, normalizedUrl)
+  const row: SourceChannel = {
+    ...(existing ?? {}),
+    id,
+    url: normalizedUrl,
+    handle: ch.handle,
+    name: ch.name,
+    avatar: ch.avatar,
+    lastScrapedAt: new Date().toISOString(),
+    videoCount: ch.videos.length
+  }
+  repos.upsertSourceChannel(row)
+  repos.replaceSourceVideos(id, ch.videos)
+  pushActivity({ t: hhmm(), icon: '+', color: '#36c98e', text: `Source saved: ${ch.handle} — ${ch.videos.length} videos cached` })
+  return enrichSource(repos.sourceChannels().find((s) => s.id === id) ?? row)
+}
 
 function hasStockBrollSource(): boolean {
   const settings = getSettings()
@@ -226,13 +273,46 @@ export async function sourceVideos(url: string, order: ScrapeOrder, count: numbe
   const ch = await scrapeChannel(url, settings, { flat: !popular, limit: poolLimit })
   const ordered = orderVideos(ch.videos, order, count)
   const existing = repos.sourceChannelByUrl(channelUrl(url))
-  const sourceId = existing?.id ?? `src-${ch.handle.replace(/^@/, '')}`
-  repos.upsertSourceChannel({ id: sourceId, url: channelUrl(url), handle: ch.handle, name: ch.name })
+  const sourceId = existing?.id ?? sourceIdFor(ch.handle, url)
+  repos.upsertSourceChannel({ id: sourceId, url: channelUrl(url), handle: ch.handle, name: ch.name, avatar: ch.avatar, lastScrapedAt: new Date().toISOString(), videoCount: ordered.length })
   repos.replaceSourceVideos(sourceId, ordered)
   // Do not prefetch stock B-roll just because a source was scraped. Users read that
   // as "B-roll is being used" even when the project/profile B-roll toggle is off; the
   // render queue can fetch clips later if B-roll is explicitly enabled.
   return ordered
+}
+
+async function addSource(url: string): Promise<SourceChannel> {
+  if (!url.trim()) throw new Error('Paste a YouTube channel URL or @handle first.')
+  return scrapeAndSaveSource(url.trim())
+}
+
+async function refreshSource(id: string): Promise<SourceChannel> {
+  const source = getRepos().sourceChannels().find((s) => s.id === id)
+  if (!source) throw new Error(`Unknown source: ${id}`)
+  return scrapeAndSaveSource(source.url || source.handle, id)
+}
+
+function cachedSourceVideos(id: string): ScrapedVideo[] {
+  return getRepos().getSourceVideos(id)
+}
+
+function markSourceVisited(id: string): SourceChannel[] {
+  const repos = getRepos()
+  const videos = repos.getSourceVideos(id)
+  repos.setSourceCursor(id, { lastVisitedAt: new Date().toISOString(), lastSeenVideoId: videos[0]?.id })
+  return listSources()
+}
+
+function removeSource(id: string): SourceChannel[] {
+  getRepos().deleteSourceChannel(id)
+  pushActivity({ t: hhmm(), icon: '×', color: '#ff5a6e', text: 'Source removed' })
+  return listSources()
+}
+
+function setLinkedMyChannel(id: string, myChannelId: string | null): SourceChannel[] {
+  getRepos().setSourceLinkedMyChannel(id, myChannelId)
+  return listSources()
 }
 
 export function checkReminders(): ReminderHit[] {
@@ -254,5 +334,12 @@ export function registerScrapeIpc(): void {
   ipcMain.handle('scrape:refreshChannel', (_e, id: string) => refreshChannel(id))
   ipcMain.handle('scrape:all', () => scrapeAll())
   ipcMain.handle('scrape:sourceVideos', (_e, url: string, order: ScrapeOrder, count: number) => sourceVideos(url, order, count))
+  ipcMain.handle('sources:list', () => listSources())
+  ipcMain.handle('sources:add', (_e, url: string) => addSource(url))
+  ipcMain.handle('sources:refresh', (_e, id: string) => refreshSource(id))
+  ipcMain.handle('sources:videos', (_e, id: string) => cachedSourceVideos(id))
+  ipcMain.handle('sources:markVisited', (_e, id: string) => markSourceVisited(id))
+  ipcMain.handle('sources:remove', (_e, id: string) => removeSource(id))
+  ipcMain.handle('sources:setLinkedMyChannel', (_e, id: string, myChannelId: string | null) => setLinkedMyChannel(id, myChannelId))
   ipcMain.handle('reminders:check', () => checkReminders())
 }

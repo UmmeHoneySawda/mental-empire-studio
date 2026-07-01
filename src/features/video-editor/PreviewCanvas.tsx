@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../../store/useStore'
 import { useData } from '../../store/useData'
 import { usePreviewCompositor } from './usePreviewCompositor'
+import { videoSrc } from '../../lib/media'
 
 function fmt(sec: number): string {
   const s = Math.max(0, Math.floor(sec))
@@ -36,6 +37,10 @@ export function PreviewCanvas(): JSX.Element | null {
   const canvasRef = useRef<HTMLCanvasElement>(null)
   const [playheadSec, setPlayheadSec] = useState(0)
   const [playing, setPlaying] = useState(false)
+  const [fallbackPath, setFallbackPath] = useState('')
+  const [fallbackState, setFallbackState] = useState<'idle' | 'rendering' | 'ready' | 'error'>('idle')
+  const [fallbackError, setFallbackError] = useState('')
+  const [fallbackForKey, setFallbackForKey] = useState('')
   const { status, error } = usePreviewCompositor(canvasRef, spec, playheadSec)
 
   const projectKey = useMemo(() => {
@@ -66,6 +71,39 @@ export function PreviewCanvas(): JSX.Element | null {
     void loadPreviewSpec(project.id)
   }, [videoEditorV2, project?.id, projectKey, imagesKey, transcriptKey, loadPreviewSpec])
 
+  const fallbackKey = `${project?.id ?? ''}|${projectKey}|${imagesKey}|${transcriptKey}`
+  useEffect(() => {
+    setFallbackPath('')
+    setFallbackState('idle')
+    setFallbackError('')
+    setFallbackForKey('')
+  }, [fallbackKey])
+
+  useEffect(() => {
+    if (!videoEditorV2 || !project || !/webgl2/i.test(error) || fallbackForKey === fallbackKey || fallbackState === 'rendering') return
+    let cancelled = false
+    setFallbackForKey(fallbackKey)
+    setFallbackState('rendering')
+    setFallbackError('')
+    const preview = window.api?.compose.preview
+    if (!preview) {
+      setFallbackState('error')
+      setFallbackError('Backend preview is unavailable.')
+      return
+    }
+    void preview(project.id).then((path) => {
+      if (cancelled) return
+      setFallbackPath(path)
+      setFallbackState('ready')
+    }).catch((e) => {
+      if (cancelled) return
+      setFallbackPath('')
+      setFallbackError((e as Error).message)
+      setFallbackState('error')
+    })
+    return () => { cancelled = true }
+  }, [videoEditorV2, project?.id, project, error, fallbackKey, fallbackForKey, fallbackState])
+
   useEffect(() => {
     setPlayheadSec((t) => Math.min(t, durationSec))
   }, [durationSec])
@@ -95,20 +133,26 @@ export function PreviewCanvas(): JSX.Element | null {
 
   const statusText = previewLoading || status === 'loading'
     ? 'Building preview'
-    : previewError || error
-      ? 'Preview unavailable'
-      : spec?.broll?.length
-        ? 'Live still preview · B-roll poster'
-        : 'Live still preview'
+    : fallbackState === 'rendering'
+      ? 'Backend preview'
+      : fallbackState === 'ready'
+        ? 'Backend preview ready'
+        : (previewError || fallbackError || error)
+          ? 'Preview unavailable'
+          : spec?.broll?.length
+            ? 'Live still preview · B-roll poster'
+            : 'Live still preview'
+  const fallbackMediaSrc = videoSrc(fallbackPath)
 
   return (
     <div style={{ display: 'grid', gridTemplateColumns: 'minmax(360px, 680px) minmax(220px, 1fr)', gap: 16, alignItems: 'stretch', marginBottom: 20 }}>
       <div style={{ border: '1px solid #1d2129', borderRadius: 14, background: '#0c0d11', overflow: 'hidden' }}>
         <div style={{ position: 'relative', aspectRatio: spec ? `${spec.width}/${spec.height}` : '16/9', background: '#080a0e', display: 'grid', placeItems: 'center' }}>
-          <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: 'block' }} />
+          <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: fallbackMediaSrc ? 'none' : 'block' }} />
+          {fallbackMediaSrc && <video src={fallbackMediaSrc} muted loop playsInline controls style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', background: '#080a0e' }} />}
           {!project && <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', fontSize: 12, color: '#5b616f' }}>Choose a downloaded clip to preview.</div>}
-          {(previewLoading || status === 'loading') && <div style={{ position: 'absolute', right: 12, top: 12, border: '1px solid rgba(245,179,35,.35)', borderRadius: 999, padding: '3px 8px', fontSize: 10, color: '#f5b323', background: 'rgba(8,10,14,.78)' }}>Loading</div>}
-          {(previewError || error) && <div title={previewError || error} style={{ position: 'absolute', left: 12, right: 12, bottom: 12, border: '1px solid #5a2530', borderRadius: 9, padding: '8px 10px', fontSize: 11, color: '#ff8a96', background: 'rgba(20,10,14,.86)' }}>{previewError || error}</div>}
+          {(previewLoading || status === 'loading' || fallbackState === 'rendering') && <div style={{ position: 'absolute', right: 12, top: 12, border: '1px solid rgba(245,179,35,.35)', borderRadius: 999, padding: '3px 8px', fontSize: 10, color: '#f5b323', background: 'rgba(8,10,14,.78)' }}>{fallbackState === 'rendering' ? 'Fallback' : 'Loading'}</div>}
+          {(previewError || fallbackError || (error && fallbackState !== 'rendering' && !fallbackMediaSrc)) && <div title={previewError || fallbackError || error} style={{ position: 'absolute', left: 12, right: 12, bottom: 12, border: '1px solid #5a2530', borderRadius: 9, padding: '8px 10px', fontSize: 11, color: '#ff8a96', background: 'rgba(20,10,14,.86)' }}>{previewError || fallbackError || error}</div>}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderTop: '1px solid #1d2129' }}>
           <TransportButton label="|<" title="Start" disabled={!canDraw} onClick={() => setPlayheadSec(0)} />

@@ -7,6 +7,7 @@ const LABELS: Record<ScreenKey, string> = {
   library: 'Library',
   workspace: 'Workspace',
   channels: 'My Channels',
+  sources: 'Sources',
   download: 'Download',
   compose: 'Compose',
   thumb: 'Thumbnails',
