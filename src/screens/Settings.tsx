@@ -9,7 +9,7 @@ const ACCENT_SWATCH: Record<AccentName, string> = { Amber: '#f5b323', Violet: '#
 
 const RENDER_ENGINES: Array<{ value: NonNullable<AppSettings['renderEngine']>; label: string; note: string }> = [
   { value: 'ffmpeg', label: 'ffmpeg', note: 'CPU filtergraph — the stable default. Works everywhere.' },
-  { value: 'gpu', label: 'GPU', note: 'WebGL compositor + WebCodecs hardware H.264 (beta). Image projects only; falls back to ffmpeg on any error.' },
+  { value: 'gpu', label: 'GPU', note: 'WebGL compositor + WebCodecs hardware H.264. With a GPU encoder selected, failures stop visibly instead of falling back to CPU filters.' },
   { value: 'auto', label: 'Auto', note: 'Use the GPU engine when hardware H.264 encode is available, otherwise ffmpeg.' },
 ]
 
@@ -91,7 +91,7 @@ export function Settings(): JSX.Element {
   const confirmFloor = settings.detection.confirmBand[0] ?? 0.6
   const confirmCeil = settings.detection.confirmBand[1] ?? 0.82
   const chooseEncoder = (enc: typeof encoders[number]): void => {
-    saved({ encoder: enc.value })
+    saved({ encoder: enc.value, renderEngine: enc.value === 'cpu' ? 'ffmpeg' : 'gpu' })
     if (!enc.enabled && enc.value !== 'cpu') void refreshCaps(true)
   }
 

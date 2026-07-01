@@ -37,14 +37,18 @@ function emitR(p: RenderProgress): void {
 /** Decide which engine to use for a job. 'ffmpeg' (default) and 'gpu' are explicit;
  *  'auto' uses the GPU only when WebCodecs hardware H.264 encode is present. Probing
  *  happens only for 'auto'/'gpu' so the default ffmpeg path never spins up the worker. */
-async function resolveEngine(settings: ReturnType<typeof getSettings>): Promise<RenderEngine> {
+async function resolveEngine(settings: ReturnType<typeof getSettings>, strictHardwareGpu = false): Promise<RenderEngine> {
   const pref = settings.renderEngine ?? 'ffmpeg'
-  if (pref === 'ffmpeg') return 'ffmpeg'
-  if (pref === 'gpu') return 'gpu'
+  const gpuUnavailable = (detail?: string): Error =>
+    new Error(`GPU compositor is unavailable${detail ? `: ${detail}` : ''}. CPU-filter ffmpeg fallback is disabled because a GPU encoder is selected.`)
+  if (pref === 'ffmpeg' && !strictHardwareGpu) return 'ffmpeg'
+  if (pref === 'gpu' && !strictHardwareGpu) return 'gpu'
   try {
     const probe = await probeGpuEngine()
+    if (strictHardwareGpu && !probe.hardware) throw gpuUnavailable(probe.detail ?? 'hardware H.264 encode was not reported')
     return probe.hardware ? 'gpu' : 'ffmpeg'
-  } catch {
+  } catch (e) {
+    if (strictHardwareGpu) throw (e instanceof Error ? e : gpuUnavailable())
     return 'ffmpeg'
   }
 }
@@ -100,9 +104,10 @@ export async function runJob(job: RenderJob): Promise<void> {
   const settings = getSettings()
   const caps = probeRenderCapabilities()
   const enc = selectEncoder(settings, caps)
-  let filterDevice: RenderProgress['filterDevice'] = 'cpu'
-  let encoderDetail = enc.device === 'gpu' ? `${enc.label} encode · CPU filters` : `${enc.label} encode`
-  let filterDetail = enc.device === 'gpu' ? 'CPU filters/captions' : undefined
+  const strictGpuPipeline = enc.device === 'gpu'
+  let filterDevice: RenderProgress['filterDevice'] = strictGpuPipeline ? 'gpu' : 'cpu'
+  let encoderDetail = strictGpuPipeline ? `${enc.label} encode · GPU compositor preferred` : `${enc.label} encode`
+  let filterDetail = strictGpuPipeline ? 'GPU compositor/captions' : undefined
   let renderWarning: string | undefined
   const dir = itemOutputDir(itemDirForProject(project))
   mkdirSync(dir, { recursive: true })
@@ -354,10 +359,9 @@ export async function runJob(job: RenderJob): Promise<void> {
   try {
     if (hasCancelIntent(job.id)) throw new Error('render cancelled')
 
-    // Engine selection. The GPU (WebCodecs) engine is additive + beta: it handles
-    // image projects, and B-roll video stitching. ANY failure transparently falls back to
-    // the ffmpeg path so the user always gets a video.
-    const engine: RenderEngine = await resolveEngine(settings)
+    // Engine selection. When a hardware encoder is selected, the GPU compositor is
+    // strict: failures stop visibly instead of falling into the CPU-heavy ffmpeg graph.
+    const engine: RenderEngine = await resolveEngine(settings, strictGpuPipeline)
     let gpuDone = false
     if (engine === 'gpu') {
       const h264Path = join(dir, `${base}.gpu.mp4`)
@@ -382,15 +386,36 @@ export async function runJob(job: RenderJob): Promise<void> {
         encoderDetail = 'GPU compositor + WebCodecs H.264'
         filterDevice = 'gpu'
         filterDetail = 'WebGL grade/captions'
+        const gpuStartedAt = Date.now()
         await runGpuRender(spec, {
           logPath: renderLogPath,
-          onProgress: (p) => emitStage('encoding', p.totalFrames > 0 ? (p.framesDone / p.totalFrames) * 100 : 0, `Encoding with ${encoderDetail}`)
+          onProgress: (p) => {
+            const pct = p.totalFrames > 0 ? (p.framesDone / p.totalFrames) * 100 : 0
+            const fps = p.fps || spec.fps
+            const encodedSec = fps > 0 ? p.framesDone / fps : 0
+            const elapsedSec = Math.max(0.01, (Date.now() - gpuStartedAt) / 1000)
+            const speed = encodedSec > 0 ? encodedSec / elapsedSec : undefined
+            const remainingSec = Math.max(0, spec.durationSec - encodedSec)
+            const etaSec = speed && speed > 0 ? remainingSec / speed : undefined
+            emitStage('encoding', pct, `Encoding with ${encoderDetail}`, {
+              outTimeSec: encodedSec,
+              pct,
+              speed,
+              fps,
+              etaSec,
+              etaState: p.framesDone > Math.max(24, fps * 2) ? 'stable' : 'estimating'
+            })
+          }
         })
         gpuDone = true
       } catch (gpuErr) {
         if (hasCancelIntent(job.id)) throw gpuErr
         const msg = (gpuErr as Error).message
-        if (renderLogPath) appendFileSync(renderLogPath, `[engine:gpu-fallback] ${msg}\n`)
+        if (renderLogPath) appendFileSync(renderLogPath, strictGpuPipeline ? `[engine:gpu-failed] ${msg}\n` : `[engine:gpu-fallback] ${msg}\n`)
+        if (strictGpuPipeline) {
+          renderWarning = `GPU compositor failed; CPU-filter fallback is disabled for ${enc.label}`
+          throw new Error(`${renderWarning}. ${msg}`)
+        }
         pushActivity({ t: hhmm(), icon: '!', color: '#f5b323', text: `GPU render fell back to ffmpeg: ${project.title.slice(0, 40)}` })
         renderWarning = enc.device === 'gpu'
           ? `GPU compositor failed; ffmpeg fallback is still using ${enc.label}`
@@ -435,7 +460,7 @@ export async function runJob(job: RenderJob): Promise<void> {
     const msg = (e as Error).message
     finishStageLog('error')
     repos.setRenderStatus(job.id, { status: 'error', pct: 0, error: msg })
-    emitR({ jobId: job.id, pct: 0, stage: 'error', done: true, error: msg })
+    emitR({ jobId: job.id, pct: 0, stage: 'error', done: true, error: msg, device: enc.device, filterDevice, filterDetail, encoder: enc.label, warning: renderWarning })
     pushActivity({ t: hhmm(), icon: '!', color: '#ff5a6e', text: `Render failed: ${project.title}` })
   } finally {
     // The SFX track is a full-length WAV written per render — delete it so temp doesn't grow.

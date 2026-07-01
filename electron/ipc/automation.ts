@@ -51,6 +51,7 @@ export async function runProfile(profileId: string, headless = false): Promise<s
     emitA({ profileId, profileName: profile.name, phase: 'composing', message: 'Building projects' })
     const projectIds: string[] = []
     const succeeded = new Set<string>()
+    const template = profile.thumbnailTemplateId ? repos.getTemplate(profile.thumbnailTemplateId) : undefined
     for (let i = 0; i < dls.length; i++) {
       const dl = dls[i]
       const sourceVideo = list[i]
@@ -71,10 +72,14 @@ export async function runProfile(profileId: string, headless = false): Promise<s
           captionPosition: profile.captionPosition ?? 'bottom',
           captionPace: profile.captionPace ?? 'auto',
           // Inherit the profile's beta-feature defaults (hook/highlight/overlay/zoom/b-roll/style).
-          ...(profile.betaOpts ? { betaOpts: profile.betaOpts } : {})
+          ...(profile.betaOpts ? { betaOpts: profile.betaOpts } : {}),
+          ...(template ? { thumbnailTemplateId: template.id } : {})
         })
         projectIds.push(proj.id)
         succeeded.add(sourceVideo.id)
+        if (template) {
+          emitA({ profileId, profileName: profile.name, phase: 'composing', message: `Attached thumbnail template "${template.name}"` })
+        }
         if (canAutoTranscribe) {
           emitA({ profileId, profileName: profile.name, phase: 'transcribing', message: `Transcribing ${i + 1}/${dls.length}` })
           try {

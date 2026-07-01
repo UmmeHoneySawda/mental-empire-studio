@@ -27,7 +27,7 @@ export function selectEncoder(settings: Pick<AppSettings, 'encoder'>, _caps: Ren
       label: 'GPU-NVENC',
       device: 'gpu',
       codec: 'h264_nvenc',
-      args: ['-c:v', 'h264_nvenc', '-preset', 'p4', '-tune', 'hq', '-rc', 'vbr', '-cq', crfOrCq, '-b:v', '0', '-pix_fmt', 'yuv420p']
+      args: ['-c:v', 'h264_nvenc', '-preset', 'medium', '-tune', 'hq', '-rc', 'vbr', '-cq', crfOrCq, '-b:v', '0', '-pix_fmt', 'yuv420p']
     }
   }
   if (requested === 'qsv') {

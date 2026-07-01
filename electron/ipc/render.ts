@@ -6,6 +6,7 @@ import { getRepos } from '../db'
 import { runAll, outputDir } from '../services/queue'
 import { cancelRender, markCancelIntent } from '../services/render'
 import { safeName } from '../../shared/sanitize'
+import { itemDirForProject, itemThumbDir } from '../services/storage'
 
 // Render queue IPC (M6): the joined queue view, run-all, cancel, and an output
 // folder picker for the Render Queue screen.
@@ -17,7 +18,11 @@ function jobsView(): RenderQueueRow[] {
     const project = repos.getProject(job.projectId)
     const images = repos.getProjectImages(job.projectId)
     const words = repos.getTranscript(job.projectId)
-    const hasThumb = !!project && existsSync(join(thumbsDir, `${safeName(project.title)}.png`))
+    const hasThumb = !!project && (
+      (!!project.thumbPath && existsSync(project.thumbPath)) ||
+      existsSync(join(itemThumbDir(itemDirForProject(project)), `${safeName(project.title)}.png`)) ||
+      existsSync(join(thumbsDir, `${safeName(project.title)}.png`))
+    )
     const hasMp3 = !!project?.mp3Path && existsSync(project.mp3Path)
     // Only the audio actually blocks a render (the graph falls back to a solid
     // background with no images, and captions/thumbnail are optional). hasThumb /

@@ -440,14 +440,30 @@ function BatchExport(): JSX.Element {
 export function Thumbnails(): JSX.Element {
   const layers = useStore((s) => s.layers)
   const selectedLayerId = useStore((s) => s.selectedLayerId)
+  const templates = useStore((s) => s.templates)
   const loadTemplates = useStore((s) => s.loadTemplates)
+  const applyTemplate = useStore((s) => s.applyTemplate)
   const activeProject = useData((s) => s.activeProject)
   const [leftTab, setLeftTab] = useState<'layers' | 'templates'>('layers')
   const [saved, setSaved] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
+  const appliedTemplate = useRef('')
 
   useEffect(() => { void loadTemplates() }, [loadTemplates])
+  useEffect(() => {
+    const templateId = activeProject?.thumbnailTemplateId
+    if (!activeProject || !templateId) return
+    const key = `${activeProject.id}:${templateId}`
+    if (appliedTemplate.current === key) return
+    const template = templates.find((t) => t.id === templateId)
+    if (!template) {
+      void loadTemplates()
+      return
+    }
+    applyTemplate(template)
+    appliedTemplate.current = key
+  }, [activeProject?.id, activeProject?.thumbnailTemplateId, templates, applyTemplate, loadTemplates])
 
   const saveThumbnail = async (): Promise<void> => {
     if (!activeProject) return

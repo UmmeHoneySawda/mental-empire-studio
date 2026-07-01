@@ -169,6 +169,7 @@ function migrate(d: Database.Database): void {
   ensureColumn(d, 'uploads', 'thumb', 'TEXT')
   // M8: per-project saved thumbnail path
   ensureColumn(d, 'projects', 'thumbPath', 'TEXT')
+  ensureColumn(d, 'projects', 'thumbnailTemplateId', 'TEXT')
   ensureColumn(d, 'projects', 'captionLines', 'INTEGER')
   ensureColumn(d, 'projects', 'captionPosition', 'TEXT')
   ensureColumn(d, 'projects', 'captionPace', 'TEXT')

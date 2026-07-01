@@ -161,7 +161,11 @@ export function RenderQueue(): JSX.Element {
           const p = status === 'rendering' ? progress[r.job.id] : undefined
           const isBlocked = !r.isReady && status !== 'rendering' && status !== 'done'
           const barColor = status === 'done' ? '#36c98e' : status === 'error' ? '#ff5a6e' : 'var(--accent)'
-          const encoderChip = p?.encoder ? (p.device === 'gpu' ? `${p.encoder} · GPU` : p.encoder) : ''
+          const encoderChip = p?.encoder ? (p.device === 'gpu' ? `${p.encoder} encode` : p.encoder) : ''
+          const filterChip = p?.filterDetail || (p?.filterDevice === 'gpu' ? 'GPU filters' : p?.filterDevice === 'cpu' ? 'CPU filters' : '')
+          const speedChip = typeof p?.speed === 'number' && Number.isFinite(p.speed) ? `${p.speed.toFixed(1)}x` : ''
+          const fpsChip = typeof p?.fps === 'number' && Number.isFinite(p.fps) && p.fps > 0 ? `${Math.round(p.fps)} fps` : ''
+          const bitrateChip = p?.bitrate ?? ''
           const eta = p?.etaState === 'estimating' ? 'estimating...' : fmtEta(p?.etaSec)
 
           return (
@@ -215,11 +219,20 @@ export function RenderQueue(): JSX.Element {
                           <StageStepper p={p} />
                           <div style={{ marginTop: 5, display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
                             {p?.stageDetail && <span style={{ fontSize: 10, color: '#8a909c' }}>{p.stageDetail}</span>}
-                            {encoderChip && <span style={{ border: '1px solid #262b34', borderRadius: 999, padding: '1px 6px', fontSize: 9.5, color: p?.device === 'gpu' ? '#4fd6a0' : '#aab0bb', fontFamily: 'var(--font-mono)' }}>{encoderChip}</span>}
-                            {eta && <span style={{ fontSize: 9.5, color: '#6a7180', fontFamily: 'var(--font-mono)' }}>{eta}</span>}
+                            {encoderChip && <span title={p?.encoder} style={{ border: '1px solid #262b34', borderRadius: 999, padding: '1px 6px', fontSize: 9.5, color: p?.device === 'gpu' ? '#4fd6a0' : '#aab0bb', fontFamily: 'var(--font-mono)' }}>{encoderChip}</span>}
+                            {filterChip && <span title={p?.filterDetail} style={{ border: '1px solid #262b34', borderRadius: 999, padding: '1px 6px', fontSize: 9.5, color: p?.filterDevice === 'gpu' ? '#4fd6a0' : '#f5b323', fontFamily: 'var(--font-mono)' }}>{filterChip}</span>}
+                            {eta && <span title="Estimated time remaining" style={{ fontSize: 9.5, color: '#6a7180', fontFamily: 'var(--font-mono)' }}>{eta}</span>}
+                            {speedChip && <span title="Encoding speed" style={{ fontSize: 9.5, color: '#6a7180', fontFamily: 'var(--font-mono)' }}>{speedChip}</span>}
+                            {fpsChip && <span title="Current encoder FPS" style={{ fontSize: 9.5, color: '#6a7180', fontFamily: 'var(--font-mono)' }}>{fpsChip}</span>}
+                            {bitrateChip && <span title="Output bitrate" style={{ fontSize: 9.5, color: '#6a7180', fontFamily: 'var(--font-mono)' }}>{bitrateChip}</span>}
                             {p?.warning && <span title={p.warning} style={{ border: '1px solid rgba(245,179,35,.35)', borderRadius: 999, padding: '1px 7px', fontSize: 9.5, color: '#f5b323', background: 'rgba(245,179,35,.08)' }}>Warning</span>}
                           </div>
                         </>
+                      )}
+                      {status === 'error' && r.job.error && (
+                        <div title={r.job.error} className="me-clamp-2" style={{ marginTop: 6, fontSize: 10.5, color: '#ff8a96', lineHeight: 1.35 }}>
+                          {r.job.error}
+                        </div>
                       )}
                     </div>
                   )}

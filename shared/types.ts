@@ -507,6 +507,8 @@ export interface Project {
   stage: string
   /** saved thumbnail path (written by thumbnails:saveProjectThumb) */
   thumbPath?: string
+  /** thumbnail template attached by an automation profile; applied when Thumbnail studio opens */
+  thumbnailTemplateId?: string
   createdAt: string
   /** beta-feature options (hook/highlight/overlay/zoom/b-roll/style). Always present
    *  from the DB; optional on the type so construction-site literals stay terse. */
@@ -615,11 +617,10 @@ export interface AppSettings {
   outputFolder: string
   concurrency: number
   quality: '720p' | '1080p' | '1440p'
-  /** video encoder: cpu works everywhere; hardware modes are capability-gated and fall back. */
+  /** video encoder: cpu works everywhere; hardware modes fail visibly instead of silently falling back to CPU. */
   encoder: 'cpu' | 'nvenc' | 'qsv' | 'amf'
-  /** render engine: 'ffmpeg' is the default CPU/ffmpeg filtergraph; 'gpu' uses the WebGL
-   *  compositor + WebCodecs hardware encoder (beta) with automatic ffmpeg fallback on any
-   *  error; 'auto' prefers GPU when hardware H.264 is present, else ffmpeg. */
+  /** render engine: 'ffmpeg' is the stable CPU-filtergraph path; 'gpu' uses the WebGL
+   *  compositor + WebCodecs encoder; 'auto' prefers GPU when hardware H.264 is present. */
   renderEngine?: 'auto' | 'ffmpeg' | 'gpu'
   autoScrape: { enabled: boolean; frequency: string; delaySec: number; retries: number; proxy: string; cookiesPath: string }
   background: { tray: boolean; startOnSignIn: boolean; notifications: boolean; webhook: string }

@@ -11,8 +11,8 @@ import { logger } from '../../logger'
 // Main-process host for the hidden GPU render-worker window. Owns the worker lifecycle
 // (lazy create, keep warm, destroy on quit), relays the spec, streams progress, and —
 // once the worker has written the video-only H.264 mp4 — muxes the mastered audio in
-// with a single ffmpeg stream-copy. Any failure here surfaces to the queue, which falls
-// back to the ffmpeg engine so the user always gets a video.
+// with a single ffmpeg stream-copy. Failures surface to the queue; CPU/fallback policy
+// is decided there from the user's encoder + engine settings.
 
 const log = logger.scope('gpu')
 
@@ -155,7 +155,7 @@ export interface GpuRunOptions {
 
 /**
  * Run a full GPU render: worker composes + hardware-encodes the video, host muxes the
- * mastered audio in. Rejects on any failure so the queue can fall back to ffmpeg.
+ * mastered audio in. Rejects on any failure so the queue can decide whether fallback is allowed.
  */
 export function runGpuRender(spec: GpuRenderSpec, opts: GpuRunOptions = {}): Promise<void> {
   // Serialize so concurrent queue jobs share the single worker window safely.

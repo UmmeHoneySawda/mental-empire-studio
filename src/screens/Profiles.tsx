@@ -37,7 +37,7 @@ function pipelineChips(p: Profile, groqReady: boolean): Array<{ text: string; ac
     { text: `${p.sourceOrder} ${p.sourceCount}` },
     { text: 'MP3' },
     { text: groqReady ? 'auto captions' : 'captions manual', accent: groqReady },
-    { text: p.thumbnailTemplateId ? 'template ✓' : 'no thumb' },
+    { text: p.thumbnailTemplateId ? 'thumb template' : 'no thumb' },
     ...(beta.broll.enabled ? [{ text: `B-roll ${beta.broll.density}`, accent: true }] : []),
     { text: p.autoQueueRender ? 'auto-render' : 'manual render', accent: p.autoQueueRender }
   ]

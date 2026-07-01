@@ -28,6 +28,14 @@ import { dropIdleRenderProgress } from '../lib/renderProgress'
 
 const api = (): typeof window.api | undefined => (typeof window !== 'undefined' ? window.api : undefined)
 
+function transcribeErrorMessage(message: string): string {
+  const msg = message || 'Transcription failed.'
+  if (/api key|groq/i.test(msg)) return `${msg} Add or check the Groq key in Settings > Integrations, then try Re-transcribe.`
+  if (/not found|enoent|no such file|mp3|audio/i.test(msg)) return `${msg} Resume or re-download the audio, then try Re-transcribe.`
+  if (/rate|429|quota|limit/i.test(msg)) return `${msg} Wait a minute or switch models/API key, then retry.`
+  return msg
+}
+
 interface DataState {
   channels: MyChannel[]
   activity: ActivityRow[]
@@ -185,7 +193,7 @@ export const useData = create<DataState>((set, get) => ({
     a.onTranscribeProgress((p) => set({
       transcribing: p.phase !== 'done' && p.phase !== 'error',
       transcribeMessage: p.phase === 'done' ? 'Done' : p.phase === 'error' ? '' : p.message,
-      transcribeError: p.phase === 'error' ? (p.error ?? p.message) : ''
+      transcribeError: p.phase === 'error' ? transcribeErrorMessage(p.error ?? p.message) : ''
     }))
     a.onRenderProgress((p) => {
       set((s) => ({ renderProgress: { ...s.renderProgress, [p.jobId]: p } }))
@@ -375,7 +383,7 @@ export const useData = create<DataState>((set, get) => ({
       const transcript = await a.transcribe.run(p.id)
       set({ transcript, transcribeError: '', transcribeMessage: 'Done' })
     } catch (e) {
-      set({ transcribeError: (e as Error).message, transcribeMessage: '' })
+      set({ transcribeError: transcribeErrorMessage((e as Error).message), transcribeMessage: '' })
     } finally {
       set({ transcribing: false })
     }
