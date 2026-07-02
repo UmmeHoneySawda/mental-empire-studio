@@ -267,6 +267,10 @@ export interface AutomationEvent {
   profileName: string
   phase: 'start' | 'scraping' | 'downloading' | 'composing' | 'transcribing' | 'queued' | 'done' | 'error'
   message: string
+  /** 0-100 profile/source pipeline progress for the Profiles card. */
+  progress?: number
+  /** Current item count for batch stages such as downloads/transcription. */
+  step?: { current: number; total: number; label?: string }
   /** project ids created this run (for the interactive quick-edit) */
   projectIds?: string[]
 }

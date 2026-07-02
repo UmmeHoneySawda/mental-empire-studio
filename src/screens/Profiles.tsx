@@ -84,6 +84,7 @@ export function Profiles(): JSX.Element {
           const event = automationEvents[source.id]
           const error = automationErrors[source.id]
           const chips = pipelineChips(source, groqReady)
+          const progress = typeof event?.progress === 'number' ? Math.max(0, Math.min(100, event.progress)) : undefined
           const name = source.name || source.handle || 'Source'
           const handle = source.handle || source.url || 'no source'
           const mono = name.replace(/^@/, '').split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'SO'
@@ -115,6 +116,16 @@ export function Profiles(): JSX.Element {
                   <div title={error ?? event?.message} className="me-clamp-2" style={{ border: `1px solid ${error ? '#4a2530' : '#262b34'}`, background: error ? 'rgba(255,90,110,.08)' : '#0e1116', borderRadius: 9, padding: '7px 10px', marginBottom: 10, fontSize: 10.5, color: error ? '#ff8a96' : '#aab0bb', lineHeight: 1.35 }}>
                     {error ?? event?.message ?? 'Starting...'}
                   </div>
+                  {progress !== undefined && !error && (
+                    <div style={{ height: 5, borderRadius: 5, background: '#252a34', overflow: 'hidden', marginBottom: 10 }}>
+                      <div style={{ width: `${progress}%`, height: '100%', background: progress >= 100 ? '#36c98e' : 'var(--accent)', transition: 'width .25s ease' }} />
+                    </div>
+                  )}
+                  {event?.step && !error && (
+                    <div className="me-ellipsis" title={event.step.label} style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, color: '#5b616f', marginTop: -4, marginBottom: 10 }}>
+                      item {event.step.current}/{event.step.total}{event.step.label ? ` · ${event.step.label}` : ''}
+                    </div>
+                  )}
                 </>
               )}
 

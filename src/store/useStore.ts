@@ -82,6 +82,7 @@ interface AppState {
   addTextLayer: () => void
   addShapeLayer: (shape: ShapeLayer['shape']) => void
   updateLayer: (id: string, patch: Partial<ThumbnailLayer>) => void
+  updateLayers: (updates: Array<{ id: string; patch: Partial<ThumbnailLayer> }>) => void
   updateGeometry: (id: string, frame: Partial<LayerFrame>) => void
   updateGeometries: (updates: Array<{ id: string; frame: Partial<LayerFrame> }>) => void
   setSubjectImage: (src: string) => void
@@ -361,6 +362,19 @@ export const useStore = create<AppState>((set, get) => ({
         return normalizeThumbnailLayer({ ...l, ...patch }, i) ?? l
       })
     })),
+  updateLayers: (updates) =>
+    set((s) => {
+      if (updates.length === 0) return s
+      const byId = new Map(updates.map((u) => [u.id, u.patch]))
+      let changed = false
+      const layers = s.layers.map((l, i) => {
+        const patch = byId.get(l.id)
+        if (!patch) return l
+        changed = true
+        return normalizeThumbnailLayer({ ...l, ...patch }, i) ?? l
+      })
+      return changed ? historyPatch(s, { layers }) : s
+    }),
   updateGeometry: (id, frame) =>
     set((s) => historyPatch(s, {
       layers: s.layers.map((l, i) => (l.id === id ? (normalizeThumbnailLayer({ ...l, frame: { ...l.frame, ...frame } }, i) ?? l) : l))

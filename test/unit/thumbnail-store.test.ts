@@ -92,4 +92,36 @@ describe('thumbnail editor store history', () => {
     expect(useStore.getState().layers.find((l) => l.id === 'text-a')?.frame).toMatchObject({ x: 10, y: 20 })
     expect(useStore.getState().layers.find((l) => l.id === 'shape-b')?.frame).toMatchObject({ x: 300, y: 120 })
   })
+
+  it('batches mixed text and shape layer edits into one undo step', () => {
+    useStore.getState().updateLayers([
+      {
+        id: 'text-a',
+        patch: {
+          frame: { x: 40, y: 45, width: 260, height: 120, rotation: 3 },
+          lines: [{ text: 'A', size: 96 }]
+        }
+      },
+      {
+        id: 'shape-b',
+        patch: {
+          frame: { x: 410, y: 165, width: 100, height: 80, rotation: -5 }
+        }
+      }
+    ])
+
+    const text = useStore.getState().layers.find((l) => l.id === 'text-a')
+    const shape = useStore.getState().layers.find((l) => l.id === 'shape-b')
+    expect(text?.frame).toMatchObject({ x: 40, y: 45, width: 260, height: 120, rotation: 3 })
+    expect(text?.kind === 'text' ? text.lines[0]?.size : undefined).toBe(96)
+    expect(shape?.frame).toMatchObject({ x: 410, y: 165, width: 100, height: 80, rotation: -5 })
+    expect(useStore.getState().thumbnailPast).toHaveLength(1)
+
+    useStore.getState().undoThumbnail()
+    const restoredText = useStore.getState().layers.find((l) => l.id === 'text-a')
+    const restoredShape = useStore.getState().layers.find((l) => l.id === 'shape-b')
+    expect(restoredText?.frame).toMatchObject({ x: 10, y: 20, width: 200, height: 90, rotation: 0 })
+    expect(restoredText?.kind === 'text' ? restoredText.lines[0]?.size : undefined).toBe(72)
+    expect(restoredShape?.frame).toMatchObject({ x: 300, y: 120, width: 80, height: 60, rotation: 0 })
+  })
 })

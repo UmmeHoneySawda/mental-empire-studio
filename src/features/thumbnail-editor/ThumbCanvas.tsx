@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import Konva from 'konva'
 import { useStore } from '../../store/useStore'
-import { THUMB_W, THUMB_H, type TextLayer } from '@shared/types'
+import { THUMB_W, THUMB_H, type TextLayer, type ThumbnailLayer } from '@shared/types'
 import { snapFrameToGuides, scaleTextLayerBy, type ThumbnailSnapGuide } from '@shared/thumbnail'
 import { buildLayerGroup, loadImage, type LayerImages } from './render'
 
@@ -39,6 +39,7 @@ export function ThumbCanvas(): JSX.Element {
   const setSelection = useStore((s) => s.setSelection)
   const clearSelection = useStore((s) => s.clearSelection)
   const updateLayer = useStore((s) => s.updateLayer)
+  const updateLayers = useStore((s) => s.updateLayers)
   const updateGeometry = useStore((s) => s.updateGeometry)
   const nudgeSelection = useStore((s) => s.nudgeSelection)
   const requestFocusTextEditor = useStore((s) => s.requestFocusTextEditor)
@@ -400,6 +401,26 @@ export function ThumbCanvas(): JSX.Element {
           anchorSize: 10
         })
         klayer.add(tr)
+        const transformPatchFor = (selNode: Konva.Node): { id: string; patch: Partial<ThumbnailLayer> } | null => {
+          const id = selNode.getAttr('layerId') as string
+          const layer = layers.find((l) => l.id === id)
+          if (!layer) return null
+          const sx = Math.abs(selNode.scaleX() || 1)
+          const sy = Math.abs(selNode.scaleY() || 1)
+          const frame = {
+            x: selNode.x(),
+            y: selNode.y(),
+            rotation: selNode.rotation(),
+            width: Math.max(20, (layer.frame.width || selNode.width()) * sx),
+            height: Math.max(20, (layer.frame.height || selNode.height()) * sy)
+          }
+          const snapped = snapFrameToGuides(frame, layers, { excludeIds: selectedLayerIds.includes(id) ? selectedLayerIds : [id] }).frame
+          if (layer.kind === 'text') {
+            const fontScale = Math.sqrt(sx * sy)
+            return { id, patch: scaleTextLayerBy(layer as TextLayer, fontScale, snapped) as Partial<ThumbnailLayer> }
+          }
+          return { id, patch: { frame: snapped } as Partial<ThumbnailLayer> }
+        }
         selectedNodes.forEach((selNode) => {
           selNode.on('transform', () => {
             const id = selNode.getAttr('layerId') as string
@@ -416,29 +437,17 @@ export function ThumbCanvas(): JSX.Element {
             }, layers, { excludeIds: selectedLayerIds.includes(id) ? selectedLayerIds : [id] })
             drawGuides(result.guides)
           })
-          selNode.on('transformend', () => {
-            const id = selNode.getAttr('layerId') as string
-            const layer = layers.find((l) => l.id === id)
-            if (!layer) return
-            const sx = Math.abs(selNode.scaleX() || 1)
-            const sy = Math.abs(selNode.scaleY() || 1)
-            const frame = {
-              x: selNode.x(),
-              y: selNode.y(),
-              rotation: selNode.rotation(),
-              width: Math.max(20, (layer.frame.width || selNode.width()) * sx),
-              height: Math.max(20, (layer.frame.height || selNode.height()) * sy)
-            }
-            const snapped = snapFrameToGuides(frame, layers, { excludeIds: selectedLayerIds.includes(id) ? selectedLayerIds : [id] }).frame
-            clearGuides()
-            if (layer.kind === 'text') {
-              const fontScale = Math.sqrt(sx * sy)
-              updateLayer(id, scaleTextLayerBy(layer as TextLayer, fontScale, snapped) as Partial<TextLayer>)
-            } else {
-              updateGeometry(id, snapped)
-            }
-            selNode.scale({ x: 1, y: 1 })
-          })
+        })
+        tr.on('transformend', () => {
+          clearGuides()
+          const updates = selectedNodes
+            .map((selNode) => {
+              const patch = transformPatchFor(selNode)
+              selNode.scale({ x: 1, y: 1 })
+              return patch
+            })
+            .filter((patch): patch is { id: string; patch: Partial<ThumbnailLayer> } => !!patch)
+          updateLayers(updates)
         })
       }
       klayer.draw()
@@ -448,7 +457,7 @@ export function ThumbCanvas(): JSX.Element {
       cancelled = true
       stage.off('.thumbselect')
     }
-  }, [layers, selectedLayerId, selectedLayerIds, selectLayer, setSelection, clearSelection, updateLayer, updateGeometry, nudgeSelection, thumbEditorV2])
+  }, [layers, selectedLayerId, selectedLayerIds, selectLayer, setSelection, clearSelection, updateLayer, updateLayers, updateGeometry, nudgeSelection, thumbEditorV2])
 
   return (
     <div

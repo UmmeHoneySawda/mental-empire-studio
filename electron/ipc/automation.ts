@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron'
-import { asBetaOpts, type AutomationEvent, type Profile, type ScrapedVideo, type SourceAutomationPatch, type SourceChannel } from '../../shared/types'
+import { asBetaOpts, type AutomationEvent, type DownloadedVideo, type Profile, type ScrapedVideo, type SourceAutomationPatch, type SourceChannel } from '../../shared/types'
 import { getRepos } from '../db'
 import { sourceVideos, warmSourceBrollLibrary } from './scrape'
 import { startDownloads } from './download'
@@ -116,18 +116,42 @@ async function runAutomation(eventId: string, guardId: string, profile: Profile,
   try {
     const settings = getSettings()
     const canAutoTranscribe = !!settings.transcription.apiKey?.trim()
-    emitA({ profileId: eventId, profileName: profile.name, phase: 'scraping', message: 'Checking source' })
+    emitA({ profileId: eventId, profileName: profile.name, phase: 'start', message: 'Starting source pipeline', progress: 1 })
+    emitA({ profileId: eventId, profileName: profile.name, phase: 'scraping', message: 'Checking source', progress: 4 })
     const scraped = await sourceVideos(profile.sourceUrl, profile.sourceOrder, profile.sourceCount)
     const list = headless ? newVideos(scraped, profile.lastSeenVideoId) : scraped
     if (list.length === 0) {
-      emitA({ profileId: eventId, profileName: profile.name, phase: 'done', message: 'No new uploads', projectIds: [] })
+      emitA({ profileId: eventId, profileName: profile.name, phase: 'done', message: 'No new uploads', progress: 100, projectIds: [] })
       return []
     }
 
-    emitA({ profileId: eventId, profileName: profile.name, phase: 'downloading', message: `Downloading ${list.length}` })
-    const dls = await startDownloads(list, { bitrate: 192, sourceUrl: profile.sourceUrl })
+    const dls: DownloadedVideo[] = []
+    for (let i = 0; i < list.length; i++) {
+      const sourceVideo = list[i]
+      const current = i + 1
+      const label = sourceVideo.title.slice(0, 60)
+      emitA({
+        profileId: eventId,
+        profileName: profile.name,
+        phase: 'downloading',
+        message: `Downloading ${current}/${list.length}: ${label}`,
+        progress: Math.round(8 + (i / list.length) * 32),
+        step: { current, total: list.length, label }
+      })
+      const [dl] = await startDownloads([sourceVideo], { bitrate: 192, sourceUrl: profile.sourceUrl })
+      if (!dl) throw new Error(`Download did not start for ${sourceVideo.title}`)
+      dls.push(dl)
+      emitA({
+        profileId: eventId,
+        profileName: profile.name,
+        phase: 'downloading',
+        message: `Downloaded ${current}/${list.length}: ${label}`,
+        progress: Math.round(8 + (current / list.length) * 32),
+        step: { current, total: list.length, label }
+      })
+    }
 
-    emitA({ profileId: eventId, profileName: profile.name, phase: 'composing', message: 'Building projects' })
+    emitA({ profileId: eventId, profileName: profile.name, phase: 'composing', message: 'Building projects', progress: 44 })
     const projectIds: string[] = []
     const succeeded = new Set<string>()
     const template = profile.thumbnailTemplateId ? repos.getTemplate(profile.thumbnailTemplateId) : undefined
@@ -160,19 +184,20 @@ async function runAutomation(eventId: string, guardId: string, profile: Profile,
         projectIds.push(proj.id)
         succeeded.add(sourceVideo.id)
         if (template) {
-          emitA({ profileId: eventId, profileName: profile.name, phase: 'composing', message: `Attached thumbnail template "${template.name}"` })
+          emitA({ profileId: eventId, profileName: profile.name, phase: 'composing', message: `Attached thumbnail template "${template.name}"`, progress: Math.round(46 + ((i + 1) / dls.length) * 12), step: { current: i + 1, total: dls.length, label: sourceVideo.title.slice(0, 60) } })
         }
         if (canAutoTranscribe) {
-          emitA({ profileId: eventId, profileName: profile.name, phase: 'transcribing', message: `Transcribing ${i + 1}/${dls.length}` })
+          emitA({ profileId: eventId, profileName: profile.name, phase: 'transcribing', message: `Transcribing ${i + 1}/${dls.length}: ${sourceVideo.title.slice(0, 60)}`, progress: Math.round(60 + (i / dls.length) * 28), step: { current: i + 1, total: dls.length, label: sourceVideo.title.slice(0, 60) } })
           try {
             await runTranscribe(proj.id)
+            emitA({ profileId: eventId, profileName: profile.name, phase: 'transcribing', message: `Captioned ${i + 1}/${dls.length}: ${sourceVideo.title.slice(0, 60)}`, progress: Math.round(60 + ((i + 1) / dls.length) * 28), step: { current: i + 1, total: dls.length, label: sourceVideo.title.slice(0, 60) } })
           } catch (e) {
             const msg = (e as Error).message
-            emitA({ profileId: eventId, profileName: profile.name, phase: 'composing', message: `Transcription skipped: ${msg.slice(0, 90)}` })
+            emitA({ profileId: eventId, profileName: profile.name, phase: 'composing', message: `Transcription skipped: ${msg.slice(0, 90)}`, progress: Math.round(60 + ((i + 1) / dls.length) * 28), step: { current: i + 1, total: dls.length, label: sourceVideo.title.slice(0, 60) } })
             pushActivity({ t: hhmm(), icon: '!', color: '#f5b323', text: `${profile.name}: transcription skipped for ${sourceVideo.title.slice(0, 30)} — ${msg.slice(0, 70)}` })
           }
         } else {
-          emitA({ profileId: eventId, profileName: profile.name, phase: 'composing', message: 'Project ready; add Groq key to auto-transcribe' })
+          emitA({ profileId: eventId, profileName: profile.name, phase: 'composing', message: 'Project ready; add Groq key to auto-transcribe', progress: Math.round(60 + ((i + 1) / dls.length) * 18), step: { current: i + 1, total: dls.length, label: sourceVideo.title.slice(0, 60) } })
         }
         // Headless (auto-watch) always queues; interactive runs queue too when the
         // profile opts into end-to-end automation. Otherwise projects are left staged
@@ -195,7 +220,7 @@ async function runAutomation(eventId: string, guardId: string, profile: Profile,
     await postWebhook('profile_run', { profile: profile.name, count: dls.length, headless })
     if (headless) notifyMessage('Auto-watch', `${profile.name}: ${dls.length} new video(s) queued`)
 
-    emitA({ profileId: eventId, profileName: profile.name, phase: queued ? 'queued' : 'done', message: queued ? `${dls.length} queued for render — see Render Queue` : `${dls.length} staged — open Compose to edit, then render`, projectIds })
+    emitA({ profileId: eventId, profileName: profile.name, phase: queued ? 'queued' : 'done', message: queued ? `${dls.length} queued for render — see Render Queue` : `${dls.length} staged — open Compose to edit, then render`, progress: 100, projectIds })
     return projectIds
   } catch (e) {
     emitA({ profileId: eventId, profileName: profile.name, phase: 'error', message: (e as Error).message })
