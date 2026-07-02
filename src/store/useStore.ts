@@ -83,6 +83,7 @@ interface AppState {
   addShapeLayer: (shape: ShapeLayer['shape']) => void
   updateLayer: (id: string, patch: Partial<ThumbnailLayer>) => void
   updateGeometry: (id: string, frame: Partial<LayerFrame>) => void
+  updateGeometries: (updates: Array<{ id: string; frame: Partial<LayerFrame> }>) => void
   setSubjectImage: (src: string) => void
   setBackground: (patch: Partial<BackgroundLayer>) => void
   runAutoArrange: () => void
@@ -364,6 +365,19 @@ export const useStore = create<AppState>((set, get) => ({
     set((s) => historyPatch(s, {
       layers: s.layers.map((l, i) => (l.id === id ? (normalizeThumbnailLayer({ ...l, frame: { ...l.frame, ...frame } }, i) ?? l) : l))
     })),
+  updateGeometries: (updates) =>
+    set((s) => {
+      if (updates.length === 0) return s
+      const byId = new Map(updates.map((u) => [u.id, u.frame]))
+      let changed = false
+      const layers = s.layers.map((l, i) => {
+        const frame = byId.get(l.id)
+        if (!frame) return l
+        changed = true
+        return normalizeThumbnailLayer({ ...l, frame: { ...l.frame, ...frame } }, i) ?? l
+      })
+      return changed ? historyPatch(s, { layers }) : s
+    }),
   setSubjectImage: (src) =>
     set((s) => historyPatch(s, {
       layers: s.layers.map((l, i) => (l.kind === 'subject' ? (normalizeThumbnailLayer({ ...(l as SubjectLayer), src }, i) ?? l) : l))

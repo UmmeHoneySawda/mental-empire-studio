@@ -348,7 +348,7 @@ function SelectionToolbar(): JSX.Element | null {
   const layers = useStore((s) => s.layers)
   const selectedLayerIds = useStore((s) => s.selectedLayerIds)
   const updateLayer = useStore((s) => s.updateLayer)
-  const updateGeometry = useStore((s) => s.updateGeometry)
+  const updateGeometries = useStore((s) => s.updateGeometries)
   const duplicateLayer = useStore((s) => s.duplicateLayer)
   const deleteLayer = useStore((s) => s.deleteLayer)
   const thumbEditorV2 = useStore((s) => s.settings.features.thumbEditorV2)
@@ -403,7 +403,7 @@ function SelectionToolbar(): JSX.Element | null {
 
   const moveGroup = (dx: number, dy: number): void => {
     if (dx === 0 && dy === 0) return
-    selected.forEach((layer) => updateGeometry(layer.id, { x: layer.frame.x + dx, y: layer.frame.y + dy }))
+    updateGeometries(selected.map((layer) => ({ id: layer.id, frame: { x: layer.frame.x + dx, y: layer.frame.y + dy } })))
   }
 
   const alignGroup = (kind: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom'): void => {
@@ -490,7 +490,7 @@ function LayersTab(): JSX.Element {
   const reorderLayer = useStore((s) => s.reorderLayer)
   const addTextLayer = useStore((s) => s.addTextLayer)
   const addShapeLayer = useStore((s) => s.addShapeLayer)
-  const updateGeometry = useStore((s) => s.updateGeometry)
+  const updateGeometries = useStore((s) => s.updateGeometries)
   const runAutoArrange = useStore((s) => s.runAutoArrange)
   const dragLayerId = useRef<string | null>(null)
   const selectedLayers = layers.filter((l) => selectedLayerIds.includes(l.id) && !l.locked)
@@ -500,14 +500,14 @@ function LayersTab(): JSX.Element {
     const maxX = Math.max(...selectedLayers.map((l) => l.frame.x + l.frame.width))
     const minY = Math.min(...selectedLayers.map((l) => l.frame.y))
     const maxY = Math.max(...selectedLayers.map((l) => l.frame.y + l.frame.height))
-    selectedLayers.forEach((l) => {
-      if (kind === 'left') updateGeometry(l.id, { x: minX })
-      else if (kind === 'center') updateGeometry(l.id, { x: (minX + maxX - l.frame.width) / 2 })
-      else if (kind === 'right') updateGeometry(l.id, { x: maxX - l.frame.width })
-      else if (kind === 'top') updateGeometry(l.id, { y: minY })
-      else if (kind === 'middle') updateGeometry(l.id, { y: (minY + maxY - l.frame.height) / 2 })
-      else updateGeometry(l.id, { y: maxY - l.frame.height })
-    })
+    updateGeometries(selectedLayers.map((l) => {
+      if (kind === 'left') return { id: l.id, frame: { x: minX } }
+      if (kind === 'center') return { id: l.id, frame: { x: (minX + maxX - l.frame.width) / 2 } }
+      if (kind === 'right') return { id: l.id, frame: { x: maxX - l.frame.width } }
+      if (kind === 'top') return { id: l.id, frame: { y: minY } }
+      if (kind === 'middle') return { id: l.id, frame: { y: (minY + maxY - l.frame.height) / 2 } }
+      return { id: l.id, frame: { y: maxY - l.frame.height } }
+    }))
   }
   const distribute = (axis: 'x' | 'y'): void => {
     if (selectedLayers.length < 3) return
@@ -517,7 +517,10 @@ function LayersTab(): JSX.Element {
     const start = axis === 'x' ? first.frame.x : first.frame.y
     const end = axis === 'x' ? last.frame.x : last.frame.y
     const step = (end - start) / (sorted.length - 1)
-    sorted.slice(1, -1).forEach((l, i) => updateGeometry(l.id, axis === 'x' ? { x: start + step * (i + 1) } : { y: start + step * (i + 1) }))
+    updateGeometries(sorted.slice(1, -1).map((l, i) => ({
+      id: l.id,
+      frame: axis === 'x' ? { x: start + step * (i + 1) } : { y: start + step * (i + 1) }
+    })))
   }
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%' }}>

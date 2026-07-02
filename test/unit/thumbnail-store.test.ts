@@ -77,4 +77,19 @@ describe('thumbnail editor store history', () => {
     expect(useStore.getState().layers.find((l) => l.id === 'text-a')?.frame).toMatchObject({ x: 10, y: 20 })
     expect(useStore.getState().layers.find((l) => l.id === 'shape-b')?.frame).toMatchObject({ x: 300, y: 120 })
   })
+
+  it('batches multi-layer geometry edits into one undo step', () => {
+    useStore.getState().updateGeometries([
+      { id: 'text-a', frame: { x: 44, y: 55 } },
+      { id: 'shape-b', frame: { x: 400, y: 155 } }
+    ])
+
+    expect(useStore.getState().layers.find((l) => l.id === 'text-a')?.frame).toMatchObject({ x: 44, y: 55 })
+    expect(useStore.getState().layers.find((l) => l.id === 'shape-b')?.frame).toMatchObject({ x: 400, y: 155 })
+    expect(useStore.getState().thumbnailPast).toHaveLength(1)
+
+    useStore.getState().undoThumbnail()
+    expect(useStore.getState().layers.find((l) => l.id === 'text-a')?.frame).toMatchObject({ x: 10, y: 20 })
+    expect(useStore.getState().layers.find((l) => l.id === 'shape-b')?.frame).toMatchObject({ x: 300, y: 120 })
+  })
 })
