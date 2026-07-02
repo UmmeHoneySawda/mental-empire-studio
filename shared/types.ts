@@ -199,7 +199,7 @@ export interface ReminderHit {
   message: string
 }
 
-/** A row for the Library "Recent uploads" table (upload joined with its channel). */
+/** A row for recent uploads (upload joined with its channel). */
 export interface RecentUpload {
   title: string
   channel: string
@@ -680,7 +680,7 @@ export interface AppSettings {
   ambientGlow: boolean
   showActivityRail: boolean
   defaultScreen: ScreenKey
-  /** last channel viewed in the Workspace board, so reopening lands where you left */
+  /** last channel viewed in the Home pipeline board, so reopening lands where you left */
   lastWorkspaceChannel?: string
   namingTemplate: string
   /** master library root: where all per-video folders (audio/images/captions/broll/
@@ -970,7 +970,7 @@ export interface NativeApi {
     upsertProfile(profile: Profile): Promise<Profile[]>
     /** delete a profile */
     deleteProfile(profileId: string): Promise<Profile[]>
-    /** trigger one scheduler tick now (Library "Run now") */
+    /** trigger one scheduler tick now */
     tick(): Promise<void>
   }
   /** pick an output folder via the OS dialog; returns the chosen path or '' */

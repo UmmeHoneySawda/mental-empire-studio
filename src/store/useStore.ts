@@ -26,10 +26,10 @@ interface AppState {
   // navigation
   active: ScreenKey
   setActive: (s: ScreenKey) => void
-  /** selected channel in the Workspace board (null = all channels) */
+  /** selected channel in the Home pipeline board (null = all channels) */
   workspaceChannel: string | null
   setWorkspaceChannel: (c: string | null) => void
-  /** navigate to the Workspace, optionally focusing a channel */
+  /** navigate to Home, optionally focusing a pipeline channel */
   openWorkspace: (channel?: string | null) => void
 
   // persisted settings (electron-store via window.api.settings)

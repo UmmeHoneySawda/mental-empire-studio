@@ -1,8 +1,7 @@
 import type { MyChannel, WorkItem } from '@shared/types'
 
-// Pure helpers for the Channel Workspace board (P2). Kept dependency-free so the column
-// classification + "Resume" selection are unit-testable and shared between the Workspace
-// screen and the Library pipeline section.
+// Pure helpers for the Home pipeline board. Kept dependency-free so the column
+// classification, Resume selection, and source-video badges are unit-testable.
 
 export type WorkColumn = 'todo' | 'inprogress' | 'done'
 export type SourceVideoBadgeKind = 'new' | 'downloaded' | 'inprogress' | 'rendered' | 'uploaded' | 'pending'
