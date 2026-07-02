@@ -2,8 +2,8 @@ import { spawn, spawnSync, type ChildProcess } from 'node:child_process'
 import { appendFileSync, existsSync, mkdirSync, statSync, writeFileSync } from 'node:fs'
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
-import type { AppSettings, Project, ProjectImage, RenderCapabilities } from '../../shared/types'
-import { asBetaOpts } from '../../shared/types'
+import type { AppSettings, BetaVideoOpts, Project, ProjectImage, RenderCapabilities } from '../../shared/types'
+import { projectVideoOpts } from '../../shared/types'
 import type { EffectPlan } from '../../shared/effectPlan'
 import { resolutionFor, type CaptionAspect } from './captions'
 import { FALLBACK_CAPS, selectEncoder } from './engine/encoder'
@@ -34,17 +34,17 @@ function longFormFastPath(project: Pick<Project, 'durationSec'>): boolean {
   return project.durationSec >= LONG_FORM_FAST_SEC
 }
 
-function punchZoomFilter(project: Project, beta: ReturnType<typeof asBetaOpts> | null, w: number, h: number, allowCpuMotion: boolean): string {
+function punchZoomFilter(project: Project, beta: BetaVideoOpts, w: number, h: number, allowCpuMotion: boolean): string {
   const preset = project.motionPreset ?? (project.kenBurns ? 'subtle' : 'off')
-  const requested = preset !== 'off' && (project.punchZoom || !!beta?.autoZoom.atKeyPhrases)
+  const requested = preset !== 'off' && (project.punchZoom || beta.autoZoom.atKeyPhrases)
   return requested && !longFormFastPath(project) && allowCpuMotion
     ? `,zoompan=z='min(zoom+0.0015,1.08)':d=1:s=${w}x${h}:fps=${FPS}`
     : ''
 }
 
-function stillMotionFilter(project: Project, beta: ReturnType<typeof asBetaOpts> | null, index: number, frames: number, w: number, h: number, allowCpuMotion: boolean): string {
+function stillMotionFilter(project: Project, beta: BetaVideoOpts, index: number, frames: number, w: number, h: number, allowCpuMotion: boolean): string {
   const preset = project.motionPreset ?? (project.kenBurns ? 'subtle' : 'off')
-  const requested = preset !== 'off' || (beta?.autoZoom.atStart && index === 0)
+  const requested = preset !== 'off' || (beta.autoZoom.atStart && index === 0)
   const maxZoom = preset === 'cinematic' ? 1.2 : 1.1
   const inc = ((maxZoom - 1) / Math.max(1, frames)).toFixed(7)
   return requested && !longFormFastPath(project) && allowCpuMotion
@@ -263,18 +263,19 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
   const longForm = longFormFastPath(project)
   const allowCpuMotion = (settings.encoder ?? 'cpu') === 'cpu'
   const effectiveCf = longForm ? 0 : cf
-  // Beta options only apply when beta mode is on; otherwise the graph is unchanged.
-  const beta = settings.beta?.enabled ? asBetaOpts(project.betaOpts) : null
+  // Project video effects are no-op by default and are not gated by the legacy
+  // global beta toggle. A saved project option should render exactly as previewed.
+  const beta = projectVideoOpts(project)
   const imgs: ProjectImage[] =
     images.length > 0
       ? images
       : [{ id: 'x', projectId: project.id, ord: 0, path: '', thumb: '', rangeStart: 0, rangeEnd: project.durationSec, manual: false }]
 
-  // Beta auto-B-roll v2 path: normalized segment files are listed in a concat
+  // Auto-B-roll v2 path: normalized segment files are listed in a concat
   // demuxer manifest and enter the final graph as one continuous video input.
   if (inp.brollManifestPath) {
     const useCudaFinal = canUseCudaFinalFilters(settings, caps)
-    const overlayPath = beta ? overlayGradientPath(beta.overlay, w, h) : undefined
+    const overlayPath = overlayGradientPath(beta.overlay, w, h)
     const hardwareFrameOutput = useCudaFinal && !overlayPath
     const inputs = [
       ...(useCudaFinal ? ['-hwaccel', 'cuda', '-hwaccel_output_format', 'cuda'] : []),
@@ -287,7 +288,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
     if (overlayPath) inputs.push('-loop', '1', '-i', overlayPath)
 
     const parts: string[] = []
-    const grade = gradeChain(beta?.style, project).replace(/,+$/, '')
+    const grade = gradeChain(beta.style, project).replace(/,+$/, '')
     const punch = punchZoomFilter(project, beta, w, h, allowCpuMotion)
     pushFinishedVideo(parts, '[0:v]', useCudaFinal
       ? [`scale_cuda=w=${w}:h=${h}:force_original_aspect_ratio=increase`, 'hwdownload', 'format=nv12', `crop=${w}:${h}`, 'setsar=1', `fps=${FPS}`, grade]
@@ -316,11 +317,11 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
     ]
   }
 
-  // Beta auto-B-roll single-pass path: planned stock clips become direct video inputs
+  // Auto-B-roll single-pass path: planned stock clips become direct video inputs
   // in the final graph, so the job avoids a pre-encoded full-length bed.
   if (inp.brollSegments?.length) {
     const segments = inp.brollSegments
-    const overlayPath = beta ? overlayGradientPath(beta.overlay, w, h) : undefined
+    const overlayPath = overlayGradientPath(beta.overlay, w, h)
     const inputs: string[] = []
     const parts: string[] = []
     segments.forEach((s, i) => {
@@ -352,7 +353,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
       }
     }
 
-    const grade = gradeChain(beta?.style, project).replace(/,+$/, '')
+    const grade = gradeChain(beta.style, project).replace(/,+$/, '')
     const punch = punchZoomFilter(project, beta, w, h, allowCpuMotion)
     pushFinishedVideo(parts, `[${last}]`, [grade], { overlayIdx, assPath, punch, prefix: 'bd' })
     const aMap = audioWithSfx(parts, audioIdx, sfxIdx)
@@ -373,10 +374,10 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
     ]
   }
 
-  // Beta auto-B-roll fallback: a single full-length video bed replaces the still-image track.
+  // Auto-B-roll fallback: a single full-length video bed replaces the still-image track.
   if (inp.videoBedPath) {
-    const overlayPath = beta ? overlayGradientPath(beta.overlay, w, h) : undefined
-    const grade = gradeChain(beta?.style, project).replace(/,+$/, '')
+    const overlayPath = overlayGradientPath(beta.overlay, w, h)
+    const grade = gradeChain(beta.style, project).replace(/,+$/, '')
     const punch = punchZoomFilter(project, beta, w, h, allowCpuMotion)
     const crfBed = crfFor(settings.quality)
     const bedParts: string[] = []
@@ -399,7 +400,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
     ]
   }
 
-  const overlayPath = beta ? overlayGradientPath(beta.overlay, w, h) : undefined
+  const overlayPath = overlayGradientPath(beta.overlay, w, h)
   const inputs: string[] = []
   imgs.forEach((im) => {
     const dur = Math.max(0.5, im.rangeEnd - im.rangeStart) + effectiveCf
@@ -436,9 +437,9 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
     parts.push(`${base}${motion}[v${i}]`)
   })
 
-  // Beta: each segment boundary uses the planned transition nearest that cut (per-
+  // Each segment boundary uses the planned transition nearest that cut (per-
   // boundary placement), falling back to the style transition, then 'fade'.
-  const fallbackType = (beta && inp.transition) ? inp.transition : 'fade'
+  const fallbackType = inp.transition ?? 'fade'
   let last = 'v0'
   if (imgs.length > 1) {
     if (longForm) {
@@ -448,7 +449,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
       let offset = Math.max(0.5, imgs[0].rangeEnd - imgs[0].rangeStart)
       for (let i = 1; i < imgs.length; i++) {
         const out = `x${i}`
-        const tr = beta ? transitionAt(inp.plan, offset, fallbackType, cf || 0.4) : { type: fallbackType, dur: cf || 0.4 }
+        const tr = transitionAt(inp.plan, offset, fallbackType, cf || 0.4)
         parts.push(`[${last}][v${i}]xfade=transition=${tr.type}:duration=${tr.dur.toFixed(2)}:offset=${offset.toFixed(2)}[${out}]`)
         offset += Math.max(0.5, imgs[i].rangeEnd - imgs[i].rangeStart)
         last = out
@@ -457,7 +458,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
   }
 
   // Beta darkening gradient goes under the captions (applied before the subtitles burn).
-  const grade = gradeChain(beta?.style, project).replace(/,+$/, '')
+  const grade = gradeChain(beta.style, project).replace(/,+$/, '')
   // Burn captions; punch-zoom adds a subtle pulse when enabled (project flag or beta key-phrases).
   const punch = punchZoomFilter(project, beta, w, h, allowCpuMotion)
   pushFinishedVideo(parts, `[${last}]`, [grade], { overlayIdx, assPath, punch, prefix: 'img' })

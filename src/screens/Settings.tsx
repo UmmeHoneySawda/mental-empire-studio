@@ -19,7 +19,7 @@ const NAV: Array<{ id: Section; label: string }> = [
   { id: 'output', label: 'Output & Quality' },
   { id: 'scraping', label: 'Scraping' },
   { id: 'integrations', label: 'Integrations' },
-  { id: 'beta', label: 'Beta features' },
+  { id: 'beta', label: 'Video effects' },
   { id: 'advanced', label: 'Advanced' },
   { id: 'danger', label: 'Danger zone' },
 ]
@@ -243,15 +243,15 @@ export function Settings(): JSX.Element {
       </div>
     ),
     beta: (
-      <Card label="BETA FEATURES">
-        <div onClick={() => saved({ beta: { enabled: !settings.beta.enabled } })} style={{ display: 'flex', alignItems: 'center', gap: 10, cursor: 'pointer', marginBottom: 8 }}>
-          <Toggle on={settings.beta.enabled} />
+      <Card label="VIDEO EFFECTS">
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
+          <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent)', marginTop: 5, flex: 'none' }} />
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 12.5, color: settings.beta.enabled ? '#cdd2da' : '#8a909c' }}>Enable beta features</div>
-            <div style={{ fontSize: 10.5, color: '#6a7180', marginTop: 2 }}>Hook · auto-highlight · overlay · auto-zoom · auto B-roll · style transitions</div>
+            <div style={{ fontSize: 12.5, color: '#cdd2da' }}>Compose controls are always available per project.</div>
+            <div style={{ fontSize: 10.5, color: '#6a7180', marginTop: 2, lineHeight: 1.45 }}>Hook, auto-highlight, gradient overlay, auto-zoom, B-roll, and style transitions are saved on each project/profile. Defaults render with no extra effects.</div>
           </div>
         </div>
-        {!settings.beta.enabled && <div style={{ fontSize: 11.5, color: '#5b616f', padding: '12px 0' }}>Toggle on to access Style and Advanced tabs in Compose. Stock footage API keys are in Integrations.</div>}
+        <div style={{ fontSize: 11.5, color: '#5b616f', borderTop: '1px solid #1d2129', paddingTop: 11 }}>Auto B-roll still needs stock footage API keys in Integrations.</div>
       </Card>
     ),
     advanced: (
@@ -284,7 +284,7 @@ export function Settings(): JSX.Element {
         </Card>
         <Card label="REDESIGN FLAGS">
           <Row on={settings.features.workflowP1} label="Workflow P1 source state" onClick={() => saved({ features: { workflowP1: !settings.features.workflowP1 } })} />
-          <Row on={settings.features.videoEditorV2} label="Video editor V2 preview" onClick={() => saved({ features: { videoEditorV2: !settings.features.videoEditorV2 } })} />
+          <Row on={settings.features.videoEditorV2} label="Video editor V2" onClick={() => saved({ features: { videoEditorV2: !settings.features.videoEditorV2 } })} />
           <Row on={settings.features.thumbEditorV2} label="Thumbnail editor V2" onClick={() => saved({ features: { thumbEditorV2: !settings.features.thumbEditorV2 } })} />
         </Card>
       </div>

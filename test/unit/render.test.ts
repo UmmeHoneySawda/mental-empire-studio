@@ -1,6 +1,6 @@
 import { describe, it, expect } from 'vitest'
 import { buildRenderArgs, canUseCudaFinalFilters, videoCodecArgs } from '../../electron/services/render'
-import type { AppSettings, Project, ProjectImage, RenderCapabilities } from '../../shared/types'
+import { DEFAULT_BETA_OPTS, DEFAULT_SETTINGS, type AppSettings, type Project, type ProjectImage, type RenderCapabilities } from '../../shared/types'
 
 const caps = (over: Partial<RenderCapabilities>): RenderCapabilities => ({
   hasNvenc: false, hasQsv: false, hasAmf: false, gpuVendor: 'unknown', ffmpegHasLibass: true, ffmpegHasCuda: false, ...over
@@ -86,5 +86,27 @@ describe('buildRenderArgs — still-image ffmpeg path', () => {
     const joined = args.join(' ')
     expect(joined).not.toContain('scale_cuda')
     expect(joined).toContain('libx264')
+  })
+
+  it('honors project video effects without the legacy global beta toggle', () => {
+    const args = buildRenderArgs({
+      project: {
+        ...project,
+        betaOpts: {
+          ...DEFAULT_BETA_OPTS,
+          style: 'Cinematic',
+          overlay: { ...DEFAULT_BETA_OPTS.overlay, bottom: true, intensity: 60 }
+        }
+      },
+      images: [image],
+      assPath: 'captions.ass',
+      outPath: 'out.mp4',
+      settings: { ...DEFAULT_SETTINGS, beta: { ...DEFAULT_SETTINGS.beta, enabled: false }, encoder: 'nvenc', quality: '1080p' },
+      caps: caps({ hasNvenc: true, ffmpegHasCuda: true })
+    })
+    const joined = args.join(' ')
+    expect(joined).toContain('overlay=0:0:format=auto')
+    expect(joined).toContain('curves=preset=medium_contrast')
+    expect(joined).toContain('h264_nvenc')
   })
 })

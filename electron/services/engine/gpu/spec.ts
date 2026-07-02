@@ -1,5 +1,5 @@
 import type { AppSettings, MotionPreset, Project, ProjectImage, TranscriptWord } from '../../../../shared/types'
-import { asBetaOpts } from '../../../../shared/types'
+import { projectVideoOpts } from '../../../../shared/types'
 import type {
   CaptionFrameModel,
   CaptionGroupModel,
@@ -142,15 +142,15 @@ export interface GpuSpecInputs {
  */
 export function buildGpuRenderSpec(inp: GpuSpecInputs): GpuRenderSpec {
   const { project, settings } = inp
-  const beta = settings.beta?.enabled ? asBetaOpts(project.betaOpts) : null
+  const beta = projectVideoOpts(project)
   const { w, h } = gpuDimensions(settings.quality, project.captionAspect)
   const longForm = project.durationSec >= LONG_FORM_FAST_SEC
-  const { grade, grain } = gradeParamsForProject(beta?.style, project)
+  const { grade, grain } = gradeParamsForProject(beta.style, project)
 
   // Motion mirrors render.ts gating: Ken Burns / punch zoom are disabled on long-form.
-  const motionPreset = longForm ? 'off' : effectiveMotionPreset(project, !!beta?.autoZoom.atStart)
+  const motionPreset = longForm ? 'off' : effectiveMotionPreset(project, beta.autoZoom.atStart)
   const kenBurns = motionPreset !== 'off'
-  const punchEnabled = motionPreset !== 'off' && (project.punchZoom || !!beta?.autoZoom.atKeyPhrases)
+  const punchEnabled = motionPreset !== 'off' && (project.punchZoom || beta.autoZoom.atKeyPhrases)
   const punchAtSec = punchEnabled
     ? [...new Set([...inp.zoomHits, ...inp.words.filter((w) => w.emphasis).map((w) => w.start)])].sort((a, b) => a - b)
     : []

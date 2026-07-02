@@ -400,7 +400,7 @@ export interface TranscriptWord {
   emphasis: boolean
 }
 
-// ---- Beta features (gated behind settings.beta.enabled) ----
+// ---- Video effects options (project/profile scoped; defaults are no-op) ----
 // Stored as one JSON column (betaOpts) on projects + profiles, so adding fields
 // across phases needs no DB migration. Phase 1 = hook/highlight/overlay/zoom;
 // phase 2 = b-roll pool; phase 3 = style + effect plan.
@@ -505,6 +505,11 @@ export function asBetaOpts(v: unknown): BetaVideoOpts {
     style,
     effectPlanJson: stringValue(o.effectPlanJson, DEFAULT_BETA_OPTS.effectPlanJson)
   }
+}
+
+/** Canonical render/preview entrypoint for project-scoped video effects. */
+export function projectVideoOpts(project: { betaOpts?: unknown } | null | undefined): BetaVideoOpts {
+  return asBetaOpts(project?.betaOpts)
 }
 
 /** One compose project = a downloaded mp3 + its image/caption recipe, headed for render. */

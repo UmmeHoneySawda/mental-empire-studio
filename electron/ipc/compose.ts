@@ -4,10 +4,10 @@ import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
 import type { LookAdjust, Project, ProjectImage, TranscribeProgress, TranscriptWord } from '../../shared/types'
-import { asBetaOpts } from '../../shared/types'
+import { asBetaOpts, projectVideoOpts } from '../../shared/types'
 import type { GpuRenderSpec } from '../../shared/renderSpec'
 import { safeName } from '../../shared/sanitize'
-import { deriveStylePlan, EMPTY_PLAN, styleCaptionLead, styleTransition, validateEffectPlan } from '../../shared/effectPlan'
+import { deriveStylePlan, styleCaptionLead, styleTransition, validateEffectPlan } from '../../shared/effectPlan'
 import { LOOKS, lookById } from '../../shared/looks'
 import { getSettings } from '../store/settings'
 import { getRepos } from '../db'
@@ -266,16 +266,16 @@ function previewSpec(projectId: string, draftOverrides?: Partial<Project>): GpuR
     betaOpts: draftOverrides?.betaOpts ?? project.betaOpts
   }
   const settings = { ...getSettings(), quality: '720p' as const }
-  const beta = settings.beta?.enabled ? asBetaOpts(draftProject.betaOpts) : null
+  const beta = projectVideoOpts(draftProject)
   const words = repos.getTranscript(projectId)
-  const hookText = beta?.hook.enabled
+  const hookText = beta.hook.enabled
     ? (beta.hook.text.trim() || words.slice(0, 8).map((w) => w.word).join(' '))
     : ''
-  const style = beta?.style ?? 'None'
-  const styleLead = beta ? styleCaptionLead(style) : undefined
-  const plan = beta
-    ? (beta.effectPlanJson.trim() ? validateEffectPlan(beta.effectPlanJson, draftProject.durationSec).plan : deriveStylePlan(words, style, draftProject.durationSec))
-    : EMPTY_PLAN
+  const style = beta.style
+  const styleLead = styleCaptionLead(style)
+  const plan = beta.effectPlanJson.trim()
+    ? validateEffectPlan(beta.effectPlanJson, draftProject.durationSec).plan
+    : deriveStylePlan(words, style, draftProject.durationSec)
   const { zoomHits } = buildAss(words, {
     preset: draftProject.captionPreset,
     font: draftProject.captionFont,
@@ -284,10 +284,10 @@ function previewSpec(projectId: string, draftOverrides?: Partial<Project>): GpuR
     lines: draftProject.captionLines ?? 1,
     position: draftProject.captionPosition ?? 'bottom',
     mode: draftProject.captionPace === 'word' ? 'word' : draftProject.captionPace === 'phrase' ? 'phrase' : undefined,
-    keywords: draftProject.keywords || !!beta?.autoHighlight,
+    keywords: draftProject.keywords || beta.autoHighlight,
     hook: hookText ? { text: hookText, untilSec: 2.6 } : undefined,
     styleLead,
-    textEffects: beta ? plan.textEffects : undefined,
+    textEffects: plan.textEffects,
     highlightColor: draftProject.captionHighlightColor,
     highlightBox: draftProject.captionPreset === 'Submagic'
       ? { enabled: true, boxColor: draftProject.captionBoxColor ?? '#ffd93d', textColor: draftProject.captionHighlightColor ?? '#111111' }
@@ -295,7 +295,7 @@ function previewSpec(projectId: string, draftOverrides?: Partial<Project>): GpuR
     wordsPerPage: draftProject.captionWordsPerPage
   })
   const dims = gpuDimensions(settings.quality, draftProject.captionAspect)
-  const overlayPath = beta ? overlayGradientPath(beta.overlay, dims.w, dims.h) : undefined
+  const overlayPath = overlayGradientPath(beta.overlay, dims.w, dims.h)
   const dir = cacheDir('preview-specs')
   mkdirSync(dir, { recursive: true })
   const base = `${safeName(draftProject.title)}-${Date.now()}`
@@ -390,16 +390,16 @@ async function previewProject(projectId: string): Promise<string> {
   const outPath = join(dir, `${base}.mp4`)
   const logPath = join(dir, `${base}.render.log`)
 
-  const beta = settings.beta?.enabled ? asBetaOpts(project.betaOpts) : null
+  const beta = projectVideoOpts(project)
   const words = repos.getTranscript(projectId).filter((w) => w.start < previewSec)
-  const hookText = beta?.hook.enabled
+  const hookText = beta.hook.enabled
     ? (beta.hook.text.trim() || words.slice(0, 8).map((w) => w.word).join(' '))
     : ''
-  const style = beta?.style ?? 'None'
-  const styleLead = beta ? styleCaptionLead(style) : undefined
-  const plan = beta
-    ? (beta.effectPlanJson.trim() ? validateEffectPlan(beta.effectPlanJson, previewSec).plan : deriveStylePlan(words, style, previewSec))
-    : EMPTY_PLAN
+  const style = beta.style
+  const styleLead = styleCaptionLead(style)
+  const plan = beta.effectPlanJson.trim()
+    ? validateEffectPlan(beta.effectPlanJson, previewSec).plan
+    : deriveStylePlan(words, style, previewSec)
   const { ass } = buildAss(words, {
     preset: project.captionPreset,
     font: project.captionFont,
@@ -408,10 +408,10 @@ async function previewProject(projectId: string): Promise<string> {
     lines: project.captionLines ?? 1,
     position: project.captionPosition ?? 'bottom',
     mode: 'phrase',
-    keywords: project.keywords || !!beta?.autoHighlight,
+    keywords: project.keywords || beta.autoHighlight,
     hook: hookText ? { text: hookText, untilSec: Math.min(2.6, previewSec) } : undefined,
     styleLead,
-    textEffects: beta ? plan.textEffects : undefined,
+    textEffects: plan.textEffects,
     highlightColor: project.captionHighlightColor,
     highlightBox: project.captionPreset === 'Submagic'
       ? { enabled: true, boxColor: project.captionBoxColor ?? '#ffd93d', textColor: project.captionHighlightColor ?? '#111111' }
@@ -433,7 +433,7 @@ async function previewProject(projectId: string): Promise<string> {
         rangeEnd: previewSec
       }]
     : []
-  const previewBeta = beta ? { ...beta, broll: { ...beta.broll, enabled: false } } : project.betaOpts
+  const previewBeta = { ...beta, broll: { ...beta.broll, enabled: false } }
 
   await runRender({
     project: { ...project, durationSec: previewSec, kenBurns: false, punchZoom: false, betaOpts: previewBeta },
@@ -442,7 +442,7 @@ async function previewProject(projectId: string): Promise<string> {
     outPath,
     settings: previewSettings,
     caps,
-    transition: beta && style !== 'None' ? styleTransition(style) : undefined,
+    transition: style !== 'None' ? styleTransition(style) : undefined,
     plan,
     jobId: `preview-${projectId}`,
     logPath,

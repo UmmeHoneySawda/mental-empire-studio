@@ -212,7 +212,7 @@ describe('buildGpuRenderSpec', () => {
         project: project({ betaOpts: { ...DEFAULT_BETA_OPTS, style } }),
         images,
         words,
-        settings: settings({ beta: { ...DEFAULT_SETTINGS.beta, enabled: true } }),
+        settings: settings({ beta: { ...DEFAULT_SETTINGS.beta, enabled: false } }),
         zoomHits: [],
         voicePath: '/x/a.mp3',
         out: { h264Path: `/x/${style}.gpu.mp4`, finalPath: `/x/${style}.mp4` }
@@ -222,6 +222,25 @@ describe('buildGpuRenderSpec', () => {
       if (style === 'Cinematic') expect(spec.grain.temporal).toBe(true)
       if (style === 'Clean' || style === 'None') expect(spec.grade.vignette).toBe(0)
     }
+  })
+  it('honors project auto-zoom without the legacy global beta toggle', () => {
+    const spec = buildGpuRenderSpec({
+      project: project({
+        punchZoom: false,
+        betaOpts: {
+          ...DEFAULT_BETA_OPTS,
+          autoZoom: { atStart: true, atKeyPhrases: true }
+        }
+      }),
+      images,
+      words,
+      settings: settings({ beta: { ...DEFAULT_SETTINGS.beta, enabled: false } }),
+      zoomHits: [],
+      voicePath: '/x/auto.mp3',
+      out: { h264Path: '/x/auto.gpu.mp4', finalPath: '/x/auto.mp4' }
+    })
+    expect(spec.motion.kenBurns).toBe(true)
+    expect(spec.motion.punchAtSec).toContain(0.8)
   })
   it('carries the saved project look into the GPU grade model', () => {
     const spec = buildGpuRenderSpec({

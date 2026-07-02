@@ -74,7 +74,6 @@ function MediaTab(): JSX.Element {
   const setCaptions = useData((s) => s.setCaptions)
   const setProjectImages = useData((s) => s.setProjectImages)
   const reorderProjectImages = useData((s) => s.reorderProjectImages)
-  const betaOn = useStore((s) => s.settings.beta.enabled)
   const mode = project?.imageMode ?? 'sequence'
   const dragId = useRef<string | null>(null)
   const durationMissing = !project || !project.durationSec || project.durationSec <= 0
@@ -108,12 +107,10 @@ function MediaTab(): JSX.Element {
   return (
     <>
       <div style={{ display: 'flex', justifyContent: 'flex-end', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-        {betaOn && (
-          <div title="Auto B-roll status. Toggle it in the Style / Customize panel below — this is just an indicator so there's one source of truth." style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11.5, color: brollEnabled ? '#f5b323' : '#8a909c', background: brollEnabled ? 'rgba(245,179,35,.1)' : '#0e1116', border: `1px solid ${brollEnabled ? 'rgba(245,179,35,.3)' : '#23272f'}`, borderRadius: 8, padding: '5px 10px' }}>
-            <span style={{ width: 7, height: 7, borderRadius: '50%', background: brollEnabled ? '#f5b323' : '#3a3f4a', flex: 'none' }} />
-            <span>{brollEnabled ? 'Auto B-roll ON' : 'Auto B-roll off'}</span>
-          </div>
-        )}
+        <div title="Auto B-roll status. Toggle it in the Style / Customize panel below — this is just an indicator so there's one source of truth." style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 11.5, color: brollEnabled ? '#f5b323' : '#8a909c', background: brollEnabled ? 'rgba(245,179,35,.1)' : '#0e1116', border: `1px solid ${brollEnabled ? 'rgba(245,179,35,.3)' : '#23272f'}`, borderRadius: 8, padding: '5px 10px' }}>
+          <span style={{ width: 7, height: 7, borderRadius: '50%', background: brollEnabled ? '#f5b323' : '#3a3f4a', flex: 'none' }} />
+          <span>{brollEnabled ? 'Auto B-roll ON' : 'Auto B-roll off'}</span>
+        </div>
         <div style={{ display: 'flex', background: '#0e1116', border: '1px solid #23272f', borderRadius: 10, overflow: 'hidden', fontSize: 12.5 }}>
           <button type="button" title="Play images in a fixed order, one after another" onClick={() => void setMedia({ imageMode: 'sequence' })} style={{ border: 0, padding: '9px 16px', cursor: 'pointer', background: mode === 'sequence' ? 'var(--accent)' : 'transparent', color: mode === 'sequence' ? 'var(--accent-ink)' : '#8a909c', fontWeight: 600 }}>Sequence</button>
           <button type="button" title="Shuffle images randomly on each render (locked by seed)" onClick={() => void setMedia({ imageMode: 'pool' })} style={{ border: 0, padding: '9px 16px', cursor: 'pointer', background: mode === 'pool' ? 'var(--accent)' : 'transparent', color: mode === 'pool' ? 'var(--accent-ink)' : '#8a909c', fontWeight: 600 }}>Random pool</button>
@@ -261,26 +258,22 @@ function BetaRow({ label, on, set, hint }: { label: string; on: boolean; set: ()
   )
 }
 
-function BetaHeader({ betaOn }: { betaOn: boolean }): JSX.Element {
+function BetaHeader(): JSX.Element {
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 7 }}>
       <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '.6px', color: '#5b616f' }}>CUSTOMIZE</span>
-      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 8, fontWeight: 700, background: 'var(--accent-soft)', color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: 9, padding: '1px 6px' }}>BETA</span>
-      {!betaOn && <span style={{ marginLeft: 'auto', fontSize: 9.5, color: '#6a7180' }}>Turns on when changed</span>}
+      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 8, fontWeight: 700, background: 'var(--accent-soft)', color: 'var(--accent)', border: '1px solid var(--accent)', borderRadius: 9, padding: '1px 6px' }}>VIDEO FX</span>
     </div>
   )
 }
 
-/** Compose "Style" tab — visual beta controls, auto-enabling beta on first change. */
+/** Compose "Style" tab — project-scoped visual controls. */
 function StyleTab(): JSX.Element {
-  const betaOn = useStore((s) => s.settings.beta.enabled)
-  const updateSettings = useStore((s) => s.updateSettings)
   const project = useData((s) => s.activeProject)
   const setCaptions = useData((s) => s.setCaptions)
   const setMedia = useData((s) => s.setMedia)
   const o = asBetaOpts(project?.betaOpts)
   const patch = (p: Partial<BetaVideoOpts>): void => {
-    if (!betaOn) updateSettings({ beta: { enabled: true } })
     void setCaptions({ betaOpts: { ...o, ...p } })
   }
   const motionPreset: MotionPreset = project?.motionPreset ?? (project?.kenBurns ? 'subtle' : 'off')
@@ -300,7 +293,7 @@ function StyleTab(): JSX.Element {
     <div style={{ maxWidth: 760, display: 'flex', flexDirection: 'column', gap: 14 }}>
       <LookGallery />
       <div style={{ position: 'relative', border: '1px solid #1d2129', borderRadius: 14, padding: 15, background: '#12151b', display: 'flex', flexDirection: 'column', gap: 13 }}>
-        <BetaHeader betaOn={betaOn} />
+        <BetaHeader />
         <div>
           <div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 7 }}>Motion</div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 7 }}>
@@ -376,16 +369,13 @@ function StyleTab(): JSX.Element {
   )
 }
 
-/** Compose "Advanced" tab — effect plan override, auto-enabling beta on first edit. */
+/** Compose "Advanced" tab — effect plan override. */
 function AdvancedTab(): JSX.Element {
-  const betaOn = useStore((s) => s.settings.beta.enabled)
-  const updateSettings = useStore((s) => s.updateSettings)
   const project = useData((s) => s.activeProject)
   const transcript = useData((s) => s.transcript)
   const setCaptions = useData((s) => s.setCaptions)
   const o = asBetaOpts(project?.betaOpts)
   const patch = (p: Partial<BetaVideoOpts>): void => {
-    if (!betaOn) updateSettings({ beta: { enabled: true } })
     void setCaptions({ betaOpts: { ...o, ...p } })
   }
   const [fxStatus, setFxStatus] = useState('')
@@ -414,7 +404,7 @@ function AdvancedTab(): JSX.Element {
   return (
     <div style={{ maxWidth: 560 }}>
       <div style={{ position: 'relative', border: '1px solid #1d2129', borderRadius: 14, padding: 15, background: '#12151b', display: 'flex', flexDirection: 'column', gap: 13 }}>
-        <BetaHeader betaOn={betaOn} />
+        <BetaHeader />
         <div>
           <div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 7 }}>Effect plan (advanced override)</div>
           <div style={{ display: 'flex', gap: 6, marginBottom: 7 }}>
@@ -469,8 +459,6 @@ function QuickPanel({ customizeOpen, onCustomizeToggle }: { customizeOpen: boole
   const setCaptions = useData((s) => s.setCaptions)
   const setMedia = useData((s) => s.setMedia)
   const setLook = useData((s) => s.setLook)
-  const betaOn = useStore((s) => s.settings.beta.enabled)
-  const updateSettings = useStore((s) => s.updateSettings)
   if (!project) return null
 
   const betaOpts = asBetaOpts(project.betaOpts)
@@ -478,7 +466,6 @@ function QuickPanel({ customizeOpen, onCustomizeToggle }: { customizeOpen: boole
   const lookStrength = selectedLook.id === 'off' ? 0 : Math.max(0, Math.min(1, project.lookStrength ?? selectedLook.defaultStrength))
   const motionPreset: MotionPreset = project.motionPreset ?? (project.kenBurns ? 'subtle' : 'off')
   const patchBeta = (patch: Partial<BetaVideoOpts>): void => {
-    if (!betaOn) updateSettings({ beta: { enabled: true } })
     void setCaptions({ betaOpts: { ...betaOpts, ...patch } })
   }
   const setMotion = (preset: MotionPreset): void => {

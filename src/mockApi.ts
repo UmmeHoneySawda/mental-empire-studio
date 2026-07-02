@@ -9,6 +9,7 @@
 import {
   DEFAULT_BETA_OPTS,
   DEFAULT_SETTINGS,
+  asBetaOpts,
   type ActivityRow,
   type AppSettings,
   type AutomationEvent,
@@ -279,7 +280,7 @@ function installMock(): void {
         words: chunk.map((w) => ({ text: w.word, startSec: w.start, endSec: w.end, emphasis: w.emphasis }))
       })
     }
-    const style = settings.beta.enabled ? (p.betaOpts?.style ?? 'None') : 'None'
+    const style = asBetaOpts(p.betaOpts).style
     const motionPreset = effectiveMotionPreset(p)
     const look = lookById(p.lookLut)
     const lutStrength = look.id === 'off' ? 0 : Math.max(0, Math.min(1, p.lookStrength ?? look.defaultStrength))

@@ -2,8 +2,8 @@ import { app } from 'electron'
 import { appendFileSync, existsSync, mkdirSync, writeFileSync, rmSync } from 'node:fs'
 import { join } from 'node:path'
 import type { Project, ProjectImage, RenderJob, RenderProgress, RenderStage } from '../../shared/types'
-import { asBetaOpts } from '../../shared/types'
-import { styleCaptionLead, styleTransition, deriveStylePlan, validateEffectPlan, EMPTY_PLAN } from '../../shared/effectPlan'
+import { projectVideoOpts } from '../../shared/types'
+import { styleCaptionLead, styleTransition, deriveStylePlan, validateEffectPlan } from '../../shared/effectPlan'
 import { buildSfxTrack } from './sfx'
 import { getRepos } from '../db'
 import { getSettings } from '../store/settings'
@@ -202,36 +202,35 @@ export async function runJob(job: RenderJob): Promise<void> {
   images = alignImagesToDuration(images, renderProject.durationSec)
   emitStage('preparing', 100, `Audio duration ${Math.round(renderProject.durationSec)}s · ${encoderDetail}`)
 
-  // Beta: fold hook + auto-highlight into the caption options when beta mode is on.
-  const beta = settings.beta?.enabled ? asBetaOpts(project.betaOpts) : null
-  // Surface exactly which beta effects will be applied so a render is never silently
+  // Fold project-scoped video effects into the caption/render options. Defaults are
+  // no-op, so this does not depend on the legacy global beta toggle.
+  const beta = projectVideoOpts(project)
+  // Surface exactly which effects will be applied so a render is never silently
   // "cinematic"/"b-roll" — shown on the queue row detail and written to the log.
-  const effectsSummary = beta
-    ? [
-        beta.style !== 'None' ? beta.style : null,
-        beta.broll.enabled ? `B-roll ${beta.broll.density}` : null,
-        beta.autoZoom.atStart || beta.autoZoom.atKeyPhrases ? 'auto-zoom' : null,
-        (beta.overlay.bottom || beta.overlay.top || beta.overlay.left || beta.overlay.right) ? 'overlay' : null,
-        beta.autoHighlight ? 'highlight' : null,
-        beta.hook.enabled ? 'hook' : null
-      ].filter(Boolean).join(' · ') || 'no effects'
-    : 'plain (images + captions)'
+  const effectsSummary = [
+    beta.style !== 'None' ? beta.style : null,
+    beta.broll.enabled ? `B-roll ${beta.broll.density}` : null,
+    beta.autoZoom.atStart || beta.autoZoom.atKeyPhrases ? 'auto-zoom' : null,
+    (beta.overlay.bottom || beta.overlay.top || beta.overlay.left || beta.overlay.right) ? 'overlay' : null,
+    beta.autoHighlight ? 'highlight' : null,
+    beta.hook.enabled ? 'hook' : null
+  ].filter(Boolean).join(' · ') || 'no effects'
   if (renderLogPath) appendFileSync(renderLogPath, `effects=${effectsSummary}\n`)
   encoderDetail = `${encoderDetail} · ${effectsSummary}`
-  const hookText = beta?.hook.enabled
+  const hookText = beta.hook.enabled
     ? (beta.hook.text.trim() || words.slice(0, 8).map((w) => w.word).join(' '))
     : ''
-  // Beta style → transitions + caption "feel". A pasted/LLM effect plan overrides the
+  // Style → transitions + caption "feel". A pasted/LLM effect plan overrides the
   // built-in rule engine; both pass through validateEffectPlan's guardrails.
-  const style = beta?.style ?? 'None'
-  const styleLead = beta ? styleCaptionLead(style) : undefined
-  const transition = beta && style !== 'None' ? styleTransition(style) : undefined
+  const style = beta.style
+  const styleLead = styleCaptionLead(style)
+  const transition = style !== 'None' ? styleTransition(style) : undefined
   // The effect plan (pasted/LLM JSON overrides the rule engine) drives per-boundary
   // transitions + the SFX track. Both go through validateEffectPlan's guardrails.
-  const plan = beta
-    ? (beta.effectPlanJson.trim() ? validateEffectPlan(beta.effectPlanJson, renderProject.durationSec).plan : deriveStylePlan(words, style, renderProject.durationSec))
-    : EMPTY_PLAN
-  const sfxPath = beta ? buildSfxTrack(plan.transitions, renderProject.durationSec) ?? undefined : undefined
+  const plan = beta.effectPlanJson.trim()
+    ? validateEffectPlan(beta.effectPlanJson, renderProject.durationSec).plan
+    : deriveStylePlan(words, style, renderProject.durationSec)
+  const sfxPath = buildSfxTrack(plan.transitions, renderProject.durationSec) ?? undefined
 
   emitStage('captioning', 20, 'Building caption file')
   const captionMode = captionRenderMode(renderProject, words.length)
@@ -243,10 +242,10 @@ export async function runJob(job: RenderJob): Promise<void> {
     lines: renderProject.captionLines ?? 1,
     position: renderProject.captionPosition ?? 'bottom',
     mode: captionMode,
-    keywords: renderProject.keywords || !!beta?.autoHighlight,
+    keywords: renderProject.keywords || beta.autoHighlight,
     hook: hookText ? { text: hookText, untilSec: 2.6 } : undefined,
     styleLead,
-    textEffects: beta ? plan.textEffects : undefined,
+    textEffects: plan.textEffects,
     highlightColor: renderProject.captionHighlightColor,
     highlightBox: renderProject.captionPreset === 'Submagic'
       ? { enabled: true, boxColor: renderProject.captionBoxColor ?? '#ffd93d', textColor: renderProject.captionHighlightColor ?? '#111111' }
@@ -258,7 +257,7 @@ export async function runJob(job: RenderJob): Promise<void> {
   if (renderLogPath) appendFileSync(renderLogPath, `[captions]\nmode=${captionMode}\npace=${renderProject.captionPace ?? 'auto'}\nwords=${words.length}\ndialogues=${dialogueCount}\nlines=${renderProject.captionLines ?? 1}\n`)
   emitStage('captioning', 100, captionMode === 'phrase' ? `Caption file ready · steady phrases (${dialogueCount} events)` : 'Caption file ready')
 
-  // Beta auto-B-roll v2: normalize selected stock segments to a resumable concat
+  // Auto-B-roll v2: normalize selected stock segments to a resumable concat
   // manifest, then feed that manifest into the final render as one continuous input.
   //
   // B2 (perf) note — evaluated, intentionally kept: this normalizes each segment to its
@@ -277,7 +276,7 @@ export async function runJob(job: RenderJob): Promise<void> {
   // Tracks whether requested B-roll silently degraded to the image track, so the render
   // row + log can say so instead of the user wondering why the output looks different.
   let brollFallback = false
-  if (beta?.broll.enabled) {
+  if (beta.broll.enabled) {
     const hasStockSource = !!(settings.beta.pexelsKey || settings.beta.pixabayKey || settings.beta.coverrKey || process.env['ME_BROLL_LOCAL'] || process.env['ME_BROLL_FIXTURE'])
     if (!hasStockSource) {
       const msg = 'Stock B-roll unavailable: add a Pexels, Pixabay, or Coverr key in Settings'
@@ -373,7 +372,7 @@ export async function runJob(job: RenderJob): Promise<void> {
       gpuTempPath = h264Path
       try {
         const { w, h } = dimensions(settings.quality, renderProject.captionAspect)
-        const overlayPath = beta ? overlayGradientPath(beta.overlay, w, h) : undefined
+        const overlayPath = overlayGradientPath(beta.overlay, w, h)
         const spec = buildGpuRenderSpec({
           project: renderProject,
           images,
