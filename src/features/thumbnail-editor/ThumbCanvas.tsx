@@ -40,6 +40,7 @@ export function ThumbCanvas(): JSX.Element {
   const clearSelection = useStore((s) => s.clearSelection)
   const updateLayer = useStore((s) => s.updateLayer)
   const updateGeometry = useStore((s) => s.updateGeometry)
+  const nudgeSelection = useStore((s) => s.nudgeSelection)
   const requestFocusTextEditor = useStore((s) => s.requestFocusTextEditor)
   const thumbEditorV2 = useStore((s) => s.settings.features.thumbEditorV2)
   const [editing, setEditing] = useState<InlineTextEdit | null>(null)
@@ -230,6 +231,51 @@ export function ThumbCanvas(): JSX.Element {
         node.position({ x: result.frame.x, y: result.frame.y })
         return result
       }
+      let groupDrag: {
+        activeId: string
+        frames: Map<string, { x: number; y: number }>
+        nodes: Map<string, Konva.Node>
+      } | null = null
+      const beginGroupDrag = (id: string): void => {
+        const selected = layers.filter((l) => selectedLayerIds.includes(l.id) && !l.locked)
+        if (!selectedLayerIds.includes(id) || selected.length < 2) {
+          groupDrag = null
+          return
+        }
+        const nodes = new Map<string, Konva.Node>()
+        group.getChildren().forEach((child) => {
+          const childId = child.getAttr('layerId') as string
+          if (selectedLayerIds.includes(childId)) nodes.set(childId, child)
+        })
+        groupDrag = {
+          activeId: id,
+          frames: new Map(selected.map((l) => [l.id, { x: l.frame.x, y: l.frame.y }])),
+          nodes
+        }
+      }
+      const applyGroupDrag = (id: string, node: Konva.Node, commit: boolean): boolean => {
+        const drag = groupDrag
+        if (!drag || drag.activeId !== id) return false
+        const activeStart = drag.frames.get(id)
+        if (!activeStart) return false
+        const result = snapNodePosition(id, node)
+        const dx = result.frame.x - activeStart.x
+        const dy = result.frame.y - activeStart.y
+        for (const [layerId, otherNode] of drag.nodes) {
+          if (layerId === id) continue
+          const start = drag.frames.get(layerId)
+          if (!start) continue
+          otherNode.position({ x: start.x + dx, y: start.y + dy })
+        }
+        if (commit) {
+          clearGuides()
+          groupDrag = null
+          nudgeSelection(dx, dy)
+        } else {
+          drawGuides(result.guides)
+        }
+        return true
+      }
       group.getChildren().forEach((node) => {
         const id = node.getAttr('layerId') as string
         const layer = layers.find((l) => l.id === id)
@@ -248,11 +294,14 @@ export function ThumbCanvas(): JSX.Element {
         }
         if (!layer.locked) {
           node.draggable(true)
+          node.on('dragstart', () => beginGroupDrag(id))
           node.on('dragmove', () => {
+            if (applyGroupDrag(id, node, false)) return
             const result = snapNodePosition(id, node)
             drawGuides(result.guides)
           })
           node.on('dragend', () => {
+            if (applyGroupDrag(id, node, true)) return
             clearGuides()
             const result = snapNodePosition(id, node)
             updateGeometry(id, { x: result.frame.x, y: result.frame.y })
@@ -399,7 +448,7 @@ export function ThumbCanvas(): JSX.Element {
       cancelled = true
       stage.off('.thumbselect')
     }
-  }, [layers, selectedLayerId, selectedLayerIds, selectLayer, setSelection, clearSelection, updateLayer, updateGeometry, thumbEditorV2])
+  }, [layers, selectedLayerId, selectedLayerIds, selectLayer, setSelection, clearSelection, updateLayer, updateGeometry, nudgeSelection, thumbEditorV2])
 
   return (
     <div
