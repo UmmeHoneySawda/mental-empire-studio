@@ -219,13 +219,20 @@ function MediaTab(): JSX.Element {
             }} title="Smart motion across each image. GPU preview/render uses eased zoom and pan; CPU fallback keeps a simpler zoom only." style={{ position: 'absolute', top: 14, left: 14, border: project?.kenBurns ?? true ? '1px solid var(--accent)' : '1px dashed rgba(255,255,255,.3)', borderRadius: 7, padding: '5px 9px', fontSize: 10, color: project?.kenBurns ?? true ? 'var(--accent)' : '#cdd2da', fontFamily: 'var(--font-mono)', background: project?.kenBurns ?? true ? 'var(--accent-soft)' : 'transparent', cursor: 'pointer' }}>Motion {project?.kenBurns ?? true ? 'on' : 'off'}</div>
             <div style={{ position: 'absolute', bottom: 12, left: 14, right: 14, height: 6, borderRadius: 4, background: 'rgba(255,255,255,.18)', overflow: 'hidden' }}><div style={{ width: '35%', height: '100%', background: 'var(--accent)' }} /></div>
           </div>
-          <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-            <button type="button" onClick={() => void setMedia({ seed: Math.floor(Math.random() * 9000) + 1000 })} className="me-btn" style={{ display: 'flex', alignItems: 'center', gap: 7, border: '1px solid #262b34', background: '#15181f', borderRadius: 9, padding: '8px 13px', fontSize: 11.5, color: '#c4cad3', cursor: 'pointer' }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 11-3-6.7M21 4v5h-5" /></svg>Try another order</button>
-            <label title="Duration of the crossfade transition between images (0 = cut)" style={{ display: 'flex', alignItems: 'center', gap: 5, border: '1px solid #262b34', background: '#15181f', borderRadius: 9, padding: '8px 13px', fontSize: 11.5, color: '#8a909c', cursor: 'default' }}>
-              Crossfade<input type="number" min={0} max={3} step={0.1} value={project?.crossfade ?? 0.8} onChange={(e) => void setMedia({ crossfade: parseFloat(e.target.value) || 0 })} style={{ width: 34, border: 'none', background: 'transparent', color: '#c4cad3', fontSize: 11.5, textAlign: 'right', outline: 'none', padding: 0 }} />s
-            </label>
-            <div title="Same lock number means the same shuffled order." style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 9, padding: '8px 13px', fontSize: 11.5, color: '#8a909c', fontFamily: 'var(--font-mono)' }}>order lock {project?.seed ?? '—'}</div>
-          </div>
+          <details style={{ marginTop: 12, border: '1px solid #1d2129', borderRadius: 10, background: '#0e1116', padding: '8px 11px' }}>
+            <summary style={{ cursor: 'pointer', color: '#aab0bb', fontSize: 11.5, fontWeight: 700 }}>Image timing</summary>
+            <div style={{ marginTop: 9, display: 'flex', flexWrap: 'wrap', gap: 8, alignItems: 'center' }}>
+              {mode === 'pool' ? (
+                <button type="button" title="Try a new saved shuffle for these images" onClick={() => void setMedia({ seed: Math.floor(Math.random() * 9000) + 1000 })} className="me-btn" style={{ display: 'flex', alignItems: 'center', gap: 7, border: '1px solid #262b34', background: '#15181f', borderRadius: 9, padding: '8px 13px', fontSize: 11.5, color: '#c4cad3', cursor: 'pointer' }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 11-3-6.7M21 4v5h-5" /></svg>Try another shuffle</button>
+              ) : (
+                <span style={{ fontSize: 11, color: '#6a7180' }}>Switch to Shuffle to try alternate image orders.</span>
+              )}
+              <label title="Seconds of blend between images. 0 means a hard cut." style={{ display: 'flex', alignItems: 'center', gap: 5, border: '1px solid #262b34', background: '#15181f', borderRadius: 9, padding: '8px 13px', fontSize: 11.5, color: '#8a909c', cursor: 'default' }}>
+                Blend time<input type="number" min={0} max={3} step={0.1} value={project?.crossfade ?? 0.8} onChange={(e) => void setMedia({ crossfade: parseFloat(e.target.value) || 0 })} style={{ width: 34, border: 'none', background: 'transparent', color: '#c4cad3', fontSize: 11.5, textAlign: 'right', outline: 'none', padding: 0 }} />s
+              </label>
+              {mode === 'pool' && <div title="Same number means the same shuffle will be reused." style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 9, padding: '8px 13px', fontSize: 11.5, color: '#8a909c', fontFamily: 'var(--font-mono)' }}>shuffle #{project?.seed ?? 'none'}</div>}
+            </div>
+          </details>
         </div>
         <div style={{ flex: 1 }}>
           <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '.6px', color: '#6a7180', marginBottom: 10 }}>IMAGES · EVEN AUTO-SPLIT</div>
