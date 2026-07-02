@@ -90,8 +90,27 @@ export function seedDemoData(d: Database.Database): void {
   if ((d.prepare('SELECT COUNT(*) AS n FROM my_channels').get() as { n: number }).n > 0) return
   const tx = d.transaction(() => {
     seedTemplate(d)
-    const src = d.prepare('INSERT INTO source_channels (id,url,handle,name) VALUES (@id,@url,@handle,@name)')
-    demoSourceChannels.forEach((s) => src.run(s))
+    const src = d.prepare(
+      `INSERT INTO source_channels (id,url,handle,name,autoWatch,autoQueueRender,sourceOrder,sourceCount,imageMode,poolSize,kenBurns,captionPreset,captionAspect,thumbnailTemplateId,betaOpts)
+       VALUES (@id,@url,@handle,@name,@autoWatch,@autoQueueRender,@sourceOrder,@sourceCount,@imageMode,@poolSize,@kenBurns,@captionPreset,@captionAspect,@thumbnailTemplateId,@betaOpts)`
+    )
+    demoSourceChannels.forEach((s) => {
+      const p = demoProfiles.find((profile) => profile.linkedSourceId === s.id)
+      src.run({
+        ...s,
+        autoWatch: p?.autoWatch ? 1 : 0,
+        autoQueueRender: p?.autoQueueRender ? 1 : 0,
+        sourceOrder: p?.sourceOrder ?? 'Latest',
+        sourceCount: p?.sourceCount ?? 5,
+        imageMode: p?.imageMode ?? 'pool',
+        poolSize: p?.poolSize ?? 10,
+        kenBurns: p?.kenBurns ? 1 : 0,
+        captionPreset: p?.captionPreset ?? 'Hormozi',
+        captionAspect: p?.captionAspect ?? '16:9',
+        thumbnailTemplateId: p?.thumbnailTemplateId ?? null,
+        betaOpts: p?.betaOpts ? JSON.stringify(p.betaOpts) : null
+      })
+    })
 
     const mc = d.prepare(
       `INSERT INTO my_channels (id,name,handle,mono,avatar,views,subs,total,linkedSourceId,source,mapDone,mapTotal,weekDone,weekGoal,monthDone,monthGoal,reminder,reminderNote)

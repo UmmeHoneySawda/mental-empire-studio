@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron'
-import { asBetaOpts, type AutomationEvent, type Profile, type ScrapedVideo } from '../../shared/types'
+import { asBetaOpts, type AutomationEvent, type Profile, type ScrapedVideo, type SourceAutomationPatch, type SourceChannel } from '../../shared/types'
 import { getRepos } from '../db'
 import { sourceVideos, warmSourceBrollLibrary } from './scrape'
 import { startDownloads } from './download'
@@ -28,27 +28,106 @@ function emitA(e: AutomationEvent): void {
   emit('automation:event', e)
 }
 
-export async function runProfile(profileId: string, headless = false): Promise<string[]> {
+type CursorPatch = { lastSeenVideoId?: string; lastRunAt?: string }
+
+function monoFor(name: string): string {
+  const words = name.trim().replace(/^@/, '').split(/\s+/).filter(Boolean)
+  if (words.length >= 2) return `${words[0][0]}${words[1][0]}`.toUpperCase()
+  return name.replace(/[^A-Za-z0-9]/g, '').slice(0, 2).toUpperCase() || 'SO'
+}
+
+function profileFromSource(source: SourceChannel): Profile {
+  const name = source.name || source.handle || 'Source'
+  const sourceOrder = source.sourceOrder ?? 'Latest'
+  const sourceCount = source.sourceCount ?? 5
+  const imageMode = source.imageMode ?? 'pool'
+  const poolSize = source.poolSize ?? 10
+  const captionPreset = source.captionPreset ?? 'Hormozi'
+  const captionAspect = source.captionAspect ?? '16:9'
+  const captionLines = source.captionLines ?? 1
+  const captionPace = source.captionPace ?? 'auto'
+  return {
+    id: `src-auto-${source.id}`,
+    name: `${name} automation`,
+    mono: monoFor(name),
+    avatar: 'linear-gradient(135deg,var(--accent),var(--accent-deep))',
+    rule: `${sourceOrder} · ${sourceCount} videos`,
+    images: imageMode === 'pool' ? `Pool of ${poolSize} · shuffle` : 'Sequence',
+    thumb: source.thumbnailTemplateId ? 'Template' : 'None',
+    cap: `${captionPreset} · ${captionAspect} · ${captionLines}L · ${captionPace === 'phrase' ? 'steady' : captionPace}`,
+    out: source.outputFolder ?? '',
+    autoWatch: !!source.autoWatch,
+    autoQueueRender: !!source.autoQueueRender,
+    thumbnailTemplateId: source.thumbnailTemplateId,
+    linkedSourceId: source.id,
+    sourceUrl: source.url,
+    sourceOrder,
+    sourceCount,
+    imageMode,
+    poolSize,
+    kenBurns: source.kenBurns ?? true,
+    captionPreset,
+    captionFont: source.captionFont ?? 'Montserrat',
+    captionAnim: source.captionAnim ?? 'Pop-in',
+    captionAspect,
+    captionLines,
+    captionPosition: source.captionPosition ?? 'bottom',
+    captionPace,
+    captionHighlightColor: source.captionHighlightColor,
+    captionBoxColor: source.captionBoxColor,
+    captionWordsPerPage: source.captionWordsPerPage,
+    outputFolder: source.outputFolder,
+    lastSeenVideoId: source.lastSeenVideoId,
+    lastRunAt: source.lastRunAt,
+    betaOpts: asBetaOpts(source.betaOpts)
+  }
+}
+
+function sourcePatchFromProfile(p: Profile): SourceAutomationPatch {
+  return {
+    autoWatch: p.autoWatch,
+    autoQueueRender: p.autoQueueRender,
+    sourceOrder: p.sourceOrder,
+    sourceCount: p.sourceCount,
+    imageMode: p.imageMode,
+    poolSize: p.poolSize,
+    kenBurns: p.kenBurns,
+    captionPreset: p.captionPreset,
+    captionFont: p.captionFont,
+    captionAnim: p.captionAnim,
+    captionAspect: p.captionAspect,
+    captionLines: p.captionLines,
+    captionPosition: p.captionPosition,
+    captionPace: p.captionPace,
+    captionHighlightColor: p.captionHighlightColor,
+    captionBoxColor: p.captionBoxColor,
+    captionWordsPerPage: p.captionWordsPerPage,
+    outputFolder: p.outputFolder,
+    thumbnailTemplateId: p.thumbnailTemplateId,
+    betaOpts: p.betaOpts
+  }
+}
+
+async function runAutomation(eventId: string, guardId: string, profile: Profile, headless: boolean, setCursor: (patch: CursorPatch) => void): Promise<string[]> {
   const repos = getRepos()
-  const profile = repos.getProfile(profileId)
-  if (!profile) throw new Error(`Unknown profile: ${profileId}`)
-  if (inFlight.has(profileId)) return [] // re-entrancy guard
-  inFlight.add(profileId)
+  if (!profile.sourceUrl) throw new Error(`${profile.name} has no source URL`)
+  if (inFlight.has(guardId)) return [] // re-entrancy guard
+  inFlight.add(guardId)
   try {
     const settings = getSettings()
     const canAutoTranscribe = !!settings.transcription.apiKey?.trim()
-    emitA({ profileId, profileName: profile.name, phase: 'scraping', message: 'Checking source' })
+    emitA({ profileId: eventId, profileName: profile.name, phase: 'scraping', message: 'Checking source' })
     const scraped = await sourceVideos(profile.sourceUrl, profile.sourceOrder, profile.sourceCount)
     const list = headless ? newVideos(scraped, profile.lastSeenVideoId) : scraped
     if (list.length === 0) {
-      emitA({ profileId, profileName: profile.name, phase: 'done', message: 'No new uploads', projectIds: [] })
+      emitA({ profileId: eventId, profileName: profile.name, phase: 'done', message: 'No new uploads', projectIds: [] })
       return []
     }
 
-    emitA({ profileId, profileName: profile.name, phase: 'downloading', message: `Downloading ${list.length}` })
+    emitA({ profileId: eventId, profileName: profile.name, phase: 'downloading', message: `Downloading ${list.length}` })
     const dls = await startDownloads(list, { bitrate: 192, sourceUrl: profile.sourceUrl })
 
-    emitA({ profileId, profileName: profile.name, phase: 'composing', message: 'Building projects' })
+    emitA({ profileId: eventId, profileName: profile.name, phase: 'composing', message: 'Building projects' })
     const projectIds: string[] = []
     const succeeded = new Set<string>()
     const template = profile.thumbnailTemplateId ? repos.getTemplate(profile.thumbnailTemplateId) : undefined
@@ -81,19 +160,19 @@ export async function runProfile(profileId: string, headless = false): Promise<s
         projectIds.push(proj.id)
         succeeded.add(sourceVideo.id)
         if (template) {
-          emitA({ profileId, profileName: profile.name, phase: 'composing', message: `Attached thumbnail template "${template.name}"` })
+          emitA({ profileId: eventId, profileName: profile.name, phase: 'composing', message: `Attached thumbnail template "${template.name}"` })
         }
         if (canAutoTranscribe) {
-          emitA({ profileId, profileName: profile.name, phase: 'transcribing', message: `Transcribing ${i + 1}/${dls.length}` })
+          emitA({ profileId: eventId, profileName: profile.name, phase: 'transcribing', message: `Transcribing ${i + 1}/${dls.length}` })
           try {
             await runTranscribe(proj.id)
           } catch (e) {
             const msg = (e as Error).message
-            emitA({ profileId, profileName: profile.name, phase: 'composing', message: `Transcription skipped: ${msg.slice(0, 90)}` })
+            emitA({ profileId: eventId, profileName: profile.name, phase: 'composing', message: `Transcription skipped: ${msg.slice(0, 90)}` })
             pushActivity({ t: hhmm(), icon: '!', color: '#f5b323', text: `${profile.name}: transcription skipped for ${sourceVideo.title.slice(0, 30)} — ${msg.slice(0, 70)}` })
           }
         } else {
-          emitA({ profileId, profileName: profile.name, phase: 'composing', message: 'Project ready; add Groq key to auto-transcribe' })
+          emitA({ profileId: eventId, profileName: profile.name, phase: 'composing', message: 'Project ready; add Groq key to auto-transcribe' })
         }
         // Headless (auto-watch) always queues; interactive runs queue too when the
         // profile opts into end-to-end automation. Otherwise projects are left staged
@@ -101,7 +180,7 @@ export async function runProfile(profileId: string, headless = false): Promise<s
         if (headless || profile.autoQueueRender) sendToRender(proj.id)
       } catch (e) {
         const msg = (e as Error).message
-        emitA({ profileId, profileName: profile.name, phase: 'error', message: `${sourceVideo.title}: ${msg}` })
+        emitA({ profileId: eventId, profileName: profile.name, phase: 'error', message: `${sourceVideo.title}: ${msg}` })
         pushActivity({ t: hhmm(), icon: '!', color: '#ff5a6e', text: `${profile.name}: skipped ${sourceVideo.title.slice(0, 34)} — ${msg.slice(0, 70)}` })
       }
     }
@@ -110,24 +189,47 @@ export async function runProfile(profileId: string, headless = false): Promise<s
     // Advance only on a fully successful batch. With YouTube's newest-first cursor,
     // moving past a partial failure can hide older failed uploads forever.
     const cursor = succeeded.size === list.length ? list[0]?.id : profile.lastSeenVideoId
-    repos.setProfileCursor(profileId, { lastSeenVideoId: cursor, lastRunAt: new Date().toISOString() })
+    setCursor({ lastSeenVideoId: cursor, lastRunAt: new Date().toISOString() })
     const queued = headless || profile.autoQueueRender
     pushActivity({ t: hhmm(), icon: '▶', color: '#f5b323', text: `${profile.name}: ${dls.length} ${queued ? 'queued for render' : 'staged for edit'}` })
     await postWebhook('profile_run', { profile: profile.name, count: dls.length, headless })
     if (headless) notifyMessage('Auto-watch', `${profile.name}: ${dls.length} new video(s) queued`)
 
-    emitA({ profileId, profileName: profile.name, phase: queued ? 'queued' : 'done', message: queued ? `${dls.length} queued for render — see Render Queue` : `${dls.length} staged — open Compose to edit, then render`, projectIds })
+    emitA({ profileId: eventId, profileName: profile.name, phase: queued ? 'queued' : 'done', message: queued ? `${dls.length} queued for render — see Render Queue` : `${dls.length} staged — open Compose to edit, then render`, projectIds })
     return projectIds
   } catch (e) {
-    emitA({ profileId, profileName: profile.name, phase: 'error', message: (e as Error).message })
+    emitA({ profileId: eventId, profileName: profile.name, phase: 'error', message: (e as Error).message })
     throw e
   } finally {
-    inFlight.delete(profileId)
+    inFlight.delete(guardId)
   }
 }
 
+export async function runProfile(profileId: string, headless = false): Promise<string[]> {
+  const repos = getRepos()
+  const profile = repos.getProfile(profileId)
+  if (!profile) throw new Error(`Unknown profile: ${profileId}`)
+  const source = profile.linkedSourceId ? repos.sourceChannel(profile.linkedSourceId) : profile.sourceUrl ? repos.sourceChannelByUrl(profile.sourceUrl) : undefined
+  return runAutomation(profileId, `profile:${profileId}`, profile, headless, (patch) => {
+    repos.setProfileCursor(profileId, patch)
+    if (source) repos.setSourceCursor(source.id, patch)
+  })
+}
+
+export async function runSource(sourceId: string, headless = false): Promise<string[]> {
+  const repos = getRepos()
+  const source = repos.sourceChannel(sourceId)
+  if (!source) throw new Error(`Unknown source: ${sourceId}`)
+  return runAutomation(sourceId, `source:${sourceId}`, profileFromSource(source), headless, (patch) => {
+    repos.setSourceCursor(sourceId, patch)
+  })
+}
+
 export function upsertProfileAndWarm(p: Profile): Profile[] {
-  const profiles = getRepos().upsertProfile(p)
+  const repos = getRepos()
+  const profiles = repos.upsertProfile(p)
+  const source = p.linkedSourceId ? repos.sourceChannel(p.linkedSourceId) : p.sourceUrl ? repos.sourceChannelByUrl(p.sourceUrl) : undefined
+  if (source) repos.updateSourceAutomation(source.id, sourcePatchFromProfile(p))
   if (p.sourceUrl?.trim() && asBetaOpts(p.betaOpts).broll.enabled) {
     void warmSourceBrollLibrary(p.sourceUrl, p.sourceOrder, {
       sourceKey: p.linkedSourceId || `profile-${p.id}`,
@@ -141,6 +243,7 @@ export function upsertProfileAndWarm(p: Profile): Profile[] {
 
 export function registerAutomationIpc(): void {
   ipcMain.handle('automation:runProfile', (_e, id: string, headless?: boolean) => runProfile(id, !!headless))
+  ipcMain.handle('automation:runSource', (_e, id: string, headless?: boolean) => runSource(id, !!headless))
   ipcMain.handle('automation:upsertProfile', (_e, p: Profile) => upsertProfileAndWarm(p))
   ipcMain.handle('automation:deleteProfile', (_e, id: string) => getRepos().deleteProfile(id))
 }

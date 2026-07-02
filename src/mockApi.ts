@@ -27,6 +27,7 @@ import {
   type ScrapeOrder,
   type ScrapedChannel,
   type ScrapedVideo,
+  type SourceAutomationPatch,
   type SourceChannel,
   type ThumbnailTemplate,
   type TranscriptWord
@@ -114,7 +115,7 @@ function installMock(): void {
   } as Partial<AppSettings>)
 
   const sourceChannels: SourceChannel[] = [
-    { id: 'src-pw', url: 'https://www.youtube.com/@powerwithinofficial-q7d', handle: '@powerwithinofficial-q7d', name: 'Power Within Official', lastScrapedAt: new Date().toISOString(), videoCount: 5 },
+    { id: 'src-pw', url: 'https://www.youtube.com/@powerwithinofficial-q7d', handle: '@powerwithinofficial-q7d', name: 'Power Within Official', lastScrapedAt: new Date().toISOString(), videoCount: 5, autoWatch: true, sourceOrder: 'Latest', sourceCount: 5, imageMode: 'pool', poolSize: 10, kenBurns: true, captionPreset: 'Hormozi', captionAspect: '16:9', betaOpts: { ...DEFAULT_BETA_OPTS, broll: { ...DEFAULT_BETA_OPTS.broll, enabled: true }, style: 'Cinematic' } },
     { id: 'src-nar', url: 'https://www.youtube.com/@narceo05', handle: '@narceo05', name: 'Narceo', lastScrapedAt: new Date().toISOString(), videoCount: 5 }
   ]
 
@@ -507,6 +508,13 @@ function installMock(): void {
         const source = sourceChannels.find((s) => s.id === id)
         if (source) source.linkedMyChannelId = myChannelId ?? undefined
         return sourceChannels.map(sourceSummary)
+      },
+      setAutomation: async (id: string, patch: SourceAutomationPatch) => {
+        const source = sourceChannels.find((s) => s.id === id)
+        if (!source) throw new Error(`Source not found: ${id}`)
+        Object.assign(source, patch)
+        pushActivity(`${source.handle || source.name} automation ${source.autoWatch ? 'enabled' : 'paused'}`)
+        return sourceChannels.map(sourceSummary)
       }
     }),
     reminders: ns({ check: async () => [] }),
@@ -698,6 +706,25 @@ function installMock(): void {
         pushActivity(`Profile "${p.name}" created ${ids.length} queued projects`)
         return ids
       },
+      runSource: async (sourceId: string) => {
+        const source = sourceChannels.find((s) => s.id === sourceId)
+        if (!source) return []
+        const name = source.name || source.handle || 'Source'
+        automationCbs.forEach((cb) => cb({ profileId: source.id, profileName: name, phase: 'start', message: 'Starting browser source run' }))
+        const vids = catalogFor(source.url).slice(0, source.sourceCount ?? 5)
+        const createdDownloads = vids.map((v) => {
+          const d = makeDownload(v, source.url, 'Downloaded only')
+          downloads.unshift(d)
+          return d
+        })
+        const ids = createdDownloads.map((d) => createProjectForDownload(d.id).id)
+        if (source.autoQueueRender) ids.forEach(queueProject)
+        source.lastRunAt = new Date().toISOString()
+        source.lastSeenVideoId = vids[0]?.id
+        automationCbs.forEach((cb) => cb({ profileId: source.id, profileName: name, phase: source.autoQueueRender ? 'queued' : 'done', message: `Created ${ids.length} projects`, projectIds: ids }))
+        pushActivity(`Source "${name}" created ${ids.length} projects`)
+        return ids
+      },
       upsertProfile: async (p: Profile) => upsertProfile(p),
       deleteProfile: async (profileId: string) => {
         const i = profiles.findIndex((p) => p.id === profileId)
@@ -744,7 +771,7 @@ function installMock(): void {
     const handle = handleFromUrl(url)
     const existing = sourceChannels.find((s) => s.handle.toLowerCase() === handle.toLowerCase())
     if (existing) return existing
-    const source = { id: `src-${slug(handle)}`, url, handle, name: nameFromHandle(handle), lastScrapedAt: new Date().toISOString(), videoCount: catalogFor(handle).length }
+    const source: SourceChannel = { id: `src-${slug(handle)}`, url, handle, name: nameFromHandle(handle), lastScrapedAt: new Date().toISOString(), videoCount: catalogFor(handle).length }
     sourceChannels.push(source)
     return source
   }
@@ -769,6 +796,31 @@ function installMock(): void {
     const i = profiles.findIndex((x) => x.id === p.id)
     if (i >= 0) profiles[i] = p
     else profiles.unshift(p)
+    const source = p.linkedSourceId ? sourceChannels.find((s) => s.id === p.linkedSourceId) : sourceChannels.find((s) => s.url === p.sourceUrl)
+    if (source) {
+      Object.assign(source, {
+        autoWatch: p.autoWatch,
+        autoQueueRender: p.autoQueueRender,
+        sourceOrder: p.sourceOrder,
+        sourceCount: p.sourceCount,
+        imageMode: p.imageMode,
+        poolSize: p.poolSize,
+        kenBurns: p.kenBurns,
+        captionPreset: p.captionPreset,
+        captionFont: p.captionFont,
+        captionAnim: p.captionAnim,
+        captionAspect: p.captionAspect,
+        captionLines: p.captionLines,
+        captionPosition: p.captionPosition,
+        captionPace: p.captionPace,
+        captionHighlightColor: p.captionHighlightColor,
+        captionBoxColor: p.captionBoxColor,
+        captionWordsPerPage: p.captionWordsPerPage,
+        outputFolder: p.outputFolder,
+        thumbnailTemplateId: p.thumbnailTemplateId,
+        betaOpts: p.betaOpts
+      } satisfies SourceAutomationPatch)
+    }
     return profiles
   }
 

@@ -13,6 +13,7 @@ import type {
   ScrapeOrder,
   ScrapeProgress,
   ScrapedVideo,
+  SourceAutomationPatch,
   ThumbnailTemplate,
   TranscribeProgress,
   RenderProgress,
@@ -95,7 +96,9 @@ const api: NativeApi = {
     markVisited: (id: string) => ipcRenderer.invoke('sources:markVisited', id),
     remove: (id: string) => ipcRenderer.invoke('sources:remove', id),
     setLinkedMyChannel: (id: string, myChannelId: string | null) =>
-      ipcRenderer.invoke('sources:setLinkedMyChannel', id, myChannelId)
+      ipcRenderer.invoke('sources:setLinkedMyChannel', id, myChannelId),
+    setAutomation: (id: string, patch: SourceAutomationPatch) =>
+      ipcRenderer.invoke('sources:setAutomation', id, patch)
   } satisfies NativeApi['sources'],
 
   reminders: {
@@ -158,6 +161,7 @@ const api: NativeApi = {
 
   automation: {
     runProfile: (profileId: string, headless?: boolean) => ipcRenderer.invoke('automation:runProfile', profileId, headless),
+    runSource: (sourceId: string, headless?: boolean) => ipcRenderer.invoke('automation:runSource', sourceId, headless),
     upsertProfile: (profile: Profile) => ipcRenderer.invoke('automation:upsertProfile', profile),
     deleteProfile: (profileId: string) => ipcRenderer.invoke('automation:deleteProfile', profileId),
     tick: () => ipcRenderer.invoke('automation:tick')

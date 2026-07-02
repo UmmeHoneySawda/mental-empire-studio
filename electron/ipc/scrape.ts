@@ -6,6 +6,7 @@ import type {
   ScrapeProgress,
   ScrapedChannel,
   ScrapedVideo,
+  SourceAutomationPatch,
   SourceChannel,
   Upload
 } from '../../shared/types'
@@ -315,6 +316,11 @@ function setLinkedMyChannel(id: string, myChannelId: string | null): SourceChann
   return listSources()
 }
 
+function setSourceAutomation(id: string, patch: SourceAutomationPatch): SourceChannel[] {
+  getRepos().updateSourceAutomation(id, patch)
+  return listSources()
+}
+
 export function checkReminders(): ReminderHit[] {
   const settings = getSettings()
   const hits: ReminderHit[] = []
@@ -341,5 +347,6 @@ export function registerScrapeIpc(): void {
   ipcMain.handle('sources:markVisited', (_e, id: string) => markSourceVisited(id))
   ipcMain.handle('sources:remove', (_e, id: string) => removeSource(id))
   ipcMain.handle('sources:setLinkedMyChannel', (_e, id: string, myChannelId: string | null) => setLinkedMyChannel(id, myChannelId))
+  ipcMain.handle('sources:setAutomation', (_e, id: string, patch: SourceAutomationPatch) => setSourceAutomation(id, patch))
   ipcMain.handle('reminders:check', () => checkReminders())
 }

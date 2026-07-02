@@ -1,13 +1,13 @@
 import { getRepos } from '../db'
 import { getSettings } from '../store/settings'
 import { sourceVideos, checkReminders } from '../ipc/scrape'
-import { newVideos, runProfile } from '../ipc/automation'
+import { newVideos, runSource } from '../ipc/automation'
 import { refreshNichePools } from './pool-refresh'
 import { hhmm, pushActivity } from '../ipc/events'
 import { logger } from './logger'
 
-// Auto-watch scheduler (req #3). On each tick it checks every watched profile's
-// linked source for new uploads and runs the profile hands-free. Runs in the main
+// Auto-watch scheduler (Workflow P5). On each tick it checks every watched source
+// for new uploads and runs the source-owned automation hands-free. Runs in the main
 // process while the app is alive (the tray keeps it alive).
 
 const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms))
@@ -28,7 +28,7 @@ let timer: ReturnType<typeof setTimeout> | null = null
 let paused = false
 let ticking = false
 
-/** One scheduler pass: per watched profile, run on new uploads; baseline on first sight. */
+/** One scheduler pass: per watched source, run on new uploads; baseline on first sight. */
 export async function tick(): Promise<void> {
   const settings = getSettings()
   if (!settings.autoScrape.enabled || paused) return
@@ -38,20 +38,20 @@ export async function tick(): Promise<void> {
   ticking = true
   try {
     const repos = getRepos()
-    for (const p of repos.profiles()) {
-      if (!p.autoWatch || !p.sourceUrl) continue
+    for (const s of repos.sourceChannels()) {
+      if (!s.autoWatch || !s.url) continue
       try {
-        const scraped = await sourceVideos(p.sourceUrl, p.sourceOrder, p.sourceCount)
-        if (!p.lastSeenVideoId) {
-          // First time we see this profile: set the baseline cursor, don't backfill.
-          repos.setProfileCursor(p.id, { lastSeenVideoId: scraped[0]?.id, lastRunAt: p.lastRunAt })
-        } else if (newVideos(scraped, p.lastSeenVideoId).length > 0) {
-          await runProfile(p.id, true)
+        const scraped = await sourceVideos(s.url, s.sourceOrder ?? 'Latest', s.sourceCount ?? 5)
+        if (!s.lastSeenVideoId) {
+          // First time we see this source: set the baseline cursor, don't backfill.
+          repos.setSourceCursor(s.id, { lastSeenVideoId: scraped[0]?.id, lastRunAt: s.lastRunAt })
+        } else if (newVideos(scraped, s.lastSeenVideoId).length > 0) {
+          await runSource(s.id, true)
         }
       } catch (e) {
         const msg = (e as Error).message
-        SCHED_LOG.warn(`auto-watch failed profile=${p.name} source=${p.sourceUrl}: ${msg}`)
-        pushActivity({ t: hhmm(), icon: '!', color: '#ff5a6e', text: `Auto-watch failed: ${p.name} — ${msg.slice(0, 80)}` })
+        SCHED_LOG.warn(`auto-watch failed source=${s.name || s.handle} url=${s.url}: ${msg}`)
+        pushActivity({ t: hhmm(), icon: '!', color: '#ff5a6e', text: `Auto-watch failed: ${s.name || s.handle} — ${msg.slice(0, 80)}` })
       }
       await sleep((settings.autoScrape.delaySec || 0) * 1000)
     }

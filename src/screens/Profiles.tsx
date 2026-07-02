@@ -3,7 +3,7 @@ import { useStore } from '../store/useStore'
 import { useData } from '../store/useData'
 import { ScreenPad } from '../components/primitives'
 import { asBetaOpts } from '@shared/types'
-import type { Profile } from '@shared/types'
+import type { SourceChannel } from '@shared/types'
 
 const PROFILE_STEPS: Array<{ phase: string; label: string }> = [
   { phase: 'scraping', label: 'Scrape' },
@@ -12,10 +12,6 @@ const PROFILE_STEPS: Array<{ phase: string; label: string }> = [
   { phase: 'transcribing', label: 'Captions' },
   { phase: 'done', label: 'Edit' }
 ]
-
-function normUrl(url?: string): string {
-  return (url ?? '').trim().replace(/\/+$/, '').toLowerCase()
-}
 
 function ProfileStepper({ phase }: { phase?: string }): JSX.Element {
   const active = phase === 'queued' ? 'done' : phase
@@ -30,36 +26,36 @@ function ProfileStepper({ phase }: { phase?: string }): JSX.Element {
   )
 }
 
-function pipelineChips(p: Profile, groqReady: boolean): Array<{ text: string; accent?: boolean }> {
-  const beta = asBetaOpts(p.betaOpts)
+function pipelineChips(source: SourceChannel, groqReady: boolean): Array<{ text: string; accent?: boolean }> {
+  const beta = asBetaOpts(source.betaOpts)
   return [
-    { text: `${p.sourceOrder} ${p.sourceCount}` },
+    { text: `${source.sourceOrder || 'Latest'} ${source.sourceCount || 5}` },
     { text: 'MP3' },
     { text: groqReady ? 'auto captions' : 'captions manual', accent: groqReady },
-    { text: p.thumbnailTemplateId ? 'thumb template' : 'no thumb' },
+    { text: source.thumbnailTemplateId ? 'thumb template' : 'no thumb' },
     ...(beta.broll.enabled ? [{ text: `B-roll ${beta.broll.density}`, accent: true }] : []),
-    { text: p.autoQueueRender ? 'auto-render' : 'manual render', accent: p.autoQueueRender }
+    { text: source.autoQueueRender ? 'auto-render' : 'manual render', accent: source.autoQueueRender }
   ]
 }
 
 export function Profiles(): JSX.Element {
-  const profiles = useData((s) => s.profiles)
-  const loadProfiles = useData((s) => s.loadProfiles)
   const sourceChannels = useData((s) => s.sourceChannels)
-  const runProfile = useData((s) => s.runProfile)
+  const loadSources = useData((s) => s.loadSources)
+  const runSource = useData((s) => s.runSource)
   const runningProfileId = useData((s) => s.runningProfileId)
   const automationEvents = useData((s) => s.automationEvents)
   const automationErrors = useData((s) => s.automationErrors)
   const groqReady = useStore((s) => !!s.settings.transcription.apiKey.trim())
   const setProfile = useStore((s) => s.setProfile)
   const setActive = useStore((s) => s.setActive)
-  const activeCount = profiles.filter((p) => p.autoWatch).length
+  const activeCount = sourceChannels.filter((s) => s.autoWatch).length
+  const automationSources = [...sourceChannels].sort((a, b) => Number(!!b.autoWatch) - Number(!!a.autoWatch))
 
-  useEffect(() => { void loadProfiles() }, [loadProfiles])
+  useEffect(() => { void loadSources() }, [loadSources])
 
-  const run = async (p: Profile): Promise<void> => {
-    setProfile(p.name)
-    const ids = await runProfile(p.id)
+  const run = async (source: SourceChannel): Promise<void> => {
+    setProfile(source.name || source.handle || 'Source')
+    const ids = await runSource(source.id)
     if (ids.length > 0) setActive('compose')
   }
 
@@ -80,29 +76,31 @@ export function Profiles(): JSX.Element {
       </div>
 
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(270px,1fr))', gap: 15 }}>
-        {profiles.length === 0 && (
-          <div style={{ gridColumn: '1 / -1', border: '1.5px dashed #23272f', borderRadius: 14, padding: '36px 18px', textAlign: 'center', color: '#6a7180', fontSize: 12.5 }}>No automations yet. Open Sources and turn on Automate for a saved source channel.</div>
+        {automationSources.length === 0 && (
+          <div style={{ gridColumn: '1 / -1', border: '1.5px dashed #23272f', borderRadius: 14, padding: '36px 18px', textAlign: 'center', color: '#6a7180', fontSize: 12.5 }}>No sources yet. Open Sources and add a channel; automations are owned by those source rows.</div>
         )}
-        {profiles.map((p) => {
-          const running = runningProfileId === p.id
-          const event = automationEvents[p.id]
-          const error = automationErrors[p.id]
-          const linkedSource = sourceChannels.find((s) => s.id === p.linkedSourceId) ?? sourceChannels.find((s) => normUrl(s.url) === normUrl(p.sourceUrl))
-          const chips = pipelineChips(p, groqReady)
+        {automationSources.map((source) => {
+          const running = runningProfileId === source.id
+          const event = automationEvents[source.id]
+          const error = automationErrors[source.id]
+          const chips = pipelineChips(source, groqReady)
+          const name = source.name || source.handle || 'Source'
+          const handle = source.handle || source.url || 'no source'
+          const mono = name.replace(/^@/, '').split(/\s+/).filter(Boolean).slice(0, 2).map((part) => part[0]).join('').toUpperCase() || 'SO'
 
           return (
-            <div key={p.id} className="me-card" style={{ border: p.autoWatch ? '1px solid rgba(54,201,142,.38)' : '1px solid #1d2129', borderRadius: 15, padding: 16, background: p.autoWatch ? 'linear-gradient(165deg,rgba(54,201,142,.08),#12151b)' : '#12151b' }} onClick={() => setProfile(p.name)}>
+            <div key={source.id} className="me-card" style={{ border: source.autoWatch ? '1px solid rgba(54,201,142,.38)' : '1px solid #1d2129', borderRadius: 15, padding: 16, background: source.autoWatch ? 'linear-gradient(165deg,rgba(54,201,142,.08),#12151b)' : '#12151b' }} onClick={() => setProfile(name)}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
-                <div style={{ width: 36, height: 36, borderRadius: 9, background: p.avatar, display: 'grid', placeItems: 'center', fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 12, color: '#0c0d11', flex: 'none' }}>{p.mono}</div>
+                <div style={{ width: 36, height: 36, borderRadius: 9, background: 'linear-gradient(135deg,var(--accent),var(--accent-deep))', display: 'grid', placeItems: 'center', fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 12, color: '#0c0d11', flex: 'none' }}>{mono}</div>
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div title={p.name} className="me-ellipsis" style={{ fontWeight: 600, fontSize: 13.5, color: '#eef0f3' }}>{p.name}</div>
-                  <div className="me-ellipsis" style={{ fontSize: 10, color: '#6a7180', fontFamily: 'var(--font-mono)', marginTop: 2 }}>{linkedSource?.handle || p.sourceUrl || 'no source'}</div>
+                  <div title={name} className="me-ellipsis" style={{ fontWeight: 600, fontSize: 13.5, color: '#eef0f3' }}>{name}</div>
+                  <div className="me-ellipsis" style={{ fontSize: 10, color: '#6a7180', fontFamily: 'var(--font-mono)', marginTop: 2 }}>{handle}</div>
                 </div>
-                {p.autoWatch && <span style={{ flex: 'none', fontSize: 8.5, fontWeight: 700, fontFamily: 'var(--font-mono)', color: '#4fd6a0', background: 'rgba(54,201,142,.14)', borderRadius: 8, padding: '2px 7px' }}>WATCHING</span>}
+                {source.autoWatch && <span style={{ flex: 'none', fontSize: 8.5, fontWeight: 700, fontFamily: 'var(--font-mono)', color: '#4fd6a0', background: 'rgba(54,201,142,.14)', borderRadius: 8, padding: '2px 7px' }}>WATCHING</span>}
               </div>
 
               <div className="me-clamp-2" style={{ color: '#8a909c', fontSize: 11.5, lineHeight: 1.45, marginBottom: 12 }}>
-                Source-owned defaults. Last run: {p.lastRunAt ? new Date(p.lastRunAt).toLocaleString() : 'never'}.
+                Source-owned defaults. Last run: {source.lastRunAt ? new Date(source.lastRunAt).toLocaleString() : 'never'}.
               </div>
 
               <div style={{ display: 'flex', flexWrap: 'wrap', gap: 5, marginBottom: 14 }}>
@@ -121,10 +119,10 @@ export function Profiles(): JSX.Element {
               )}
 
               <div style={{ display: 'flex', gap: 8 }} onClick={(e) => e.stopPropagation()}>
-                <div onClick={() => { if (!running) void run(p) }} className="me-btn" style={{ flex: 1, textAlign: 'center', background: '#15181f', color: '#c4cad3', border: '1px solid #262b34', borderRadius: 9, padding: '8px 0', fontSize: 12, fontWeight: 600, cursor: running ? 'not-allowed' : 'pointer', opacity: running ? 0.6 : 1 }}>
+                <div onClick={() => { if (!running) void run(source) }} className="me-btn" style={{ flex: 1, textAlign: 'center', background: '#15181f', color: '#c4cad3', border: '1px solid #262b34', borderRadius: 9, padding: '8px 0', fontSize: 12, fontWeight: 600, cursor: running ? 'not-allowed' : 'pointer', opacity: running ? 0.6 : 1 }}>
                   {running ? '...Running' : 'Run'}
                 </div>
-                <div onClick={() => setActive('sources')} className="me-btn" title={linkedSource ? `Edit on Source: ${linkedSource.handle || linkedSource.name}` : 'Open Sources to attach this automation to a source'} style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 9, padding: '8px 12px', fontSize: 12, color: '#c4cad3', cursor: 'pointer' }}>Edit on Source</div>
+                <div onClick={() => setActive('sources')} className="me-btn" title={`Edit on Source: ${handle}`} style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 9, padding: '8px 12px', fontSize: 12, color: '#c4cad3', cursor: 'pointer' }}>Edit on Source</div>
               </div>
             </div>
           )

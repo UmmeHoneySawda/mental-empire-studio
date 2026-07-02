@@ -3,7 +3,7 @@ import { ScreenPad, Eyebrow, Title } from '../components/primitives'
 import { useData } from '../store/useData'
 import { useStore } from '../store/useStore'
 import { DEFAULT_BETA_OPTS } from '@shared/types'
-import type { Profile, ScrapedVideo, ScrapeOrder, SourceChannel } from '@shared/types'
+import type { ScrapedVideo, ScrapeOrder, SourceAutomationPatch, SourceChannel } from '@shared/types'
 import { youtubeIdFromDownloadId, youtubeThumbUrl, type YoutubeThumbQuality } from '@shared/youtube'
 import { sourceVideoBadge, type SourceVideoBadge } from '../lib/workitems'
 
@@ -71,71 +71,35 @@ function SourceAvatar({ source }: { source: SourceChannel }): JSX.Element {
   )
 }
 
-function normUrl(url?: string): string {
-  return (url ?? '').trim().replace(/\/+$/, '').toLowerCase()
+function automationSummary(source: SourceChannel, groqReady: boolean): string {
+  const caption = `${source.captionPreset || 'Hormozi'} ${source.captionAspect || '16:9'}`
+  const queue = source.autoQueueRender ? 'auto-renders manual runs' : 'manual runs stage for edit'
+  return `Watches ${source.sourceOrder || 'Latest'} ${source.sourceCount || 5} · ${caption} · ${groqReady ? 'auto captions' : 'manual captions'} · ${queue}`
 }
 
-function sourceMono(source: SourceChannel): string {
-  const name = source.name || source.handle || 'Source'
-  const parts = name.replace(/^@/, '').split(/\s+/).filter(Boolean)
-  if (parts.length >= 2) return `${parts[0][0]}${parts[1][0]}`.toUpperCase()
-  return name.replace(/[^a-z0-9]/gi, '').slice(0, 2).toUpperCase() || 'SO'
-}
-
-function sourceAutomationProfile(source: SourceChannel, profiles: Profile[]): Profile | undefined {
-  return profiles.find((p) => p.linkedSourceId === source.id)
-    ?? profiles.find((p) => normUrl(p.sourceUrl) === normUrl(source.url))
-}
-
-function automationSummary(profile: Profile, groqReady: boolean): string {
-  const caption = `${profile.captionPreset || 'Hormozi'} ${profile.captionAspect || '16:9'}`
-  const queue = profile.autoQueueRender ? 'auto-renders' : 'stages for edit'
-  return `Watches ${profile.sourceOrder} ${profile.sourceCount} · ${caption} · ${groqReady ? 'auto captions' : 'manual captions'} · ${queue}`
-}
-
-function sourceAutomationDefaults(source: SourceChannel, existing: Profile | undefined, autoWatch: boolean): Profile {
-  const name = source.name || source.handle || 'Source automation'
-  const base: Profile = existing ?? {
-    id: `src-auto-${source.id}`,
-    name: `${name} automation`,
-    mono: sourceMono(source),
-    avatar: 'linear-gradient(135deg,var(--accent),var(--accent-deep))',
-    rule: 'Latest · 5 videos',
-    images: 'Pool of 10 · shuffle',
-    thumb: 'None',
-    cap: 'Hormozi · 16:9 · 1L · auto',
-    out: '',
-    autoWatch: false,
-    sourceUrl: source.url,
-    sourceOrder: 'Latest',
-    sourceCount: 5,
-    imageMode: 'pool',
-    poolSize: 10,
-    kenBurns: true,
-    captionPreset: 'Hormozi',
-    captionFont: 'Montserrat',
-    captionAnim: 'Pop-in',
-    captionAspect: '16:9',
-    captionLines: 1,
-    captionPosition: 'bottom',
-    captionPace: 'auto',
-    captionHighlightColor: '#ffd93d',
-    captionBoxColor: '#ffd93d',
-    captionWordsPerPage: 1,
-    betaOpts: { ...DEFAULT_BETA_OPTS }
-  }
-  const lines = base.captionLines ?? 1
-  const pace = base.captionPace ?? 'auto'
+function sourceAutomationDefaults(source: SourceChannel, autoWatch: boolean): SourceAutomationPatch {
+  if (!autoWatch) return { autoWatch: false }
   return {
-    ...base,
-    linkedSourceId: source.id,
-    sourceUrl: source.url,
-    name: base.name || `${name} automation`,
-    mono: base.mono || sourceMono(source),
     autoWatch,
-    rule: `${base.sourceOrder} · ${base.sourceCount} videos`,
-    images: base.imageMode === 'pool' ? `Pool of ${base.poolSize} · shuffle` : 'Sequence',
-    cap: `${base.captionPreset} · ${base.captionAspect} · ${lines}L · ${pace === 'phrase' ? 'steady' : pace}`
+    autoQueueRender: source.autoQueueRender ?? false,
+    sourceOrder: source.sourceOrder ?? 'Latest',
+    sourceCount: source.sourceCount ?? 5,
+    imageMode: source.imageMode ?? 'pool',
+    poolSize: source.poolSize ?? 10,
+    kenBurns: source.kenBurns ?? true,
+    captionPreset: source.captionPreset ?? 'Hormozi',
+    captionFont: source.captionFont ?? 'Montserrat',
+    captionAnim: source.captionAnim ?? 'Pop-in',
+    captionAspect: source.captionAspect ?? '16:9',
+    captionLines: source.captionLines ?? 1,
+    captionPosition: source.captionPosition ?? 'bottom',
+    captionPace: source.captionPace ?? 'auto',
+    captionHighlightColor: source.captionHighlightColor ?? '#ffd93d',
+    captionBoxColor: source.captionBoxColor ?? '#ffd93d',
+    captionWordsPerPage: source.captionWordsPerPage ?? 1,
+    outputFolder: source.outputFolder,
+    thumbnailTemplateId: source.thumbnailTemplateId,
+    betaOpts: source.betaOpts ?? { ...DEFAULT_BETA_OPTS }
   }
 }
 
@@ -177,7 +141,6 @@ export function Download(): JSX.Element {
   const downloads = useData((s) => s.downloads)
   const workItems = useData((s) => s.workItems)
   const channels = useData((s) => s.channels)
-  const profiles = useData((s) => s.profiles)
   const sourceChannels = useData((s) => s.sourceChannels)
   const dlProgress = useData((s) => s.dlProgress)
   const fetching = useData((s) => s.fetching)
@@ -192,7 +155,7 @@ export function Download(): JSX.Element {
   const deleteDownload = useData((s) => s.deleteDownload)
   const setItemUploaded = useData((s) => s.setItemUploaded)
   const openProject = useData((s) => s.openProject)
-  const saveProfile = useData((s) => s.saveProfile)
+  const setSourceAutomation = useData((s) => s.setSourceAutomation)
   const setActive = useStore((s) => s.setActive)
   const allowReupload = useStore((s) => s.settings.dedup.allowReupload)
   const workflowP1 = useStore((s) => s.settings.features.workflowP1)
@@ -249,8 +212,7 @@ export function Download(): JSX.Element {
     await openSource(source.id)
   }
   const toggleSourceAutomation = async (source: SourceChannel): Promise<void> => {
-    const existing = sourceAutomationProfile(source, profiles)
-    await saveProfile(sourceAutomationDefaults(source, existing, !existing?.autoWatch))
+    await setSourceAutomation(source.id, sourceAutomationDefaults(source, !source.autoWatch))
   }
   const listedVideos = useMemo(() => orderCachedVideos(sourceVideos, order, qty), [sourceVideos, order, qty])
   const visibleVideos = listedVideos.filter((v) => {
@@ -312,8 +274,7 @@ export function Download(): JSX.Element {
           )}
           {sourceChannels.map((source) => {
             const linked = channels.find((c) => c.id === source.linkedMyChannelId)
-            const automation = sourceAutomationProfile(source, profiles)
-            const watching = !!automation?.autoWatch
+            const watching = !!source.autoWatch
             return (
               <div key={source.id} className="me-card" style={{ border: '1px solid #1d2129', borderRadius: 12, background: '#12151b', padding: 14, display: 'flex', flexDirection: 'column', gap: 13 }}>
                 <div style={{ display: 'flex', gap: 12, minWidth: 0 }}>
@@ -343,7 +304,7 @@ export function Download(): JSX.Element {
                     </button>
                   </div>
                   <div className="me-clamp-2" style={{ color: watching ? '#8fcfb3' : '#6a7180', fontSize: 10.5, lineHeight: 1.35, marginTop: 6 }}>
-                    {automation ? automationSummary(automation, groqReady) : 'Turn on to watch this source with sensible defaults; details appear in Automations.'}
+                    {watching ? automationSummary(source, groqReady) : 'Turn on to watch this source with sensible defaults; details appear in Automations.'}
                   </div>
                 </div>
                 <div style={{ display: 'flex', gap: 8, marginTop: 'auto' }}>

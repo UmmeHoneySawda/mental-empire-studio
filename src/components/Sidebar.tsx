@@ -73,13 +73,13 @@ export function Sidebar(): JSX.Element {
   const renderJobs = useData((s) => s.renderJobs)
   const renderProgress = useData((s) => s.renderProgress)
   const channels = useData((s) => s.channels)
-  const profiles = useData((s) => s.profiles)
+  const sourceChannels = useData((s) => s.sourceChannels)
   const setActive = useStore((s) => s.setActive)
   const queued = renderJobs.filter((j) => {
     const state = renderLiveState(j, renderProgress[j.job.id])
     return state.status === 'queued' || state.status === 'rendering'
   }).length
-  const watching = profiles.filter((p) => p.autoWatch).length
+  const watching = sourceChannels.filter((s) => s.autoWatch).length
 
   // Find the most active rendering job for the mini status strip
   const activeJob = renderJobs.find((j) => {
@@ -138,8 +138,8 @@ export function Sidebar(): JSX.Element {
         </div>
         <div style={{ fontSize: 10.5, color: '#6a7180', lineHeight: 1.5 }}>
           {watching > 0
-            ? `${watching} profile${watching === 1 ? '' : 's'} watching · ${channels.length} channel${channels.length === 1 ? '' : 's'}`
-            : 'Enable auto-watch on a profile to run hands-free.'}
+            ? `${watching} source${watching === 1 ? '' : 's'} watching · ${channels.length} channel${channels.length === 1 ? '' : 's'}`
+            : 'Enable auto-watch on a source to run hands-free.'}
         </div>
       </div>
     </div>

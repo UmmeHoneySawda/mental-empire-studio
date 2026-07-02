@@ -18,6 +18,7 @@ import type {
   WorkItem,
   Niche,
   NichePoolHealth,
+  SourceAutomationPatch,
   SourceChannel
 } from '@shared/types'
 import type { GpuRenderSpec } from '@shared/renderSpec'
@@ -82,6 +83,7 @@ interface DataState {
   refreshSource: (id: string) => Promise<void>
   removeSource: (id: string) => Promise<void>
   openSource: (id: string) => Promise<void>
+  setSourceAutomation: (id: string, patch: SourceAutomationPatch) => Promise<void>
   fetchSource: (url: string, order: ScrapeOrder, count: number) => Promise<void>
   startDownload: (videos: ScrapedVideo[], sourceUrl: string, bitrate: number) => Promise<DownloadedVideo[]>
   resumeDownload: (id: string) => Promise<void>
@@ -111,6 +113,7 @@ interface DataState {
   deleteDownload: (id: string) => Promise<void>
   loadProfiles: () => Promise<void>
   runProfile: (id: string) => Promise<string[]>
+  runSource: (id: string) => Promise<string[]>
   saveProfile: (p: Profile) => Promise<void>
   deleteProfile: (id: string) => Promise<void>
   runNow: () => Promise<void>
@@ -319,6 +322,12 @@ export const useData = create<DataState>((set, get) => ({
     const sourceChannels = await a.sources.markVisited(id)
     set({ sourceChannels })
     void get().refreshSource(id)
+  },
+  setSourceAutomation: async (id, patch) => {
+    const a = api()
+    if (!a) return
+    const sourceChannels = await a.sources.setAutomation(id, patch)
+    set({ sourceChannels })
   },
 
   fetchSource: async (url, order, count) => {
@@ -563,7 +572,29 @@ export const useData = create<DataState>((set, get) => ({
       const projectIds = await a.automation.runProfile(id, false)
       // open the first new project for quick-edit, then refresh
       if (projectIds[0]) await get().openProjectById(projectIds[0])
-      await Promise.all([get().loadDownloads(), get().loadProfiles(), get().loadActivity()])
+      await Promise.all([get().loadDownloads(), get().loadProfiles(), get().loadSources(), get().loadRenderJobs(), get().loadWorkItems(), get().loadActivity()])
+      return projectIds
+    } catch (e) {
+      const msg = (e as Error).message
+      set((s) => ({ automationErrors: { ...s.automationErrors, [id]: msg } }))
+      await get().loadActivity()
+      return []
+    } finally {
+      set({ runningProfileId: null })
+    }
+  },
+  runSource: async (id) => {
+    const a = api()
+    if (!a) return []
+    set((s) => {
+      const errors = { ...s.automationErrors }
+      delete errors[id]
+      return { runningProfileId: id, automationErrors: errors }
+    })
+    try {
+      const projectIds = await a.automation.runSource(id, false)
+      if (projectIds[0]) await get().openProjectById(projectIds[0])
+      await Promise.all([get().loadDownloads(), get().loadSources(), get().loadRenderJobs(), get().loadWorkItems(), get().loadActivity()])
       return projectIds
     } catch (e) {
       const msg = (e as Error).message
@@ -579,6 +610,7 @@ export const useData = create<DataState>((set, get) => ({
     if (!a) return
     const profiles = await a.automation.upsertProfile(p)
     set({ profiles })
+    await get().loadSources()
   },
   deleteProfile: async (id) => {
     const a = api()
@@ -590,7 +622,7 @@ export const useData = create<DataState>((set, get) => ({
     const a = api()
     if (!a) return
     await a.automation.tick()
-    await Promise.all([get().loadActivity(), get().loadRenderJobs(), get().loadProfiles()])
+    await Promise.all([get().loadActivity(), get().loadRenderJobs(), get().loadProfiles(), get().loadSources()])
   },
 
   loadWorkItems: async () => {

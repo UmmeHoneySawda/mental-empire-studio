@@ -61,7 +61,36 @@ export interface SourceChannel {
   newVideoCount?: number
   /** assigned b-roll niche pool (id of a Niche); videos from this channel use its pool */
   nicheId?: string
+  /** source-owned automation config (Workflow P5); legacy profiles remain as shims. */
+  autoWatch?: boolean
+  autoQueueRender?: boolean
+  sourceOrder?: ScrapeOrder
+  sourceCount?: number
+  imageMode?: ImageMode
+  poolSize?: number
+  kenBurns?: boolean
+  captionPreset?: string
+  captionFont?: string
+  captionAnim?: string
+  captionAspect?: '16:9' | '1:1' | '9:16'
+  captionLines?: 1 | 2 | 3
+  captionPosition?: 'top' | 'middle' | 'bottom'
+  captionPace?: 'auto' | 'word' | 'phrase'
+  captionHighlightColor?: string
+  captionBoxColor?: string
+  captionWordsPerPage?: 1 | 2 | 3
+  outputFolder?: string
+  thumbnailTemplateId?: string
+  lastRunAt?: string
+  betaOpts?: BetaVideoOpts
 }
+
+export type SourceAutomationPatch = Partial<Pick<SourceChannel,
+  'autoWatch' | 'autoQueueRender' | 'sourceOrder' | 'sourceCount' | 'imageMode' | 'poolSize' | 'kenBurns'
+  | 'captionPreset' | 'captionFont' | 'captionAnim' | 'captionAspect' | 'captionLines' | 'captionPosition'
+  | 'captionPace' | 'captionHighlightColor' | 'captionBoxColor' | 'captionWordsPerPage' | 'outputFolder'
+  | 'thumbnailTemplateId' | 'betaOpts'
+>>
 
 /** A global, user-curated b-roll niche/theme pool (workflow plan §4). Channels are
  *  assigned to a niche; renders pull clips from the niche's pool first. */
@@ -858,6 +887,8 @@ export interface NativeApi {
     remove(id: string): Promise<SourceChannel[]>
     /** optionally link a source to one owned channel for dedup/status context */
     setLinkedMyChannel(id: string, myChannelId: string | null): Promise<SourceChannel[]>
+    /** update the source-owned automation defaults/cursor settings */
+    setAutomation(id: string, patch: SourceAutomationPatch): Promise<SourceChannel[]>
   }
   reminders: {
     /** evaluate behind-pace channels, firing desktop notifications */
@@ -933,6 +964,8 @@ export interface NativeApi {
   automation: {
     /** run a profile's pipeline; interactive returns new project ids for quick-edit */
     runProfile(profileId: string, headless?: boolean): Promise<string[]>
+    /** run a saved source's automation pipeline; replaces profile-owned runs */
+    runSource(sourceId: string, headless?: boolean): Promise<string[]>
     /** create/update a profile */
     upsertProfile(profile: Profile): Promise<Profile[]>
     /** delete a profile */

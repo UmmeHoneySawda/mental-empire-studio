@@ -17,7 +17,8 @@ import type {
   ScrapeOrder,
   ImageMode,
   WorkItem,
-  Niche
+  Niche,
+  SourceAutomationPatch
 } from '../../shared/types'
 import { asBetaOpts, DEFAULT_BETA_OPTS } from '../../shared/types'
 import { seedIfEmpty, seedDemoData } from './seed'
@@ -140,6 +141,28 @@ function migrate(d: Database.Database): void {
   ensureColumn(d, 'source_channels', 'lastSeenVideoId', 'TEXT')
   ensureColumn(d, 'source_channels', 'linkedMyChannelId', 'TEXT')
   ensureColumn(d, 'source_channels', 'videoCount', 'INTEGER')
+  // Workflow P5: source-owned automation defaults. Profiles stay readable for one release.
+  ensureColumn(d, 'source_channels', 'autoWatch', 'INTEGER')
+  ensureColumn(d, 'source_channels', 'autoQueueRender', 'INTEGER')
+  ensureColumn(d, 'source_channels', 'sourceOrder', 'TEXT')
+  ensureColumn(d, 'source_channels', 'sourceCount', 'INTEGER')
+  ensureColumn(d, 'source_channels', 'imageMode', 'TEXT')
+  ensureColumn(d, 'source_channels', 'poolSize', 'INTEGER')
+  ensureColumn(d, 'source_channels', 'kenBurns', 'INTEGER')
+  ensureColumn(d, 'source_channels', 'captionPreset', 'TEXT')
+  ensureColumn(d, 'source_channels', 'captionFont', 'TEXT')
+  ensureColumn(d, 'source_channels', 'captionAnim', 'TEXT')
+  ensureColumn(d, 'source_channels', 'captionAspect', 'TEXT')
+  ensureColumn(d, 'source_channels', 'captionLines', 'INTEGER')
+  ensureColumn(d, 'source_channels', 'captionPosition', 'TEXT')
+  ensureColumn(d, 'source_channels', 'captionPace', 'TEXT')
+  ensureColumn(d, 'source_channels', 'captionHighlightColor', 'TEXT')
+  ensureColumn(d, 'source_channels', 'captionBoxColor', 'TEXT')
+  ensureColumn(d, 'source_channels', 'captionWordsPerPage', 'INTEGER')
+  ensureColumn(d, 'source_channels', 'outputFolder', 'TEXT')
+  ensureColumn(d, 'source_channels', 'thumbnailTemplateId', 'TEXT')
+  ensureColumn(d, 'source_channels', 'lastRunAt', 'TEXT')
+  ensureColumn(d, 'source_channels', 'betaOpts', 'TEXT')
   ensureColumn(d, 'source_videos', 'ord', 'INTEGER')
   ensureColumn(d, 'downloaded_videos', 'matchedUploadId', 'TEXT')
   // M4: real download bookkeeping
@@ -196,6 +219,7 @@ function migrate(d: Database.Database): void {
   ensureColumn(d, 'work_item_state', 'uploadConfidence', 'TEXT')
 
   purgeLegacyDemoSeed(d)
+  migrateProfilesToSources(d)
 }
 
 /**
@@ -219,6 +243,115 @@ function purgeLegacyDemoSeed(d: Database.Database): void {
     // Canned activity feed from the seed (no real run ever produced these exact rows).
     d.prepare("DELETE FROM activity_log WHERE text IN ('Skipped 1 video — members only','Auto-watch found 5 new uploads','Downloaded 5 mp3 from @stoichour','Captions burned (Hormozi)','Rendered Gaslighting Explained → ME_out')").run()
     d.prepare("INSERT OR REPLACE INTO app_meta (key,value) VALUES ('demo_purged_v2','1')").run()
+  })
+  tx()
+}
+
+function normalizeSourceUrl(raw?: string): string {
+  return (raw ?? '').trim().replace(/\/+$/, '').toLowerCase()
+}
+
+function handleFromSourceUrl(raw?: string): string {
+  const url = raw ?? ''
+  const at = url.match(/@[^/?#]+/)
+  if (at) return at[0]
+  try {
+    const parts = new URL(url).pathname.split('/').filter(Boolean)
+    return parts.length ? parts[parts.length - 1] : ''
+  } catch {
+    return url.replace(/^https?:\/\//, '').replace(/\/+$/, '')
+  }
+}
+
+function sourceIdForMigratedProfile(p: Profile): string {
+  const seed = p.linkedSourceId || handleFromSourceUrl(p.sourceUrl) || p.id
+  if (seed.startsWith('src-')) return seed
+  return `src-${seed.replace(/^@/, '').replace(/[^A-Za-z0-9]+/g, '_') || p.id}`
+}
+
+function profileToSourceAutomationRow(p: Profile): Record<string, unknown> {
+  return {
+    autoWatch: p.autoWatch ? 1 : 0,
+    autoQueueRender: p.autoQueueRender ? 1 : 0,
+    sourceOrder: p.sourceOrder ?? 'Latest',
+    sourceCount: p.sourceCount ?? 5,
+    imageMode: p.imageMode ?? 'pool',
+    poolSize: p.poolSize ?? 10,
+    kenBurns: p.kenBurns ? 1 : 0,
+    captionPreset: p.captionPreset ?? 'Hormozi',
+    captionFont: p.captionFont ?? 'Montserrat',
+    captionAnim: p.captionAnim ?? 'Pop-in',
+    captionAspect: p.captionAspect ?? '16:9',
+    captionLines: p.captionLines ?? 1,
+    captionPosition: p.captionPosition ?? 'bottom',
+    captionPace: p.captionPace ?? 'auto',
+    captionHighlightColor: p.captionHighlightColor ?? null,
+    captionBoxColor: p.captionBoxColor ?? null,
+    captionWordsPerPage: p.captionWordsPerPage ?? null,
+    outputFolder: p.outputFolder ?? null,
+    thumbnailTemplateId: p.thumbnailTemplateId ?? null,
+    lastSeenVideoId: p.lastSeenVideoId ?? null,
+    lastRunAt: p.lastRunAt ?? null,
+    betaOpts: JSON.stringify(p.betaOpts ?? DEFAULT_BETA_OPTS)
+  }
+}
+
+/** One-time guarded fold from legacy profile-owned automation into source rows.
+ *  The profiles table stays intact so old IPC/UI paths remain reversible shims. */
+function migrateProfilesToSources(d: Database.Database): void {
+  const done = d.prepare("SELECT value FROM app_meta WHERE key='profiles_folded_v1'").get()
+  if (done) return
+  const rows = d.prepare('SELECT * FROM profiles').all() as Array<Record<string, unknown>>
+  const tx = d.transaction(() => {
+    const byId = d.prepare('SELECT id FROM source_channels WHERE id=?')
+    const insertSource = d.prepare(
+      `INSERT OR IGNORE INTO source_channels (id,url,handle,name)
+       VALUES (@id,@url,@handle,@name)`
+    )
+    const updateAutomation = d.prepare(
+      `UPDATE source_channels SET
+         autoWatch=CASE WHEN @autoWatch=1 THEN 1 ELSE COALESCE(autoWatch,@autoWatch) END,
+         autoQueueRender=COALESCE(autoQueueRender,@autoQueueRender),
+         sourceOrder=COALESCE(sourceOrder,@sourceOrder),
+         sourceCount=COALESCE(sourceCount,@sourceCount),
+         imageMode=COALESCE(imageMode,@imageMode),
+         poolSize=COALESCE(poolSize,@poolSize),
+         kenBurns=COALESCE(kenBurns,@kenBurns),
+         captionPreset=COALESCE(captionPreset,@captionPreset),
+         captionFont=COALESCE(captionFont,@captionFont),
+         captionAnim=COALESCE(captionAnim,@captionAnim),
+         captionAspect=COALESCE(captionAspect,@captionAspect),
+         captionLines=COALESCE(captionLines,@captionLines),
+         captionPosition=COALESCE(captionPosition,@captionPosition),
+         captionPace=COALESCE(captionPace,@captionPace),
+         captionHighlightColor=COALESCE(captionHighlightColor,@captionHighlightColor),
+         captionBoxColor=COALESCE(captionBoxColor,@captionBoxColor),
+         captionWordsPerPage=COALESCE(captionWordsPerPage,@captionWordsPerPage),
+         outputFolder=COALESCE(outputFolder,@outputFolder),
+         thumbnailTemplateId=COALESCE(thumbnailTemplateId,@thumbnailTemplateId),
+         lastSeenVideoId=COALESCE(lastSeenVideoId,@lastSeenVideoId),
+         lastRunAt=COALESCE(lastRunAt,@lastRunAt),
+         betaOpts=COALESCE(betaOpts,@betaOpts)
+       WHERE id=@id`
+    )
+    for (const row of rows) {
+      const profile = rowToProfile(row)
+      if (!profile.sourceUrl && !profile.linkedSourceId) continue
+      const allSources = d.prepare('SELECT id,url FROM source_channels').all() as Array<{ id: string; url?: string }>
+      const byUrl = normalizeSourceUrl(profile.sourceUrl)
+      const matchedByUrl = byUrl ? allSources.find((s) => normalizeSourceUrl(s.url) === byUrl)?.id : undefined
+      const linkedExists = profile.linkedSourceId ? byId.get(profile.linkedSourceId) : undefined
+      const id = linkedExists ? profile.linkedSourceId! : matchedByUrl ?? sourceIdForMigratedProfile(profile)
+      const handle = handleFromSourceUrl(profile.sourceUrl)
+      insertSource.run({
+        id,
+        url: profile.sourceUrl || handle || id,
+        handle,
+        name: profile.name || handle || 'Source'
+      })
+      updateAutomation.run({ id, ...profileToSourceAutomationRow(profile) })
+    }
+    d.prepare("INSERT OR REPLACE INTO app_meta (key,value) VALUES ('profiles_folded_v1','1')").run()
   })
   tx()
 }
@@ -268,9 +401,11 @@ export interface Repositories {
   myChannel(id: string): MyChannel | undefined
   upsertMyChannel(c: MyChannel): void
   sourceChannels(): SourceChannel[]
+  sourceChannel(id: string): SourceChannel | undefined
   sourceChannelByUrl(url: string): SourceChannel | undefined
   upsertSourceChannel(s: SourceChannel): void
-  setSourceCursor(id: string, patch: { lastSeenVideoId?: string | null; lastVisitedAt?: string }): void
+  setSourceCursor(id: string, patch: { lastSeenVideoId?: string | null; lastVisitedAt?: string; lastRunAt?: string }): void
+  updateSourceAutomation(id: string, patch: SourceAutomationPatch): SourceChannel[]
   deleteSourceChannel(id: string): void
   newVideoCountForSource(id: string): number
   setSourceLinkedMyChannel(id: string, myChannelId: string | null): void
@@ -397,6 +532,91 @@ export function closeDatabase(): void {
   repos = null
 }
 
+const SOURCE_BASE_COLS = [
+  'id', 'url', 'handle', 'name', 'nicheId', 'avatar', 'lastScrapedAt', 'lastVisitedAt',
+  'lastSeenVideoId', 'linkedMyChannelId', 'videoCount'
+]
+
+const SOURCE_AUTOMATION_COLS = [
+  'autoWatch', 'autoQueueRender', 'sourceOrder', 'sourceCount', 'imageMode', 'poolSize', 'kenBurns',
+  'captionPreset', 'captionFont', 'captionAnim', 'captionAspect', 'captionLines', 'captionPosition',
+  'captionPace', 'captionHighlightColor', 'captionBoxColor', 'captionWordsPerPage', 'outputFolder',
+  'thumbnailTemplateId', 'lastRunAt', 'betaOpts'
+] as const
+
+const SOURCE_SELECT_COLS = [...SOURCE_BASE_COLS, ...SOURCE_AUTOMATION_COLS].join(',')
+
+function parseSourceBetaOpts(raw: unknown): import('../../shared/types').BetaVideoOpts | undefined {
+  if (typeof raw !== 'string' || !raw.trim()) return undefined
+  try {
+    return asBetaOpts(JSON.parse(raw))
+  } catch {
+    return undefined
+  }
+}
+
+function rowToSourceChannel(r: Record<string, unknown>): SourceChannel {
+  const rawLines = Number(r.captionLines ?? 1)
+  const captionLines = rawLines === 2 || rawLines === 3 ? rawLines as 1 | 2 | 3 : 1
+  const rawPace = r.captionPace as SourceChannel['captionPace']
+  const captionPace = rawPace === 'word' || rawPace === 'phrase' ? rawPace : 'auto'
+  const rawWordsPerPage = Number(r.captionWordsPerPage ?? 0)
+  const captionWordsPerPage = rawWordsPerPage === 1 || rawWordsPerPage === 2 || rawWordsPerPage === 3 ? rawWordsPerPage as 1 | 2 | 3 : undefined
+  const rawOrder = r.sourceOrder as ScrapeOrder
+  const sourceOrder = rawOrder === 'Popular' || rawOrder === 'Oldest' ? rawOrder : 'Latest'
+  const rawMode = r.imageMode as ImageMode
+  const imageMode = rawMode === 'sequence' || rawMode === 'pool' ? rawMode : 'pool'
+  return {
+    ...(r as unknown as SourceChannel),
+    autoWatch: !!r.autoWatch,
+    autoQueueRender: !!r.autoQueueRender,
+    sourceOrder,
+    sourceCount: coerceNum(r.sourceCount, 5),
+    imageMode,
+    poolSize: coerceNum(r.poolSize, 10),
+    kenBurns: r.kenBurns == null ? true : !!r.kenBurns,
+    captionPreset: (r.captionPreset as string) ?? 'Hormozi',
+    captionFont: (r.captionFont as string) ?? 'Montserrat',
+    captionAnim: (r.captionAnim as string) ?? 'Pop-in',
+    captionAspect: (r.captionAspect as SourceChannel['captionAspect']) ?? '16:9',
+    captionLines,
+    captionPosition: (r.captionPosition as SourceChannel['captionPosition']) ?? 'bottom',
+    captionPace,
+    captionHighlightColor: typeof r.captionHighlightColor === 'string' && r.captionHighlightColor ? r.captionHighlightColor : undefined,
+    captionBoxColor: typeof r.captionBoxColor === 'string' && r.captionBoxColor ? r.captionBoxColor : undefined,
+    captionWordsPerPage,
+    betaOpts: parseSourceBetaOpts(r.betaOpts)
+  }
+}
+
+function sourceAutomationToRow(patch: SourceAutomationPatch): Record<string, unknown> {
+  const row: Record<string, unknown> = {}
+  const put = (key: typeof SOURCE_AUTOMATION_COLS[number], value: unknown): void => {
+    if (value !== undefined) row[key] = value
+  }
+  put('autoWatch', patch.autoWatch == null ? undefined : patch.autoWatch ? 1 : 0)
+  put('autoQueueRender', patch.autoQueueRender == null ? undefined : patch.autoQueueRender ? 1 : 0)
+  put('sourceOrder', patch.sourceOrder)
+  put('sourceCount', patch.sourceCount)
+  put('imageMode', patch.imageMode)
+  put('poolSize', patch.poolSize)
+  put('kenBurns', patch.kenBurns == null ? undefined : patch.kenBurns ? 1 : 0)
+  put('captionPreset', patch.captionPreset)
+  put('captionFont', patch.captionFont)
+  put('captionAnim', patch.captionAnim)
+  put('captionAspect', patch.captionAspect)
+  put('captionLines', patch.captionLines)
+  put('captionPosition', patch.captionPosition)
+  put('captionPace', patch.captionPace)
+  put('captionHighlightColor', patch.captionHighlightColor)
+  put('captionBoxColor', patch.captionBoxColor)
+  put('captionWordsPerPage', patch.captionWordsPerPage)
+  put('outputFolder', patch.outputFolder)
+  put('thumbnailTemplateId', patch.thumbnailTemplateId)
+  put('betaOpts', patch.betaOpts ? JSON.stringify(asBetaOpts(patch.betaOpts)) : undefined)
+  return row
+}
+
 function buildRepositories(d: Database.Database): Repositories {
   const allTemplates = (): ThumbnailTemplate[] =>
     (d.prepare('SELECT * FROM thumbnail_templates').all() as Array<{ id: string; name: string; layers: string }>).map(
@@ -404,6 +624,8 @@ function buildRepositories(d: Database.Database): Repositories {
     )
   const allProfiles = (): Profile[] =>
     (d.prepare('SELECT * FROM profiles').all() as Array<Record<string, unknown>>).map(rowToProfile)
+  const allSources = (): SourceChannel[] =>
+    (d.prepare(`SELECT ${SOURCE_SELECT_COLS} FROM source_channels ORDER BY COALESCE(lastVisitedAt,lastScrapedAt,name) DESC`).all() as Array<Record<string, unknown>>).map(rowToSourceChannel)
 
   return {
     myChannels: () => d.prepare('SELECT * FROM my_channels').all() as MyChannel[],
@@ -420,9 +642,15 @@ function buildRepositories(d: Database.Database): Repositories {
       ).run({ linkedSourceId: null, lastScrapedAt: null, ...c })
     },
 
-    sourceChannels: () => d.prepare('SELECT id,url,handle,name,nicheId,avatar,lastScrapedAt,lastVisitedAt,lastSeenVideoId,linkedMyChannelId,videoCount FROM source_channels ORDER BY COALESCE(lastVisitedAt,lastScrapedAt,name) DESC').all() as SourceChannel[],
-    sourceChannelByUrl: (url) =>
-      d.prepare('SELECT id,url,handle,name,nicheId,avatar,lastScrapedAt,lastVisitedAt,lastSeenVideoId,linkedMyChannelId,videoCount FROM source_channels WHERE url=?').get(url) as SourceChannel | undefined,
+    sourceChannels: allSources,
+    sourceChannel: (id) => {
+      const row = d.prepare(`SELECT ${SOURCE_SELECT_COLS} FROM source_channels WHERE id=?`).get(id) as Record<string, unknown> | undefined
+      return row ? rowToSourceChannel(row) : undefined
+    },
+    sourceChannelByUrl: (url) => {
+      const row = d.prepare(`SELECT ${SOURCE_SELECT_COLS} FROM source_channels WHERE url=?`).get(url) as Record<string, unknown> | undefined
+      return row ? rowToSourceChannel(row) : undefined
+    },
     upsertSourceChannel: (s) => {
       d.prepare(
         `INSERT INTO source_channels (id,url,handle,name,nicheId,avatar,lastScrapedAt,lastVisitedAt,lastSeenVideoId,linkedMyChannelId,videoCount)
@@ -453,9 +681,19 @@ function buildRepositories(d: Database.Database): Repositories {
       d.prepare(
         `UPDATE source_channels
          SET lastVisitedAt=COALESCE(@lastVisitedAt,lastVisitedAt),
-             lastSeenVideoId=COALESCE(@lastSeenVideoId,lastSeenVideoId)
+             lastSeenVideoId=COALESCE(@lastSeenVideoId,lastSeenVideoId),
+             lastRunAt=COALESCE(@lastRunAt,lastRunAt)
          WHERE id=@id`
-      ).run({ id, lastVisitedAt: patch.lastVisitedAt ?? null, lastSeenVideoId: patch.lastSeenVideoId ?? null })
+      ).run({ id, lastVisitedAt: patch.lastVisitedAt ?? null, lastSeenVideoId: patch.lastSeenVideoId ?? null, lastRunAt: patch.lastRunAt ?? null })
+    },
+    updateSourceAutomation: (id, patch) => {
+      if (!d.prepare('SELECT id FROM source_channels WHERE id=?').get(id)) throw new Error(`Unknown source: ${id}`)
+      const row = sourceAutomationToRow(patch)
+      const cols = Object.keys(row)
+      if (cols.length > 0) {
+        d.prepare(`UPDATE source_channels SET ${cols.map((c) => `${c}=@${c}`).join(', ')} WHERE id=@id`).run({ id, ...row })
+      }
+      return allSources()
     },
     deleteSourceChannel: (id) => {
       const tx = d.transaction(() => {
