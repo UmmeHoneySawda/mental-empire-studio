@@ -21,6 +21,10 @@ function fmtDur(sec: number): string {
   return `${m}:${String(s).padStart(2, '0')}`
 }
 
+function fmtViews(views: number): string {
+  return views > 0 ? `${views.toLocaleString()} views` : '— views'
+}
+
 function YouTubeThumb({ videoId, alt, fallback, selected }: { videoId: string; alt: string; fallback: string; selected?: boolean }): JSX.Element {
   const [quality, setQuality] = useState<YoutubeThumbQuality>('max')
   const [failed, setFailed] = useState(false)
@@ -378,7 +382,7 @@ export function Download(): JSX.Element {
               <div style={{ padding: '11px 12px' }}>
                 <div title={v.title} style={{ fontSize: 12.5, color: on ? '#f2f4f7' : '#dde0e5', lineHeight: 1.35, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{v.title}</div>
                 <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginTop: 5 }}>
-                  <div style={{ fontSize: 10.5, color: '#5b616f', fontFamily: 'var(--font-mono)', minWidth: 0, flex: 1 }}>{v.views > 0 ? `${v.views.toLocaleString()} views` : ''}</div>
+                  <div style={{ fontSize: 10.5, color: '#5b616f', fontFamily: 'var(--font-mono)', minWidth: 0, flex: 1 }}>{fmtViews(v.views)}</div>
                   {workflowP1 && badge.kind === 'pending' && (
                     <button type="button" onClick={(e) => { e.stopPropagation(); void setItemUploaded(v.id, true) }} style={{ flex: 'none', border: '1px solid rgba(245,179,35,.45)', background: 'rgba(245,179,35,.12)', color: '#f5b323', borderRadius: 7, padding: '3px 7px', fontSize: 10, cursor: 'pointer' }}>Confirm</button>
                   )}
