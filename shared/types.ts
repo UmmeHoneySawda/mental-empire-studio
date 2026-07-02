@@ -826,6 +826,12 @@ export interface NativeApi {
     /** data-only reset: wipe channels/projects/downloads/jobs/transcripts but keep API keys and settings */
     softReset(): Promise<void>
   }
+  appMeta: {
+    /** read app-level onboarding/migration markers stored in app_meta */
+    get(key: string): Promise<string>
+    /** write app-level onboarding/migration markers stored in app_meta */
+    set(key: string, value: string): Promise<void>
+  }
   caps: {
     get(force?: boolean): Promise<RenderCapabilities>
   }

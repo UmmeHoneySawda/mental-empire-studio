@@ -45,6 +45,11 @@ const api: NativeApi = {
     softReset: () => ipcRenderer.invoke('app:softReset')
   },
 
+  appMeta: {
+    get: (key: string) => ipcRenderer.invoke('appMeta:get', key),
+    set: (key: string, value: string) => ipcRenderer.invoke('appMeta:set', key, value)
+  },
+
   caps: {
     get: (force?: boolean) => ipcRenderer.invoke('caps:get', !!force)
   },

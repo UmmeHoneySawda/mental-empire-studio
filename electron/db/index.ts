@@ -489,6 +489,10 @@ export interface Repositories {
   nicheKeyForDownload(downloadId: string): string | undefined
   /** The niche assigned to a download's source channel, if any. */
   nicheForDownload(downloadId: string): Niche | undefined
+  /** Read a small app-level marker from app_meta. */
+  appMeta(key: string): string | undefined
+  /** Persist a small app-level marker in app_meta. */
+  setAppMeta(key: string, value: string): void
   /** Wipe every domain table (channels, profiles, projects, jobs, …) back to empty,
    *  and mark the DB seeded so demo content is not re-inserted on next launch. */
   resetAll(): void
@@ -1122,6 +1126,13 @@ function buildRepositories(d: Database.Database): Repositories {
         orientation: (row.orientation as Niche['orientation']) || 'landscape',
         targetClips: Number(row.targetClips ?? 60), createdAt: String(row.createdAt ?? ''), updatedAt: String(row.updatedAt ?? '')
       }
+    },
+    appMeta: (key) => {
+      const row = d.prepare('SELECT value FROM app_meta WHERE key=?').get(key) as { value: string } | undefined
+      return row?.value
+    },
+    setAppMeta: (key, value) => {
+      d.prepare('INSERT OR REPLACE INTO app_meta (key,value) VALUES (?,?)').run(key, value)
     },
 
     softReset: () => {

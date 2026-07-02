@@ -113,6 +113,7 @@ function installMock(): void {
     outputFolder: '/Browser/MentalEmpire_out',
     beta: { enabled: false, pexelsKey: '', pixabayKey: '', coverrKey: '' }
   } as Partial<AppSettings>)
+  const appMeta = new Map<string, string>()
 
   const sourceChannels: SourceChannel[] = [
     { id: 'src-pw', url: 'https://www.youtube.com/@powerwithinofficial-q7d', handle: '@powerwithinofficial-q7d', name: 'Power Within Official', lastScrapedAt: new Date().toISOString(), videoCount: 5, autoWatch: true, sourceOrder: 'Latest', sourceCount: 5, imageMode: 'pool', poolSize: 10, kenBurns: true, captionPreset: 'Hormozi', captionAspect: '16:9', betaOpts: { ...DEFAULT_BETA_OPTS, broll: { ...DEFAULT_BETA_OPTS.broll, enabled: true }, style: 'Cinematic' } },
@@ -388,6 +389,10 @@ function installMock(): void {
         settings = { ...DEFAULT_SETTINGS }
         return settings
       }
+    }),
+    appMeta: ns({
+      get: async (key: string) => appMeta.get(key) ?? '',
+      set: async (key: string, value: string) => { appMeta.set(key, value) }
     }),
     db: ns({
       myChannels: async () => channels,

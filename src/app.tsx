@@ -3,6 +3,7 @@ import { useStore } from './store/useStore'
 import { useData } from './store/useData'
 import { TitleBar } from './components/TitleBar'
 import { Sidebar } from './components/Sidebar'
+import { FirstRunOnboarding } from './components/FirstRunOnboarding'
 import { Home } from './screens/Home'
 import { MyChannels } from './screens/MyChannels'
 import { Download } from './screens/Download'
@@ -70,6 +71,7 @@ export function App(): JSX.Element {
             </Suspense>
           </ErrorBoundary>
         </div>
+        <FirstRunOnboarding />
       </div>
     </div>
   )

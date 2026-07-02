@@ -37,6 +37,10 @@ export function registerIpc(): void {
     return next
   })
   ipcMain.handle('caps:get', (_e, force?: boolean) => probeRenderCapabilities(!!force))
+  ipcMain.handle('appMeta:get', (_e, key: string) => getRepos().appMeta(reqId(key, 'key')) ?? '')
+  ipcMain.handle('appMeta:set', (_e, key: string, value: string) => {
+    getRepos().setAppMeta(reqId(key, 'key'), String(value))
+  })
   // Factory reset: settings back to defaults + wipe all projects/profiles/channels/jobs.
   ipcMain.handle('app:reset', () => {
     const next = resetSettings()
