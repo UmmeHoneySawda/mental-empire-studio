@@ -116,10 +116,10 @@ const IMG_GRADS = ['linear-gradient(135deg,#2a2540,#46243a)', 'linear-gradient(1
 const CAPTION_ASPECTS: Project['captionAspect'][] = ['16:9', '1:1', '9:16']
 const CAPTION_LINES: Array<NonNullable<Project['captionLines']>> = [1, 2, 3]
 const CAPTION_POSITIONS: Array<NonNullable<Project['captionPosition']>> = ['bottom', 'middle', 'top']
-const CAPTION_PACES: Array<{ value: NonNullable<Project['captionPace']>; label: string }> = [
-  { value: 'auto', label: 'Auto' },
-  { value: 'word', label: 'Word' },
-  { value: 'phrase', label: 'Steady' }
+const CAPTION_PACES: Array<{ value: NonNullable<Project['captionPace']>; label: string; help: string }> = [
+  { value: 'auto', label: 'Auto', help: 'Studio picks the best timing for this video length.' },
+  { value: 'word', label: 'Word by word', help: 'Each spoken word highlights as it is said.' },
+  { value: 'phrase', label: 'Steady pages', help: 'Captions change in calmer chunks for long videos.' }
 ]
 
 function overlayBackground(o?: BetaVideoOpts['overlay']): string {
@@ -195,13 +195,13 @@ function MediaTab(): JSX.Element {
           <span>{brollEnabled ? 'Auto B-roll ON' : 'Auto B-roll off'}</span>
         </div>
         <div style={{ display: 'flex', background: '#0e1116', border: '1px solid #23272f', borderRadius: 10, overflow: 'hidden', fontSize: 12.5 }}>
-          <button type="button" title="Play images in a fixed order, one after another" onClick={() => void setMedia({ imageMode: 'sequence' })} style={{ border: 0, padding: '9px 16px', cursor: 'pointer', background: mode === 'sequence' ? 'var(--accent)' : 'transparent', color: mode === 'sequence' ? 'var(--accent-ink)' : '#8a909c', fontWeight: 600 }}>Sequence</button>
-          <button type="button" title="Shuffle images randomly on each render (locked by seed)" onClick={() => void setMedia({ imageMode: 'pool' })} style={{ border: 0, padding: '9px 16px', cursor: 'pointer', background: mode === 'pool' ? 'var(--accent)' : 'transparent', color: mode === 'pool' ? 'var(--accent-ink)' : '#8a909c', fontWeight: 600 }}>Random pool</button>
+          <button type="button" title="Play images in this exact order, one after another" onClick={() => void setMedia({ imageMode: 'sequence' })} style={{ border: 0, padding: '9px 16px', cursor: 'pointer', background: mode === 'sequence' ? 'var(--accent)' : 'transparent', color: mode === 'sequence' ? 'var(--accent-ink)' : '#8a909c', fontWeight: 600 }}>In order</button>
+          <button type="button" title="Let Studio choose a shuffled image order" onClick={() => void setMedia({ imageMode: 'pool' })} style={{ border: 0, padding: '9px 16px', cursor: 'pointer', background: mode === 'pool' ? 'var(--accent)' : 'transparent', color: mode === 'pool' ? 'var(--accent-ink)' : '#8a909c', fontWeight: 600 }}>Shuffle</button>
         </div>
       </div>
       {mode === 'pool' && (
         <div style={{ fontSize: 11, color: '#8a909c', marginBottom: 12, padding: '8px 12px', background: '#0e1116', border: '1px solid #23272f', borderRadius: 9 }}>
-          Images will be shuffled into a random order on each render. Use Re-roll to preview a different arrangement, or lock a specific order with the seed.
+          Studio shuffles these images into a repeatable order. Use Try another order until the flow feels right.
         </div>
       )}
       <div style={{ display: 'flex', gap: 20, marginBottom: 20 }}>
@@ -220,11 +220,11 @@ function MediaTab(): JSX.Element {
             <div style={{ position: 'absolute', bottom: 12, left: 14, right: 14, height: 6, borderRadius: 4, background: 'rgba(255,255,255,.18)', overflow: 'hidden' }}><div style={{ width: '35%', height: '100%', background: 'var(--accent)' }} /></div>
           </div>
           <div style={{ display: 'flex', gap: 8, marginTop: 12 }}>
-            <button type="button" onClick={() => void setMedia({ seed: Math.floor(Math.random() * 9000) + 1000 })} className="me-btn" style={{ display: 'flex', alignItems: 'center', gap: 7, border: '1px solid #262b34', background: '#15181f', borderRadius: 9, padding: '8px 13px', fontSize: 11.5, color: '#c4cad3', cursor: 'pointer' }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 11-3-6.7M21 4v5h-5" /></svg>Re-roll</button>
+            <button type="button" onClick={() => void setMedia({ seed: Math.floor(Math.random() * 9000) + 1000 })} className="me-btn" style={{ display: 'flex', alignItems: 'center', gap: 7, border: '1px solid #262b34', background: '#15181f', borderRadius: 9, padding: '8px 13px', fontSize: 11.5, color: '#c4cad3', cursor: 'pointer' }}><svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M21 12a9 9 0 11-3-6.7M21 4v5h-5" /></svg>Try another order</button>
             <label title="Duration of the crossfade transition between images (0 = cut)" style={{ display: 'flex', alignItems: 'center', gap: 5, border: '1px solid #262b34', background: '#15181f', borderRadius: 9, padding: '8px 13px', fontSize: 11.5, color: '#8a909c', cursor: 'default' }}>
               Crossfade<input type="number" min={0} max={3} step={0.1} value={project?.crossfade ?? 0.8} onChange={(e) => void setMedia({ crossfade: parseFloat(e.target.value) || 0 })} style={{ width: 34, border: 'none', background: 'transparent', color: '#c4cad3', fontSize: 11.5, textAlign: 'right', outline: 'none', padding: 0 }} />s
             </label>
-            <div style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 9, padding: '8px 13px', fontSize: 11.5, color: '#8a909c', fontFamily: 'var(--font-mono)' }}>seed {project?.seed ?? '—'}</div>
+            <div title="Same lock number means the same shuffled order." style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 9, padding: '8px 13px', fontSize: 11.5, color: '#8a909c', fontFamily: 'var(--font-mono)' }}>order lock {project?.seed ?? '—'}</div>
           </div>
         </div>
         <div style={{ flex: 1 }}>
@@ -418,7 +418,7 @@ function StyleTab(): JSX.Element {
           <div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 7 }}>Automatically zoom in</div>
           <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
             <BetaRow label="At start" on={o.autoZoom.atStart} set={() => patch({ autoZoom: { ...o.autoZoom, atStart: !o.autoZoom.atStart } })} />
-            <BetaRow label="At key phrases" on={o.autoZoom.atKeyPhrases} set={() => patch({ autoZoom: { ...o.autoZoom, atKeyPhrases: !o.autoZoom.atKeyPhrases } })} />
+            <BetaRow label="On important words" on={o.autoZoom.atKeyPhrases} set={() => patch({ autoZoom: { ...o.autoZoom, atKeyPhrases: !o.autoZoom.atKeyPhrases } })} />
           </div>
         </div>
         <div style={{ borderTop: '1px solid #1d2129', paddingTop: 12 }}>
@@ -707,7 +707,11 @@ function CaptionsTab(): JSX.Element {
           <div><div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 7 }}>Aspect</div><div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, fontSize: 10.5 }}>{CAPTION_ASPECTS.map((a) => chip(a, (project?.captionAspect ?? '16:9') === a, () => void setCaptions({ captionAspect: a }), a))}</div></div>
           <div><div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 7 }}>Lines</div><div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, fontSize: 10.5 }}>{CAPTION_LINES.map((n) => chip(`${n} line${n > 1 ? 's' : ''}`, (project?.captionLines ?? 1) === n, () => void setCaptions({ captionLines: n }), String(n)))}</div></div>
           <div><div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 7 }}>Position</div><div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, fontSize: 10.5 }}>{CAPTION_POSITIONS.map((p) => chip(p[0].toUpperCase() + p.slice(1), (project?.captionPosition ?? 'bottom') === p, () => void setCaptions({ captionPosition: p }), p))}</div></div>
-          <div><div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 7 }}>Pace</div><div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, fontSize: 10.5 }}>{CAPTION_PACES.map((p) => chip(p.label, (project?.captionPace ?? 'auto') === p.value, () => void setCaptions({ captionPace: p.value }), p.value))}</div></div>
+          <div>
+            <div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 7 }}>Caption timing</div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6, fontSize: 10.5 }}>{CAPTION_PACES.map((p) => chip(p.label, (project?.captionPace ?? 'auto') === p.value, () => void setCaptions({ captionPace: p.value }), p.value))}</div>
+            <div style={{ marginTop: 6, fontSize: 10.5, color: '#6a7180', lineHeight: 1.35 }}>{CAPTION_PACES.find((p) => p.value === (project?.captionPace ?? 'auto'))?.help}</div>
+          </div>
           {isSubmagic && (
             <div style={{ border: '1px solid var(--accent)', borderRadius: 10, padding: 10, background: 'var(--accent-soft)' }}>
               <div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 7 }}>Words per page</div>
