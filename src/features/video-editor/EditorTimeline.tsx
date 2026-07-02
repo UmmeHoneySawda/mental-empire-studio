@@ -2,6 +2,7 @@ import type { MotionPreset, Project, ProjectImage, TranscriptWord } from '@share
 import { LOOKS } from '@shared/looks'
 import type { MouseEvent, ReactNode } from 'react'
 import { useData } from '../../store/useData'
+import { QUICK_CAPTION_PRESETS, captionPresetPatch } from './captionPresets'
 import {
   buildCaptionTimeline,
   buildVisualTimeline,
@@ -240,16 +241,7 @@ function Inspector({
     setImageRange(start, start + span)
   }
   const selectCaptionPreset = (captionPreset: string): void => {
-    const patch: Partial<Project> = { captionPreset }
-    if (captionPreset === 'Submagic') {
-      patch.captionPace = 'word'
-      patch.captionLines = 1
-      patch.captionFont = project.captionFont || 'Anton'
-      patch.captionHighlightColor = project.captionHighlightColor ?? '#111111'
-      patch.captionBoxColor = project.captionBoxColor ?? '#ffd93d'
-      patch.captionWordsPerPage = project.captionWordsPerPage ?? 1
-    }
-    void setCaptions(patch)
+    void setCaptions(captionPresetPatch(project, captionPreset))
   }
 
   return (
@@ -326,7 +318,7 @@ function Inspector({
             ))}
           </div>
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 6 }}>
-            {['Hormozi', 'Submagic', 'Pop', 'Minimal'].map((preset) => (
+            {QUICK_CAPTION_PRESETS.map((preset) => (
               <MiniButton key={preset} active={project.captionPreset === preset} onClick={() => selectCaptionPreset(preset)}>
                 {preset}
               </MiniButton>

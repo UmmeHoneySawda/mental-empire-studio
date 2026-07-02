@@ -9,6 +9,8 @@ import { buildMasterPrompt, validateEffectPlan } from '@shared/effectPlan'
 import { isCssImageValue, mediaSrc, videoSrc } from '../lib/media'
 import { PreviewCanvas } from '../features/video-editor/PreviewCanvas'
 import { LookGallery } from '../features/video-editor/LookGallery'
+import { CaptionGallery } from '../features/video-editor/CaptionGallery'
+import { CAPTION_PRESETS, QUICK_CAPTION_PRESETS } from '../features/video-editor/captionPresets'
 import { EditorTimeline, type EditorSelection } from '../features/video-editor/EditorTimeline'
 
 function Tab({ id, label, icon }: { id: 'media' | 'captions' | 'style' | 'advanced'; label: string; icon: JSX.Element }): JSX.Element {
@@ -29,7 +31,6 @@ function fmt(sec: number): string {
 }
 
 const IMG_GRADS = ['linear-gradient(135deg,#2a2540,#46243a)', 'linear-gradient(135deg,#1a2e3a,#0f3a32)', 'linear-gradient(135deg,#23304a,#1a2438)', 'linear-gradient(135deg,#2e2440,#3a1f2e)']
-const CAPTION_PRESETS = ['Hormozi', 'Submagic', 'Pop', 'Bold', 'Word', 'Neon', 'Minimal']
 const CAPTION_ASPECTS: Project['captionAspect'][] = ['16:9', '1:1', '9:16']
 const CAPTION_LINES: Array<NonNullable<Project['captionLines']>> = [1, 2, 3]
 const CAPTION_POSITIONS: Array<NonNullable<Project['captionPosition']>> = ['bottom', 'middle', 'top']
@@ -471,18 +472,6 @@ function QuickPanel({ customizeOpen, onCustomizeToggle }: { customizeOpen: boole
   const setMotion = (preset: MotionPreset): void => {
     void setMedia({ motionPreset: preset, kenBurns: preset !== 'off' })
   }
-  const selectCaptionPreset = (captionPreset: string): void => {
-    const patch: Partial<Project> = { captionPreset }
-    if (captionPreset === 'Submagic') {
-      patch.captionPace = 'word'
-      patch.captionLines = 1
-      patch.captionFont = project.captionFont || 'Anton'
-      patch.captionHighlightColor = project.captionHighlightColor ?? '#111111'
-      patch.captionBoxColor = project.captionBoxColor ?? '#ffd93d'
-      patch.captionWordsPerPage = project.captionWordsPerPage ?? 1
-    }
-    void setCaptions(patch)
-  }
 
   return (
     <div style={{ border: '1px solid #1d2129', borderRadius: 14, background: '#12151b', marginBottom: 18, padding: 14, display: 'grid', gridTemplateColumns: 'minmax(0,1.1fr) minmax(0,1fr)', gap: 14 }}>
@@ -505,11 +494,7 @@ function QuickPanel({ customizeOpen, onCustomizeToggle }: { customizeOpen: boole
         </div>
         <div>
           <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, color: '#5b616f', marginBottom: 7 }}>CAPTIONS</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(0,1fr))', gap: 6 }}>
-            {['Hormozi', 'Submagic', 'Pop', 'Minimal'].map((preset) => (
-              <QuickButton key={preset} active={(project.captionPreset ?? 'Hormozi') === preset} onClick={() => selectCaptionPreset(preset)}>{preset}</QuickButton>
-            ))}
-          </div>
+          <CaptionGallery presets={QUICK_CAPTION_PRESETS} compact />
         </div>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
@@ -621,30 +606,12 @@ function CaptionsTab(): JSX.Element {
     setPreviewError('Preview cancelled. Your images and captions were kept intact.')
   }
 
-  const selectCaptionPreset = (name: string): void => {
-    const patch: Partial<Project> = { captionPreset: name }
-    if (name === 'Submagic') {
-      patch.captionPace = 'word'
-      patch.captionLines = 1
-      patch.captionFont = project?.captionFont || 'Anton'
-      patch.captionHighlightColor = project?.captionHighlightColor ?? '#111111'
-      patch.captionBoxColor = project?.captionBoxColor ?? '#ffd93d'
-      patch.captionWordsPerPage = project?.captionWordsPerPage ?? 1
-    }
-    void setCaptions(patch)
-  }
-
   return (
     <div style={{ display: 'flex', gap: 18 }}>
       <div style={{ flex: 'none', width: 284, display: 'flex', flexDirection: 'column', gap: 16 }}>
         <div style={{ border: '1px solid #1d2129', borderRadius: 14, padding: 15, background: '#12151b' }}>
           <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '.6px', color: '#5b616f', marginBottom: 11 }}>PRESET</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 8 }}>
-            {CAPTION_PRESETS.map((name) => {
-              const on = name === preset
-              return <div key={name} onClick={() => selectCaptionPreset(name)} className="me-card" style={{ border: on ? '1px solid var(--accent)' : '1px solid #1d2129', background: on ? 'var(--accent-soft)' : '#0e1116', borderRadius: 9, padding: '11px 5px', textAlign: 'center', cursor: 'pointer' }}><div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 12, color: on ? '#f2f4f7' : '#8a909c' }}>{name}</div></div>
-            })}
-          </div>
+          <CaptionGallery presets={CAPTION_PRESETS} />
         </div>
         <div style={{ border: '1px solid #1d2129', borderRadius: 14, padding: 15, background: '#12151b', display: 'flex', flexDirection: 'column', gap: 14 }}>
           <div>
