@@ -56,8 +56,8 @@ export function registerRenderIpc(): void {
     // it to 'queued', otherwise set it here for an already-idle job.
     const job = getRepos().renderJob(id)
     if (!cancelRender(id, 'cancel')) {
-      if (job?.status === 'rendering') markCancelIntent(id, 'cancel')
-      else getRepos().setRenderStatus(id, { status: 'queued', pct: 0, error: '' })
+      if (job?.status === 'rendering' || id.startsWith('preview-')) markCancelIntent(id, 'cancel')
+      else if (job) getRepos().setRenderStatus(id, { status: 'queued', pct: 0, error: '' })
     }
   })
   ipcMain.handle('render:delete', (_e, id: string) => {

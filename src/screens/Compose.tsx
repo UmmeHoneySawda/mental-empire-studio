@@ -589,6 +589,7 @@ function CaptionsTab(): JSX.Element {
       setPreviewState('ready')
     } catch (e) {
       if (previewRunRef.current !== runId) return
+      await refreshActiveProjectSnapshot(projectId).catch(() => undefined)
       setPreviewError((e as Error).message)
       setPreviewState('error')
     } finally {

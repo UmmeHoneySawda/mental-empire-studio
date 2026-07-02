@@ -36,11 +36,27 @@ function probeEncoder(args: string[]): ProbeResult {
   }
 }
 
+function firstNvidiaName(raw: string): string {
+  return raw.split(/\r?\n/).map((line) => line.trim()).find((line) => /nvidia|geforce|rtx|gtx/i.test(line)) ?? ''
+}
+
 function nvidiaGpuName(): string {
   if (process.platform !== 'win32') return ''
   const r = spawnSync('nvidia-smi', ['--query-gpu=name', '--format=csv,noheader'], { encoding: 'utf8', windowsHide: true })
   const out = `${r.stdout ?? ''}`.trim()
-  return r.status === 0 && /nvidia|geforce|rtx|gtx/i.test(`${out}${r.stderr ?? ''}`) ? out.split(/\r?\n/)[0] ?? '' : ''
+  const smiName = r.status === 0 ? firstNvidiaName(`${out}\n${r.stderr ?? ''}`) : ''
+  if (smiName) return smiName
+
+  // Some Windows installs do not expose nvidia-smi in PATH even though Task Manager
+  // sees the card. Fall back to WMI so Settings can explain "GPU detected, NVENC
+  // probe failed" instead of claiming NVIDIA is absent.
+  const ps = spawnSync('powershell.exe', [
+    '-NoProfile',
+    '-ExecutionPolicy', 'Bypass',
+    '-Command',
+    '(Get-CimInstance Win32_VideoController | Select-Object -ExpandProperty Name) -join "`n"'
+  ], { encoding: 'utf8', windowsHide: true })
+  return ps.status === 0 ? firstNvidiaName(`${ps.stdout ?? ''}\n${ps.stderr ?? ''}`) : ''
 }
 
 export function probeRenderCapabilities(force = false): RenderCapabilities {

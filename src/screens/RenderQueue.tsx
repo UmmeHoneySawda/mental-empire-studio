@@ -81,6 +81,8 @@ export function RenderQueue(): JSX.Element {
   const canRenderAll = queuedRows.length > 0 && readyCount === queuedRows.length && !rendering
   const canRenderSome = readyCount > 0 && !canRenderAll && !rendering
   const outputFolder = settings.libraryFolder || settings.outputFolder || '<Documents>/MentalEmpireStudio'
+  const hardwareEncoder = (settings.encoder ?? 'cpu') !== 'cpu'
+  const effectiveParallel = hardwareEncoder ? 1 : settings.concurrency
 
   const browse = async (): Promise<void> => {
     const dir = await window.api?.chooseFolder?.()
@@ -119,7 +121,7 @@ export function RenderQueue(): JSX.Element {
             <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 22, letterSpacing: '-.5px', color: '#f4f6f9', lineHeight: 1 }}>Render queue</div>
             <div style={{ fontSize: 11, color: '#6a7180', marginTop: 4 }}>
               {processing > 0 && <span style={{ color: 'var(--accent)', marginRight: 10 }}>● {processing} rendering</span>}
-              {rows.length} jobs · {settings.concurrency} parallel
+              {rows.length} jobs · {effectiveParallel} active{hardwareEncoder && settings.concurrency > 1 ? ` (hardware cap; setting ${settings.concurrency})` : ''}
             </div>
           </div>
 

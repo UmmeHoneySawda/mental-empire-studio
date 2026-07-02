@@ -483,11 +483,11 @@ export async function runAll(): Promise<void> {
   const jobs = getRepos().queuedJobs()
   const settings = getSettings()
   const requested = Math.max(1, settings.concurrency)
-  // Consumer GPUs cap concurrent hardware-encode sessions (often 2–3 on GeForce) and a
-  // single encoder ASIC means parallel HW encodes mostly contend rather than speed up.
-  // So when a GPU encoder is selected, cap effective parallelism for the encode stage.
+  // Hardware mode is intentionally one-at-a-time. Even with NVENC/WebCodecs, captions,
+  // muxing, disk IO and stock normalization still have CPU-side work; parallel jobs made
+  // the user's machine peg CPU and turned ETA into fiction.
   const enc = selectEncoder(settings, probeRenderCapabilities())
-  const concurrency = enc.device === 'gpu' ? Math.min(requested, 2) : requested
+  const concurrency = enc.device === 'gpu' ? 1 : requested
   let idx = 0
   let active = 0
   maxActive = 0
