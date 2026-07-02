@@ -12,6 +12,7 @@ import { LookGallery } from '../features/video-editor/LookGallery'
 import { CaptionGallery } from '../features/video-editor/CaptionGallery'
 import { CAPTION_PRESETS, QUICK_CAPTION_PRESETS } from '../features/video-editor/captionPresets'
 import { EditorTimeline, type EditorSelection } from '../features/video-editor/EditorTimeline'
+import { PipelineRibbon } from '../components/PipelineRibbon'
 
 function Tab({ id, label, icon }: { id: 'media' | 'captions' | 'style' | 'advanced'; label: string; icon: JSX.Element }): JSX.Element {
   const composeTab = useStore((s) => s.composeTab)
@@ -768,6 +769,19 @@ export function Compose(): JSX.Element {
           <div style={{ fontSize: 12, color: '#6a7180' }}>{project ? `${project.title} · ${Math.floor((project.durationSec || 0) / 60)}:${String(Math.round((project.durationSec || 0) % 60)).padStart(2, '0')}` : 'No project — download a clip first'}</div>
         )}
       </div>
+      {project && (
+        <PipelineRibbon
+          title={project.title}
+          downloadId={project.downloadId}
+          projectId={project.id}
+          snapshot={{
+            downloaded: true,
+            hasImages: images.length > 0,
+            captioned: transcript.length > 0,
+            hasThumbnail: Boolean(project.thumbPath)
+          }}
+        />
+      )}
       <div style={{ display: 'flex', gap: 9, marginBottom: videoEditorV2 && project ? 14 : 22, flexWrap: 'wrap', alignItems: 'center' }}>
         {videoEditorV2 && project ? (
           <>
@@ -791,7 +805,7 @@ export function Compose(): JSX.Element {
           </>
         )}
         <div style={{ flex: 1 }} />
-        <button type="button" onClick={() => void sendToRender()} className="me-btn" style={{ display: 'flex', alignItems: 'center', gap: 7, border: '1px solid #262b34', background: '#15181f', borderRadius: 10, padding: '9px 16px', fontSize: 12.5, color: '#c4cad3', cursor: 'pointer' }}>Save &amp; send to render<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M5 12h14M13 6l6 6-6 6" /></svg></button>
+        <button type="button" disabled={!project} onClick={() => { if (project) void sendToRender() }} className="me-btn" style={{ display: 'flex', alignItems: 'center', gap: 7, border: '1px solid #262b34', background: '#15181f', borderRadius: 10, padding: '9px 16px', fontSize: 12.5, color: '#c4cad3', cursor: project ? 'pointer' : 'not-allowed', opacity: project ? 1 : 0.5 }}>Save &amp; send to render<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M5 12h14M13 6l6 6-6 6" /></svg></button>
       </div>
       <PreviewCanvas playheadSec={videoPlayheadSec} onPlayheadChange={setVideoPlayheadSec} selectedLabel={selectedLabel} />
       {videoEditorV2 && project && <QuickPanel customizeOpen={videoCustomizeOpen} onCustomizeToggle={() => setVideoCustomizeOpen((open) => !open)} />}

@@ -5,6 +5,7 @@ import { useData } from '../store/useData'
 import type { RenderProgress, RenderQueueRow, RenderStage, RenderStatus } from '@shared/types'
 import { mediaSrc } from '../lib/media'
 import { renderLiveState } from '../lib/renderProgress'
+import { PipelineRibbon } from '../components/PipelineRibbon'
 
 const THUMB_BG = 'linear-gradient(135deg,#2a2540,#46243a)'
 const STAGES: RenderStage[] = ['preparing', 'captioning', 'fetching-broll', 'assembling', 'encoding', 'finalizing']
@@ -83,6 +84,7 @@ export function RenderQueue(): JSX.Element {
   const outputFolder = settings.libraryFolder || settings.outputFolder || '<Documents>/MentalEmpireStudio'
   const hardwareEncoder = (settings.encoder ?? 'cpu') !== 'cpu'
   const effectiveParallel = hardwareEncoder ? 1 : settings.concurrency
+  const focusRow = rows.find((r) => live(r).status === 'rendering') ?? rows.find((r) => !r.isReady) ?? rows.find((r) => live(r).status === 'queued') ?? rows[0]
 
   const browse = async (): Promise<void> => {
     const dir = await window.api?.chooseFolder?.()
@@ -150,6 +152,21 @@ export function RenderQueue(): JSX.Element {
           </button>
         </div>
       </div>
+
+      {focusRow && (
+        <PipelineRibbon
+          title={focusRow.job.title}
+          projectId={focusRow.job.projectId}
+          snapshot={{
+            projectId: focusRow.job.projectId,
+            downloaded: focusRow.hasMp3,
+            hasImages: focusRow.images > 0,
+            captioned: focusRow.hasCaptions,
+            hasThumbnail: focusRow.hasThumb,
+            rendered: live(focusRow).status === 'done'
+          }}
+        />
+      )}
 
       {/* Job cards */}
       {rows.length === 0 && (

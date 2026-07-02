@@ -7,6 +7,7 @@ import { asGlow, asOutline, asShadow, DEFAULT_SCRIM, DEFAULT_TEXT_HIGHLIGHT, THU
 import { ThumbCanvas } from '../features/thumbnail-editor/ThumbCanvas'
 import { rasterizeLayers, withHeadline } from '../features/thumbnail-editor/render'
 import { youtubeIdFromDownloadId, youtubeThumbUrl, type YoutubeThumbQuality } from '@shared/youtube'
+import { PipelineRibbon } from '../components/PipelineRibbon'
 
 function layerGlyph(l: ThumbnailLayer): string {
   if (l.kind === 'text') return 'T'
@@ -803,6 +804,8 @@ export function Thumbnails(): JSX.Element {
   const selectAllUnlockedLayers = useStore((s) => s.selectAllUnlockedLayers)
   const clearSelection = useStore((s) => s.clearSelection)
   const activeProject = useData((s) => s.activeProject)
+  const projectImages = useData((s) => s.projectImages)
+  const transcript = useData((s) => s.transcript)
   const downloads = useData((s) => s.downloads)
   const openProject = useData((s) => s.openProject)
   const setActive = useStore((s) => s.setActive)
@@ -944,6 +947,20 @@ export function Thumbnails(): JSX.Element {
         </div>
       </div>
       {saveError && <div title={saveError} className="me-clamp-2" style={{ marginTop: -10, marginBottom: 14, border: '1px solid #5a2530', background: 'rgba(255,90,110,.1)', color: '#ff8a96', borderRadius: 10, padding: '9px 12px', fontSize: 11.5 }}>{saveError}</div>}
+
+      {activeProject && (
+        <PipelineRibbon
+          title={activeProject.title}
+          downloadId={activeProject.downloadId}
+          projectId={activeProject.id}
+          snapshot={{
+            downloaded: true,
+            hasImages: projectImages.length > 0,
+            captioned: transcript.length > 0,
+            hasThumbnail: Boolean(activeProject.thumbPath)
+          }}
+        />
+      )}
 
       {!activeProject && (
         <ProjectPicker
