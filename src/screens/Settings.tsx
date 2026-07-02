@@ -84,32 +84,28 @@ export function Settings(): JSX.Element {
   const nvidiaName = caps?.nvidiaGpuName?.trim()
   const nvencProbeHint = caps?.nvencProbeError ? ` Probe: ${caps.nvencProbeError.slice(0, 180)}` : ''
   const encoders = [
-    { value: 'cpu' as const, label: 'CPU', enabled: true, warning: false, note: 'libx264 — always available.' },
+    { value: 'cpu' as const, label: 'CPU', warning: false, note: 'libx264 — always available.' },
     {
       value: 'nvenc' as const,
       label: 'NVENC',
-      enabled: !!(caps?.hasNvenc || caps?.hasNvencListed || nvidiaName),
-      warning: !!(caps && (!caps.hasNvenc || !caps.hasNvencListed) && (caps.hasNvencListed || nvidiaName)),
+      warning: !!caps && !caps.hasNvenc,
       note: caps?.hasNvenc
         ? `NVIDIA NVENC ready${nvidiaName ? ` (${nvidiaName})` : ''}${caps.ffmpegHasCuda ? ' + CUDA filters for B-roll' : ''}`
         : caps?.hasNvencListed
           ? `NVIDIA NVENC is listed${nvidiaName ? ` for ${nvidiaName}` : ''}, but the live probe failed. Renders will try NVENC and fail visibly; CPU fallback is disabled.${nvencProbeHint}`
           : nvidiaName
             ? `NVIDIA GPU detected (${nvidiaName}), but this ffmpeg build does not list h264_nvenc. Recheck after updating ffmpeg/driver; CPU fallback stays disabled.`
-            : 'NVIDIA NVENC not listed by ffmpeg'
+            : 'NVENC is not verified by ffmpeg yet. Your choice will still be saved; renders will try NVENC and fail visibly if the driver/ffmpeg cannot use it.'
     },
-    { value: 'qsv' as const, label: 'QSV', enabled: !!caps?.hasQsv, warning: !!(caps?.hasQsvListed && !caps?.hasQsv), note: caps?.hasQsv ? 'Intel QSV ready' : caps?.hasQsvListed ? 'Intel QSV is listed by ffmpeg, but the live probe failed on this machine.' : 'Intel QSV not listed by ffmpeg' },
-    { value: 'amf' as const, label: 'AMF', enabled: !!caps?.hasAmf, warning: !!(caps?.hasAmfListed && !caps?.hasAmf), note: caps?.hasAmf ? 'AMD AMF ready' : caps?.hasAmfListed ? 'AMD AMF is listed by ffmpeg, but the live probe failed on this machine.' : 'AMD AMF not listed by ffmpeg' },
+    { value: 'qsv' as const, label: 'QSV', warning: !!caps && !caps.hasQsv, note: caps?.hasQsv ? 'Intel QSV ready' : caps?.hasQsvListed ? 'Intel QSV is listed by ffmpeg, but the live probe failed. Choice is saved; CPU fallback is disabled.' : 'Intel QSV is not verified by ffmpeg. Choice is saved; renders will fail visibly if unavailable.' },
+    { value: 'amf' as const, label: 'AMF', warning: !!caps && !caps.hasAmf, note: caps?.hasAmf ? 'AMD AMF ready' : nvidiaName ? `AMF is for AMD GPUs. This machine reports ${nvidiaName}; choose NVENC for NVIDIA unless you also have AMD hardware.` : caps?.hasAmfListed ? 'AMD AMF is listed by ffmpeg, but the live probe failed. Choice is saved; CPU fallback is disabled.' : 'AMD AMF is not verified by ffmpeg. Choice is saved; renders will fail visibly if unavailable.' },
   ]
   const selectedEncoder = encoders.find((e) => e.value === (settings.encoder ?? 'cpu')) ?? encoders[0]
   const confirmFloor = settings.detection.confirmBand[0] ?? 0.6
   const confirmCeil = settings.detection.confirmBand[1] ?? 0.82
   const chooseEncoder = (enc: typeof encoders[number]): void => {
-    if (!enc.enabled && enc.value !== 'cpu') {
-      void refreshCaps(true)
-      return
-    }
     saved({ encoder: enc.value, renderEngine: enc.value === 'cpu' ? 'ffmpeg' : 'gpu' })
+    if (enc.value !== 'cpu' && (!caps || enc.warning)) void refreshCaps(true)
   }
 
   const CONTENT: Record<Section, JSX.Element> = {
@@ -162,9 +158,9 @@ export function Settings(): JSX.Element {
                 <button type="button" onClick={() => void refreshCaps(true)} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 7, padding: '3px 7px', fontSize: 10, color: '#8a909c', cursor: 'pointer' }}>{checkingCaps ? 'Checking…' : 'Recheck'}</button>
               </div>
               <div style={{ display: 'flex', border: '1px solid #23272f', borderRadius: 8, overflow: 'hidden', fontSize: 11.5 }}>
-                {encoders.map((enc) => { const on = (settings.encoder ?? 'cpu') === enc.value; const disabled = !enc.enabled && enc.value !== 'cpu'; return <div key={enc.value} title={disabled ? `${enc.note} Click to recheck hardware.` : enc.note} onClick={() => chooseEncoder(enc)} style={{ padding: '8px 12px', cursor: disabled ? 'not-allowed' : 'pointer', background: on ? 'var(--accent)' : undefined, color: on ? 'var(--accent-ink)' : enc.warning ? '#f5b323' : enc.enabled ? '#8a909c' : '#737a86', fontWeight: on ? 600 : undefined, opacity: disabled ? 0.7 : 1 }}>{enc.label}</div> })}
+                {encoders.map((enc) => { const on = (settings.encoder ?? 'cpu') === enc.value; return <div key={enc.value} title={enc.note} onClick={() => chooseEncoder(enc)} style={{ padding: '8px 12px', cursor: 'pointer', background: on ? 'var(--accent)' : undefined, color: on ? 'var(--accent-ink)' : enc.warning ? '#f5b323' : '#8a909c', fontWeight: on ? 600 : undefined }}>{enc.label}</div> })}
               </div>
-              <div className="me-clamp-2" style={{ fontSize: 10, color: selectedEncoder.warning || (!selectedEncoder.enabled && selectedEncoder.value !== 'cpu') ? '#f5b323' : '#6a7180', marginTop: 5 }}>{checkingCaps ? 'Checking ffmpeg GPU capabilities…' : caps ? selectedEncoder.note : 'Could not check capabilities — encoder choice is saved.'}</div>
+              <div className="me-clamp-2" style={{ fontSize: 10, color: selectedEncoder.warning ? '#f5b323' : '#6a7180', marginTop: 5 }}>{checkingCaps ? 'Checking ffmpeg GPU capabilities…' : caps ? selectedEncoder.note : 'Could not check capabilities — encoder choice is saved.'}</div>
             </div>
             <div style={{ minWidth: 260 }}>
               <div style={{ fontSize: 12, color: '#8a909c', marginBottom: 7 }}>Render engine <span style={{ color: '#5b616f', fontFamily: 'var(--font-mono)', fontSize: 9.5 }}>BETA</span></div>

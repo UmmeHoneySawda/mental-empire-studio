@@ -237,26 +237,46 @@ function LayerInspector(): JSX.Element {
     const next = { ...highlight, ...patch }
     updateLayer(layer.id, { highlight: next, highlightSquare: next.enabled, highlightColor: next.boxColor } as Partial<TextLayer>)
   }
+  const setBlockSize = (size: number): void => {
+    const target = clampNum(size, 8, 260)
+    const current = Math.max(1, ...layer.lines.map((ln) => ln.size))
+    const scale = target / current
+    const lines = layer.lines.map((ln) => ({ ...ln, size: clampNum(Math.round(ln.size * scale), 8, 260) }))
+    updateLayer(layer.id, { lines } as Partial<TextLayer>)
+  }
+  const setLineSize = (index: number, size: number): void => {
+    const lines = layer.lines.map((ln, i) => i === index ? { ...ln, size: clampNum(size, 8, 260) } : ln)
+    updateLayer(layer.id, { lines } as Partial<TextLayer>)
+  }
 
   return (
     <div style={{ padding: 14, display: 'flex', flexDirection: 'column', gap: 0, overflowY: 'auto' }}>
       <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, color: 'var(--accent)', marginBottom: 10 }}>SELECTED · {layer.name.toUpperCase()}</div>
       <div style={{ marginBottom: 12 }}>
-        <div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 6 }}>Text (one line per row)</div>
+        <div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 6 }}>Text content</div>
         <textarea ref={textareaRef} value={layer.lines.map((l) => l.text).join('\n')} onChange={(e) => { const rows = e.target.value.split('\n'); updateLayer(layer.id, { text: rows.join(' '), lines: rows.map((t, i) => ({ text: t, size: layer.lines[i]?.size ?? 72 })) }) }} rows={Math.max(2, layer.lines.length)} style={{ width: '100%', border: '1px solid #23272f', borderRadius: 8, padding: 9, fontSize: 12, color: '#dde0e5', lineHeight: 1.4, background: '#0e1116', resize: 'vertical', fontFamily: 'inherit' }} />
       </div>
       <CollapseSection label="Typography">
-        {layer.lines.map((ln, i) => (
-          <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 8 }}>
-            <span style={{ fontSize: 10.5, color: '#8a909c', width: 42 }}>Line {i + 1}</span>
-            <input type="range" min={24} max={180} value={ln.size} onChange={(e) => { const lines = layer.lines.map((l, idx) => idx === i ? { ...l, size: Number(e.target.value) } : l); updateLayer(layer.id, { lines }) }} style={{ flex: 1, accentColor: 'var(--accent)' }} />
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#8a909c', width: 30 }}>{ln.size}</span>
-          </div>
-        ))}
+        <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 8 }}>
+          <span style={{ fontSize: 10.5, color: '#8a909c', width: 64 }}>Size</span>
+          <input type="range" min={24} max={180} value={maxLineSize} onChange={(e) => setBlockSize(Number(e.target.value))} style={{ flex: 1, accentColor: 'var(--accent)' }} />
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#8a909c', width: 52, textAlign: 'right' }}>{maxLineSize}</span>
+        </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 9, marginTop: 4 }}>
-          <span style={{ fontSize: 10.5, color: '#8a909c', width: 64 }}>Line gap</span>
+          <span style={{ fontSize: 10.5, color: '#8a909c', width: 64 }}>Line spacing</span>
           <input type="range" min={0} max={80} value={lineGap} onChange={(e) => updateLayer(layer.id, { lineGap: Number(e.target.value), lineHeight: undefined } as Partial<TextLayer>)} style={{ flex: 1, accentColor: 'var(--accent)' }} />
           <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#8a909c', width: 52, textAlign: 'right' }}>{lineGap}px</span>
+        </div>
+        <div style={{ marginTop: 10 }}>
+          <CollapseSection label="Advanced line sizes" defaultOpen={false}>
+            {layer.lines.map((ln, i) => (
+              <div key={i} style={{ display: 'flex', alignItems: 'center', gap: 9, marginBottom: 8 }}>
+                <span style={{ fontSize: 10.5, color: '#8a909c', width: 42 }}>Line {i + 1}</span>
+                <input type="range" min={24} max={180} value={ln.size} onChange={(e) => setLineSize(i, Number(e.target.value))} style={{ flex: 1, accentColor: 'var(--accent)' }} />
+                <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#8a909c', width: 30 }}>{ln.size}</span>
+              </div>
+            ))}
+          </CollapseSection>
         </div>
       </CollapseSection>
       <CollapseSection label="Highlighted words">

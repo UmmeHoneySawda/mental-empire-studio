@@ -337,14 +337,20 @@ function posterFrame(videoPath: string): Promise<string> {
   })
 }
 
-function previewStillPath(imagePath: string, dir: string): Promise<string> {
+function previewRenderDimensions(aspect: Project['captionAspect']): { w: number; h: number } {
+  if (aspect === '9:16') return { w: 360, h: 640 }
+  if (aspect === '1:1') return { w: 480, h: 480 }
+  return { w: 640, h: 360 }
+}
+
+function previewStillPath(imagePath: string, dir: string, maxWidth: number): Promise<string> {
   if (!imagePath || !existsSync(imagePath)) return Promise.resolve(imagePath)
   let key = ''
   try {
     const st = statSync(imagePath)
-    key = createHash('sha1').update(`${imagePath}:${st.size}:${st.mtimeMs}`).digest('hex').slice(0, 24)
+    key = createHash('sha1').update(`${imagePath}:${st.size}:${st.mtimeMs}:w${maxWidth}`).digest('hex').slice(0, 24)
   } catch {
-    key = createHash('sha1').update(imagePath).digest('hex').slice(0, 24)
+    key = createHash('sha1').update(`${imagePath}:w${maxWidth}`).digest('hex').slice(0, 24)
   }
   const out = join(dir, `preview-still-${key}.jpg`)
   if (existsSync(out)) return Promise.resolve(out)
@@ -356,7 +362,7 @@ function previewStillPath(imagePath: string, dir: string): Promise<string> {
       '-loglevel', 'error',
       '-i', imagePath,
       '-frames:v', '1',
-      '-vf', 'scale=640:-2:force_original_aspect_ratio=decrease',
+      '-vf', `scale=${maxWidth}:-2:force_original_aspect_ratio=decrease`,
       '-q:v', '6',
       out
     ]
@@ -420,9 +426,10 @@ async function previewProject(projectId: string): Promise<string> {
   })
   writeFileSync(assPath, ass)
 
+  const previewDims = previewRenderDimensions(project.captionAspect)
   const existingImages = repos.getProjectImages(projectId)
   const previewImagePath = existingImages[0]
-    ? await previewStillPath(existingImages[0].thumb || existingImages[0].path, dir)
+    ? await previewStillPath(existingImages[0].thumb || existingImages[0].path, dir, previewDims.w)
     : ''
   const images: ProjectImage[] = existingImages[0]
     ? [{
@@ -446,7 +453,9 @@ async function previewProject(projectId: string): Promise<string> {
     plan,
     jobId: `preview-${projectId}`,
     logPath,
-    skipAudioMaster: true
+    skipAudioMaster: true,
+    previewDimensions: previewDims,
+    cpuPreset: 'ultrafast'
   })
   pushActivity({ t: hhmm(), icon: '▶', color: '#8b7cff', text: `Preview rendered: ${project.title.slice(0, 42)}` })
   return outPath

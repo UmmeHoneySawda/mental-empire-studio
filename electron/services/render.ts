@@ -22,8 +22,13 @@ import { ffmpegPath, ffprobePath } from './bin'
 
 /** Video codec args for the chosen encoder. CPU = libx264 (CRF); NVIDIA = h264_nvenc
  *  (constant-quality VBR). Both target visually-equivalent quality at the given level. */
-export function videoCodecArgs(settings: AppSettings, crf: string, caps: RenderCapabilities = FALLBACK_CAPS): string[] {
-  return selectEncoder(settings, caps, crf).args
+export function videoCodecArgs(
+  settings: AppSettings,
+  crf: string,
+  caps: RenderCapabilities = FALLBACK_CAPS,
+  opts?: { cpuPreset?: 'ultrafast' | 'veryfast' }
+): string[] {
+  return selectEncoder(settings, caps, crf, opts).args
 }
 
 export function canUseCudaFinalFilters(settings: AppSettings, caps: RenderCapabilities = FALLBACK_CAPS): boolean {
@@ -52,8 +57,14 @@ function stillMotionFilter(project: Project, beta: BetaVideoOpts, index: number,
     : `,fps=${FPS}`
 }
 
-function codecArgsForFilterOutput(settings: AppSettings, crf: string, caps: RenderCapabilities, hardwareFrames: boolean): string[] {
-  const args = videoCodecArgs(settings, crf, caps)
+function codecArgsForFilterOutput(
+  settings: AppSettings,
+  crf: string,
+  caps: RenderCapabilities,
+  hardwareFrames: boolean,
+  opts?: { cpuPreset?: 'ultrafast' | 'veryfast' }
+): string[] {
+  const args = videoCodecArgs(settings, crf, caps, opts)
   if (!hardwareFrames) return args
   const out: string[] = []
   for (let i = 0; i < args.length; i++) {
@@ -231,6 +242,10 @@ export interface RenderInputs {
   logPath?: string
   /** skip the two-pass loudness master (used for fast throwaway previews) */
   skipAudioMaster?: boolean
+  /** smaller frame size for fast throwaway previews; final renders omit this. */
+  previewDimensions?: { w: number; h: number }
+  /** CPU preview renders should favor speed over quality; GPU choices remain strict. */
+  cpuPreset?: 'ultrafast' | 'veryfast'
 }
 
 /** The transition type/duration to use at a segment boundary: the nearest planned
@@ -258,7 +273,7 @@ function audioWithSfx(parts: string[], mp3Idx: number, sfxIdx: number | null): s
 export function buildRenderArgs(inp: RenderInputs): string[] {
   const { project, images, assPath, outPath, settings } = inp
   const caps = inp.caps ?? FALLBACK_CAPS
-  const { w, h } = dimensions(settings.quality, project.captionAspect)
+  const { w, h } = inp.previewDimensions ?? dimensions(settings.quality, project.captionAspect)
   const cf = typeof project.crossfade === 'number' ? project.crossfade : 0
   const longForm = longFormFastPath(project)
   const allowCpuMotion = (settings.encoder ?? 'cpu') === 'cpu'
@@ -308,7 +323,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
       '-filter_complex', parts.join(';'),
       '-map', '[v]',
       '-map', aMap,
-      ...codecArgsForFilterOutput(settings, crf, caps, hardwareFrameOutput),
+      ...codecArgsForFilterOutput(settings, crf, caps, hardwareFrameOutput, { cpuPreset: inp.cpuPreset }),
       '-r', String(FPS),
       '-c:a', 'aac',
       '-b:a', '192k',
@@ -365,7 +380,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
       '-filter_complex', parts.join(';'),
       '-map', '[v]',
       '-map', aMap,
-      ...videoCodecArgs(settings, crf, caps),
+      ...videoCodecArgs(settings, crf, caps, { cpuPreset: inp.cpuPreset }),
       '-r', String(FPS),
       '-c:a', 'aac',
       '-b:a', '192k',
@@ -393,7 +408,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
       ...(overlayPath ? ['-loop', '1', '-i', overlayPath] : []),
       '-filter_complex', bedParts.join(';'),
       '-map', '[v]', '-map', aMap,
-      ...videoCodecArgs(settings, crfBed, caps), '-r', String(FPS),
+      ...videoCodecArgs(settings, crfBed, caps, { cpuPreset: inp.cpuPreset }), '-r', String(FPS),
       '-c:a', 'aac', '-b:a', '192k',
       '-t', project.durationSec > 0 ? project.durationSec.toFixed(2) : '1',
       outPath
@@ -471,7 +486,7 @@ export function buildRenderArgs(inp: RenderInputs): string[] {
     '-filter_complex', parts.join(';'),
     '-map', '[v]',
     '-map', aMap,
-    ...videoCodecArgs(settings, crf, caps),
+    ...videoCodecArgs(settings, crf, caps, { cpuPreset: inp.cpuPreset }),
     '-r', String(FPS),
     '-c:a', 'aac',
     '-b:a', '192k',
@@ -506,7 +521,7 @@ export async function runRender(inp: RenderInputs, onProgress?: (p: FfmpegProgre
       const gpuEncode = enc !== 'cpu'
       const cudaScale = args.some((arg) => arg.includes('scale_cuda') || arg.includes('hwupload_cuda') || arg.includes('hwdownload'))
       const motion = (inp.settings.encoder ?? 'cpu') === 'cpu'
-      appendFileSync(inp.logPath, `\n[render] encoder=${enc} encode=${gpuEncode ? 'GPU' : 'CPU'} scale=${cudaScale ? 'GPU(cuda)' : 'CPU'} subtitles=CPU(libass) kenBurns/punch=${motion ? 'on' : 'off (disabled when a GPU encoder is selected, to keep filters light)'} quality=${inp.settings.quality} durationSec=${inp.project.durationSec.toFixed(2)}\n`)
+      appendFileSync(inp.logPath, `\n[render] encoder=${enc} encode=${gpuEncode ? 'GPU' : 'CPU'} scale=${cudaScale ? 'GPU(cuda)' : 'CPU'} subtitles=CPU(libass) kenBurns/punch=${motion ? 'on' : 'off (disabled when a GPU encoder is selected, to keep filters light)'} quality=${inp.settings.quality}${inp.previewDimensions ? ` preview=${inp.previewDimensions.w}x${inp.previewDimensions.h}` : ''} durationSec=${inp.project.durationSec.toFixed(2)}\n`)
       appendFileSync(inp.logPath, `\n[ffmpeg]\n${ffmpegCommandLine(args)}\n`)
     }
     await spawnFfmpeg(args, inp.project.durationSec, onProgress, inp.jobId)

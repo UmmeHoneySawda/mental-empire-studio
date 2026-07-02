@@ -19,7 +19,12 @@ export const FALLBACK_CAPS: RenderCapabilities = {
   ffmpegHasCuda: false
 }
 
-export function selectEncoder(settings: Pick<AppSettings, 'encoder'>, _caps: RenderCapabilities = FALLBACK_CAPS, crfOrCq = '21'): SelectedEncoder {
+export function selectEncoder(
+  settings: Pick<AppSettings, 'encoder'>,
+  _caps: RenderCapabilities = FALLBACK_CAPS,
+  crfOrCq = '21',
+  opts?: { cpuPreset?: 'ultrafast' | 'veryfast' }
+): SelectedEncoder {
   const requested = settings.encoder ?? 'cpu'
   if (requested === 'nvenc') {
     return {
@@ -53,6 +58,6 @@ export function selectEncoder(settings: Pick<AppSettings, 'encoder'>, _caps: Ren
     label: 'CPU-libx264',
     device: 'cpu',
     codec: 'libx264',
-    args: ['-c:v', 'libx264', '-preset', 'veryfast', '-crf', crfOrCq, '-pix_fmt', 'yuv420p']
+    args: ['-c:v', 'libx264', '-preset', opts?.cpuPreset ?? 'veryfast', '-crf', crfOrCq, '-pix_fmt', 'yuv420p']
   }
 }
