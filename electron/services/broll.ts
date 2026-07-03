@@ -593,6 +593,35 @@ function libraryCandidates(themes: string[], target: { w: number; h: number }, p
   return out
 }
 
+/** Cached-only B-roll plan for editor preview/timeline.
+ *  This never calls stock providers and never normalizes clips; the live preview only needs
+ *  representative poster frames, so raw cached library clips are enough and stay instant. */
+export function buildCachedBrollPreviewSegments(opts: {
+  words: TranscriptWord[]
+  durationSec: number
+  density: BrollDensity
+  poolSize: number
+  dims: { w: number; h: number }
+  maxSegments?: number
+  poolKey?: string
+  logPath?: string
+}): BrollManifestSegment[] {
+  const themes = extractThemes(opts.words)
+  const candidates = libraryCandidates(themes, opts.dims, Math.max(1, opts.poolSize), opts.logPath, opts.poolKey)
+  const clips = candidates.map((c) => ({
+    path: c.url,
+    durationSec: c.durationSec || probeDurationSec(c.url)
+  })).filter((c) => c.path && existsSync(c.path) && c.durationSec > 0)
+  const segments = planCoverage(opts.durationSec, clips, {
+    density: opts.density,
+    maxSegments: opts.maxSegments
+  })
+  return segments.map((segment) => ({
+    ...segment,
+    normalizedPath: segment.path
+  }))
+}
+
 function concatPath(p: string): string {
   return p.replace(/\\/g, '/').replace(/'/g, "\\'")
 }

@@ -1,15 +1,18 @@
 import type { MotionDirection, MotionPreset, Project, ProjectImage, TranscriptWord } from '@shared/types'
+import type { GpuBrollSegment } from '@shared/renderSpec'
 import { LOOKS } from '@shared/looks'
 import type { MouseEvent, ReactNode } from 'react'
 import { useData } from '../../store/useData'
 import { QUICK_CAPTION_PRESETS, captionPresetPatch } from './captionPresets'
 import {
+  buildBrollTimeline,
   buildCaptionTimeline,
   buildVisualTimeline,
   clampTimelineSec,
   rangeToPct,
   type EditorSelection,
-  type TimelineBlock
+  type TimelineBlock,
+  type VisualTimelineBlock
 } from './timelineModel'
 
 function fmt(sec: number): string {
@@ -19,7 +22,7 @@ function fmt(sec: number): string {
 }
 
 function selectionKey(selection: EditorSelection): string {
-  return selection.kind === 'image' || selection.kind === 'caption' ? `${selection.kind}:${selection.id}` : selection.kind
+  return selection.kind === 'image' || selection.kind === 'broll' || selection.kind === 'caption' ? `${selection.kind}:${selection.id}` : selection.kind
 }
 
 function clampValue(value: number, min: number, max: number): number {
@@ -53,18 +56,22 @@ function Block({
   block,
   active,
   tone,
+  badge,
   onClick
 }: {
   block: TimelineBlock
   active: boolean
-  tone: 'visual' | 'caption' | 'look'
+  tone: 'visual' | 'broll' | 'caption' | 'look'
+  badge?: string
   onClick: (e: MouseEvent) => void
 }): JSX.Element {
   const colors = tone === 'caption'
     ? { bg: 'rgba(54,201,142,.13)', border: active ? '#36c98e' : 'rgba(54,201,142,.3)', text: active ? '#eafff5' : '#72d8aa' }
     : tone === 'look'
       ? { bg: 'rgba(139,124,255,.14)', border: active ? '#8b7cff' : 'rgba(139,124,255,.32)', text: active ? '#f1eeff' : '#b8afff' }
-      : { bg: 'rgba(245,179,35,.14)', border: active ? 'var(--accent)' : 'rgba(245,179,35,.32)', text: active ? '#fff4cc' : '#f5c95f' }
+      : tone === 'broll'
+        ? { bg: 'rgba(64,169,255,.13)', border: active ? '#40a9ff' : 'rgba(64,169,255,.32)', text: active ? '#eaf6ff' : '#8fcaff' }
+        : { bg: 'rgba(245,179,35,.14)', border: active ? 'var(--accent)' : 'rgba(245,179,35,.32)', text: active ? '#fff4cc' : '#f5c95f' }
   return (
     <button
       type="button"
@@ -91,6 +98,7 @@ function Block({
         textAlign: 'left'
       }}
     >
+      {badge && <span style={{ display: 'inline-block', marginRight: 5, border: '1px solid currentColor', borderRadius: 5, padding: '0 4px', fontSize: 8, lineHeight: '12px', verticalAlign: '1px', opacity: 0.9 }}>{badge === 'video' ? '▶' : badge}</span>}
       {block.label}
     </button>
   )
@@ -198,11 +206,13 @@ function ColorField({
 function Inspector({
   project,
   images,
+  broll,
   words,
   selection
 }: {
   project: Project
   images: ProjectImage[]
+  broll: GpuBrollSegment[]
   words: TranscriptWord[]
   selection: EditorSelection
 }): JSX.Element {
@@ -212,6 +222,8 @@ function Inspector({
   const setImageMotion = useData((s) => s.setImageMotion)
   const setWordsEmphasis = useData((s) => s.setWordsEmphasis)
   const image = selection.kind === 'image' ? images.find((im) => im.id === selection.id) : undefined
+  const brollIndex = selection.kind === 'broll' ? Number(selection.id.replace(/^broll-/, '')) : -1
+  const brollSegment = brollIndex >= 0 ? broll[brollIndex] : undefined
   const word = selection.kind === 'caption' ? words.find((w) => w.id === selection.id) : undefined
   const durationSec = Math.max(0.05, project.durationSec || 0.05)
   const minSpan = Math.min(0.05, durationSec)
@@ -225,6 +237,8 @@ function Inspector({
   const captionBoxColor = /^#[0-9a-f]{6}$/i.test(project.captionBoxColor ?? '') ? project.captionBoxColor! : '#ffd93d'
   const title = image
     ? 'Image segment'
+    : brollSegment
+      ? 'B-roll segment'
     : word
       ? 'Caption word'
       : selection.kind === 'look'
@@ -234,6 +248,8 @@ function Inspector({
           : 'Project'
   const detail = image
     ? `${fmt(image.rangeStart)}-${fmt(image.rangeEnd)} · ${image.path.split(/[\\/]/).pop() || 'image'}`
+    : brollSegment
+      ? `${fmt(brollSegment.startSec)}-${fmt(brollSegment.endSec)} · ${brollSegment.path.split(/[\\/]/).pop() || 'video'}`
     : word
       ? `${fmt(word.start)}-${fmt(word.end)} · ${word.emphasis ? 'emphasized' : 'normal'}`
       : selection.kind === 'look'
@@ -324,6 +340,11 @@ function Inspector({
           )}
         </div>
       )}
+      {brollSegment && (
+        <div style={{ marginTop: 11, border: '1px solid #20334a', borderRadius: 9, padding: 9, background: 'rgba(64,169,255,.08)', fontSize: 10.5, color: '#8fcaff', lineHeight: 1.45 }}>
+          The live preview uses a cached poster frame for this video segment. B-roll pool, density, and on/off controls stay in the project video effects panel.
+        </div>
+      )}
       {selection.kind === 'look' && (
         <div style={{ marginTop: 11, display: 'flex', flexDirection: 'column', gap: 9 }}>
           <label style={{ display: 'grid', gridTemplateColumns: '56px minmax(0,1fr) 34px', alignItems: 'center', gap: 8, fontSize: 10.5, color: '#6a7180' }}>
@@ -378,6 +399,7 @@ function Waveform(): JSX.Element {
 export function EditorTimeline({
   project,
   images,
+  broll = [],
   words,
   playheadSec,
   selection,
@@ -386,6 +408,7 @@ export function EditorTimeline({
 }: {
   project: Project
   images: ProjectImage[]
+  broll?: GpuBrollSegment[]
   words: TranscriptWord[]
   playheadSec: number
   selection: EditorSelection
@@ -393,7 +416,10 @@ export function EditorTimeline({
   onSelect: (selection: EditorSelection) => void
 }): JSX.Element {
   const durationSec = Math.max(0.05, project.durationSec || 0.05)
-  const visualBlocks = buildVisualTimeline(images, durationSec)
+  const visualBlocks: VisualTimelineBlock[] = [
+    ...buildVisualTimeline(images, durationSec),
+    ...buildBrollTimeline(broll, durationSec)
+  ].sort((a, b) => a.startSec - b.startSec || (a.kind === 'broll' ? -1 : 1))
   const captionBlocks = buildCaptionTimeline(words, durationSec)
   const playhead = rangeToPct(clampTimelineSec(playheadSec, durationSec), clampTimelineSec(playheadSec, durationSec) + 0.05, durationSec).leftPct
   const activeKey = selectionKey(selection)
@@ -416,9 +442,23 @@ export function EditorTimeline({
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 260px', gap: 14, alignItems: 'start' }}>
         <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 8 }}>
           <Track label="Visual" playheadPct={playhead} onSeek={seekFromClick}>
-            {visualBlocks.map((block) => (
-              <Block key={block.id} block={block} tone="visual" active={activeKey === `image:${block.id}`} onClick={(e) => { e.stopPropagation(); onSelect({ kind: 'image', id: block.id }); onSeek(block.startSec) }} />
-            ))}
+            {visualBlocks.map((block) => {
+              const key = `${block.kind}:${block.id}`
+              return (
+                <Block
+                  key={key}
+                  block={block}
+                  tone={block.kind === 'broll' ? 'broll' : 'visual'}
+                  badge={block.badge}
+                  active={activeKey === key}
+                  onClick={(e) => {
+                    e.stopPropagation()
+                    onSelect({ kind: block.kind, id: block.id })
+                    onSeek(block.startSec)
+                  }}
+                />
+              )
+            })}
             {visualBlocks.length === 0 && <span style={{ position: 'absolute', left: 10, top: 7, fontSize: 10.5, color: '#5b616f' }}>No images yet</span>}
           </Track>
           <Track label="Captions" playheadPct={playhead} onSeek={seekFromClick}>
@@ -434,7 +474,7 @@ export function EditorTimeline({
             <Waveform />
           </Track>
         </div>
-        <Inspector project={project} images={images} words={words} selection={selection} />
+        <Inspector project={project} images={images} broll={broll} words={words} selection={selection} />
       </div>
     </div>
   )

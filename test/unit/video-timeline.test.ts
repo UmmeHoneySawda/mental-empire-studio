@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ProjectImage, TranscriptWord } from '@shared/types'
-import { buildCaptionTimeline, buildVisualTimeline, clampTimelineSec, rangeToPct } from '../../src/features/video-editor/timelineModel'
+import { buildBrollTimeline, buildCaptionTimeline, buildVisualTimeline, clampTimelineSec, rangeToPct } from '../../src/features/video-editor/timelineModel'
 import { previewImagesKey } from '../../src/features/video-editor/previewKeys'
 
 function image(patch: Partial<ProjectImage>): ProjectImage {
@@ -49,11 +49,29 @@ describe('video timeline model', () => {
     expect(blocks[0]).toMatchObject({
       id: 'img-1',
       label: 'first image.png',
+      kind: 'image',
       startSec: 0,
       endSec: 4,
       leftPct: 0,
       widthPct: 50
     })
+  })
+
+  it('builds b-roll video blocks from preview render segments', () => {
+    const blocks = buildBrollTimeline([
+      { path: 'C:/assets/cache/clip one.mp4', startSec: 2, endSec: 7 },
+      { path: 'C:/assets/cache/clip two.mp4', startSec: 7, endSec: 12 }
+    ], 12)
+
+    expect(blocks[0]).toMatchObject({
+      id: 'broll-0',
+      label: 'clip one.mp4',
+      kind: 'broll',
+      badge: 'video',
+      startSec: 2,
+      endSec: 7
+    })
+    expect(blocks[1].leftPct + blocks[1].widthPct).toBeLessThanOrEqual(100)
   })
 
   it('includes per-image motion overrides in the live-preview image key', () => {

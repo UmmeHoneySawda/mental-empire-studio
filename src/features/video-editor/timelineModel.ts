@@ -1,8 +1,10 @@
 import type { ProjectImage, TranscriptWord } from '@shared/types'
+import type { GpuBrollSegment } from '@shared/renderSpec'
 
 export type EditorSelection =
   | { kind: 'project' }
   | { kind: 'image'; id: string }
+  | { kind: 'broll'; id: string }
   | { kind: 'caption'; id: string }
   | { kind: 'look' }
   | { kind: 'audio' }
@@ -14,6 +16,11 @@ export interface TimelineBlock {
   endSec: number
   leftPct: number
   widthPct: number
+}
+
+export interface VisualTimelineBlock extends TimelineBlock {
+  kind: 'image' | 'broll'
+  badge?: string
 }
 
 export function clampTimelineSec(value: number, durationSec: number): number {
@@ -34,7 +41,7 @@ export function rangeToPct(startSec: number, endSec: number, durationSec: number
   }
 }
 
-export function buildVisualTimeline(images: ProjectImage[], durationSec: number): TimelineBlock[] {
+export function buildVisualTimeline(images: ProjectImage[], durationSec: number): VisualTimelineBlock[] {
   return images.map((image, index) => {
     const duration = Math.max(0.001, durationSec)
     const startSec = Math.min(clampTimelineSec(image.rangeStart, duration), Math.max(0, duration - 0.05))
@@ -44,6 +51,26 @@ export function buildVisualTimeline(images: ProjectImage[], durationSec: number)
     return {
       id: image.id,
       label: filename,
+      kind: 'image',
+      startSec,
+      endSec,
+      ...pct
+    }
+  })
+}
+
+export function buildBrollTimeline(segments: GpuBrollSegment[] | undefined, durationSec: number): VisualTimelineBlock[] {
+  return (segments ?? []).map((segment, index) => {
+    const duration = Math.max(0.001, durationSec)
+    const startSec = Math.min(clampTimelineSec(segment.startSec, duration), Math.max(0, duration - 0.05))
+    const endSec = Math.min(duration, Math.max(startSec + 0.05, clampTimelineSec(segment.endSec, duration)))
+    const pct = rangeToPct(startSec, endSec, durationSec)
+    const filename = segment.path.split(/[\\/]/).pop() || `B-roll ${index + 1}`
+    return {
+      id: `broll-${index}`,
+      label: filename,
+      kind: 'broll',
+      badge: 'video',
       startSec,
       endSec,
       ...pct

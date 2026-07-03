@@ -5,6 +5,7 @@ import { ScreenPad, Eyebrow, Title } from '../components/primitives'
 import type { BetaVideoOpts, DownloadedVideo, MotionPreset, Project, ProjectImage, TranscriptWord, VideoStyle } from '@shared/types'
 import { asBetaOpts } from '@shared/types'
 import { LOOKS } from '@shared/looks'
+import type { GpuBrollSegment } from '@shared/renderSpec'
 import { buildMasterPrompt, validateEffectPlan } from '@shared/effectPlan'
 import { isCssImageValue, mediaSrc, videoSrc } from '../lib/media'
 import { youtubeIdFromDownloadId, youtubeThumbUrl, type YoutubeThumbQuality } from '@shared/youtube'
@@ -136,10 +137,15 @@ function overlayBackground(o?: BetaVideoOpts['overlay']): string {
   return edges.join(',')
 }
 
-function editorSelectionLabel(selection: EditorSelection, images: ProjectImage[], words: TranscriptWord[], project?: Project | null): string {
+function editorSelectionLabel(selection: EditorSelection, images: ProjectImage[], words: TranscriptWord[], broll: GpuBrollSegment[], project?: Project | null): string {
   if (selection.kind === 'image') {
     const image = images.find((im) => im.id === selection.id)
     return image ? `Image · ${fmt(image.rangeStart)}-${fmt(image.rangeEnd)}` : 'Image segment'
+  }
+  if (selection.kind === 'broll') {
+    const index = Number(selection.id.replace(/^broll-/, ''))
+    const segment = Number.isFinite(index) ? broll[index] : undefined
+    return segment ? `B-roll · ${fmt(segment.startSec)}-${fmt(segment.endSec)}` : 'B-roll segment'
   }
   if (selection.kind === 'caption') {
     const word = words.find((w) => w.id === selection.id)
@@ -810,6 +816,7 @@ export function Compose(): JSX.Element {
   const project = useData((s) => s.activeProject)
   const images = useData((s) => s.projectImages)
   const transcript = useData((s) => s.transcript)
+  const previewSpec = useData((s) => s.previewSpec)
   const downloads = useData((s) => s.downloads)
   const openProject = useData((s) => s.openProject)
   const sendActiveToRender = useData((s) => s.sendActiveToRender)
@@ -818,7 +825,8 @@ export function Compose(): JSX.Element {
   const [videoPlayheadSec, setVideoPlayheadSec] = useState(0)
   const [videoSelection, setVideoSelection] = useState<EditorSelection>({ kind: 'project' })
   const [videoCustomizeOpen, setVideoCustomizeOpen] = useState(false)
-  const selectedLabel = useMemo(() => editorSelectionLabel(videoSelection, images, transcript, project), [videoSelection, images, transcript, project])
+  const previewBroll = previewSpec?.broll ?? []
+  const selectedLabel = useMemo(() => editorSelectionLabel(videoSelection, images, transcript, previewBroll, project), [videoSelection, images, transcript, previewBroll, project])
   const showDeepEditor = !videoEditorV2 || videoCustomizeOpen || !project
 
   // Auto-open only when there is one obvious choice. With multiple downloads,
@@ -933,6 +941,7 @@ export function Compose(): JSX.Element {
         <EditorTimeline
           project={project}
           images={images}
+          broll={previewBroll}
           words={transcript}
           playheadSec={videoPlayheadSec}
           selection={videoSelection}

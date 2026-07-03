@@ -18,6 +18,7 @@ import { emit, hhmm, pushActivity } from './events'
 import { outputDir } from '../services/queue'
 import { itemDirForProject, itemImagesDir, itemThumbDir, cacheDir, ensureDir, writeProjectManifest, videoIdFromProjectId } from '../services/storage'
 import { buildAss } from '../services/captions'
+import { buildCachedBrollPreviewSegments } from '../services/broll'
 import { overlayGradientPath, runRender } from '../services/render'
 import { probeRenderCapabilities } from '../services/engine/caps'
 import { buildGpuRenderSpec, gpuDimensions } from '../services/engine/gpu/spec'
@@ -342,6 +343,17 @@ function previewSpec(projectId: string, draftOverrides?: Partial<Project>): GpuR
   const dir = cacheDir('preview-specs')
   mkdirSync(dir, { recursive: true })
   const base = `${safeName(draftProject.title)}-${Date.now()}`
+  const previewBrollSegments = beta.broll.enabled
+    ? buildCachedBrollPreviewSegments({
+        words,
+        durationSec: draftProject.durationSec,
+        density: beta.broll.density,
+        poolSize: beta.broll.poolSize,
+        dims,
+        maxSegments: Math.max(1, Math.min(8, Math.ceil(Math.max(1, draftProject.durationSec) / 9))),
+        poolKey: repos.nicheKeyForDownload(draftProject.downloadId)
+      })
+    : []
   return buildGpuRenderSpec({
     project: draftProject,
     images: repos.getProjectImages(projectId),
@@ -354,7 +366,8 @@ function previewSpec(projectId: string, draftOverrides?: Partial<Project>): GpuR
     out: {
       h264Path: join(dir, `${base}.gpu.mp4`),
       finalPath: join(dir, `${base}.mp4`)
-    }
+    },
+    brollSegments: previewBrollSegments.length ? previewBrollSegments : undefined
   })
 }
 
