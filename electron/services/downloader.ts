@@ -115,6 +115,7 @@ function runYtdlpDownload(
       '--newline',
       '--continue',
       '--no-warnings',
+      '--js-runtimes', 'node',
       // Self-recover from transient network stalls before our watchdog has to step in.
       '--socket-timeout', '30',
       '--retries', '3',

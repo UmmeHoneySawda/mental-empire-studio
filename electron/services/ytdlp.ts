@@ -83,7 +83,7 @@ export async function runYtdlpJson(url: string, opts: YtdlpOptions = {}): Promis
 
 function spawnYtdlp(url: string, opts: YtdlpOptions): Promise<YtdlpPlaylist> {
   return new Promise((resolve, reject) => {
-    const args = ['-J', '--no-warnings', '--ignore-errors']
+    const args = ['-J', '--no-warnings', '--ignore-errors', '--js-runtimes', 'node']
     // Default to a flat dump (fast, full list); callers that need real per-video
     // view counts pass flat:false (+ a limit) to get full metadata extraction.
     if (opts.flat !== false) args.push('--flat-playlist')

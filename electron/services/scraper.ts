@@ -62,7 +62,18 @@ export async function scrapeChannel(
   fetch?: { flat?: boolean; limit?: number }
 ): Promise<ScrapedChannel> {
   const base = channelUrl(handleOrUrl)
-  const data = await runYtdlpJson(videosTab(base), { ...ytdlpOptionsFromSettings(settings), ...fetch })
+  const rawChannelUrl = base.replace(/\/(videos|streams|shorts|about)$/, '')
+  const targetUrl = videosTab(rawChannelUrl)
+  let data: YtdlpPlaylist
+  try {
+    data = await runYtdlpJson(targetUrl, { ...ytdlpOptionsFromSettings(settings), ...fetch })
+  } catch (err) {
+    if (targetUrl !== rawChannelUrl) {
+      data = await runYtdlpJson(rawChannelUrl, { ...ytdlpOptionsFromSettings(settings), ...fetch })
+    } else {
+      throw err
+    }
+  }
   const videos = (data.entries ?? []).filter((e): e is YtdlpEntry => !!e).map(toScrapedVideo)
   const summedViews = videos.reduce((a, v) => a + v.views, 0)
   // yt-dlp exposes the channel avatar as `thumbnail` at the playlist level, or as the
