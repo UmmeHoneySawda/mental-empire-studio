@@ -197,9 +197,9 @@ function Inspector({
   selection: EditorSelection
 }): JSX.Element {
   const setImageRanges = useData((s) => s.setImageRanges)
-  const setMedia = useData((s) => s.setMedia)
   const setCaptions = useData((s) => s.setCaptions)
   const setLook = useData((s) => s.setLook)
+  const setMotion = useData((s) => s.setMotion)
   const setWordsEmphasis = useData((s) => s.setWordsEmphasis)
   const image = selection.kind === 'image' ? images.find((im) => im.id === selection.id) : undefined
   const word = selection.kind === 'caption' ? words.find((w) => w.id === selection.id) : undefined
@@ -260,7 +260,7 @@ function Inspector({
               { id: 'subtle', label: 'Subtle' },
               { id: 'cinematic', label: 'Cinema' }
             ] as Array<{ id: MotionPreset; label: string }>).map((preset) => (
-              <MiniButton key={preset.id} active={motionPreset === preset.id} onClick={() => void setMedia({ motionPreset: preset.id, kenBurns: preset.id !== 'off' })}>
+              <MiniButton key={preset.id} active={motionPreset === preset.id} onClick={() => void setMotion(preset.id)}>
                 {preset.label}
               </MiniButton>
             ))}

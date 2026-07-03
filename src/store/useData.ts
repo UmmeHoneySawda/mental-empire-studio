@@ -15,6 +15,7 @@ import type {
   RenderProgress,
   Profile,
   LookAdjust,
+  MotionPreset,
   WorkItem,
   Niche,
   NichePoolHealth,
@@ -98,6 +99,7 @@ interface DataState {
   setMedia: (patch: Partial<Project>) => Promise<void>
   setCaptions: (patch: Partial<Project>) => Promise<void>
   setLook: (patch: { lut?: string; strength?: number; adjust?: LookAdjust }) => Promise<void>
+  setMotion: (preset: MotionPreset) => Promise<void>
   runTranscribe: () => Promise<void>
   toggleWordEmphasis: (wordId: string) => Promise<void>
   setWordsEmphasis: (wordIds: string[], emphasis: boolean) => Promise<void>
@@ -442,20 +444,27 @@ export const useData = create<DataState>((set, get) => ({
     const p = get().activeProject
     if (!a || !p) return
     const project = await a.compose.setMedia(p.id, patch)
-    if (project) set({ activeProject: project })
+    if (project) set({ activeProject: project, previewSpec: null, previewError: '' })
   },
   setCaptions: async (patch) => {
     const a = api()
     const p = get().activeProject
     if (!a || !p) return
-    const project = await a.compose.setCaptions(p.id, patch)
-    if (project) set({ activeProject: project })
+    const project = await a.compose.updateCaptions(p.id, patch)
+    if (project) set({ activeProject: project, previewSpec: null, previewError: '' })
   },
   setLook: async (patch) => {
     const a = api()
     const p = get().activeProject
     if (!a || !p) return
     const project = await a.compose.updateLook(p.id, patch)
+    if (project) set({ activeProject: project, previewSpec: null, previewError: '' })
+  },
+  setMotion: async (preset) => {
+    const a = api()
+    const p = get().activeProject
+    if (!a || !p) return
+    const project = await a.compose.updateMotion(p.id, { preset })
     if (project) set({ activeProject: project, previewSpec: null, previewError: '' })
   },
   runTranscribe: async () => {

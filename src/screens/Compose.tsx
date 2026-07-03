@@ -154,6 +154,7 @@ function MediaTab(): JSX.Element {
   const project = useData((s) => s.activeProject)
   const images = useData((s) => s.projectImages)
   const setMedia = useData((s) => s.setMedia)
+  const setMotionPreset = useData((s) => s.setMotion)
   const setCaptions = useData((s) => s.setCaptions)
   const setProjectImages = useData((s) => s.setProjectImages)
   const reorderProjectImages = useData((s) => s.reorderProjectImages)
@@ -215,7 +216,7 @@ function MediaTab(): JSX.Element {
             <div style={{ position: 'absolute', inset: 0, background: overlayBackground(betaOpts.overlay) }} />
             <div onClick={() => {
               const nextOn = !(project?.kenBurns ?? true)
-              void setMedia({ kenBurns: nextOn, motionPreset: nextOn ? (project?.motionPreset === 'off' ? 'subtle' : project?.motionPreset ?? 'subtle') : 'off' })
+              void setMotionPreset(nextOn ? (project?.motionPreset === 'off' ? 'subtle' : project?.motionPreset ?? 'subtle') : 'off')
             }} title="Smart motion across each image. GPU preview/render uses eased zoom and pan; CPU fallback keeps a simpler zoom only." style={{ position: 'absolute', top: 14, left: 14, border: project?.kenBurns ?? true ? '1px solid var(--accent)' : '1px dashed rgba(255,255,255,.3)', borderRadius: 7, padding: '5px 9px', fontSize: 10, color: project?.kenBurns ?? true ? 'var(--accent)' : '#cdd2da', fontFamily: 'var(--font-mono)', background: project?.kenBurns ?? true ? 'var(--accent-soft)' : 'transparent', cursor: 'pointer' }}>Motion {project?.kenBurns ?? true ? 'on' : 'off'}</div>
             <div style={{ position: 'absolute', bottom: 12, left: 14, right: 14, height: 6, borderRadius: 4, background: 'rgba(255,255,255,.18)', overflow: 'hidden' }}><div style={{ width: '35%', height: '100%', background: 'var(--accent)' }} /></div>
           </div>
@@ -362,13 +363,14 @@ function StyleTab(): JSX.Element {
   const project = useData((s) => s.activeProject)
   const setCaptions = useData((s) => s.setCaptions)
   const setMedia = useData((s) => s.setMedia)
+  const setMotionPreset = useData((s) => s.setMotion)
   const o = asBetaOpts(project?.betaOpts)
   const patch = (p: Partial<BetaVideoOpts>): void => {
     void setCaptions({ betaOpts: { ...o, ...p } })
   }
   const motionPreset: MotionPreset = project?.motionPreset ?? (project?.kenBurns ? 'subtle' : 'off')
   const setMotion = (preset: MotionPreset): void => {
-    void setMedia({ motionPreset: preset, kenBurns: preset !== 'off' })
+    void setMotionPreset(preset)
   }
   const styles: VideoStyle[] = ['None', 'Cinematic', 'Intense', 'Heartfelt', 'Clean']
   const styleTips: Record<VideoStyle, string> = {
@@ -547,7 +549,7 @@ function QuickButton({
 function QuickPanel({ customizeOpen, onCustomizeToggle }: { customizeOpen: boolean; onCustomizeToggle: () => void }): JSX.Element | null {
   const project = useData((s) => s.activeProject)
   const setCaptions = useData((s) => s.setCaptions)
-  const setMedia = useData((s) => s.setMedia)
+  const setMotionPreset = useData((s) => s.setMotion)
   const setLook = useData((s) => s.setLook)
   if (!project) return null
 
@@ -559,7 +561,7 @@ function QuickPanel({ customizeOpen, onCustomizeToggle }: { customizeOpen: boole
     void setCaptions({ betaOpts: { ...betaOpts, ...patch } })
   }
   const setMotion = (preset: MotionPreset): void => {
-    void setMedia({ motionPreset: preset, kenBurns: preset !== 'off' })
+    void setMotionPreset(preset)
   }
 
   return (

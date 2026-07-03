@@ -599,6 +599,11 @@ function installMock(): void {
         if (patch.adjust !== undefined) p.lookAdjust = Object.keys(patch.adjust).length ? patch.adjust : undefined
         return p
       },
+      updateMotion: async (projectId: string, patch: { preset: MotionPreset }) => {
+        const preset: MotionPreset = patch.preset === 'off' || patch.preset === 'subtle' || patch.preset === 'cinematic' ? patch.preset : 'subtle'
+        return patchProject(projectId, { motionPreset: preset, kenBurns: preset !== 'off' })
+      },
+      updateCaptions: async (projectId: string, patch: Partial<Project>) => patchProject(projectId, patch),
       previewSpec: async (projectId: string, draftOverrides?: Partial<Project>) => makePreviewSpec(projectId, draftOverrides),
       posterFrame: async () => '',
       preview: async (projectId: string) => `/Browser/MentalEmpire_out/${slug(projectId)}-preview.mp4`,

@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'no
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
-import type { LookAdjust, Project, ProjectImage, TranscribeProgress, TranscriptWord } from '../../shared/types'
+import type { LookAdjust, MotionPreset, Project, ProjectImage, TranscribeProgress, TranscriptWord } from '../../shared/types'
 import { asBetaOpts, projectVideoOpts } from '../../shared/types'
 import type { GpuRenderSpec } from '../../shared/renderSpec'
 import { safeName } from '../../shared/sanitize'
@@ -211,6 +211,27 @@ function updateLook(projectId: string, patch: { lut?: string; strength?: number;
     lookAdjust: patch.adjust === undefined ? adjust : (adjust ?? null)
   } as Partial<Project>
   const updated = repos.updateProject(projectId, dbPatch)
+  if (!updated) throw new Error(`Unknown project: ${projectId}`)
+  return updated
+}
+
+function updateMotion(projectId: string, patch: { preset: MotionPreset }): Project {
+  const repos = getRepos()
+  const project = repos.getProject(projectId)
+  if (!project) throw new Error(`Unknown project: ${projectId}`)
+  const preset: MotionPreset = patch.preset === 'off' || patch.preset === 'subtle' || patch.preset === 'cinematic'
+    ? patch.preset
+    : 'subtle'
+  const updated = repos.updateProject(projectId, { motionPreset: preset, kenBurns: preset !== 'off' })
+  if (!updated) throw new Error(`Unknown project: ${projectId}`)
+  return updated
+}
+
+function updateCaptions(projectId: string, patch: Partial<Project>): Project {
+  const repos = getRepos()
+  const project = repos.getProject(projectId)
+  if (!project) throw new Error(`Unknown project: ${projectId}`)
+  const updated = repos.updateProject(projectId, patch)
   if (!updated) throw new Error(`Unknown project: ${projectId}`)
   return updated
 }
@@ -477,6 +498,8 @@ export function registerComposeIpc(): void {
   ipcMain.handle('compose:setMedia', (_e, projectId: string, patch: Partial<Project>) => repos().updateProject(projectId, patch))
   ipcMain.handle('compose:setCaptions', (_e, projectId: string, patch: Partial<Project>) => repos().updateProject(projectId, patch))
   ipcMain.handle('compose:updateLook', (_e, projectId: string, patch: { lut?: string; strength?: number; adjust?: LookAdjust }) => updateLook(projectId, patch))
+  ipcMain.handle('compose:updateMotion', (_e, projectId: string, patch: { preset: MotionPreset }) => updateMotion(projectId, patch))
+  ipcMain.handle('compose:updateCaptions', (_e, projectId: string, patch: Partial<Project>) => updateCaptions(projectId, patch))
   ipcMain.handle('compose:previewSpec', (_e, projectId: string, draftOverrides?: Partial<Project>) => previewSpec(projectId, draftOverrides))
   ipcMain.handle('compose:posterFrame', (_e, path: string) => posterFrame(path))
   ipcMain.handle('compose:preview', (_e, projectId: string) => previewProject(projectId))

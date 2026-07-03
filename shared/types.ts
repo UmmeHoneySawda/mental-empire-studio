@@ -927,6 +927,8 @@ export interface NativeApi {
     setMedia(projectId: string, patch: Partial<Project>): Promise<Project>
     setCaptions(projectId: string, patch: Partial<Project>): Promise<Project>
     updateLook(projectId: string, patch: { lut?: string; strength?: number; adjust?: LookAdjust }): Promise<Project>
+    updateMotion(projectId: string, patch: { preset: MotionPreset }): Promise<Project>
+    updateCaptions(projectId: string, patch: Partial<Project>): Promise<Project>
     /** serializable GPU compositor spec for the live still editor preview */
     previewSpec(projectId: string, draftOverrides?: Partial<Project>): Promise<GpuRenderSpec>
     /** extract/cache the first frame of a local video segment as a PNG data URL */
