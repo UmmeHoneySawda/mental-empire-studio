@@ -199,13 +199,14 @@ function Inspector({
   const setImageRanges = useData((s) => s.setImageRanges)
   const setCaptions = useData((s) => s.setCaptions)
   const setLook = useData((s) => s.setLook)
-  const setMotion = useData((s) => s.setMotion)
+  const setImageMotion = useData((s) => s.setImageMotion)
   const setWordsEmphasis = useData((s) => s.setWordsEmphasis)
   const image = selection.kind === 'image' ? images.find((im) => im.id === selection.id) : undefined
   const word = selection.kind === 'caption' ? words.find((w) => w.id === selection.id) : undefined
   const durationSec = Math.max(0.05, project.durationSec || 0.05)
   const minSpan = Math.min(0.05, durationSec)
-  const motionPreset: MotionPreset = project.motionPreset ?? (project.kenBurns ? 'subtle' : 'off')
+  const projectMotionPreset: MotionPreset = project.motionPreset ?? (project.kenBurns ? 'subtle' : 'off')
+  const imageMotionPreset: MotionPreset = image?.motionPreset ?? projectMotionPreset
   const selectedLook = LOOKS.find((look) => look.id === (project.lookLut ?? 'off')) ?? LOOKS[0]
   const lookStrength = selectedLook.id === 'off' ? 0 : clampValue(project.lookStrength ?? selectedLook.defaultStrength, 0, 1)
   const captionHighlightColor = /^#[0-9a-f]{6}$/i.test(project.captionHighlightColor ?? '') ? project.captionHighlightColor! : project.captionPreset === 'Submagic' ? '#111111' : '#ffd93d'
@@ -254,13 +255,16 @@ function Inspector({
           <NumberField label="Start" value={image.rangeStart} min={0} max={Math.max(0, image.rangeEnd - minSpan)} step={0.05} onChange={(v) => setImageRange(v, image.rangeEnd)} />
           <NumberField label="End" value={image.rangeEnd} min={image.rangeStart + minSpan} max={durationSec} step={0.05} onChange={(v) => setImageRange(image.rangeStart, v)} />
           <NumberField label="Secs" value={Math.max(minSpan, image.rangeEnd - image.rangeStart)} min={minSpan} max={durationSec} step={0.05} onChange={setImageDuration} />
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 6 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(0,1fr))', gap: 6 }}>
+            <MiniButton active={image.motionPreset == null} title={`Inherit project motion: ${projectMotionPreset}`} onClick={() => void setImageMotion([{ id: image.id, motionPreset: null }])}>
+              Auto
+            </MiniButton>
             {([
               { id: 'off', label: 'Static' },
               { id: 'subtle', label: 'Subtle' },
               { id: 'cinematic', label: 'Cinema' }
             ] as Array<{ id: MotionPreset; label: string }>).map((preset) => (
-              <MiniButton key={preset.id} active={motionPreset === preset.id} onClick={() => void setMotion(preset.id)}>
+              <MiniButton key={preset.id} active={image.motionPreset != null && imageMotionPreset === preset.id} onClick={() => void setImageMotion([{ id: image.id, motionPreset: preset.id }])}>
                 {preset.label}
               </MiniButton>
             ))}

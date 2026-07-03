@@ -421,6 +421,8 @@ export interface ProjectImage {
   rangeStart: number
   rangeEnd: number
   manual: boolean
+  /** optional per-image override; null/undefined inherits the project motion preset */
+  motionPreset?: MotionPreset | null
 }
 
 export interface TranscriptWord {
@@ -924,6 +926,7 @@ export interface NativeApi {
     setImages(projectId: string, paths: string[]): Promise<ProjectImage[]>
     reorderImages(projectId: string, imageIds: string[]): Promise<ProjectImage[]>
     setRanges(projectId: string, ranges: { id: string; rangeStart: number; rangeEnd: number }[]): Promise<ProjectImage[]>
+    setImageMotion(projectId: string, updates: { id: string; motionPreset: MotionPreset | null }[]): Promise<ProjectImage[]>
     setMedia(projectId: string, patch: Partial<Project>): Promise<Project>
     setCaptions(projectId: string, patch: Partial<Project>): Promise<Project>
     updateLook(projectId: string, patch: { lut?: string; strength?: number; adjust?: LookAdjust }): Promise<Project>

@@ -90,6 +90,10 @@ function mockImageMotion(index: number, seed: number, preset: MotionPreset): Ima
   }
 }
 
+function imageMotionPreset(image: ProjectImage, project: Project): MotionPreset {
+  return image.motionPreset ?? effectiveMotionPreset(project)
+}
+
 function splitImages(projectId: string, paths: string[], durationSec: number): ProjectImage[] {
   const safe = paths.length ? paths : ['browser://landscape-1.png', 'browser://landscape-2.png', 'browser://landscape-3.png']
   const step = durationSec / safe.length
@@ -302,7 +306,7 @@ function installMock(): void {
       fps: 24,
       durationSec: p.durationSec,
       images: imgs.map((im) => {
-        const row = { path: im.path, startSec: im.rangeStart, endSec: im.rangeEnd, motion: mockImageMotion(im.ord, p.seed, motionPreset) }
+        const row = { path: im.path, startSec: im.rangeStart, endSec: im.rangeEnd, motion: mockImageMotion(im.ord, p.seed, imageMotionPreset(im, p)) }
         return row.motion ? row : { path: row.path, startSec: row.startSec, endSec: row.endSec }
       }),
       motion: { kenBurns: motionPreset !== 'off', punchAtSec: words.filter((w) => w.emphasis).map((w) => w.start) },
@@ -585,6 +589,12 @@ function installMock(): void {
       },
       setRanges: async (projectId: string, ranges: Array<{ id: string; rangeStart: number; rangeEnd: number }>) => {
         const imgs = (projectImages.get(projectId) ?? []).map((im) => ({ ...im, ...(ranges.find((r) => r.id === im.id) ?? {}) }))
+        projectImages.set(projectId, imgs)
+        return imgs
+      },
+      setImageMotion: async (projectId: string, updates: Array<{ id: string; motionPreset: MotionPreset | null }>) => {
+        const byId = new Map(updates.map((u) => [u.id, u.motionPreset]))
+        const imgs = (projectImages.get(projectId) ?? []).map((im) => byId.has(im.id) ? { ...im, motionPreset: byId.get(im.id) ?? null } : im)
         projectImages.set(projectId, imgs)
         return imgs
       },

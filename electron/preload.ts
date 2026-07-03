@@ -127,6 +127,8 @@ const api: NativeApi = {
     reorderImages: (projectId: string, imageIds: string[]) => ipcRenderer.invoke('compose:reorderImages', projectId, imageIds),
     setRanges: (projectId: string, ranges: { id: string; rangeStart: number; rangeEnd: number }[]) =>
       ipcRenderer.invoke('compose:setRanges', projectId, ranges),
+    setImageMotion: (projectId: string, updates: Parameters<NativeApi['compose']['setImageMotion']>[1]) =>
+      ipcRenderer.invoke('compose:setImageMotion', projectId, updates),
     setMedia: (projectId: string, patch: Partial<Project>) => ipcRenderer.invoke('compose:setMedia', projectId, patch),
     setCaptions: (projectId: string, patch: Partial<Project>) => ipcRenderer.invoke('compose:setCaptions', projectId, patch),
     updateLook: (projectId: string, patch: Parameters<NativeApi['compose']['updateLook']>[1]) => ipcRenderer.invoke('compose:updateLook', projectId, patch),

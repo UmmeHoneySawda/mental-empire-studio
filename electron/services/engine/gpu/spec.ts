@@ -111,7 +111,8 @@ export function buildImageSpecs(images: ProjectImage[], durationSec: number, mot
       startSec: Math.max(0, im.rangeStart),
       endSec: Math.max(im.rangeStart + 0.5, im.rangeEnd)
     }
-    const smartMotion = motion ? imageMotionFor(im.ord, motion.seed, motion.preset) : undefined
+    const preset = im.motionPreset ?? motion?.preset
+    const smartMotion = preset ? imageMotionFor(im.ord, motion?.seed ?? 1, preset) : undefined
     if (smartMotion) out.motion = smartMotion
     return out
   })

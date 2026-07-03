@@ -105,6 +105,18 @@ describe('buildImageSpecs', () => {
     expect(subtle[1].motion?.zoomFrom).toBeGreaterThan(subtle[1].motion?.zoomTo ?? 0)
     expect(buildImageSpecs(images, 12, { preset: 'off', seed: 42 })[0].motion).toBeUndefined()
   })
+  it('lets individual images override the project motion preset', () => {
+    const specs = buildImageSpecs([
+      { ...images[0], motionPreset: 'off' },
+      { ...images[1], motionPreset: 'cinematic' }
+    ], 12, { preset: 'subtle', seed: 42 })
+    expect(specs[0].motion).toBeUndefined()
+    expect(specs[1].motion).toBeDefined()
+    expect((specs[1].motion?.zoomFrom ?? 0) - (specs[1].motion?.zoomTo ?? 0)).toBeCloseTo(0.18)
+
+    const globalOff = buildImageSpecs([{ ...images[0], motionPreset: 'cinematic' }], 12, { preset: 'off', seed: 42 })
+    expect(globalOff[0].motion).toBeDefined()
+  })
 })
 
 describe('smart motion helpers', () => {
