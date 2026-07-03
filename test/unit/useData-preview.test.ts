@@ -148,6 +148,28 @@ describe('preview invalidation after project mutations', () => {
     expect(useData.getState().previewError).toBe('')
   })
 
+  it('routes per-image motion writes and clears stale preview state', async () => {
+    const nextImage = { ...image(), motionPreset: 'cinematic' as const }
+    const calls: Array<{ id: string; updates: Array<{ id: string; motionPreset: string | null }> }> = []
+    ;(globalThis as unknown as { window: unknown }).window = {
+      api: {
+        compose: {
+          setImageMotion: async (id: string, updates: Array<{ id: string; motionPreset: 'off' | 'subtle' | 'cinematic' | null }>) => {
+            calls.push({ id, updates })
+            return [nextImage]
+          }
+        }
+      }
+    }
+
+    await useData.getState().setImageMotion([{ id: 'img-1', motionPreset: 'cinematic' }])
+
+    expect(calls).toEqual([{ id: 'proj-dl-video1', updates: [{ id: 'img-1', motionPreset: 'cinematic' }] }])
+    expect(useData.getState().projectImages).toEqual([nextImage])
+    expect(useData.getState().previewSpec).toBeNull()
+    expect(useData.getState().previewError).toBe('')
+  })
+
   it('clears stale preview state after generic media writes too', async () => {
     ;(globalThis as unknown as { window: unknown }).window = {
       api: {

@@ -3,6 +3,7 @@ import { useStore } from '../../store/useStore'
 import { useData } from '../../store/useData'
 import { usePreviewCompositor } from './usePreviewCompositor'
 import { videoSrc } from '../../lib/media'
+import { previewImagesKey } from './previewKeys'
 
 function fmt(sec: number): string {
   const s = Math.max(0, Math.floor(sec))
@@ -73,7 +74,7 @@ export function PreviewCanvas({ playheadSec: controlledPlayheadSec, onPlayheadCh
       JSON.stringify(project.betaOpts ?? {})
     ].join('|')
   }, [project])
-  const imagesKey = useMemo(() => images.map((im) => `${im.id}:${im.path}:${im.thumb}:${im.rangeStart}:${im.rangeEnd}`).join('|'), [images])
+  const imagesKey = useMemo(() => previewImagesKey(images), [images])
   const transcriptKey = useMemo(() => transcript.map((w) => `${w.id}:${w.word}:${w.start}:${w.end}:${w.emphasis ? 1 : 0}`).join('|'), [transcript])
   const durationSec = Math.max(0.05, spec?.durationSec ?? project?.durationSec ?? 0.05)
   const playheadSec = controlledPlayheadSec ?? localPlayheadSec

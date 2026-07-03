@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ProjectImage, TranscriptWord } from '@shared/types'
 import { buildCaptionTimeline, buildVisualTimeline, clampTimelineSec, rangeToPct } from '../../src/features/video-editor/timelineModel'
+import { previewImagesKey } from '../../src/features/video-editor/previewKeys'
 
 function image(patch: Partial<ProjectImage>): ProjectImage {
   return {
@@ -55,6 +56,15 @@ describe('video timeline model', () => {
     })
   })
 
+  it('includes per-image motion overrides in the live-preview image key', () => {
+    const auto = previewImagesKey([image({ motionPreset: null })])
+    const staticImage = previewImagesKey([image({ motionPreset: 'off' })])
+    const cinematicImage = previewImagesKey([image({ motionPreset: 'cinematic' })])
+
+    expect(auto).not.toBe(staticImage)
+    expect(staticImage).not.toBe(cinematicImage)
+  })
+
   it('builds caption word blocks with a minimum visible span', () => {
     const blocks = buildCaptionTimeline([word({ start: 9.98, end: 9.98 })], 10)
     expect(blocks[0].startSec).toBeLessThan(10)
@@ -62,4 +72,3 @@ describe('video timeline model', () => {
     expect(blocks[0].leftPct + blocks[0].widthPct).toBeLessThanOrEqual(100)
   })
 })
-
