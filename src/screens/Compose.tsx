@@ -14,6 +14,7 @@ import { LookGallery } from '../features/video-editor/LookGallery'
 import { CaptionGallery } from '../features/video-editor/CaptionGallery'
 import { CAPTION_PRESETS, QUICK_CAPTION_PRESETS } from '../features/video-editor/captionPresets'
 import { EditorTimeline, type EditorSelection } from '../features/video-editor/EditorTimeline'
+import { VideoEditorCoachmarks } from '../features/video-editor/VideoEditorCoachmarks'
 import { PipelineRibbon } from '../components/PipelineRibbon'
 
 function Tab({ id, label, icon }: { id: 'media' | 'captions' | 'style' | 'advanced'; label: string; icon: JSX.Element }): JSX.Element {
@@ -937,6 +938,7 @@ export function Compose(): JSX.Element {
       </div>
       <PreviewCanvas playheadSec={videoPlayheadSec} onPlayheadChange={setVideoPlayheadSec} selectedLabel={selectedLabel} />
       {videoEditorV2 && project && <QuickPanel customizeOpen={videoCustomizeOpen} onCustomizeToggle={() => setVideoCustomizeOpen((open) => !open)} />}
+      <VideoEditorCoachmarks enabled={videoEditorV2 && !!project} customizeOpen={videoCustomizeOpen} onOpenCustomize={() => setVideoCustomizeOpen(true)} />
       {videoEditorV2 && project && videoCustomizeOpen && (
         <EditorTimeline
           project={project}
