@@ -25,6 +25,7 @@ import type {
 } from '../../shared/types'
 import { asBetaOpts, DEFAULT_BETA_OPTS } from '../../shared/types'
 import { seedIfEmpty, seedDemoData, seedDefaultThumbnailTemplates } from './seed'
+import { planProfileSourceMigration, type SourceMigrationCandidate } from './profile-source-migration'
 
 // Embedded, synchronous SQLite (better-sqlite3) holds all domain data: channels,
 // source links, download history, uploads, profiles, thumbnail templates, render
@@ -265,55 +266,6 @@ function installDefaultThumbnailTemplates(d: Database.Database): void {
   tx()
 }
 
-function normalizeSourceUrl(raw?: string): string {
-  return (raw ?? '').trim().replace(/\/+$/, '').toLowerCase()
-}
-
-function handleFromSourceUrl(raw?: string): string {
-  const url = raw ?? ''
-  const at = url.match(/@[^/?#]+/)
-  if (at) return at[0]
-  try {
-    const parts = new URL(url).pathname.split('/').filter(Boolean)
-    return parts.length ? parts[parts.length - 1] : ''
-  } catch {
-    return url.replace(/^https?:\/\//, '').replace(/\/+$/, '')
-  }
-}
-
-function sourceIdForMigratedProfile(p: Profile): string {
-  const seed = p.linkedSourceId || handleFromSourceUrl(p.sourceUrl) || p.id
-  if (seed.startsWith('src-')) return seed
-  return `src-${seed.replace(/^@/, '').replace(/[^A-Za-z0-9]+/g, '_') || p.id}`
-}
-
-function profileToSourceAutomationRow(p: Profile): Record<string, unknown> {
-  return {
-    autoWatch: p.autoWatch ? 1 : 0,
-    autoQueueRender: p.autoQueueRender ? 1 : 0,
-    sourceOrder: p.sourceOrder ?? 'Latest',
-    sourceCount: p.sourceCount ?? 5,
-    imageMode: p.imageMode ?? 'pool',
-    poolSize: p.poolSize ?? 10,
-    kenBurns: p.kenBurns ? 1 : 0,
-    captionPreset: p.captionPreset ?? 'Hormozi',
-    captionFont: p.captionFont ?? 'Montserrat',
-    captionAnim: p.captionAnim ?? 'Pop-in',
-    captionAspect: p.captionAspect ?? '16:9',
-    captionLines: p.captionLines ?? 1,
-    captionPosition: p.captionPosition ?? 'bottom',
-    captionPace: p.captionPace ?? 'auto',
-    captionHighlightColor: p.captionHighlightColor ?? null,
-    captionBoxColor: p.captionBoxColor ?? null,
-    captionWordsPerPage: p.captionWordsPerPage ?? null,
-    outputFolder: p.outputFolder ?? null,
-    thumbnailTemplateId: p.thumbnailTemplateId ?? null,
-    lastSeenVideoId: p.lastSeenVideoId ?? null,
-    lastRunAt: p.lastRunAt ?? null,
-    betaOpts: JSON.stringify(p.betaOpts ?? DEFAULT_BETA_OPTS)
-  }
-}
-
 /** One-time guarded fold from legacy profile-owned automation into source rows.
  *  The profiles table stays intact so old IPC/UI paths remain reversible shims. */
 function migrateProfilesToSources(d: Database.Database): void {
@@ -321,7 +273,7 @@ function migrateProfilesToSources(d: Database.Database): void {
   if (done) return
   const rows = d.prepare('SELECT * FROM profiles').all() as Array<Record<string, unknown>>
   const tx = d.transaction(() => {
-    const byId = d.prepare('SELECT id FROM source_channels WHERE id=?')
+    const sourceCandidates = d.prepare('SELECT id,url FROM source_channels').all() as SourceMigrationCandidate[]
     const insertSource = d.prepare(
       `INSERT OR IGNORE INTO source_channels (id,url,handle,name)
        VALUES (@id,@url,@handle,@name)`
@@ -354,20 +306,11 @@ function migrateProfilesToSources(d: Database.Database): void {
     )
     for (const row of rows) {
       const profile = rowToProfile(row)
-      if (!profile.sourceUrl && !profile.linkedSourceId) continue
-      const allSources = d.prepare('SELECT id,url FROM source_channels').all() as Array<{ id: string; url?: string }>
-      const byUrl = normalizeSourceUrl(profile.sourceUrl)
-      const matchedByUrl = byUrl ? allSources.find((s) => normalizeSourceUrl(s.url) === byUrl)?.id : undefined
-      const linkedExists = profile.linkedSourceId ? byId.get(profile.linkedSourceId) : undefined
-      const id = linkedExists ? profile.linkedSourceId! : matchedByUrl ?? sourceIdForMigratedProfile(profile)
-      const handle = handleFromSourceUrl(profile.sourceUrl)
-      insertSource.run({
-        id,
-        url: profile.sourceUrl || handle || id,
-        handle,
-        name: profile.name || handle || 'Source'
-      })
-      updateAutomation.run({ id, ...profileToSourceAutomationRow(profile) })
+      const plan = planProfileSourceMigration(profile, sourceCandidates)
+      if (!plan) continue
+      insertSource.run(plan.insertSource)
+      updateAutomation.run({ id: plan.id, ...plan.automationRow })
+      if (!sourceCandidates.some((s) => s.id === plan.id)) sourceCandidates.push({ id: plan.id, url: plan.insertSource.url })
     }
     d.prepare("INSERT OR REPLACE INTO app_meta (key,value) VALUES ('profiles_folded_v1','1')").run()
   })
