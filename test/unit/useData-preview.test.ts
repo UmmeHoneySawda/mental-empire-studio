@@ -37,6 +37,7 @@ function word(id = 'w-1'): TranscriptWord {
 }
 
 const stalePreviewSpec = { jobId: 'stale' } as GpuRenderSpec
+const freshPreviewSpec = { jobId: 'fresh' } as GpuRenderSpec
 
 describe('preview-safe project refresh', () => {
   beforeEach(() => {
@@ -105,14 +106,19 @@ describe('preview invalidation after project mutations', () => {
     })
   })
 
-  it('routes caption writes through compose:updateCaptions and clears stale preview state', async () => {
+  it('routes caption writes through compose:updateCaptions and reloads preview state', async () => {
     const calls: Array<{ id: string; patch: Partial<Project> }> = []
+    const previewCalls: string[] = []
     ;(globalThis as unknown as { window: unknown }).window = {
       api: {
         compose: {
           updateCaptions: async (id: string, patch: Partial<Project>) => {
             calls.push({ id, patch })
             return { ...project(id), ...patch }
+          },
+          previewSpec: async (id: string) => {
+            previewCalls.push(id)
+            return freshPreviewSpec
           }
         }
       }
@@ -121,19 +127,25 @@ describe('preview invalidation after project mutations', () => {
     await useData.getState().setCaptions({ captionFont: 'Montserrat' })
 
     expect(calls).toEqual([{ id: 'proj-dl-video1', patch: { captionFont: 'Montserrat' } }])
+    expect(previewCalls).toEqual(['proj-dl-video1'])
     expect(useData.getState().activeProject?.captionFont).toBe('Montserrat')
-    expect(useData.getState().previewSpec).toBeNull()
+    expect(useData.getState().previewSpec).toBe(freshPreviewSpec)
     expect(useData.getState().previewError).toBe('')
   })
 
-  it('routes motion writes through compose:updateMotion and clears stale preview state', async () => {
+  it('routes motion writes through compose:updateMotion and reloads preview state', async () => {
     const calls: Array<{ id: string; patch: { preset: string } }> = []
+    const previewCalls: string[] = []
     ;(globalThis as unknown as { window: unknown }).window = {
       api: {
         compose: {
           updateMotion: async (id: string, patch: { preset: 'off' | 'subtle' | 'cinematic' }) => {
             calls.push({ id, patch })
             return { ...project(id), motionPreset: patch.preset, kenBurns: patch.preset !== 'off' }
+          },
+          previewSpec: async (id: string) => {
+            previewCalls.push(id)
+            return freshPreviewSpec
           }
         }
       }
@@ -142,21 +154,55 @@ describe('preview invalidation after project mutations', () => {
     await useData.getState().setMotion('cinematic')
 
     expect(calls).toEqual([{ id: 'proj-dl-video1', patch: { preset: 'cinematic' } }])
+    expect(previewCalls).toEqual(['proj-dl-video1'])
     expect(useData.getState().activeProject?.motionPreset).toBe('cinematic')
     expect(useData.getState().activeProject?.kenBurns).toBe(true)
-    expect(useData.getState().previewSpec).toBeNull()
+    expect(useData.getState().previewSpec).toBe(freshPreviewSpec)
     expect(useData.getState().previewError).toBe('')
   })
 
-  it('routes per-image motion writes and clears stale preview state', async () => {
+  it('routes look writes through compose:updateLook and reloads preview state', async () => {
+    const calls: Array<{ id: string; patch: { lut?: string; strength?: number } }> = []
+    const previewCalls: string[] = []
+    ;(globalThis as unknown as { window: unknown }).window = {
+      api: {
+        compose: {
+          updateLook: async (id: string, patch: { lut?: string; strength?: number }) => {
+            calls.push({ id, patch })
+            return { ...project(id), lookLut: patch.lut, lookStrength: patch.strength }
+          },
+          previewSpec: async (id: string) => {
+            previewCalls.push(id)
+            return freshPreviewSpec
+          }
+        }
+      }
+    }
+
+    await useData.getState().setLook({ lut: 'cinematic', strength: 0.7 })
+
+    expect(calls).toEqual([{ id: 'proj-dl-video1', patch: { lut: 'cinematic', strength: 0.7 } }])
+    expect(previewCalls).toEqual(['proj-dl-video1'])
+    expect(useData.getState().activeProject?.lookLut).toBe('cinematic')
+    expect(useData.getState().activeProject?.lookStrength).toBe(0.7)
+    expect(useData.getState().previewSpec).toBe(freshPreviewSpec)
+    expect(useData.getState().previewError).toBe('')
+  })
+
+  it('routes per-image motion writes and reloads preview state', async () => {
     const nextImage = { ...image(), motionPreset: 'cinematic' as const, motionDirection: 'left' as const, motionAmount: 70 }
     const calls: Array<{ id: string; updates: Array<{ id: string; motionPreset?: string | null; motionDirection?: string | null; motionAmount?: number | null }> }> = []
+    const previewCalls: string[] = []
     ;(globalThis as unknown as { window: unknown }).window = {
       api: {
         compose: {
           setImageMotion: async (id: string, updates: Array<{ id: string; motionPreset?: 'off' | 'subtle' | 'cinematic' | null; motionDirection?: 'auto' | 'push' | 'pull' | 'left' | 'right' | 'up' | 'down' | null; motionAmount?: number | null }>) => {
             calls.push({ id, updates })
             return [nextImage]
+          },
+          previewSpec: async (id: string) => {
+            previewCalls.push(id)
+            return freshPreviewSpec
           }
         }
       }
@@ -165,25 +211,32 @@ describe('preview invalidation after project mutations', () => {
     await useData.getState().setImageMotion([{ id: 'img-1', motionPreset: 'cinematic', motionDirection: 'left', motionAmount: 70 }])
 
     expect(calls).toEqual([{ id: 'proj-dl-video1', updates: [{ id: 'img-1', motionPreset: 'cinematic', motionDirection: 'left', motionAmount: 70 }] }])
+    expect(previewCalls).toEqual(['proj-dl-video1'])
     expect(useData.getState().projectImages).toEqual([nextImage])
-    expect(useData.getState().previewSpec).toBeNull()
+    expect(useData.getState().previewSpec).toBe(freshPreviewSpec)
     expect(useData.getState().previewError).toBe('')
   })
 
-  it('clears stale preview state after generic media writes too', async () => {
+  it('reloads preview state after generic media writes too', async () => {
+    const previewCalls: string[] = []
     ;(globalThis as unknown as { window: unknown }).window = {
       api: {
         compose: {
-          setMedia: async (id: string, patch: Partial<Project>) => ({ ...project(id), ...patch })
+          setMedia: async (id: string, patch: Partial<Project>) => ({ ...project(id), ...patch }),
+          previewSpec: async (id: string) => {
+            previewCalls.push(id)
+            return freshPreviewSpec
+          }
         }
       }
     }
 
     await useData.getState().setMedia({ imageMode: 'pool', seed: 42 })
 
+    expect(previewCalls).toEqual(['proj-dl-video1'])
     expect(useData.getState().activeProject?.imageMode).toBe('pool')
     expect(useData.getState().activeProject?.seed).toBe(42)
-    expect(useData.getState().previewSpec).toBeNull()
+    expect(useData.getState().previewSpec).toBe(freshPreviewSpec)
     expect(useData.getState().previewError).toBe('')
   })
 })

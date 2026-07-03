@@ -835,6 +835,9 @@ export function Thumbnails(): JSX.Element {
   const transcript = useData((s) => s.transcript)
   const downloads = useData((s) => s.downloads)
   const openProject = useData((s) => s.openProject)
+  const refreshActiveProjectSnapshot = useData((s) => s.refreshActiveProjectSnapshot)
+  const loadRenderJobs = useData((s) => s.loadRenderJobs)
+  const loadWorkItems = useData((s) => s.loadWorkItems)
   const setActive = useStore((s) => s.setActive)
   const [leftTab, setLeftTab] = useState<'layers' | 'templates'>('layers')
   const [saved, setSaved] = useState(false)
@@ -941,6 +944,7 @@ export function Thumbnails(): JSX.Element {
     try {
       const url = await rasterizeLayers(layers)
       await window.api?.thumbnails?.saveProjectThumb?.(activeProject.id, activeProject.title, url)
+      await Promise.all([refreshActiveProjectSnapshot(activeProject.id), loadRenderJobs(), loadWorkItems()])
       setSaved(true)
       setTimeout(() => setSaved(false), 2000)
     } catch (e) {

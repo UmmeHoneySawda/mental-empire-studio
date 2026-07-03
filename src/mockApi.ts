@@ -31,7 +31,8 @@ import {
   type SourceAutomationPatch,
   type SourceChannel,
   type ThumbnailTemplate,
-  type TranscriptWord
+  type TranscriptWord,
+  type WorkItem
 } from '@shared/types'
 import type { GpuRenderSpec } from '@shared/renderSpec'
 import type { ImageMotionSpec } from '@shared/renderSpec'
@@ -141,6 +142,7 @@ function installMock(): void {
   const transcripts = new Map<string, TranscriptWord[]>()
   const renderRows: RenderQueueRow[] = []
   const templates: ThumbnailTemplate[] = []
+  const workItemState = new Map<string, { uploadedManual: boolean | null; archived: boolean }>()
   const profiles: Profile[] = [
     { id: 'prof-me', name: 'Mental Empire', mono: 'ME', avatar: grad('#f5b323', '#b9780a'), rule: 'Latest · 5 videos', images: 'Pool of 10 · shuffle', thumb: 'Full Bleed', cap: 'Hormozi · 16:9', out: '/Browser/ME_out', autoWatch: true, sourceUrl: 'https://www.youtube.com/@powerwithinofficial-q7d', sourceOrder: 'Latest', sourceCount: 5, imageMode: 'pool', poolSize: 10, kenBurns: true, captionPreset: 'Hormozi', captionAspect: '16:9', betaOpts: { ...DEFAULT_BETA_OPTS, broll: { ...DEFAULT_BETA_OPTS.broll, enabled: true }, style: 'Cinematic' } }
   ]
@@ -195,6 +197,42 @@ function installMock(): void {
       filePath: `/Browser/MentalEmpire_out/${slug(v.title)}.mp3`
     }
   }
+
+  const videoIdForDownload = (downloadId: string): string => {
+    const match = downloadId.match(/^dl-(.+)-\d+-\d+$/)
+    return match?.[1] ?? downloadId.replace(/^dl-/, '')
+  }
+
+  const readWorkItems = (): WorkItem[] => downloads.map((d) => {
+    const videoId = videoIdForDownload(d.id)
+    const state = workItemState.get(videoId) ?? { uploadedManual: null, archived: false }
+    const project = projects.find((p) => p.downloadId === d.id)
+    const row = project ? renderRows.find((r) => r.job.projectId === project.id) : undefined
+    const uploaded = state.uploadedManual === true
+    return {
+      videoId,
+      channel: d.channel,
+      title: d.title,
+      thumb: d.thumb,
+      downloadId: d.id,
+      projectId: project?.id,
+      renderJobId: row?.job.id,
+      downloaded: d.stage === 'Downloaded only' && !!d.filePath,
+      hasImages: project ? (projectImages.get(project.id)?.length ?? 0) > 0 : false,
+      captioned: project ? (transcripts.get(project.id)?.length ?? 0) > 0 : false,
+      hasThumbnail: !!project?.thumbPath || !!row?.hasThumb,
+      rendered: row?.job.status === 'done' && !!row.job.outputPath,
+      uploaded,
+      renderStatus: row?.job.status,
+      outputPath: row?.job.outputPath,
+      error: row?.job.error,
+      uploadedTo: uploaded ? [channels[0]?.id ?? 'me'] : [],
+      uploadMatchScore: uploaded ? 1 : undefined,
+      uploadConfidence: uploaded ? 'high' : undefined,
+      uploadedManual: state.uploadedManual,
+      archived: state.archived
+    }
+  })
 
   const createProjectForDownload = (downloadId: string): Project => {
     const existing = projects.find((p) => p.downloadId === downloadId)
@@ -393,6 +431,7 @@ function installMock(): void {
         renderRows.splice(0)
         profiles.splice(0)
         templates.splice(0)
+        workItemState.clear()
         activity.splice(0)
         settings = { ...DEFAULT_SETTINGS }
         return settings
@@ -417,12 +456,18 @@ function installMock(): void {
         if (c) Object.assign(c, patch)
         return channels
       },
-      workItems: async () => []
+      workItems: async () => readWorkItems()
     }),
     workItems: ns({
       detect: async () => 0,
-      setUploaded: async () => {},
-      setArchived: async () => {}
+      setUploaded: async (videoId: string, uploaded: boolean) => {
+        const prev = workItemState.get(videoId) ?? { uploadedManual: null, archived: false }
+        workItemState.set(videoId, { ...prev, uploadedManual: uploaded })
+      },
+      setArchived: async (videoId: string, archived: boolean) => {
+        const prev = workItemState.get(videoId) ?? { uploadedManual: null, archived: false }
+        workItemState.set(videoId, { ...prev, archived })
+      }
     }),
     scrape: ns({
       channel: async (url: string): Promise<ScrapedChannel> => {

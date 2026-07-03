@@ -134,6 +134,7 @@ interface DataState {
 }
 
 let subscribed = false
+let previewSpecRequestSeq = 0
 
 /** Throttle trailing-edge: coalesces bursty progress-event reloads to at most one call
  *  per `ms`, so an active download/encode streaming many events/sec doesn't hammer the DB. */
@@ -202,7 +203,7 @@ export const useData = create<DataState>((set, get) => ({
     a.onActivity((row) => set((s) => ({ activity: [row, ...s.activity].slice(0, 30) })))
     a.onDownloadProgress((p) => {
       set((s) => ({ dlProgress: { ...s.dlProgress, [p.downloadId]: p } }))
-      if (p.done) void get().loadDownloads()
+      if (p.done) void Promise.all([get().loadDownloads(), get().loadWorkItems()])
       else reloadDownloads()
     })
     a.onTranscribeProgress((p) => set({
@@ -409,15 +410,16 @@ export const useData = create<DataState>((set, get) => ({
     const a = api()
     const current = get().activeProject
     const id = projectId ?? current?.id
-    if (!a || !id) return
+    if (!a || !id || !a.compose?.previewSpec) return
+    const requestSeq = ++previewSpecRequestSeq
     set({ previewLoading: true, previewError: '' })
     try {
       const previewSpec = await a.compose.previewSpec(id)
-      if (get().activeProject?.id === id) set({ previewSpec, previewError: '' })
+      if (get().activeProject?.id === id && requestSeq === previewSpecRequestSeq) set({ previewSpec, previewError: '' })
     } catch (e) {
-      if (get().activeProject?.id === id) set({ previewSpec: null, previewError: (e as Error).message })
+      if (get().activeProject?.id === id && requestSeq === previewSpecRequestSeq) set({ previewSpec: null, previewError: (e as Error).message })
     } finally {
-      if (get().activeProject?.id === id) set({ previewLoading: false })
+      if (get().activeProject?.id === id && requestSeq === previewSpecRequestSeq) set({ previewLoading: false })
     }
   },
   setProjectImages: async (paths) => {
@@ -426,6 +428,7 @@ export const useData = create<DataState>((set, get) => ({
     if (!a || !p) return
     const projectImages = await a.compose.setImages(p.id, paths)
     set({ projectImages })
+    await get().loadPreviewSpec(p.id)
   },
   reorderProjectImages: async (imageIds) => {
     const a = api()
@@ -433,48 +436,63 @@ export const useData = create<DataState>((set, get) => ({
     if (!a || !p) return
     const projectImages = await a.compose.reorderImages(p.id, imageIds)
     set({ projectImages })
+    await get().loadPreviewSpec(p.id)
   },
   setImageRanges: async (ranges) => {
     const a = api()
     const p = get().activeProject
     if (!a || !p || ranges.length === 0) return
     const projectImages = await a.compose.setRanges(p.id, ranges)
-    set({ projectImages, previewSpec: null, previewError: '' })
+    set({ projectImages, previewError: '' })
+    await get().loadPreviewSpec(p.id)
   },
   setImageMotion: async (updates) => {
     const a = api()
     const p = get().activeProject
     if (!a || !p || updates.length === 0) return
     const projectImages = await a.compose.setImageMotion(p.id, updates)
-    set({ projectImages, previewSpec: null, previewError: '' })
+    set({ projectImages, previewError: '' })
+    await get().loadPreviewSpec(p.id)
   },
   setMedia: async (patch) => {
     const a = api()
     const p = get().activeProject
     if (!a || !p) return
     const project = await a.compose.setMedia(p.id, patch)
-    if (project) set({ activeProject: project, previewSpec: null, previewError: '' })
+    if (project) {
+      set({ activeProject: project, previewError: '' })
+      await get().loadPreviewSpec(project.id)
+    }
   },
   setCaptions: async (patch) => {
     const a = api()
     const p = get().activeProject
     if (!a || !p) return
     const project = await a.compose.updateCaptions(p.id, patch)
-    if (project) set({ activeProject: project, previewSpec: null, previewError: '' })
+    if (project) {
+      set({ activeProject: project, previewError: '' })
+      await get().loadPreviewSpec(project.id)
+    }
   },
   setLook: async (patch) => {
     const a = api()
     const p = get().activeProject
     if (!a || !p) return
     const project = await a.compose.updateLook(p.id, patch)
-    if (project) set({ activeProject: project, previewSpec: null, previewError: '' })
+    if (project) {
+      set({ activeProject: project, previewError: '' })
+      await get().loadPreviewSpec(project.id)
+    }
   },
   setMotion: async (preset) => {
     const a = api()
     const p = get().activeProject
     if (!a || !p) return
     const project = await a.compose.updateMotion(p.id, { preset })
-    if (project) set({ activeProject: project, previewSpec: null, previewError: '' })
+    if (project) {
+      set({ activeProject: project, previewError: '' })
+      await get().loadPreviewSpec(project.id)
+    }
   },
   runTranscribe: async () => {
     const a = api()
@@ -484,6 +502,7 @@ export const useData = create<DataState>((set, get) => ({
     try {
       const transcript = await a.transcribe.run(p.id)
       set({ transcript, transcribeError: '', transcribeMessage: 'Done' })
+      await get().loadPreviewSpec(p.id)
     } catch (e) {
       set({ transcribeError: transcribeErrorMessage((e as Error).message), transcribeMessage: '' })
     } finally {
@@ -496,6 +515,7 @@ export const useData = create<DataState>((set, get) => ({
     if (!a || !p) return
     await a.transcribe.toggleEmphasis(wordId)
     set({ transcript: await a.transcribe.get(p.id) })
+    await get().loadPreviewSpec(p.id)
   },
   setWordsEmphasis: async (wordIds, emphasis) => {
     const a = api()
@@ -503,6 +523,7 @@ export const useData = create<DataState>((set, get) => ({
     if (!a || !p || wordIds.length === 0) return
     await a.transcribe.setEmphasis(wordIds, emphasis)
     set({ transcript: await a.transcribe.get(p.id) })
+    await get().loadPreviewSpec(p.id)
   },
   sendActiveToRender: async () => {
     const a = api()

@@ -71,6 +71,14 @@ describe('nextStepFor / actionLabel', () => {
     expect(nextStepFor(wi({ downloadId: 'dl-z' }))).toEqual({ screen: 'compose', openProjectId: 'dl-z' })
     expect(actionLabel(wi({}))).toBe('Edit')
   })
+  it('captioned project → thumbnail editor', () => {
+    expect(nextStepFor(wi({ hasImages: true, captioned: true, hasThumbnail: false, downloadId: 'dl-z' }))).toEqual({ screen: 'thumb', openProjectId: 'dl-z' })
+    expect(actionLabel(wi({ hasImages: true, captioned: true, hasThumbnail: false }))).toBe('Thumbnail')
+  })
+  it('thumbnail complete → render queue', () => {
+    expect(nextStepFor(wi({ hasImages: true, captioned: true, hasThumbnail: true, rendered: false }))).toEqual({ screen: 'render' })
+    expect(actionLabel(wi({ hasThumbnail: true, rendered: false }))).toBe('Render')
+  })
   it('not downloaded → sources', () => {
     expect(nextStepFor(wi({ downloaded: false, downloadId: undefined }))).toEqual({ screen: 'sources' })
     expect(actionLabel(wi({ downloaded: false }))).toBe('Download')

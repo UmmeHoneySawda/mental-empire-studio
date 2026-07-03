@@ -64,8 +64,9 @@ export function resumeCandidate(items: WorkItem[]): WorkItem | null {
 }
 
 /** The next screen + (optional) project to open for an item, given its progress. */
-export function nextStepFor(w: WorkItem): { screen: 'render' | 'compose' | 'sources'; openProjectId?: string } {
-  if (w.rendered) return { screen: 'render' }
+export function nextStepFor(w: WorkItem): { screen: 'render' | 'compose' | 'thumb' | 'sources'; openProjectId?: string } {
+  if (w.rendered || w.hasThumbnail) return { screen: 'render' }
+  if (w.hasImages && w.captioned && w.downloadId) return { screen: 'thumb', openProjectId: w.downloadId }
   if (w.downloaded && w.downloadId) return { screen: 'compose', openProjectId: w.downloadId }
   return { screen: 'sources' }
 }
@@ -73,6 +74,8 @@ export function nextStepFor(w: WorkItem): { screen: 'render' | 'compose' | 'sour
 /** Short label for the primary action button of an item. */
 export function actionLabel(w: WorkItem): string {
   if (w.rendered) return 'Queue'
+  if (w.hasThumbnail) return 'Render'
+  if (w.hasImages && w.captioned) return 'Thumbnail'
   if (w.downloaded) return 'Edit'
   return 'Download'
 }
