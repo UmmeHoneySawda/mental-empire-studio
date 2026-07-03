@@ -1,4 +1,4 @@
-import type { AppSettings, MotionPreset, Project, ProjectImage, TranscriptWord } from '../../../../shared/types'
+import type { AppSettings, MotionDirection, MotionPreset, Project, ProjectImage, TranscriptWord } from '../../../../shared/types'
 import { projectVideoOpts } from '../../../../shared/types'
 import type {
   CaptionFrameModel,
@@ -86,18 +86,34 @@ function seededUnit(seed: number, index: number, salt: number): number {
   return (x >>> 0) / 0xffffffff
 }
 
-export function imageMotionFor(index: number, seed: number, preset: MotionPreset): ImageMotionSpec | undefined {
+function motionAmountMultiplier(amount: number | null | undefined): number {
+  if (amount == null) return 1
+  const clamped = Math.max(0, Math.min(100, Number.isFinite(amount) ? amount : 50))
+  return clamped / 50
+}
+
+export function imageMotionFor(
+  index: number,
+  seed: number,
+  preset: MotionPreset,
+  override?: { direction?: MotionDirection | null; amount?: number | null }
+): ImageMotionSpec | undefined {
   if (preset === 'off') return undefined
-  const amount = preset === 'cinematic' ? 0.18 : 0.08
-  const panAmount = preset === 'cinematic' ? 0.07 : 0.035
-  const push = index % 2 === 0
+  const multiplier = motionAmountMultiplier(override?.amount)
+  const amount = (preset === 'cinematic' ? 0.18 : 0.08) * multiplier
+  const panAmount = (preset === 'cinematic' ? 0.07 : 0.035) * multiplier
+  const direction = override?.direction && override.direction !== 'auto' ? override.direction : undefined
+  const sidePan = direction === 'left' || direction === 'right' || direction === 'up' || direction === 'down'
+  const push = sidePan ? false : direction === 'push' ? true : direction === 'pull' ? false : index % 2 === 0
   const xSign = seededUnit(seed, index, 0) > 0.5 ? 1 : -1
   const ySign = seededUnit(seed, index, 1) > 0.5 ? 1 : -1
+  const panX = direction === 'left' ? -panAmount : direction === 'right' ? panAmount : direction === 'up' || direction === 'down' ? 0 : xSign * panAmount * (0.55 + seededUnit(seed, index, 2) * 0.45)
+  const panY = direction === 'up' ? -panAmount : direction === 'down' ? panAmount : direction === 'left' || direction === 'right' ? 0 : ySign * panAmount * (0.55 + seededUnit(seed, index, 3) * 0.45)
   return {
-    zoomFrom: push ? 1 : 1 + amount,
-    zoomTo: push ? 1 + amount : 1,
-    panX: xSign * panAmount * (0.55 + seededUnit(seed, index, 2) * 0.45),
-    panY: ySign * panAmount * (0.55 + seededUnit(seed, index, 3) * 0.45),
+    zoomFrom: push || sidePan ? 1 : 1 + amount,
+    zoomTo: push ? 1 + amount : sidePan ? 1 + amount * 0.5 : 1,
+    panX,
+    panY,
     ease: 'easeInOutCubic'
   }
 }
@@ -112,7 +128,7 @@ export function buildImageSpecs(images: ProjectImage[], durationSec: number, mot
       endSec: Math.max(im.rangeStart + 0.5, im.rangeEnd)
     }
     const preset = im.motionPreset ?? motion?.preset
-    const smartMotion = preset ? imageMotionFor(im.ord, motion?.seed ?? 1, preset) : undefined
+    const smartMotion = preset ? imageMotionFor(im.ord, motion?.seed ?? 1, preset, { direction: im.motionDirection, amount: im.motionAmount }) : undefined
     if (smartMotion) out.motion = smartMotion
     return out
   })

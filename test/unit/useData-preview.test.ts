@@ -149,12 +149,12 @@ describe('preview invalidation after project mutations', () => {
   })
 
   it('routes per-image motion writes and clears stale preview state', async () => {
-    const nextImage = { ...image(), motionPreset: 'cinematic' as const }
-    const calls: Array<{ id: string; updates: Array<{ id: string; motionPreset: string | null }> }> = []
+    const nextImage = { ...image(), motionPreset: 'cinematic' as const, motionDirection: 'left' as const, motionAmount: 70 }
+    const calls: Array<{ id: string; updates: Array<{ id: string; motionPreset?: string | null; motionDirection?: string | null; motionAmount?: number | null }> }> = []
     ;(globalThis as unknown as { window: unknown }).window = {
       api: {
         compose: {
-          setImageMotion: async (id: string, updates: Array<{ id: string; motionPreset: 'off' | 'subtle' | 'cinematic' | null }>) => {
+          setImageMotion: async (id: string, updates: Array<{ id: string; motionPreset?: 'off' | 'subtle' | 'cinematic' | null; motionDirection?: 'auto' | 'push' | 'pull' | 'left' | 'right' | 'up' | 'down' | null; motionAmount?: number | null }>) => {
             calls.push({ id, updates })
             return [nextImage]
           }
@@ -162,9 +162,9 @@ describe('preview invalidation after project mutations', () => {
       }
     }
 
-    await useData.getState().setImageMotion([{ id: 'img-1', motionPreset: 'cinematic' }])
+    await useData.getState().setImageMotion([{ id: 'img-1', motionPreset: 'cinematic', motionDirection: 'left', motionAmount: 70 }])
 
-    expect(calls).toEqual([{ id: 'proj-dl-video1', updates: [{ id: 'img-1', motionPreset: 'cinematic' }] }])
+    expect(calls).toEqual([{ id: 'proj-dl-video1', updates: [{ id: 'img-1', motionPreset: 'cinematic', motionDirection: 'left', motionAmount: 70 }] }])
     expect(useData.getState().projectImages).toEqual([nextImage])
     expect(useData.getState().previewSpec).toBeNull()
     expect(useData.getState().previewError).toBe('')

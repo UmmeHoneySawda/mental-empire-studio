@@ -3,7 +3,7 @@ import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'no
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
-import type { LookAdjust, MotionPreset, Project, ProjectImage, TranscribeProgress, TranscriptWord } from '../../shared/types'
+import type { LookAdjust, MotionDirection, MotionPreset, Project, ProjectImage, ProjectImageMotionPatch, TranscribeProgress, TranscriptWord } from '../../shared/types'
 import { asBetaOpts, projectVideoOpts } from '../../shared/types'
 import type { GpuRenderSpec } from '../../shared/renderSpec'
 import { safeName } from '../../shared/sanitize'
@@ -227,13 +227,23 @@ function updateMotion(projectId: string, patch: { preset: MotionPreset }): Proje
   return updated
 }
 
-function setImageMotion(projectId: string, updates: { id: string; motionPreset: MotionPreset | null }[]): ProjectImage[] {
+function cleanMotionDirection(raw: unknown): MotionDirection | null {
+  return raw === 'auto' || raw === 'push' || raw === 'pull' || raw === 'left' || raw === 'right' || raw === 'up' || raw === 'down' ? raw : null
+}
+
+function setImageMotion(projectId: string, updates: ProjectImageMotionPatch[]): ProjectImage[] {
   const clean = updates
     .filter((u) => !!u.id)
-    .map((u) => ({
-      id: u.id,
-      motionPreset: u.motionPreset === 'off' || u.motionPreset === 'subtle' || u.motionPreset === 'cinematic' ? u.motionPreset : null
-    }))
+    .map((u) => {
+      const row: ProjectImageMotionPatch = { id: u.id }
+      if ('motionPreset' in u) row.motionPreset = u.motionPreset === 'off' || u.motionPreset === 'subtle' || u.motionPreset === 'cinematic' ? u.motionPreset : null
+      if ('motionDirection' in u) row.motionDirection = cleanMotionDirection(u.motionDirection)
+      if ('motionAmount' in u) {
+        const n = Number(u.motionAmount)
+        row.motionAmount = u.motionAmount == null ? null : Math.max(0, Math.min(100, Number.isFinite(n) ? n : 50))
+      }
+      return row
+    })
   const repos = getRepos()
   repos.setImageMotion(projectId, clean)
   return repos.getProjectImages(projectId)
@@ -507,7 +517,7 @@ export function registerComposeIpc(): void {
     repos().setImageRanges(projectId, ranges)
     return repos().getProjectImages(projectId)
   })
-  ipcMain.handle('compose:setImageMotion', (_e, projectId: string, updates: { id: string; motionPreset: MotionPreset | null }[]) => setImageMotion(projectId, updates))
+  ipcMain.handle('compose:setImageMotion', (_e, projectId: string, updates: ProjectImageMotionPatch[]) => setImageMotion(projectId, updates))
   ipcMain.handle('compose:setMedia', (_e, projectId: string, patch: Partial<Project>) => repos().updateProject(projectId, patch))
   ipcMain.handle('compose:setCaptions', (_e, projectId: string, patch: Partial<Project>) => repos().updateProject(projectId, patch))
   ipcMain.handle('compose:updateLook', (_e, projectId: string, patch: { lut?: string; strength?: number; adjust?: LookAdjust }) => updateLook(projectId, patch))

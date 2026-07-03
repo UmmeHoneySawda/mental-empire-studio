@@ -1,4 +1,4 @@
-import type { MotionPreset, Project, ProjectImage, TranscriptWord } from '@shared/types'
+import type { MotionDirection, MotionPreset, Project, ProjectImage, TranscriptWord } from '@shared/types'
 import { LOOKS } from '@shared/looks'
 import type { MouseEvent, ReactNode } from 'react'
 import { useData } from '../../store/useData'
@@ -95,6 +95,16 @@ function Block({
     </button>
   )
 }
+
+const MOTION_DIRECTIONS: Array<{ id: MotionDirection | null; label: string; title: string }> = [
+  { id: null, label: 'Auto', title: 'Seeded direction for this image' },
+  { id: 'push', label: 'In', title: 'Zoom in' },
+  { id: 'pull', label: 'Out', title: 'Zoom out' },
+  { id: 'left', label: 'Left', title: 'Pan left' },
+  { id: 'right', label: 'Right', title: 'Pan right' },
+  { id: 'up', label: 'Up', title: 'Pan up' },
+  { id: 'down', label: 'Down', title: 'Pan down' }
+]
 
 function MiniButton({
   children,
@@ -207,6 +217,8 @@ function Inspector({
   const minSpan = Math.min(0.05, durationSec)
   const projectMotionPreset: MotionPreset = project.motionPreset ?? (project.kenBurns ? 'subtle' : 'off')
   const imageMotionPreset: MotionPreset = image?.motionPreset ?? projectMotionPreset
+  const imageMotionDirection = image?.motionDirection ?? null
+  const imageMotionAmount = clampValue(image?.motionAmount ?? 50, 0, 100)
   const selectedLook = LOOKS.find((look) => look.id === (project.lookLut ?? 'off')) ?? LOOKS[0]
   const lookStrength = selectedLook.id === 'off' ? 0 : clampValue(project.lookStrength ?? selectedLook.defaultStrength, 0, 1)
   const captionHighlightColor = /^#[0-9a-f]{6}$/i.test(project.captionHighlightColor ?? '') ? project.captionHighlightColor! : project.captionPreset === 'Submagic' ? '#111111' : '#ffd93d'
@@ -256,7 +268,7 @@ function Inspector({
           <NumberField label="End" value={image.rangeEnd} min={image.rangeStart + minSpan} max={durationSec} step={0.05} onChange={(v) => setImageRange(image.rangeStart, v)} />
           <NumberField label="Secs" value={Math.max(minSpan, image.rangeEnd - image.rangeStart)} min={minSpan} max={durationSec} step={0.05} onChange={setImageDuration} />
           <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(0,1fr))', gap: 6 }}>
-            <MiniButton active={image.motionPreset == null} title={`Inherit project motion: ${projectMotionPreset}`} onClick={() => void setImageMotion([{ id: image.id, motionPreset: null }])}>
+            <MiniButton active={image.motionPreset == null} title={`Inherit project motion: ${projectMotionPreset}`} onClick={() => void setImageMotion([{ id: image.id, motionPreset: null, motionDirection: null, motionAmount: null }])}>
               Auto
             </MiniButton>
             {([
@@ -269,6 +281,27 @@ function Inspector({
               </MiniButton>
             ))}
           </div>
+          {imageMotionPreset !== 'off' && (
+            <>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(0,1fr))', gap: 6 }}>
+                {MOTION_DIRECTIONS.map((direction) => (
+                  <MiniButton
+                    key={direction.id ?? 'auto'}
+                    active={direction.id === imageMotionDirection}
+                    title={direction.title}
+                    onClick={() => void setImageMotion([{ id: image.id, motionDirection: direction.id }])}
+                  >
+                    {direction.label}
+                  </MiniButton>
+                ))}
+              </div>
+              <label style={{ display: 'grid', gridTemplateColumns: '56px minmax(0,1fr) 34px', alignItems: 'center', gap: 8, fontSize: 10.5, color: '#6a7180' }}>
+                <span>Amount</span>
+                <input type="range" min={0} max={100} value={Math.round(imageMotionAmount)} onChange={(e) => void setImageMotion([{ id: image.id, motionAmount: Number(e.target.value) }])} style={{ width: '100%', accentColor: 'var(--accent)' }} />
+                <span style={{ fontFamily: 'var(--font-mono)', color: '#cdd2da', textAlign: 'right' }}>{Math.round(imageMotionAmount)}</span>
+              </label>
+            </>
+          )}
         </div>
       )}
       {word && (

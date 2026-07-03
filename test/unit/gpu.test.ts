@@ -117,6 +117,18 @@ describe('buildImageSpecs', () => {
     const globalOff = buildImageSpecs([{ ...images[0], motionPreset: 'cinematic' }], 12, { preset: 'off', seed: 42 })
     expect(globalOff[0].motion).toBeDefined()
   })
+  it('supports per-image motion direction and amount', () => {
+    const left = buildImageSpecs([
+      { ...images[0], motionPreset: 'subtle', motionDirection: 'left', motionAmount: 100 }
+    ], 12, { preset: 'subtle', seed: 42 })[0].motion
+    expect(left?.panX).toBeLessThan(0)
+    expect(left?.panY).toBeCloseTo(0)
+    expect(left?.zoomTo).toBeCloseTo(1.08)
+
+    const pull = imageMotionFor(0, 42, 'cinematic', { direction: 'pull', amount: 25 })
+    expect(pull?.zoomFrom).toBeGreaterThan(pull?.zoomTo ?? 0)
+    expect((pull?.zoomFrom ?? 0) - (pull?.zoomTo ?? 0)).toBeCloseTo(0.09)
+  })
 })
 
 describe('smart motion helpers', () => {

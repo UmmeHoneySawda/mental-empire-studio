@@ -60,9 +60,11 @@ describe('video timeline model', () => {
     const auto = previewImagesKey([image({ motionPreset: null })])
     const staticImage = previewImagesKey([image({ motionPreset: 'off' })])
     const cinematicImage = previewImagesKey([image({ motionPreset: 'cinematic' })])
+    const directedImage = previewImagesKey([image({ motionPreset: 'cinematic', motionDirection: 'left', motionAmount: 70 })])
 
     expect(auto).not.toBe(staticImage)
     expect(staticImage).not.toBe(cinematicImage)
+    expect(cinematicImage).not.toBe(directedImage)
   })
 
   it('builds caption word blocks with a minimum visible span', () => {

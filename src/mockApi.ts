@@ -22,6 +22,7 @@ import {
   type Profile,
   type Project,
   type ProjectImage,
+  type ProjectImageMotionPatch,
   type RenderProgress,
   type RenderQueueRow,
   type ScrapeOrder,
@@ -76,16 +77,19 @@ function effectiveMotionPreset(p: Project): MotionPreset {
   return p.motionPreset ?? (p.kenBurns ? 'subtle' : 'off')
 }
 
-function mockImageMotion(index: number, seed: number, preset: MotionPreset): ImageMotionSpec | undefined {
+function mockImageMotion(index: number, seed: number, preset: MotionPreset, image?: ProjectImage): ImageMotionSpec | undefined {
   if (preset === 'off') return undefined
-  const amount = preset === 'cinematic' ? 0.18 : 0.08
-  const pan = preset === 'cinematic' ? 0.06 : 0.03
-  const push = index % 2 === 0
+  const multiplier = image?.motionAmount == null ? 1 : Math.max(0, Math.min(100, image.motionAmount)) / 50
+  const amount = (preset === 'cinematic' ? 0.18 : 0.08) * multiplier
+  const pan = (preset === 'cinematic' ? 0.06 : 0.03) * multiplier
+  const direction = image?.motionDirection && image.motionDirection !== 'auto' ? image.motionDirection : undefined
+  const sidePan = direction === 'left' || direction === 'right' || direction === 'up' || direction === 'down'
+  const push = sidePan ? false : direction === 'push' ? true : direction === 'pull' ? false : index % 2 === 0
   return {
-    zoomFrom: push ? 1 : 1 + amount,
-    zoomTo: push ? 1 + amount : 1,
-    panX: (index % 3 === 0 ? -1 : 1) * pan,
-    panY: (index % 2 === 0 ? 1 : -1) * pan * 0.75,
+    zoomFrom: push || sidePan ? 1 : 1 + amount,
+    zoomTo: push ? 1 + amount : sidePan ? 1 + amount * 0.5 : 1,
+    panX: direction === 'left' ? -pan : direction === 'right' ? pan : direction === 'up' || direction === 'down' ? 0 : (index % 3 === 0 ? -1 : 1) * pan,
+    panY: direction === 'up' ? -pan : direction === 'down' ? pan : direction === 'left' || direction === 'right' ? 0 : (index % 2 === 0 ? 1 : -1) * pan * 0.75,
     ease: 'easeInOutCubic'
   }
 }
@@ -306,7 +310,7 @@ function installMock(): void {
       fps: 24,
       durationSec: p.durationSec,
       images: imgs.map((im) => {
-        const row = { path: im.path, startSec: im.rangeStart, endSec: im.rangeEnd, motion: mockImageMotion(im.ord, p.seed, imageMotionPreset(im, p)) }
+        const row = { path: im.path, startSec: im.rangeStart, endSec: im.rangeEnd, motion: mockImageMotion(im.ord, p.seed, imageMotionPreset(im, p), im) }
         return row.motion ? row : { path: row.path, startSec: row.startSec, endSec: row.endSec }
       }),
       motion: { kenBurns: motionPreset !== 'off', punchAtSec: words.filter((w) => w.emphasis).map((w) => w.start) },
@@ -592,9 +596,18 @@ function installMock(): void {
         projectImages.set(projectId, imgs)
         return imgs
       },
-      setImageMotion: async (projectId: string, updates: Array<{ id: string; motionPreset: MotionPreset | null }>) => {
-        const byId = new Map(updates.map((u) => [u.id, u.motionPreset]))
-        const imgs = (projectImages.get(projectId) ?? []).map((im) => byId.has(im.id) ? { ...im, motionPreset: byId.get(im.id) ?? null } : im)
+      setImageMotion: async (projectId: string, updates: ProjectImageMotionPatch[]) => {
+        const byId = new Map(updates.map((u) => [u.id, u]))
+        const imgs = (projectImages.get(projectId) ?? []).map((im) => {
+          const patch = byId.get(im.id)
+          if (!patch) return im
+          return {
+            ...im,
+            ...('motionPreset' in patch ? { motionPreset: patch.motionPreset ?? null } : {}),
+            ...('motionDirection' in patch ? { motionDirection: patch.motionDirection ?? null } : {}),
+            ...('motionAmount' in patch ? { motionAmount: patch.motionAmount ?? null } : {})
+          }
+        })
         projectImages.set(projectId, imgs)
         return imgs
       },

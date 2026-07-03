@@ -7,6 +7,8 @@ export function previewImagesKey(images: ProjectImage[]): string {
     im.thumb,
     im.rangeStart,
     im.rangeEnd,
-    im.motionPreset ?? 'auto'
+    im.motionPreset ?? 'auto',
+    im.motionDirection ?? 'seeded',
+    im.motionAmount ?? 'default'
   ].join(':')).join('|')
 }

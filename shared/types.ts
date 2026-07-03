@@ -423,6 +423,17 @@ export interface ProjectImage {
   manual: boolean
   /** optional per-image override; null/undefined inherits the project motion preset */
   motionPreset?: MotionPreset | null
+  /** optional per-image motion path; null/undefined keeps the deterministic seeded direction */
+  motionDirection?: MotionDirection | null
+  /** optional per-image motion strength, 0-100; 50 equals the preset default */
+  motionAmount?: number | null
+}
+
+export interface ProjectImageMotionPatch {
+  id: string
+  motionPreset?: MotionPreset | null
+  motionDirection?: MotionDirection | null
+  motionAmount?: number | null
 }
 
 export interface TranscriptWord {
@@ -442,6 +453,7 @@ export interface TranscriptWord {
 export type VideoStyle = 'None' | 'Cinematic' | 'Intense' | 'Heartfelt' | 'Clean'
 export type BrollDensity = 'full' | 'sparse' | 'keywords'
 export type MotionPreset = 'off' | 'subtle' | 'cinematic'
+export type MotionDirection = 'auto' | 'push' | 'pull' | 'left' | 'right' | 'up' | 'down'
 const VIDEO_STYLES: VideoStyle[] = ['None', 'Cinematic', 'Intense', 'Heartfelt', 'Clean']
 const BROLL_DENSITIES: BrollDensity[] = ['full', 'sparse', 'keywords']
 
@@ -926,7 +938,7 @@ export interface NativeApi {
     setImages(projectId: string, paths: string[]): Promise<ProjectImage[]>
     reorderImages(projectId: string, imageIds: string[]): Promise<ProjectImage[]>
     setRanges(projectId: string, ranges: { id: string; rangeStart: number; rangeEnd: number }[]): Promise<ProjectImage[]>
-    setImageMotion(projectId: string, updates: { id: string; motionPreset: MotionPreset | null }[]): Promise<ProjectImage[]>
+    setImageMotion(projectId: string, updates: ProjectImageMotionPatch[]): Promise<ProjectImage[]>
     setMedia(projectId: string, patch: Partial<Project>): Promise<Project>
     setCaptions(projectId: string, patch: Partial<Project>): Promise<Project>
     updateLook(projectId: string, patch: { lut?: string; strength?: number; adjust?: LookAdjust }): Promise<Project>

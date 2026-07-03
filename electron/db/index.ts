@@ -10,6 +10,7 @@ import type {
   ScrapedVideo,
   Project,
   ProjectImage,
+  ProjectImageMotionPatch,
   TranscriptWord,
   RecentUpload,
   RenderJob,
@@ -17,6 +18,7 @@ import type {
   ScrapeOrder,
   ImageMode,
   MotionPreset,
+  MotionDirection,
   WorkItem,
   Niche,
   SourceAutomationPatch
@@ -80,7 +82,8 @@ CREATE TABLE IF NOT EXISTS projects (
 );
 CREATE TABLE IF NOT EXISTS project_images (
   id TEXT PRIMARY KEY, projectId TEXT, ord INTEGER, path TEXT, thumb TEXT,
-  rangeStart REAL, rangeEnd REAL, manual INTEGER, motionPreset TEXT
+  rangeStart REAL, rangeEnd REAL, manual INTEGER,
+  motionPreset TEXT, motionDirection TEXT, motionAmount REAL
 );
 CREATE TABLE IF NOT EXISTS transcript_words (
   id TEXT PRIMARY KEY, projectId TEXT, ord INTEGER, word TEXT,
@@ -211,6 +214,8 @@ function migrate(d: Database.Database): void {
   ensureColumn(d, 'projects', 'lookAdjust', 'TEXT')
   ensureColumn(d, 'projects', 'motionPreset', 'TEXT')
   ensureColumn(d, 'project_images', 'motionPreset', 'TEXT')
+  ensureColumn(d, 'project_images', 'motionDirection', 'TEXT')
+  ensureColumn(d, 'project_images', 'motionAmount', 'REAL')
   ensureColumn(d, 'projects', 'captionLines', 'INTEGER')
   ensureColumn(d, 'projects', 'captionPosition', 'TEXT')
   ensureColumn(d, 'projects', 'captionPace', 'TEXT')
@@ -449,7 +454,7 @@ export interface Repositories {
   replaceProjectImages(projectId: string, rows: ProjectImage[]): void
   getProjectImages(projectId: string): ProjectImage[]
   setImageRanges(projectId: string, ranges: Array<{ id: string; rangeStart: number; rangeEnd: number }>): void
-  setImageMotion(projectId: string, updates: Array<{ id: string; motionPreset: MotionPreset | null }>): void
+  setImageMotion(projectId: string, updates: ProjectImageMotionPatch[]): void
   replaceTranscript(projectId: string, rows: TranscriptWord[]): void
   getTranscript(projectId: string): TranscriptWord[]
   updateWord(wordId: string, text: string): void
@@ -903,9 +908,9 @@ function buildRepositories(d: Database.Database): Repositories {
       const tx = d.transaction(() => {
         d.prepare('DELETE FROM project_images WHERE projectId=?').run(projectId)
         const ins = d.prepare(
-          'INSERT INTO project_images (id,projectId,ord,path,thumb,rangeStart,rangeEnd,manual,motionPreset) VALUES (@id,@projectId,@ord,@path,@thumb,@rangeStart,@rangeEnd,@manual,@motionPreset)'
+          'INSERT INTO project_images (id,projectId,ord,path,thumb,rangeStart,rangeEnd,manual,motionPreset,motionDirection,motionAmount) VALUES (@id,@projectId,@ord,@path,@thumb,@rangeStart,@rangeEnd,@manual,@motionPreset,@motionDirection,@motionAmount)'
         )
-        rows.forEach((r) => ins.run({ ...r, manual: r.manual ? 1 : 0, motionPreset: r.motionPreset ?? null }))
+        rows.forEach((r) => ins.run({ ...r, manual: r.manual ? 1 : 0, motionPreset: r.motionPreset ?? null, motionDirection: r.motionDirection ?? null, motionAmount: r.motionAmount ?? null }))
       })
       tx()
     },
@@ -921,8 +926,15 @@ function buildRepositories(d: Database.Database): Repositories {
     setImageMotion: (projectId, updates) => {
       if (!updates.length) return
       const tx = d.transaction(() => {
-        const up = d.prepare('UPDATE project_images SET motionPreset=@motionPreset WHERE id=@id AND projectId=@projectId')
-        updates.forEach((r) => up.run({ id: r.id, projectId, motionPreset: r.motionPreset ?? null }))
+        for (const r of updates) {
+          const row: Record<string, unknown> = {}
+          if ('motionPreset' in r) row.motionPreset = r.motionPreset ?? null
+          if ('motionDirection' in r) row.motionDirection = r.motionDirection ?? null
+          if ('motionAmount' in r) row.motionAmount = r.motionAmount ?? null
+          const keys = Object.keys(row)
+          if (!keys.length) continue
+          d.prepare(`UPDATE project_images SET ${keys.map((k) => `${k}=@${k}`).join(', ')} WHERE id=@id AND projectId=@projectId`).run({ id: r.id, projectId, ...row })
+        }
       })
       tx()
     },
@@ -1167,6 +1179,9 @@ const PROJECT_BOOL_KEYS = new Set(['kenBurns', 'emphasis', 'keywords', 'punchZoo
 function parseMotionPreset(raw: unknown): Project['motionPreset'] {
   return raw === 'off' || raw === 'subtle' || raw === 'cinematic' ? raw : undefined
 }
+function parseMotionDirection(raw: unknown): MotionDirection | undefined {
+  return raw === 'auto' || raw === 'push' || raw === 'pull' || raw === 'left' || raw === 'right' || raw === 'up' || raw === 'down' ? raw : undefined
+}
 
 function projectToRow(p: Project): Record<string, unknown> {
   return { ...p, captionLines: p.captionLines ?? 1, captionPosition: p.captionPosition ?? 'bottom', captionPace: p.captionPace ?? 'auto', captionHighlightColor: p.captionHighlightColor ?? null, captionBoxColor: p.captionBoxColor ?? null, captionWordsPerPage: p.captionWordsPerPage ?? null, kenBurns: p.kenBurns ? 1 : 0, crossfade: p.crossfade ?? 0.8, emphasis: p.emphasis ? 1 : 0, keywords: p.keywords ? 1 : 0, punchZoom: p.punchZoom ? 1 : 0, motionPreset: p.motionPreset ?? null, betaOpts: JSON.stringify(p.betaOpts ?? DEFAULT_BETA_OPTS), lookAdjust: p.lookAdjust ? JSON.stringify(p.lookAdjust) : null }
@@ -1202,7 +1217,13 @@ function rowToProject(r: Record<string, unknown>): Project {
   return { ...(r as unknown as Project), captionLines, captionPosition: (r.captionPosition as Project['captionPosition']) ?? 'bottom', captionPace, captionHighlightColor, captionBoxColor, captionWordsPerPage, durationSec: coerceNum(r.durationSec, 0), poolSize: coerceNum(r.poolSize, 10), kenBurns: !!r.kenBurns, crossfade: coerceNum(r.crossfade, 0.8) || 0.8, emphasis: !!r.emphasis, keywords: !!r.keywords, punchZoom: !!r.punchZoom, lookStrength: r.lookStrength == null ? undefined : coerceNum(r.lookStrength, 0), lookAdjust: parseLookAdjust(r.lookAdjust), motionPreset: parseMotionPreset(r.motionPreset), betaOpts: parseBetaOpts(r) }
 }
 function rowToImage(r: Record<string, unknown>): ProjectImage {
-  return { ...(r as unknown as ProjectImage), manual: !!r.manual, motionPreset: parseMotionPreset(r.motionPreset) }
+  return {
+    ...(r as unknown as ProjectImage),
+    manual: !!r.manual,
+    motionPreset: parseMotionPreset(r.motionPreset),
+    motionDirection: parseMotionDirection(r.motionDirection),
+    motionAmount: r.motionAmount == null ? undefined : Math.max(0, Math.min(100, coerceNum(r.motionAmount, 50)))
+  }
 }
 function rowToWord(r: Record<string, unknown>): TranscriptWord {
   return { ...(r as unknown as TranscriptWord), emphasis: !!r.emphasis }

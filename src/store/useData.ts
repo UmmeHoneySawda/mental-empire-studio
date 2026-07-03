@@ -7,6 +7,7 @@ import type {
   MyChannel,
   Project,
   ProjectImage,
+  ProjectImageMotionPatch,
   ScrapeOrder,
   ScrapedVideo,
   RecentUpload,
@@ -96,7 +97,7 @@ interface DataState {
   setProjectImages: (paths: string[]) => Promise<void>
   reorderProjectImages: (imageIds: string[]) => Promise<void>
   setImageRanges: (ranges: { id: string; rangeStart: number; rangeEnd: number }[]) => Promise<void>
-  setImageMotion: (updates: { id: string; motionPreset: MotionPreset | null }[]) => Promise<void>
+  setImageMotion: (updates: ProjectImageMotionPatch[]) => Promise<void>
   setMedia: (patch: Partial<Project>) => Promise<void>
   setCaptions: (patch: Partial<Project>) => Promise<void>
   setLook: (patch: { lut?: string; strength?: number; adjust?: LookAdjust }) => Promise<void>
