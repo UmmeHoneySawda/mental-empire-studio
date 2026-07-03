@@ -347,7 +347,7 @@ function LayerInspector(): JSX.Element {
 function SelectionToolbar(): JSX.Element | null {
   const layers = useStore((s) => s.layers)
   const selectedLayerIds = useStore((s) => s.selectedLayerIds)
-  const updateLayer = useStore((s) => s.updateLayer)
+  const updateLayers = useStore((s) => s.updateLayers)
   const updateGeometries = useStore((s) => s.updateGeometries)
   const duplicateLayer = useStore((s) => s.duplicateLayer)
   const deleteLayer = useStore((s) => s.deleteLayer)
@@ -367,38 +367,42 @@ function SelectionToolbar(): JSX.Element | null {
   const top = bounds.y > 58 ? `calc(${topPct}% - 42px)` : `calc(${bottomPct}% + 8px)`
 
   const changeTextSize = (delta: number): void => {
-    selectedText.forEach((layer) => {
-      const lines = layer.lines.map((line) => ({ ...line, size: clampNum(line.size + delta, 8, 260) }))
-      updateLayer(layer.id, { lines } as Partial<TextLayer>)
-    })
+    updateLayers(selectedText.map((layer) => ({
+      id: layer.id,
+      patch: { lines: layer.lines.map((line) => ({ ...line, size: clampNum(line.size + delta, 8, 260) })) } as Partial<TextLayer>
+    })))
   }
 
   const applyColour = (color: string): void => {
-    selectedColourLayers.forEach((layer) => {
-      if (layer.kind === 'text') updateLayer(layer.id, { color } as Partial<TextLayer>)
-      else updateLayer(layer.id, { color } as Partial<ShapeLayer>)
-    })
+    updateLayers(selectedColourLayers.map((layer) => ({
+      id: layer.id,
+      patch: { color } as Partial<TextLayer | ShapeLayer>
+    })))
   }
 
   const toggleCaps = (): void => {
-    selectedText.forEach((layer) => {
-      updateLayer(layer.id, { effects: { ...layer.effects, caps: !allCaps } } as Partial<TextLayer>)
-    })
+    updateLayers(selectedText.map((layer) => ({
+      id: layer.id,
+      patch: { effects: { ...layer.effects, caps: !allCaps } } as Partial<TextLayer>
+    })))
   }
 
   const toggleHighlight = (): void => {
     const enabled = !hasHighlight
-    selectedText.forEach((layer) => {
+    updateLayers(selectedText.map((layer) => {
       const highlight = layer.highlight ?? { ...DEFAULT_TEXT_HIGHLIGHT, enabled: layer.highlightSquare, boxColor: layer.highlightColor }
       const existing = layer.highlightWords?.length ? layer.highlightWords : layer.highlightWord ? [layer.highlightWord] : []
       const highlightWords = existing.length ? existing : firstHighlightWords(layer)
-      updateLayer(layer.id, {
-        highlight: { ...highlight, enabled },
-        highlightSquare: enabled,
-        highlightWords,
-        highlightWord: highlightWords[0] ?? ''
-      } as Partial<TextLayer>)
-    })
+      return {
+        id: layer.id,
+        patch: {
+          highlight: { ...highlight, enabled },
+          highlightSquare: enabled,
+          highlightWords,
+          highlightWord: highlightWords[0] ?? ''
+        } as Partial<TextLayer>
+      }
+    }))
   }
 
   const moveGroup = (dx: number, dy: number): void => {
