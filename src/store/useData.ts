@@ -360,13 +360,13 @@ export const useData = create<DataState>((set, get) => ({
     const a = api()
     if (!a) return
     await a.download.resume(id)
-    await get().loadDownloads()
+    await Promise.all([get().loadDownloads(), get().loadWorkItems()])
   },
   cancelDownload: async (id) => {
     const a = api()
     if (!a) return
     await a.download.cancel(id)
-    await get().loadDownloads()
+    await Promise.all([get().loadDownloads(), get().loadWorkItems()])
   },
 
   openProject: async (downloadId) => {
@@ -524,7 +524,7 @@ export const useData = create<DataState>((set, get) => ({
     set({ rendering: true })
     try {
       await a.render.all()
-      await Promise.all([get().loadRenderJobs(), get().loadActivity()])
+      await Promise.all([get().loadRenderJobs(), get().loadActivity(), get().loadWorkItems()])
     } finally {
       set({ rendering: false })
     }
@@ -541,21 +541,21 @@ export const useData = create<DataState>((set, get) => ({
     if (!a) return
     await a.render.cancel(id)
     get().clearProgress(id)
-    await get().loadRenderJobs()
+    await Promise.all([get().loadRenderJobs(), get().loadWorkItems()])
   },
   deleteJob: async (id) => {
     const a = api()
     if (!a) return
     await a.render.delete(id)
     get().clearProgress(id)
-    await get().loadRenderJobs()
+    await Promise.all([get().loadRenderJobs(), get().loadWorkItems()])
   },
   requeueJob: async (id) => {
     const a = api()
     if (!a) return
     await a.render.requeue(id)
     get().clearProgress(id)
-    await get().loadRenderJobs()
+    await Promise.all([get().loadRenderJobs(), get().loadWorkItems()])
   },
   openRenderFile: async (id) => {
     const a = api()
@@ -571,7 +571,7 @@ export const useData = create<DataState>((set, get) => ({
     const a = api()
     if (!a) return
     await a.download.delete(id)
-    await get().loadDownloads()
+    await Promise.all([get().loadDownloads(), get().loadWorkItems()])
   },
 
   loadProfiles: async () => {
