@@ -1,6 +1,7 @@
 import type Database from 'better-sqlite3'
 import type {
   ThumbnailLayer,
+  ThumbnailTemplate,
   DownloadedVideo,
   MyChannel,
   Profile,
@@ -10,31 +11,152 @@ import type {
 
 // First-run seed. A fresh install starts CLEAN — no fake channels, downloads,
 // profiles, or activity (those made the dashboard look fabricated and produced
-// bogus "Incomplete YouTube ID" download errors). The only thing we seed is one
-// ready-to-use thumbnail template so the Thumbnails editor opens with a sensible
-// starting point. Everything else is populated by real scraping/downloads.
+// bogus "Incomplete YouTube ID" download errors). The only thing we seed is a
+// ready-to-use thumbnail template pack so the Thumbnails editor opens with
+// sensible starting points. Everything else is populated by real scraping/downloads.
 //
 // The demo dataset below is NOT used in production — it exists only so the headless
 // smoke/e2e harnesses (ME_SMOKE=*) have deterministic rows to assert against; they
 // call seedDemoData() explicitly.
 
-const defaultTemplate: { id: string; name: string; layers: ThumbnailLayer[] } = {
-  id: 'tpl-full-bleed',
-  name: 'Full Bleed',
-  layers: [
-    { id: 'headline', kind: 'text', name: 'Headline', visible: true, locked: false, frame: { x: 80, y: 426, width: 780, height: 250, rotation: 0 }, text: 'EVERYTHING WAS FAKE', lines: [{ text: 'EVERYTHING', size: 92 }, { text: 'WAS FAKE', size: 128 }], highlightWord: 'FAKE', highlightColor: '#ffffff', highlightSquare: true, color: '#ffffff', fontFamily: 'Anton', align: 'left', effects: { shadow: { enabled: true, color: '#000000', size: 0, opacity: 0.55, distance: 5, angle: 45 }, stroke: { enabled: false, color: '#000000', size: 6, opacity: 1 }, glow: { enabled: false, color: '#ffffff', size: 26, opacity: 0.85 }, caps: true } },
-    { id: 'subject', kind: 'subject', name: 'Subject', visible: true, locked: true, frame: { x: 96, y: 80, width: 470, height: 640, rotation: 0 }, src: '', outline: { enabled: true, color: '#ffffff', size: 6, opacity: 1 }, shadow: { enabled: true, color: '#000000', size: 24, opacity: 0.6, distance: 10, angle: 90 }, glow: { enabled: false, color: '#19c3d6', size: 30, opacity: 0.85 } },
-    { id: 'bg', kind: 'background', name: 'Background', visible: true, locked: true, frame: { x: 0, y: 0, width: 1280, height: 720, rotation: 0 }, fill: 'linear-gradient(135deg,#2a2540,#46243a)', mode: 'gradient' }
-  ]
+const TEXT_EFFECTS = {
+  shadow: { enabled: true, color: '#000000', size: 0, opacity: 0.55, distance: 5, angle: 45 },
+  stroke: { enabled: false, color: '#000000', size: 6, opacity: 1 },
+  glow: { enabled: false, color: '#ffffff', size: 26, opacity: 0.85 },
+  caps: true
 }
 
-function seedTemplate(d: Database.Database): void {
-  const exists = d.prepare('SELECT 1 FROM thumbnail_templates WHERE id=?').get(defaultTemplate.id)
-  if (!exists) {
-    d.prepare('INSERT INTO thumbnail_templates (id,name,layers) VALUES (@id,@name,@layers)').run({
-      id: defaultTemplate.id, name: defaultTemplate.name, layers: JSON.stringify(defaultTemplate.layers)
-    })
+const SUBJECT_EFFECTS = {
+  outline: { enabled: true, color: '#ffffff', size: 6, opacity: 1 },
+  shadow: { enabled: true, color: '#000000', size: 24, opacity: 0.6, distance: 10, angle: 90 },
+  glow: { enabled: false, color: '#19c3d6', size: 30, opacity: 0.85 }
+}
+
+function headline(
+  id: string,
+  frame: ThumbnailLayer['frame'],
+  lines: Array<{ text: string; size: number }>,
+  opts: { align?: 'left' | 'center' | 'right'; highlight?: string; box?: string; color?: string; lineGap?: number } = {}
+): ThumbnailLayer {
+  return {
+    id,
+    kind: 'text',
+    name: id === 'headline' ? 'Headline' : 'Accent line',
+    visible: true,
+    locked: false,
+    frame,
+    text: lines.map((l) => l.text).join(' '),
+    lines,
+    highlightWord: opts.highlight,
+    highlightWords: opts.highlight ? [opts.highlight] : [],
+    highlightColor: opts.box ?? '#ffffff',
+    highlightSquare: Boolean(opts.highlight),
+    highlight: {
+      enabled: Boolean(opts.highlight),
+      boxColor: opts.box ?? '#ffffff',
+      textColor: '#111111',
+      radius: 10,
+      padding: 10,
+      opacity: 1
+    },
+    color: opts.color ?? '#ffffff',
+    fontFamily: 'Anton',
+    align: opts.align ?? 'left',
+    lineGap: opts.lineGap ?? 0,
+    effects: TEXT_EFFECTS
   }
+}
+
+function subject(frame: ThumbnailLayer['frame']): ThumbnailLayer {
+  return {
+    id: 'subject',
+    kind: 'subject',
+    name: 'Subject',
+    visible: true,
+    locked: false,
+    frame,
+    src: '',
+    ...SUBJECT_EFFECTS
+  }
+}
+
+function shape(id: string, frame: ThumbnailLayer['frame'], shape: 'rect' | 'circle' | 'arrow', color: string): ThumbnailLayer {
+  return { id, kind: 'shape', name: `${id} (shape)`, visible: true, locked: false, frame, shape, color }
+}
+
+function background(fill: string, scrim?: NonNullable<Extract<ThumbnailLayer, { kind: 'background' }>['scrim']>): ThumbnailLayer {
+  return {
+    id: 'bg',
+    kind: 'background',
+    name: 'Background',
+    visible: true,
+    locked: true,
+    frame: { x: 0, y: 0, width: 1280, height: 720, rotation: 0 },
+    fill,
+    mode: 'gradient',
+    ...(scrim ? { scrim } : {})
+  }
+}
+
+export const DEFAULT_THUMBNAIL_TEMPLATES: ThumbnailTemplate[] = [
+  {
+    id: 'tpl-full-bleed',
+    name: 'Full Bleed',
+    layers: [
+      headline('headline', { x: 80, y: 426, width: 780, height: 250, rotation: 0 }, [{ text: 'EVERYTHING', size: 92 }, { text: 'WAS FAKE', size: 128 }], { highlight: 'FAKE', box: '#f2c200' }),
+      subject({ x: 96, y: 80, width: 470, height: 640, rotation: 0 }),
+      background('linear-gradient(135deg,#2a2540,#46243a)', { enabled: true, direction: 'bottom', size: 0.58, opacity: 0.58 })
+    ]
+  },
+  {
+    id: 'tpl-subject-left',
+    name: 'Subject Left',
+    layers: [
+      headline('headline', { x: 620, y: 144, width: 560, height: 330, rotation: 0 }, [{ text: 'STOP', size: 142 }, { text: 'EXPLAINING', size: 92 }], { highlight: 'STOP', box: '#e8403a', align: 'left', lineGap: 8 }),
+      headline('kicker', { x: 624, y: 492, width: 410, height: 58, rotation: 0 }, [{ text: 'they already know', size: 40 }], { color: '#f2c200' }),
+      subject({ x: 92, y: 70, width: 488, height: 650, rotation: 0 }),
+      shape('accent', { x: 1030, y: 54, width: 142, height: 142, rotation: -8 }, 'circle', '#f2c200'),
+      background('linear-gradient(135deg,#102f3a,#181a22)', { enabled: true, direction: 'right', size: 0.45, opacity: 0.5 })
+    ]
+  },
+  {
+    id: 'tpl-subject-right',
+    name: 'Subject Right',
+    layers: [
+      headline('headline', { x: 76, y: 132, width: 590, height: 360, rotation: 0 }, [{ text: 'NEVER', size: 132 }, { text: 'APOLOGIZE', size: 88 }], { highlight: 'NEVER', box: '#19c3d6', lineGap: 10 }),
+      headline('kicker', { x: 82, y: 512, width: 470, height: 54, rotation: 0 }, [{ text: 'for surviving it', size: 38 }], { color: '#ffffff' }),
+      subject({ x: 720, y: 62, width: 470, height: 650, rotation: 0 }),
+      shape('slash', { x: 86, y: 588, width: 420, height: 28, rotation: -3 }, 'rect', '#19c3d6'),
+      background('linear-gradient(135deg,#332817,#101216)', { enabled: true, direction: 'left', size: 0.5, opacity: 0.56 })
+    ]
+  },
+  {
+    id: 'tpl-centered-punch',
+    name: 'Centered Punch',
+    layers: [
+      headline('headline', { x: 210, y: 190, width: 860, height: 300, rotation: 0 }, [{ text: "YOU'RE NOT", size: 106 }, { text: 'CRAZY', size: 154 }], { highlight: 'CRAZY', box: '#36c98e', align: 'center', lineGap: 4 }),
+      headline('kicker', { x: 348, y: 512, width: 584, height: 54, rotation: 0 }, [{ text: 'this actually happened', size: 42 }], { align: 'center', color: '#f2c200' }),
+      shape('top-rule', { x: 344, y: 134, width: 592, height: 18, rotation: 0 }, 'rect', '#36c98e'),
+      shape('badge', { x: 970, y: 86, width: 128, height: 128, rotation: 9 }, 'circle', '#8b7cff'),
+      background('linear-gradient(135deg,#252b34,#111318)', { enabled: true, direction: 'bottom', size: 0.68, opacity: 0.62 })
+    ]
+  }
+]
+
+export function seedDefaultThumbnailTemplates(d: Database.Database): number {
+  const exists = d.prepare('SELECT 1 FROM thumbnail_templates WHERE id=?')
+  const insert = d.prepare('INSERT INTO thumbnail_templates (id,name,layers) VALUES (@id,@name,@layers)')
+  let inserted = 0
+  for (const template of DEFAULT_THUMBNAIL_TEMPLATES) {
+    if (exists.get(template.id)) continue
+    insert.run({
+      id: template.id,
+      name: template.name,
+      layers: JSON.stringify(template.layers)
+    })
+    inserted++
+  }
+  return inserted
 }
 
 export function seedIfEmpty(d: Database.Database): void {
@@ -43,8 +165,8 @@ export function seedIfEmpty(d: Database.Database): void {
   if (marker) return
 
   const tx = d.transaction(() => {
-    // Production: only a default thumbnail template — no fake demo content.
-    seedTemplate(d)
+    // Production: only default thumbnail templates — no fake demo content.
+    seedDefaultThumbnailTemplates(d)
     d.prepare("INSERT OR REPLACE INTO app_meta (key,value) VALUES ('seeded','1')").run()
   })
   tx()
@@ -89,7 +211,7 @@ const demoActivity: ActivityRow[] = [
 export function seedDemoData(d: Database.Database): void {
   if ((d.prepare('SELECT COUNT(*) AS n FROM my_channels').get() as { n: number }).n > 0) return
   const tx = d.transaction(() => {
-    seedTemplate(d)
+    seedDefaultThumbnailTemplates(d)
     const src = d.prepare(
       `INSERT INTO source_channels (id,url,handle,name,autoWatch,autoQueueRender,sourceOrder,sourceCount,imageMode,poolSize,kenBurns,captionPreset,captionAspect,thumbnailTemplateId,betaOpts)
        VALUES (@id,@url,@handle,@name,@autoWatch,@autoQueueRender,@sourceOrder,@sourceCount,@imageMode,@poolSize,@kenBurns,@captionPreset,@captionAspect,@thumbnailTemplateId,@betaOpts)`

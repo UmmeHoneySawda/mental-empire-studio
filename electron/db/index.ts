@@ -24,7 +24,7 @@ import type {
   SourceAutomationPatch
 } from '../../shared/types'
 import { asBetaOpts, DEFAULT_BETA_OPTS } from '../../shared/types'
-import { seedIfEmpty, seedDemoData } from './seed'
+import { seedIfEmpty, seedDemoData, seedDefaultThumbnailTemplates } from './seed'
 
 // Embedded, synchronous SQLite (better-sqlite3) holds all domain data: channels,
 // source links, download history, uploads, profiles, thumbnail templates, render
@@ -227,6 +227,7 @@ function migrate(d: Database.Database): void {
 
   purgeLegacyDemoSeed(d)
   migrateProfilesToSources(d)
+  installDefaultThumbnailTemplates(d)
 }
 
 /**
@@ -250,6 +251,16 @@ function purgeLegacyDemoSeed(d: Database.Database): void {
     // Canned activity feed from the seed (no real run ever produced these exact rows).
     d.prepare("DELETE FROM activity_log WHERE text IN ('Skipped 1 video — members only','Auto-watch found 5 new uploads','Downloaded 5 mp3 from @stoichour','Captions burned (Hormozi)','Rendered Gaslighting Explained → ME_out')").run()
     d.prepare("INSERT OR REPLACE INTO app_meta (key,value) VALUES ('demo_purged_v2','1')").run()
+  })
+  tx()
+}
+
+function installDefaultThumbnailTemplates(d: Database.Database): void {
+  const done = d.prepare("SELECT value FROM app_meta WHERE key='default_thumb_templates_v2'").get()
+  if (done) return
+  const tx = d.transaction(() => {
+    seedDefaultThumbnailTemplates(d)
+    d.prepare("INSERT OR REPLACE INTO app_meta (key,value) VALUES ('default_thumb_templates_v2','1')").run()
   })
   tx()
 }

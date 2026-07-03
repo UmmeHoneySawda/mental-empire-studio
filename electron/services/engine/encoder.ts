@@ -32,7 +32,10 @@ export function selectEncoder(
       label: 'GPU-NVENC',
       device: 'gpu',
       codec: 'h264_nvenc',
-      args: ['-c:v', 'h264_nvenc', '-preset', 'medium', '-tune', 'hq', '-rc', 'vbr', '-cq', crfOrCq, '-b:v', '0', '-pix_fmt', 'yuv420p']
+      // Keep the NVENC option set deliberately conservative. Some bundled ffmpeg
+      // builds list h264_nvenc but reject optional tuning flags, which made Settings
+      // report NVENC unavailable even when the NVIDIA encoder itself worked.
+      args: ['-c:v', 'h264_nvenc', '-preset', 'medium', '-rc', 'vbr', '-cq', crfOrCq, '-b:v', '0', '-pix_fmt', 'yuv420p']
     }
   }
   if (requested === 'qsv') {

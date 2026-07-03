@@ -29,4 +29,8 @@ describe('selectEncoder (G2/G3)', () => {
     expect(selectEncoder({ encoder: 'cpu' }, undefined, '18').args).toContain('18')
     expect(selectEncoder({ encoder: 'nvenc' }, undefined, '20').args).toContain('20')
   })
+
+  it('uses a conservative NVENC option set for broad ffmpeg compatibility', () => {
+    expect(selectEncoder({ encoder: 'nvenc' }).args).not.toContain('-tune')
+  })
 })
