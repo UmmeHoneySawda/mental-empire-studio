@@ -46,7 +46,7 @@ function imageElement(url: string): Promise<HTMLImageElement> {
 
 async function loadBitmap(path: string, width: number, height: number): Promise<ImageBitmap> {
   if (!path || isCssImageValue(path) || path.startsWith('browser://')) return fallbackBitmap(width, height)
-  const url = mediaSrc(path)
+  const url = `${mediaSrc(path)}?t=${Date.now()}`
   try {
     const res = await fetch(url)
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -62,7 +62,7 @@ async function loadBitmap(path: string, width: number, height: number): Promise<
 
 async function loadOverlay(path?: string): Promise<ImageBitmap | null> {
   if (!path) return null
-  const url = mediaSrc(path)
+  const url = `${mediaSrc(path)}?t=${Date.now()}`
   try {
     const res = await fetch(url)
     if (!res.ok) return null

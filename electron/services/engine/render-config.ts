@@ -5,7 +5,7 @@ import type { AppSettings } from '../../../shared/types'
 // change inconsistently. Values are unchanged from the originals.
 
 /** The two rendering backends. 'ffmpeg' is the established CPU filtergraph path;
- *  'gpu' is the WebGL compositor + WebCodecs hardware encoder (beta) which always
+ *  'gpu' is the WebGL compositor + WebCodecs hardware encoder which always
  *  falls back to ffmpeg on any error. */
 export type RenderEngine = 'ffmpeg' | 'gpu'
 

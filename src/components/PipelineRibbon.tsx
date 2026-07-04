@@ -8,7 +8,8 @@ import {
   pipelineNextAction,
   pipelineStateFrom,
   type PipelineStageKey,
-  type PipelineSnapshot
+  type PipelineSnapshot,
+  type PipelineAction
 } from '../lib/pipelineRibbon'
 import { useData } from '../store/useData'
 import { useStore } from '../store/useStore'
@@ -18,6 +19,7 @@ interface PipelineRibbonProps {
   downloadId?: string
   projectId?: string
   snapshot?: PipelineSnapshot
+  onCustomAction?: (action: PipelineAction) => boolean | void
 }
 
 function findWorkItem(items: WorkItem[], downloadId?: string, projectId?: string): WorkItem | undefined {
@@ -29,7 +31,7 @@ function findWorkItem(items: WorkItem[], downloadId?: string, projectId?: string
   )
 }
 
-export function PipelineRibbon({ title, downloadId, projectId, snapshot }: PipelineRibbonProps): JSX.Element {
+export function PipelineRibbon({ title, downloadId, projectId, snapshot, onCustomAction }: PipelineRibbonProps): JSX.Element {
   const workItems = useData((s) => s.workItems)
   const openProject = useData((s) => s.openProject)
   const openProjectById = useData((s) => s.openProjectById)
@@ -44,6 +46,10 @@ export function PipelineRibbon({ title, downloadId, projectId, snapshot }: Pipel
 
   const runAction = async (): Promise<void> => {
     if (action.complete || busy) return
+    if (onCustomAction) {
+      const handled = onCustomAction(action)
+      if (handled) return
+    }
     setBusy(true)
     setError('')
     try {

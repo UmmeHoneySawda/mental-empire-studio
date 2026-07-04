@@ -192,8 +192,16 @@ export class Compositor {
     }
 
     this.captionTex = this.newTexture()
+    gl.bindTexture(gl.TEXTURE_2D, this.captionTex)
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 0]))
+
     this.videoTexA = this.newTexture()
+    gl.bindTexture(gl.TEXTURE_2D, this.videoTexA)
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 0]))
+
     this.videoTexB = this.newTexture()
+    gl.bindTexture(gl.TEXTURE_2D, this.videoTexB)
+    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([0, 0, 0, 0]))
   }
 
   private newTexture(): WebGLTexture {

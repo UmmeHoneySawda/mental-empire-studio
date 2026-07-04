@@ -163,7 +163,7 @@ export function Settings(): JSX.Element {
               <div className="me-clamp-2" style={{ fontSize: 10, color: selectedEncoder.warning ? '#f5b323' : '#6a7180', marginTop: 5 }}>{checkingCaps ? 'Checking ffmpeg GPU capabilities…' : caps ? selectedEncoder.note : 'Could not check capabilities — encoder choice is saved.'}</div>
             </div>
             <div style={{ minWidth: 260 }}>
-              <div style={{ fontSize: 12, color: '#8a909c', marginBottom: 7 }}>Render engine <span style={{ color: '#5b616f', fontFamily: 'var(--font-mono)', fontSize: 9.5 }}>BETA</span></div>
+              <div style={{ fontSize: 12, color: '#8a909c', marginBottom: 7 }}>Render engine</div>
               <div style={{ display: 'flex', border: '1px solid #23272f', borderRadius: 8, overflow: 'hidden', fontSize: 11.5 }}>
                 {RENDER_ENGINES.map((re) => { const on = (settings.renderEngine ?? 'ffmpeg') === re.value; return <div key={re.value} title={re.note} onClick={() => saved({ renderEngine: re.value })} style={{ padding: '8px 12px', cursor: 'pointer', background: on ? 'var(--accent)' : undefined, color: on ? 'var(--accent-ink)' : '#8a909c', fontWeight: on ? 600 : undefined }}>{re.label}</div> })}
               </div>

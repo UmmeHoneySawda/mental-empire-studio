@@ -1,17 +1,29 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
-import { useStore } from '../../store/useStore'
-import { useData } from '../../store/useData'
-import { usePreviewCompositor } from './usePreviewCompositor'
-import { videoSrc } from '../../lib/media'
-import { previewImagesKey } from './previewKeys'
+import { useEffect, useMemo, useRef, useState } from "react";
+import { useStore } from "../../store/useStore";
+import { useData } from "../../store/useData";
+import { usePreviewCompositor } from "./usePreviewCompositor";
+import { mediaSrc, videoSrc } from "../../lib/media";
+import { previewImagesKey } from "./previewKeys";
 
 function fmt(sec: number): string {
-  const s = Math.max(0, Math.floor(sec))
-  const m = Math.floor(s / 60)
-  return `${m}:${String(s % 60).padStart(2, '0')}`
+  const s = Math.max(0, Math.floor(sec));
+  const m = Math.floor(s / 60);
+  return `${m}:${String(s % 60).padStart(2, "0")}`;
 }
 
-function TransportButton({ label, title, disabled, onClick }: { label: string; title: string; disabled?: boolean; onClick: () => void }): JSX.Element {
+function TransportButton({
+  icon,
+  title,
+  disabled,
+  onClick,
+  active,
+}: {
+  icon: React.ReactNode;
+  title: string;
+  disabled?: boolean;
+  onClick: () => void;
+  active?: boolean;
+}): JSX.Element {
   return (
     <button
       type="button"
@@ -19,38 +31,57 @@ function TransportButton({ label, title, disabled, onClick }: { label: string; t
       disabled={disabled}
       onClick={onClick}
       className="me-btn"
-      style={{ width: 32, height: 28, border: '1px solid #262b34', borderRadius: 7, background: '#15181f', color: disabled ? '#4f5662' : '#cdd2da', fontSize: 11, cursor: disabled ? 'not-allowed' : 'pointer' }}
+      style={{
+        width: 32,
+        height: 28,
+        border: active ? "1px solid var(--accent)" : "1px solid #262b34",
+        borderRadius: 7,
+        background: active ? "var(--accent-soft)" : "#15181f",
+        color: disabled ? "#4f5662" : active ? "var(--accent)" : "#cdd2da",
+        display: "flex",
+        alignItems: "center",
+        justifyContent: "center",
+        cursor: disabled ? "not-allowed" : "pointer",
+      }}
     >
-      {label}
+      {icon}
     </button>
-  )
+  );
 }
 
 interface PreviewCanvasProps {
-  playheadSec?: number
-  onPlayheadChange?: (sec: number) => void
-  selectedLabel?: string
+  playheadSec?: number;
+  onPlayheadChange?: (sec: number) => void;
+  selectedLabel?: string;
 }
 
-export function PreviewCanvas({ playheadSec: controlledPlayheadSec, onPlayheadChange, selectedLabel }: PreviewCanvasProps = {}): JSX.Element | null {
-  const videoEditorV2 = useStore((s) => s.settings.features.videoEditorV2)
-  const project = useData((s) => s.activeProject)
-  const images = useData((s) => s.projectImages)
-  const transcript = useData((s) => s.transcript)
-  const spec = useData((s) => s.previewSpec)
-  const previewLoading = useData((s) => s.previewLoading)
-  const previewError = useData((s) => s.previewError)
-  const loadPreviewSpec = useData((s) => s.loadPreviewSpec)
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [localPlayheadSec, setLocalPlayheadSec] = useState(0)
-  const [playing, setPlaying] = useState(false)
-  const [fallbackPath, setFallbackPath] = useState('')
-  const [fallbackState, setFallbackState] = useState<'idle' | 'rendering' | 'ready' | 'error'>('idle')
-  const [fallbackError, setFallbackError] = useState('')
-  const [fallbackForKey, setFallbackForKey] = useState('')
+export function PreviewCanvas({
+  playheadSec: controlledPlayheadSec,
+  onPlayheadChange,
+  selectedLabel,
+}: PreviewCanvasProps = {}): JSX.Element | null {
+  const videoEditorV2 = useStore((s) => s.settings.features.videoEditorV2);
+  const project = useData((s) => s.activeProject);
+  const images = useData((s) => s.projectImages);
+  const transcript = useData((s) => s.transcript);
+  const spec = useData((s) => s.previewSpec);
+  const previewLoading = useData((s) => s.previewLoading);
+  const previewError = useData((s) => s.previewError);
+  const loadPreviewSpec = useData((s) => s.loadPreviewSpec);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const audioRef = useRef<HTMLAudioElement | null>(null);
+  const [localPlayheadSec, setLocalPlayheadSec] = useState(0);
+  const [playing, setPlaying] = useState(false);
+  const [fallbackPath, setFallbackPath] = useState("");
+  const [fallbackState, setFallbackState] = useState<
+    "idle" | "rendering" | "ready" | "error"
+  >("idle");
+  const [fallbackError, setFallbackError] = useState("");
+  const [fallbackForKey, setFallbackForKey] = useState("");
+  const lastPlayheadEmitMs = useRef(0);
 
   const projectKey = useMemo(() => {
-    if (!project) return ''
+    if (!project) return "";
     return [
       project.id,
       project.durationSec,
@@ -71,122 +102,404 @@ export function PreviewCanvas({ playheadSec: controlledPlayheadSec, onPlayheadCh
       project.lookLut,
       project.lookStrength,
       JSON.stringify(project.lookAdjust ?? {}),
-      JSON.stringify(project.betaOpts ?? {})
-    ].join('|')
-  }, [project])
-  const imagesKey = useMemo(() => previewImagesKey(images), [images])
-  const transcriptKey = useMemo(() => transcript.map((w) => `${w.id}:${w.word}:${w.start}:${w.end}:${w.emphasis ? 1 : 0}`).join('|'), [transcript])
-  const durationSec = Math.max(0.05, spec?.durationSec ?? project?.durationSec ?? 0.05)
-  const playheadSec = controlledPlayheadSec ?? localPlayheadSec
-  const { status, error } = usePreviewCompositor(canvasRef, spec, playheadSec)
-  const activeBroll = spec?.broll?.find((seg) => playheadSec >= seg.startSec && playheadSec < seg.endSec)
-  const canDraw = !!project && !!spec && status !== 'error'
-  const setPreviewPlayhead = (next: number | ((current: number) => number)): void => {
-    const value = typeof next === 'function' ? next(playheadSec) : next
-    const clamped = Math.max(0, Math.min(durationSec, value))
-    if (controlledPlayheadSec == null) setLocalPlayheadSec(clamped)
-    onPlayheadChange?.(clamped)
-  }
+      JSON.stringify(project.betaOpts ?? {}),
+    ].join("|");
+  }, [project]);
+  const imagesKey = useMemo(() => previewImagesKey(images), [images]);
+  const transcriptKey = useMemo(
+    () =>
+      transcript
+        .map(
+          (w) => `${w.id}:${w.word}:${w.start}:${w.end}:${w.emphasis ? 1 : 0}`,
+        )
+        .join("|"),
+    [transcript],
+  );
+  const durationSec = Math.max(
+    0.05,
+    spec?.durationSec ?? project?.durationSec ?? 0.05,
+  );
+  const externalPlayheadSec = controlledPlayheadSec ?? localPlayheadSec;
+  const playheadSec = playing ? localPlayheadSec : externalPlayheadSec;
+  const { status, error } = usePreviewCompositor(canvasRef, spec, playheadSec);
+  const activeBroll = spec?.broll?.find(
+    (seg) => playheadSec >= seg.startSec && playheadSec < seg.endSec,
+  );
+  const canDraw = !!project && !!spec && status !== "error";
+  const setPreviewPlayhead = (
+    next: number | ((current: number) => number),
+    opts?: { throttle?: boolean },
+  ): void => {
+    const value = typeof next === "function" ? next(playheadSec) : next;
+    const clamped = Math.max(0, Math.min(durationSec, value));
+    setLocalPlayheadSec(clamped);
+    if (!opts?.throttle) {
+      lastPlayheadEmitMs.current = performance.now();
+      onPlayheadChange?.(clamped);
+      return;
+    }
+    const now = performance.now();
+    if (now - lastPlayheadEmitMs.current >= 100 || clamped >= durationSec) {
+      lastPlayheadEmitMs.current = now;
+      onPlayheadChange?.(clamped);
+    }
+  };
 
   useEffect(() => {
-    if (!videoEditorV2 || !project) return
-    void loadPreviewSpec(project.id)
-  }, [videoEditorV2, project?.id, projectKey, imagesKey, transcriptKey, loadPreviewSpec])
-
-  const fallbackKey = `${project?.id ?? ''}|${projectKey}|${imagesKey}|${transcriptKey}`
-  useEffect(() => {
-    setFallbackPath('')
-    setFallbackState('idle')
-    setFallbackError('')
-    setFallbackForKey('')
-  }, [fallbackKey])
+    setPlaying(false);
+    setLocalPlayheadSec(0);
+  }, [project?.id]);
 
   useEffect(() => {
-    if (!videoEditorV2 || !project || !/webgl2/i.test(error) || fallbackForKey === fallbackKey || fallbackState === 'rendering') return
-    let cancelled = false
-    setFallbackForKey(fallbackKey)
-    setFallbackState('rendering')
-    setFallbackError('')
-    const preview = window.api?.compose.preview
+    if (!playing && controlledPlayheadSec != null)
+      setLocalPlayheadSec(controlledPlayheadSec);
+  }, [controlledPlayheadSec, playing]);
+
+  useEffect(() => {
+    if (!playing && audioRef.current) {
+      audioRef.current.currentTime = playheadSec;
+    }
+  }, [playheadSec, playing]);
+
+  useEffect(() => {
+    if (!videoEditorV2 || !project) return;
+    void loadPreviewSpec(project.id);
+  }, [
+    videoEditorV2,
+    project?.id,
+    projectKey,
+    imagesKey,
+    transcriptKey,
+    loadPreviewSpec,
+  ]);
+
+  const fallbackKey = `${project?.id ?? ""}|${projectKey}|${imagesKey}|${transcriptKey}`;
+  useEffect(() => {
+    setFallbackPath("");
+    setFallbackState("idle");
+    setFallbackError("");
+    setFallbackForKey("");
+  }, [fallbackKey]);
+
+  useEffect(() => {
+    if (
+      !videoEditorV2 ||
+      !project ||
+      !error ||
+      fallbackForKey === fallbackKey ||
+      fallbackState === "rendering"
+    )
+      return;
+    let cancelled = false;
+    setFallbackForKey(fallbackKey);
+    setFallbackState("rendering");
+    setFallbackError("");
+    const preview = window.api?.compose.preview;
     if (!preview) {
-      setFallbackState('error')
-      setFallbackError('Backend preview is unavailable.')
-      return
+      setFallbackState("error");
+      setFallbackError("Backend preview is unavailable.");
+      return;
     }
-    void preview(project.id).then((path) => {
-      if (cancelled) return
-      setFallbackPath(path)
-      setFallbackState('ready')
-    }).catch((e) => {
-      if (cancelled) return
-      setFallbackPath('')
-      setFallbackError((e as Error).message)
-      setFallbackState('error')
-    })
-    return () => { cancelled = true }
-  }, [videoEditorV2, project?.id, project, error, fallbackKey, fallbackForKey, fallbackState])
-
-  useEffect(() => {
-    if (playheadSec > durationSec) setPreviewPlayhead(durationSec)
-  }, [durationSec])
-
-  useEffect(() => {
-    if (!playing || !canDraw) return
-    let raf = 0
-    let last = performance.now()
-    const tick = (now: number): void => {
-      const dt = Math.min(0.25, (now - last) / 1000)
-      last = now
-      setPreviewPlayhead((t) => {
-        const next = t + dt
-        if (next >= durationSec) {
-          setPlaying(false)
-          return durationSec
-        }
-        return next
+    void preview(project.id)
+      .then((path) => {
+        if (cancelled) return;
+        setFallbackPath(path);
+        setFallbackState("ready");
       })
-      raf = requestAnimationFrame(tick)
+      .catch((e) => {
+        if (cancelled) return;
+        setFallbackPath("");
+        setFallbackError((e as Error).message);
+        setFallbackState("error");
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [videoEditorV2, project?.id, error, fallbackKey, fallbackForKey]);
+
+  useEffect(() => {
+    if (playheadSec > durationSec) setPreviewPlayhead(durationSec);
+  }, [durationSec]);
+
+  useEffect(() => {
+    if (!playing || !canDraw) return;
+    let raf = 0;
+    let last = performance.now();
+    const audio = audioRef.current;
+
+    if (audio) {
+      audio.currentTime = playheadSec;
+      audio.play().catch((e) => console.error("Audio play failed:", e));
     }
-    raf = requestAnimationFrame(tick)
-    return () => cancelAnimationFrame(raf)
-  }, [playing, canDraw, durationSec, playheadSec])
 
-  if (!videoEditorV2) return null
+    const tick = (now: number): void => {
+      const dt = Math.min(0.25, (now - last) / 1000);
+      last = now;
 
-  const statusText = previewLoading || status === 'loading'
-    ? 'Building preview'
-    : fallbackState === 'rendering'
-      ? 'Backend preview'
-      : fallbackState === 'ready'
-        ? 'Backend preview ready'
-        : (previewError || fallbackError || error)
-          ? 'Preview unavailable'
-          : spec?.broll?.length
-            ? 'Live still preview · B-roll poster'
-            : 'Live still preview'
-  const fallbackMediaSrc = videoSrc(fallbackPath)
+      setPreviewPlayhead(
+        (t) => {
+          let next = t + dt;
+          if (audio && !audio.paused) {
+            next = audio.currentTime;
+          }
+          if (next >= durationSec) {
+            setPlaying(false);
+            if (audio) audio.pause();
+            return durationSec;
+          }
+          return next;
+        },
+        { throttle: true },
+      );
+      raf = requestAnimationFrame(tick);
+    };
+    raf = requestAnimationFrame(tick);
+    return () => {
+      cancelAnimationFrame(raf);
+      if (audio) audio.pause();
+    };
+  }, [playing, canDraw, durationSec]);
+
+  if (!videoEditorV2) return null;
+
+  const statusText =
+    previewLoading || status === "loading"
+      ? "Building preview"
+      : fallbackState === "rendering"
+        ? "Backend preview"
+        : fallbackState === "ready"
+          ? "Backend preview ready"
+          : previewError || fallbackError || error
+            ? "Preview unavailable"
+            : spec?.broll?.length
+              ? "Live still preview · B-roll poster"
+              : "Live still preview";
+  const fallbackMediaSrc = videoSrc(fallbackPath);
 
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: 'minmax(360px, 680px) minmax(220px, 1fr)', gap: 16, alignItems: 'stretch', marginBottom: 20 }}>
-      <div style={{ border: '1px solid #1d2129', borderRadius: 14, background: '#0c0d11', overflow: 'hidden' }}>
-        <div style={{ position: 'relative', aspectRatio: spec ? `${spec.width}/${spec.height}` : '16/9', background: '#080a0e', display: 'grid', placeItems: 'center' }}>
-          <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: fallbackMediaSrc ? 'none' : 'block' }} />
-          {fallbackMediaSrc && <video src={fallbackMediaSrc} muted loop playsInline controls style={{ width: '100%', height: '100%', objectFit: 'contain', display: 'block', background: '#080a0e' }} />}
-          {!project && <div style={{ position: 'absolute', inset: 0, display: 'grid', placeItems: 'center', fontSize: 12, color: '#5b616f' }}>Choose a downloaded clip to preview.</div>}
+    <div
+      style={{
+        display: "grid",
+        gridTemplateColumns: "minmax(360px, 680px) minmax(220px, 1fr)",
+        gap: 16,
+        alignItems: "stretch",
+        marginBottom: 20,
+      }}
+    >
+      <div
+        style={{
+          border: "1px solid #1d2129",
+          borderRadius: 14,
+          background: "#0c0d11",
+          overflow: "hidden",
+        }}
+      >
+        <div
+          style={{
+            position: "relative",
+            aspectRatio: spec ? `${spec.width}/${spec.height}` : "16/9",
+            background: "#080a0e",
+            display: "grid",
+            placeItems: "center",
+          }}
+        >
+          <canvas
+            ref={canvasRef}
+            style={{
+              width: "100%",
+              height: "100%",
+              display: fallbackMediaSrc ? "none" : "block",
+            }}
+          />
+          {fallbackMediaSrc && (
+            <video
+              src={fallbackMediaSrc}
+              muted
+              loop
+              playsInline
+              controls
+              style={{
+                width: "100%",
+                height: "100%",
+                objectFit: "contain",
+                display: "block",
+                background: "#080a0e",
+              }}
+            />
+          )}
+          {!project && (
+            <div
+              style={{
+                position: "absolute",
+                inset: 0,
+                display: "grid",
+                placeItems: "center",
+                fontSize: 12,
+                color: "#5b616f",
+              }}
+            >
+              Choose a downloaded clip to preview.
+            </div>
+          )}
           {activeBroll && !fallbackMediaSrc && (
-            <div title={activeBroll.path} style={{ position: 'absolute', left: 12, top: 12, border: '1px solid rgba(64,169,255,.45)', borderRadius: 999, padding: '4px 9px', fontSize: 10, fontWeight: 800, color: '#9bd4ff', background: 'rgba(8,10,14,.78)', letterSpacing: 0 }}>
+            <div
+              title={activeBroll.path}
+              style={{
+                position: "absolute",
+                left: 12,
+                top: 12,
+                border: "1px solid rgba(64,169,255,.45)",
+                borderRadius: 999,
+                padding: "4px 9px",
+                fontSize: 10,
+                fontWeight: 800,
+                color: "#9bd4ff",
+                background: "rgba(8,10,14,.78)",
+                letterSpacing: 0,
+              }}
+            >
               ▶ video poster
             </div>
           )}
-          {(previewLoading || status === 'loading' || fallbackState === 'rendering') && <div style={{ position: 'absolute', right: 12, top: 12, border: '1px solid rgba(245,179,35,.35)', borderRadius: 999, padding: '3px 8px', fontSize: 10, color: '#f5b323', background: 'rgba(8,10,14,.78)' }}>{fallbackState === 'rendering' ? 'Fallback' : 'Loading'}</div>}
-          {(previewError || fallbackError || (error && fallbackState !== 'rendering' && !fallbackMediaSrc)) && <div title={previewError || fallbackError || error} style={{ position: 'absolute', left: 12, right: 12, bottom: 12, border: '1px solid #5a2530', borderRadius: 9, padding: '8px 10px', fontSize: 11, color: '#ff8a96', background: 'rgba(20,10,14,.86)' }}>{previewError || fallbackError || error}</div>}
+          {(previewLoading ||
+            status === "loading" ||
+            fallbackState === "rendering") && (
+            <div
+              style={{
+                position: "absolute",
+                right: 12,
+                top: 12,
+                border: "1px solid rgba(245,179,35,.35)",
+                borderRadius: 999,
+                padding: "3px 8px",
+                fontSize: 10,
+                color: "#f5b323",
+                background: "rgba(8,10,14,.78)",
+              }}
+            >
+              {fallbackState === "rendering" ? "Fallback" : "Loading"}
+            </div>
+          )}
+          {(previewError ||
+            fallbackError ||
+            (error && fallbackState !== "rendering" && !fallbackMediaSrc)) && (
+            <div
+              title={previewError || fallbackError || error}
+              style={{
+                position: "absolute",
+                left: 12,
+                right: 12,
+                bottom: 12,
+                border: "1px solid #5a2530",
+                borderRadius: 9,
+                padding: "8px 10px",
+                fontSize: 11,
+                color: "#ff8a96",
+                background: "rgba(20,10,14,.86)",
+              }}
+            >
+              {previewError || fallbackError || error}
+            </div>
+          )}
         </div>
-        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '10px 12px', borderTop: '1px solid #1d2129' }}>
-          <TransportButton label="|<" title="Start" disabled={!canDraw} onClick={() => setPreviewPlayhead(0)} />
-          <TransportButton label="<" title="Back 1 second" disabled={!canDraw} onClick={() => setPreviewPlayhead((t) => Math.max(0, t - 1))} />
-          <TransportButton label={playing ? 'II' : '>'} title={playing ? 'Pause' : 'Play timing preview'} disabled={!canDraw} onClick={() => setPlaying((p) => !p)} />
-          <TransportButton label=">" title="Forward 1 second" disabled={!canDraw} onClick={() => setPreviewPlayhead((t) => Math.min(durationSec, t + 1))} />
-          <TransportButton label=">|" title="End" disabled={!canDraw} onClick={() => setPreviewPlayhead(durationSec)} />
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 8,
+            padding: "10px 12px",
+            borderTop: "1px solid #1d2129",
+          }}
+        >
+          <TransportButton
+            icon={
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+              >
+                <path d="M6 19h2V5H6v14zm3.5-7L18 5v14l-8.5-7z" />
+              </svg>
+            }
+            title="Start"
+            disabled={!canDraw}
+            onClick={() => setPreviewPlayhead(0)}
+          />
+          <TransportButton
+            icon={
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+              >
+                <path d="M15.41 7.41L14 6l-6 6 6 6 1.41-1.41L10.83 12z" />
+              </svg>
+            }
+            title="Back 1 second"
+            disabled={!canDraw}
+            onClick={() => setPreviewPlayhead((t) => Math.max(0, t - 1))}
+          />
+          <TransportButton
+            icon={
+              playing ? (
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                >
+                  <path d="M6 19h4V5H6v14zm8-14v14h4V5h-4z" />
+                </svg>
+              ) : (
+                <svg
+                  width="12"
+                  height="12"
+                  viewBox="0 0 24 24"
+                  fill="currentColor"
+                >
+                  <path d="M8 5v14l11-7z" />
+                </svg>
+              )
+            }
+            title={playing ? "Pause" : "Play timing preview"}
+            disabled={!canDraw}
+            onClick={() => setPlaying((p) => !p)}
+            active={playing}
+          />
+          <TransportButton
+            icon={
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+              >
+                <path d="M10 6L8.59 7.41 13.17 12l-4.58 4.59L10 18l6-6z" />
+              </svg>
+            }
+            title="Forward 1 second"
+            disabled={!canDraw}
+            onClick={() =>
+              setPreviewPlayhead((t) => Math.min(durationSec, t + 1))
+            }
+          />
+          <TransportButton
+            icon={
+              <svg
+                width="12"
+                height="12"
+                viewBox="0 0 24 24"
+                fill="currentColor"
+              >
+                <path d="M16 5v14h2V5h-2zm-8.5 7L16 19V5L7.5 12z" />
+              </svg>
+            }
+            title="End"
+            disabled={!canDraw}
+            onClick={() => setPreviewPlayhead(durationSec)}
+          />
           <input
             type="range"
             min={0}
@@ -195,29 +508,187 @@ export function PreviewCanvas({ playheadSec: controlledPlayheadSec, onPlayheadCh
             value={Math.min(playheadSec, durationSec)}
             disabled={!canDraw}
             onChange={(e) => setPreviewPlayhead(Number(e.target.value))}
-            style={{ flex: 1, accentColor: 'var(--accent)', cursor: canDraw ? 'pointer' : 'not-allowed' }}
+            style={{
+              flex: 1,
+              accentColor: "var(--accent)",
+              cursor: canDraw ? "pointer" : "not-allowed",
+            }}
           />
-          <span style={{ width: 86, textAlign: 'right', fontFamily: 'var(--font-mono)', fontSize: 10.5, color: '#8a909c' }}>{fmt(playheadSec)} / {fmt(durationSec)}</span>
+          <span
+            style={{
+              width: 86,
+              textAlign: "right",
+              fontFamily: "var(--font-mono)",
+              fontSize: 10.5,
+              color: "#8a909c",
+            }}
+          >
+            {fmt(playheadSec)} / {fmt(durationSec)}
+          </span>
         </div>
       </div>
-      <div style={{ border: '1px solid #1d2129', borderRadius: 14, background: '#12151b', padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      {project?.mp3Path && (
+        <audio ref={audioRef} src={mediaSrc(project.mp3Path)} preload="auto" />
+      )}
+      <div
+        style={{
+          border: "1px solid #1d2129",
+          borderRadius: 14,
+          background: "#12151b",
+          padding: 14,
+          display: "flex",
+          flexDirection: "column",
+          gap: 12,
+        }}
+      >
         <div>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '.6px', color: 'var(--accent)', marginBottom: 6 }}>LIVE PREVIEW</div>
-          <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 18, color: '#eef0f3', lineHeight: 1.15 }}>Frame preview</div>
+          <div
+            style={{
+              fontFamily: "var(--font-mono)",
+              fontSize: 9.5,
+              letterSpacing: ".6px",
+              color: "var(--accent)",
+              marginBottom: 6,
+            }}
+          >
+            LIVE PREVIEW
+          </div>
+          <div
+            style={{
+              fontFamily: "var(--font-display)",
+              fontWeight: 600,
+              fontSize: 18,
+              color: "#eef0f3",
+              lineHeight: 1.15,
+            }}
+          >
+            Frame preview
+          </div>
         </div>
-        <div style={{ display: 'flex', gap: 7, flexWrap: 'wrap' }}>
-          <span style={{ border: '1px solid #262b34', borderRadius: 999, padding: '3px 8px', fontSize: 10, color: '#aab0bb', fontFamily: 'var(--font-mono)' }}>{spec ? `${spec.width}x${spec.height}` : 'no spec'}</span>
-          <span style={{ border: '1px solid #262b34', borderRadius: 999, padding: '3px 8px', fontSize: 10, color: status === 'ready' ? '#36c98e' : '#8a909c', fontFamily: 'var(--font-mono)' }}>{statusText}</span>
-          {spec?.grade.style && <span style={{ border: '1px solid #262b34', borderRadius: 999, padding: '3px 8px', fontSize: 10, color: '#aab0bb', fontFamily: 'var(--font-mono)' }}>{spec.grade.style}</span>}
-          {selectedLabel && <span title={selectedLabel} style={{ border: '1px solid #262b34', borderRadius: 999, padding: '3px 8px', fontSize: 10, color: 'var(--accent)', fontFamily: 'var(--font-mono)', maxWidth: 180, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{selectedLabel}</span>}
+        <div style={{ display: "flex", gap: 7, flexWrap: "wrap" }}>
+          <span
+            style={{
+              border: "1px solid #262b34",
+              borderRadius: 999,
+              padding: "3px 8px",
+              fontSize: 10,
+              color: "#aab0bb",
+              fontFamily: "var(--font-mono)",
+            }}
+          >
+            {spec ? `${spec.width}x${spec.height}` : "no spec"}
+          </span>
+          <span
+            style={{
+              border: "1px solid #262b34",
+              borderRadius: 999,
+              padding: "3px 8px",
+              fontSize: 10,
+              color: status === "ready" ? "#36c98e" : "#8a909c",
+              fontFamily: "var(--font-mono)",
+            }}
+          >
+            {statusText}
+          </span>
+          {spec?.grade.style && (
+            <span
+              style={{
+                border: "1px solid #262b34",
+                borderRadius: 999,
+                padding: "3px 8px",
+                fontSize: 10,
+                color: "#aab0bb",
+                fontFamily: "var(--font-mono)",
+              }}
+            >
+              {spec.grade.style}
+            </span>
+          )}
+          {selectedLabel && (
+            <span
+              title={selectedLabel}
+              style={{
+                border: "1px solid #262b34",
+                borderRadius: 999,
+                padding: "3px 8px",
+                fontSize: 10,
+                color: "var(--accent)",
+                fontFamily: "var(--font-mono)",
+                maxWidth: 180,
+                overflow: "hidden",
+                textOverflow: "ellipsis",
+                whiteSpace: "nowrap",
+              }}
+            >
+              {selectedLabel}
+            </span>
+          )}
         </div>
-        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 8, fontSize: 11.5, color: '#8a909c' }}>
-          <div style={{ border: '1px solid #1d2129', borderRadius: 9, padding: 9, background: '#0e1116' }}><b style={{ color: '#cdd2da' }}>{spec?.images.length ?? 0}</b><br />image windows</div>
-          <div style={{ border: '1px solid #1d2129', borderRadius: 9, padding: 9, background: '#0e1116' }}><b style={{ color: '#cdd2da' }}>{spec?.captions.groups.length ?? 0}</b><br />caption groups</div>
-          <div style={{ border: '1px solid #1d2129', borderRadius: 9, padding: 9, background: '#0e1116' }}><b style={{ color: '#cdd2da' }}>{spec?.motion.kenBurns ? 'On' : 'Off'}</b><br />motion</div>
-          <div style={{ border: '1px solid #1d2129', borderRadius: 9, padding: 9, background: '#0e1116' }}><b style={{ color: '#cdd2da' }}>{spec?.overlayPath ? 'On' : 'Off'}</b><br />overlay</div>
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "1fr 1fr",
+            gap: 8,
+            fontSize: 11.5,
+            color: "#8a909c",
+          }}
+        >
+          <div
+            style={{
+              border: "1px solid #1d2129",
+              borderRadius: 9,
+              padding: 9,
+              background: "#0e1116",
+            }}
+          >
+            <b style={{ color: "#cdd2da" }}>{spec?.images.length ?? 0}</b>
+            <br />
+            image windows
+          </div>
+          <div
+            style={{
+              border: "1px solid #1d2129",
+              borderRadius: 9,
+              padding: 9,
+              background: "#0e1116",
+            }}
+          >
+            <b style={{ color: "#cdd2da" }}>
+              {spec?.captions.groups.length ?? 0}
+            </b>
+            <br />
+            caption groups
+          </div>
+          <div
+            style={{
+              border: "1px solid #1d2129",
+              borderRadius: 9,
+              padding: 9,
+              background: "#0e1116",
+            }}
+          >
+            <b style={{ color: "#cdd2da" }}>
+              {spec?.motion.kenBurns ? "On" : "Off"}
+            </b>
+            <br />
+            motion
+          </div>
+          <div
+            style={{
+              border: "1px solid #1d2129",
+              borderRadius: 9,
+              padding: 9,
+              background: "#0e1116",
+            }}
+          >
+            <b style={{ color: "#cdd2da" }}>
+              {spec?.overlayPath ? "On" : "Off"}
+            </b>
+            <br />
+            overlay
+          </div>
         </div>
       </div>
     </div>
-  )
+  );
 }

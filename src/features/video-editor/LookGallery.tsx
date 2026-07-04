@@ -1,9 +1,7 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import type { LookAdjust } from '@shared/types'
 import { LOOKS, lookById, type LookPreset } from '@shared/looks'
-import type { GpuRenderSpec } from '@shared/renderSpec'
 import { useData } from '../../store/useData'
-import { usePreviewCompositor } from './usePreviewCompositor'
 
 function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, Number.isFinite(n) ? n : min))
@@ -24,31 +22,14 @@ function swatchGradient(id: string): string {
 }
 
 function LookSwatch({ look, active }: { look: LookPreset; active: boolean }): JSX.Element {
-  const project = useData((s) => s.activeProject)
-  const canvasRef = useRef<HTMLCanvasElement>(null)
-  const [spec, setSpec] = useState<GpuRenderSpec | null>(null)
-  usePreviewCompositor(canvasRef, spec, 0.8)
-
-  useEffect(() => {
-    let cancelled = false
-    if (!project || !window.api?.compose?.previewSpec) {
-      setSpec(null)
-      return () => { cancelled = true }
-    }
-    const strength = look.id === 'off' ? 0 : look.defaultStrength
-    void window.api.compose.previewSpec(project.id, { lookLut: look.id, lookStrength: strength }).then((next) => {
-      if (!cancelled) setSpec(next)
-    }).catch(() => {
-      if (!cancelled) setSpec(null)
-    })
-    return () => { cancelled = true }
-  }, [look.defaultStrength, look.id, project?.id])
-
   return (
     <div style={{ position: 'relative', height: 52, borderRadius: 7, overflow: 'hidden', background: swatchGradient(look.id), border: active ? '1px solid rgba(245,179,35,.65)' : '1px solid #252a34' }}>
-      <canvas ref={canvasRef} style={{ width: '100%', height: '100%', display: spec ? 'block' : 'none', objectFit: 'cover' }} />
-      {!spec && <div style={{ position: 'absolute', inset: 0, background: swatchGradient(look.id) }} />}
+      <div style={{ position: 'absolute', inset: 0, background: swatchGradient(look.id) }} />
       <div style={{ position: 'absolute', inset: 0, background: 'linear-gradient(180deg,rgba(0,0,0,0),rgba(0,0,0,.45))' }} />
+      <div style={{ position: 'absolute', left: 8, right: 8, bottom: 7, display: 'flex', alignItems: 'center', gap: 5 }}>
+        <span style={{ width: 7, height: 7, borderRadius: '50%', background: active ? 'var(--accent)' : 'rgba(255,255,255,.38)' }} />
+        <span style={{ color: '#eef0f3', fontSize: 9.5, fontFamily: 'var(--font-mono)', fontWeight: 800, letterSpacing: '.4px', textTransform: 'uppercase' }}>{look.id}</span>
+      </div>
     </div>
   )
 }

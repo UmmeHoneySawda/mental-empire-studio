@@ -1,7 +1,7 @@
 import type { MotionDirection, MotionPreset, Project, ProjectImage, TranscriptWord } from '@shared/types'
 import type { GpuBrollSegment } from '@shared/renderSpec'
 import { LOOKS } from '@shared/looks'
-import type { MouseEvent, ReactNode } from 'react'
+import { useMemo, type MouseEvent, type ReactNode } from 'react'
 import { useData } from '../../store/useData'
 import { QUICK_CAPTION_PRESETS, captionPresetPatch } from './captionPresets'
 import {
@@ -416,11 +416,11 @@ export function EditorTimeline({
   onSelect: (selection: EditorSelection) => void
 }): JSX.Element {
   const durationSec = Math.max(0.05, project.durationSec || 0.05)
-  const visualBlocks: VisualTimelineBlock[] = [
+  const visualBlocks: VisualTimelineBlock[] = useMemo(() => [
     ...buildVisualTimeline(images, durationSec),
     ...buildBrollTimeline(broll, durationSec)
-  ].sort((a, b) => a.startSec - b.startSec || (a.kind === 'broll' ? -1 : 1))
-  const captionBlocks = buildCaptionTimeline(words, durationSec)
+  ].sort((a, b) => a.startSec - b.startSec || (a.kind === 'broll' ? -1 : 1)), [images, broll, durationSec])
+  const captionBlocks = useMemo(() => buildCaptionTimeline(words, durationSec), [words, durationSec])
   const playhead = rangeToPct(clampTimelineSec(playheadSec, durationSec), clampTimelineSec(playheadSec, durationSec) + 0.05, durationSec).leftPct
   const activeKey = selectionKey(selection)
   const seekFromClick = (e: MouseEvent<HTMLDivElement>): void => {

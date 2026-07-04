@@ -157,7 +157,7 @@ function editorSelectionLabel(selection: EditorSelection, images: ProjectImage[]
   return 'Project defaults'
 }
 
-function MediaTab(): JSX.Element {
+function MediaTab({ fileInputRef }: { fileInputRef: React.RefObject<HTMLInputElement> }): JSX.Element {
   const project = useData((s) => s.activeProject)
   const images = useData((s) => s.projectImages)
   const setMedia = useData((s) => s.setMedia)
@@ -389,9 +389,9 @@ function StyleTab(): JSX.Element {
   }
 
   return (
-    <div style={{ maxWidth: 760, display: 'flex', flexDirection: 'column', gap: 14 }}>
+    <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(360px,1fr))', gap: 14, alignItems: 'start' }}>
       <LookGallery />
-      <div style={{ position: 'relative', border: '1px solid #1d2129', borderRadius: 14, padding: 15, background: '#12151b', display: 'flex', flexDirection: 'column', gap: 13 }}>
+      <div style={{ position: 'relative', border: '1px solid #1d2129', borderRadius: 14, padding: 15, background: '#12151b', display: 'flex', flexDirection: 'column', gap: 13, minWidth: 0 }}>
         <BetaHeader />
         <div>
           <div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 7 }}>Motion</div>
@@ -812,6 +812,7 @@ function CaptionsTab(): JSX.Element {
 
 export function Compose(): JSX.Element {
   const composeTab = useStore((s) => s.composeTab)
+  const setComposeTab = useStore((s) => s.setComposeTab)
   const videoEditorV2 = useStore((s) => s.settings.features.videoEditorV2)
   const setActive = useStore((s) => s.setActive)
   const project = useData((s) => s.activeProject)
@@ -826,6 +827,7 @@ export function Compose(): JSX.Element {
   const [videoPlayheadSec, setVideoPlayheadSec] = useState(0)
   const [videoSelection, setVideoSelection] = useState<EditorSelection>({ kind: 'project' })
   const [videoCustomizeOpen, setVideoCustomizeOpen] = useState(false)
+  const fileInputRef = useRef<HTMLInputElement>(null)
   const previewBroll = previewSpec?.broll ?? []
   const selectedLabel = useMemo(() => editorSelectionLabel(videoSelection, images, transcript, previewBroll, project), [videoSelection, images, transcript, previewBroll, project])
   const showDeepEditor = !videoEditorV2 || videoCustomizeOpen || !project
@@ -909,6 +911,17 @@ export function Compose(): JSX.Element {
             captioned: transcript.length > 0,
             hasThumbnail: Boolean(project.thumbPath)
           }}
+          onCustomAction={(act) => {
+            if (act.screen === 'compose' && act.label === 'Add images') {
+              setVideoCustomizeOpen(true)
+              setComposeTab('media')
+              setTimeout(() => {
+                fileInputRef.current?.click()
+              }, 50)
+              return true
+            }
+            return false
+          }}
         />
       )}
       <div style={{ display: 'flex', gap: 9, marginBottom: videoEditorV2 && project ? 14 : 22, flexWrap: 'wrap', alignItems: 'center' }}>
@@ -937,7 +950,7 @@ export function Compose(): JSX.Element {
         <button type="button" disabled={!project} onClick={() => { if (project) void sendToRender() }} className="me-btn" style={{ display: 'flex', alignItems: 'center', gap: 7, border: '1px solid #262b34', background: '#15181f', borderRadius: 10, padding: '9px 16px', fontSize: 12.5, color: '#c4cad3', cursor: project ? 'pointer' : 'not-allowed', opacity: project ? 1 : 0.5 }}>Save &amp; send to render<svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2"><path d="M5 12h14M13 6l6 6-6 6" /></svg></button>
       </div>
       <PreviewCanvas playheadSec={videoPlayheadSec} onPlayheadChange={setVideoPlayheadSec} selectedLabel={selectedLabel} />
-      {videoEditorV2 && project && <QuickPanel customizeOpen={videoCustomizeOpen} onCustomizeToggle={() => setVideoCustomizeOpen((open) => !open)} />}
+      {videoEditorV2 && project && !videoCustomizeOpen && <QuickPanel customizeOpen={videoCustomizeOpen} onCustomizeToggle={() => setVideoCustomizeOpen((open) => !open)} />}
       <VideoEditorCoachmarks enabled={videoEditorV2 && !!project} customizeOpen={videoCustomizeOpen} onOpenCustomize={() => setVideoCustomizeOpen(true)} />
       {videoEditorV2 && project && videoCustomizeOpen && (
         <EditorTimeline
@@ -952,7 +965,7 @@ export function Compose(): JSX.Element {
         />
       )}
       {error && <div style={{ marginBottom: 16, border: `1px solid ${error === 'Queued for render.' ? '#1f9c6b' : '#5a2530'}`, background: error === 'Queued for render.' ? 'rgba(31,156,107,.12)' : 'rgba(255,90,110,.1)', color: error === 'Queued for render.' ? '#4fd6a0' : '#ff8a96', borderRadius: 10, padding: '10px 12px', fontSize: 12 }}>{error}</div>}
-      {showDeepEditor && composeTab === 'media' && <MediaTab />}
+      {showDeepEditor && composeTab === 'media' && <MediaTab fileInputRef={fileInputRef} />}
       {showDeepEditor && composeTab === 'captions' && <CaptionsTab />}
       {showDeepEditor && composeTab === 'style' && <StyleTab />}
       {showDeepEditor && composeTab === 'advanced' && <AdvancedTab />}
