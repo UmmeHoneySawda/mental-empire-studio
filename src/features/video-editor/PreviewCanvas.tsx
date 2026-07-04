@@ -181,6 +181,16 @@ export function PreviewCanvas({
     setFallbackForKey("");
   }, [fallbackKey]);
 
+  // Clear fallback state immediately when WebGL has no error
+  useEffect(() => {
+    if (!error) {
+      setFallbackPath("");
+      setFallbackState("idle");
+      setFallbackError("");
+      setFallbackForKey("");
+    }
+  }, [error]);
+
   useEffect(() => {
     if (
       !videoEditorV2 ||

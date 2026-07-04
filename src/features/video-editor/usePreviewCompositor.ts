@@ -12,6 +12,8 @@ interface PreviewRuntime {
   captions: CaptionLayer
   bitmaps: ImageBitmap[]
   overlay: ImageBitmap | null
+  /** Key used to detect when a full rebuild is needed vs. an incremental update */
+  structuralKey: string
 }
 
 function clampTime(t: number, durationSec: number): number {
@@ -89,6 +91,55 @@ async function specForPreview(spec: GpuRenderSpec): Promise<{ spec: GpuRenderSpe
   return { spec: { ...spec, broll: undefined, images }, images }
 }
 
+/**
+ * Structural key — changes here require a FULL compositor rebuild (new images,
+ * new dimensions, new overlay, or significantly different caption structure).
+ */
+function specStructuralKey(spec: GpuRenderSpec): string {
+  return [
+    spec.width,
+    spec.height,
+    spec.durationSec,
+    spec.images.map(im => `${im.path}|${im.startSec}|${im.endSec}`).join(','),
+    spec.overlayPath ?? '',
+    spec.broll?.map(b => `${b.path}|${b.startSec}|${b.endSec}`).join(',') ?? '',
+    spec.captions.groups.length,
+    spec.captions.preset,
+    spec.captions.font,
+    spec.captions.animation,
+    spec.captions.mode,
+    spec.captions.position,
+    spec.captions.lines,
+    spec.captions.highlightColor,
+    spec.captions.wordsPerPage ?? '',
+    spec.captions.hook?.text ?? '',
+    JSON.stringify(spec.captions.highlightBox ?? ''),
+  ].join('|')
+}
+
+/**
+ * Grade key — changes here only need a LUT swap + spec reference update (no rebuild).
+ */
+function specGradeKey(spec: GpuRenderSpec): string {
+  const g = spec.grade
+  return [
+    g.lut ?? '',
+    g.lutStrength ?? 1,
+    g.saturation,
+    g.contrast,
+    g.brightness,
+    g.colorBalance.r,
+    g.colorBalance.g,
+    g.colorBalance.b,
+    g.vignette,
+    g.sharpen,
+    spec.grain.strength,
+    spec.grain.temporal ? 1 : 0,
+    spec.motion.kenBurns ? 1 : 0,
+    spec.motion.punchAtSec.join(','),
+  ].join('|')
+}
+
 export function usePreviewCompositor(
   canvasRef: RefObject<HTMLCanvasElement>,
   spec: GpuRenderSpec | null,
@@ -99,17 +150,38 @@ export function usePreviewCompositor(
   const [status, setStatus] = useState<PreviewStatus>('idle')
   const [error, setError] = useState('')
 
+  // Track keys to detect what changed
+  const prevStructuralKeyRef = useRef<string>('')
+  const prevGradeKeyRef = useRef<string>('')
+
+  // Full rebuild effect — only fires when structural key changes
   useEffect(() => {
     let cancelled = false
     const canvas = canvasRef.current
+    const currentStructuralKey = spec ? specStructuralKey(spec) : ''
+
+    // If structural key hasn't changed and we have a runtime, skip rebuild
+    if (
+      runtimeRef.current &&
+      currentStructuralKey &&
+      currentStructuralKey === prevStructuralKeyRef.current
+    ) {
+      return () => { cancelled = true }
+    }
+
+    // Full teardown needed
     runtimeRef.current?.bitmaps.forEach((bmp) => bmp.close())
     runtimeRef.current?.overlay?.close()
     runtimeRef.current = null
     if (!canvas || !spec) {
       setStatus('idle')
+      prevStructuralKeyRef.current = ''
+      prevGradeKeyRef.current = ''
       return () => { cancelled = true }
     }
 
+    prevStructuralKeyRef.current = currentStructuralKey
+    prevGradeKeyRef.current = spec ? specGradeKey(spec) : ''
     setStatus('loading')
     setError('')
     void (async () => {
@@ -131,7 +203,7 @@ export function usePreviewCompositor(
         compositor.setOverlay(overlay)
         compositor.setLut(lutTextureById(preview.spec.grade.lut))
         const captions = new CaptionLayer(preview.spec.captions, preview.spec.width, preview.spec.height)
-        runtimeRef.current = { compositor, captions, bitmaps, overlay }
+        runtimeRef.current = { compositor, captions, bitmaps, overlay, structuralKey: currentStructuralKey }
         setStatus('ready')
       } catch (e) {
         if (!cancelled) {
@@ -148,8 +220,30 @@ export function usePreviewCompositor(
       runtimeRef.current?.overlay?.close()
       runtimeRef.current = null
     }
-  }, [canvasRef, spec])
+    // Only depend on the structural key (derived from spec), not the spec reference itself
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canvasRef, spec ? specStructuralKey(spec) : ''])
 
+  // Incremental grade/motion update — fires when only grade/motion/grain changes
+  useEffect(() => {
+    const rt = runtimeRef.current
+    if (!rt || !spec) return
+
+    const currentGradeKey = specGradeKey(spec)
+    if (currentGradeKey === prevGradeKeyRef.current) return
+
+    prevGradeKeyRef.current = currentGradeKey
+
+    // Swap the LUT texture if the LUT id changed
+    rt.compositor.setLut(lutTextureById(spec.grade.lut))
+    // Update the spec reference in place so drawFrame reads the new grade/motion/grain values
+    rt.compositor.updateSpec(spec)
+    // Rebuild captions if the caption data changed (already handled by structural key,
+    // but update the reference just in case)
+    rt.captions = new CaptionLayer(spec.captions, spec.width, spec.height)
+  }, [spec])
+
+  // Draw frame on playhead change
   useEffect(() => {
     const rt = runtimeRef.current
     if (!rt || !spec) return

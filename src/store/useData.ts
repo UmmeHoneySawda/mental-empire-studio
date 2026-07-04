@@ -136,6 +136,23 @@ interface DataState {
 let subscribed = false
 let previewSpecRequestSeq = 0
 
+/** Debounced trailing-edge call to loadPreviewSpec. Coalesces rapid effect changes
+ *  (slider drags, quick toggle clicks) into a single IPC round-trip after 300ms of quiet.
+ *  Runs immediately in test environments to keep unit tests synchronous. */
+let previewDebounceTimer: ReturnType<typeof setTimeout> | null = null
+function debouncedLoadPreviewSpec(projectId: string, get: () => DataState): void {
+  const isTest = typeof process !== 'undefined' && (process.env?.NODE_ENV === 'test' || process.env?.VITEST === 'true')
+  if (isTest) {
+    void get().loadPreviewSpec(projectId)
+    return
+  }
+  if (previewDebounceTimer) clearTimeout(previewDebounceTimer)
+  previewDebounceTimer = setTimeout(() => {
+    previewDebounceTimer = null
+    void get().loadPreviewSpec(projectId)
+  }, 300)
+}
+
 /** Throttle trailing-edge: coalesces bursty progress-event reloads to at most one call
  *  per `ms`, so an active download/encode streaming many events/sec doesn't hammer the DB. */
 function throttle(fn: () => void, ms: number): () => void {
@@ -461,7 +478,7 @@ export const useData = create<DataState>((set, get) => ({
     const project = await a.compose.setMedia(p.id, patch)
     if (project) {
       set({ activeProject: project, previewError: '' })
-      await get().loadPreviewSpec(project.id)
+      debouncedLoadPreviewSpec(project.id, get)
     }
   },
   setCaptions: async (patch) => {
@@ -471,7 +488,7 @@ export const useData = create<DataState>((set, get) => ({
     const project = await a.compose.updateCaptions(p.id, patch)
     if (project) {
       set({ activeProject: project, previewError: '' })
-      await get().loadPreviewSpec(project.id)
+      debouncedLoadPreviewSpec(project.id, get)
     }
   },
   setLook: async (patch) => {
@@ -481,7 +498,7 @@ export const useData = create<DataState>((set, get) => ({
     const project = await a.compose.updateLook(p.id, patch)
     if (project) {
       set({ activeProject: project, previewError: '' })
-      await get().loadPreviewSpec(project.id)
+      debouncedLoadPreviewSpec(project.id, get)
     }
   },
   setMotion: async (preset) => {
@@ -491,7 +508,7 @@ export const useData = create<DataState>((set, get) => ({
     const project = await a.compose.updateMotion(p.id, { preset })
     if (project) {
       set({ activeProject: project, previewError: '' })
-      await get().loadPreviewSpec(project.id)
+      debouncedLoadPreviewSpec(project.id, get)
     }
   },
   runTranscribe: async () => {
@@ -515,7 +532,7 @@ export const useData = create<DataState>((set, get) => ({
     if (!a || !p) return
     await a.transcribe.toggleEmphasis(wordId)
     set({ transcript: await a.transcribe.get(p.id) })
-    await get().loadPreviewSpec(p.id)
+    debouncedLoadPreviewSpec(p.id, get)
   },
   setWordsEmphasis: async (wordIds, emphasis) => {
     const a = api()
@@ -523,7 +540,7 @@ export const useData = create<DataState>((set, get) => ({
     if (!a || !p || wordIds.length === 0) return
     await a.transcribe.setEmphasis(wordIds, emphasis)
     set({ transcript: await a.transcribe.get(p.id) })
-    await get().loadPreviewSpec(p.id)
+    debouncedLoadPreviewSpec(p.id, get)
   },
   sendActiveToRender: async () => {
     const a = api()

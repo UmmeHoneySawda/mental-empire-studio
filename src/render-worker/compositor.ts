@@ -261,6 +261,11 @@ export class Compositor {
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, source)
   }
 
+  /** Swap the spec reference in-place (for motion/grain changes that don't need a full rebuild). */
+  updateSpec(spec: GpuRenderSpec): void {
+    this.spec = spec
+  }
+
   /** Upload decoded B-roll frames directly as textures. */
   updateVideoTextures(frameA: VideoFrame | null, frameB: VideoFrame | null): void {
     const gl = this.gl

@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useState } from 'react'
-import type { LookAdjust } from '@shared/types'
+import type { LookAdjust, VideoStyle } from '@shared/types'
+import { asBetaOpts } from '@shared/types'
 import { LOOKS, lookById, type LookPreset } from '@shared/looks'
 import { useData } from '../../store/useData'
 
@@ -60,9 +61,19 @@ function SliderRow({
   )
 }
 
+const styles: VideoStyle[] = ['None', 'Cinematic', 'Intense', 'Heartfelt', 'Clean']
+const styleTips: Record<VideoStyle, string> = {
+  None: 'No automatic transitions or text effects',
+  Cinematic: 'Slow zoom, fade transitions, elegant typography',
+  Intense: 'Fast cuts, punch-zoom, bold caps with glow',
+  Heartfelt: 'Soft dissolves, warm colours, gentle motion',
+  Clean: 'Smooth minimal slides, no extra noise',
+}
+
 export function LookGallery(): JSX.Element {
   const project = useData((s) => s.activeProject)
   const setLook = useData((s) => s.setLook)
+  const setCaptions = useData((s) => s.setCaptions)
   const [looks, setLooks] = useState<LookPreset[]>(LOOKS)
   const [advanced, setAdvanced] = useState(false)
 
@@ -80,17 +91,23 @@ export function LookGallery(): JSX.Element {
   const color = adjust.colorBalance ?? {}
   const disabled = !project
 
+  const o = asBetaOpts(project?.betaOpts)
+  const activeStyle = o.style
+
   const setAdjust = (patch: LookAdjust): void => {
     void setLook({ adjust: { ...adjust, ...patch, colorBalance: patch.colorBalance ?? adjust.colorBalance } })
   }
   const setColor = (patch: NonNullable<LookAdjust['colorBalance']>): void => {
     void setLook({ adjust: { ...adjust, colorBalance: { ...color, ...patch } } })
   }
+  const handleStyleChange = (s: VideoStyle): void => {
+    void setCaptions({ betaOpts: { ...o, style: s } })
+  }
 
   return (
     <div style={{ border: '1px solid #1d2129', borderRadius: 14, padding: 15, background: '#12151b', display: 'flex', flexDirection: 'column', gap: 13 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '.6px', color: '#5b616f' }}>LOOK</span>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '.6px', color: '#5b616f' }}>COLOR GRADE (LOOK)</span>
         <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: 9.5, color: '#8a909c' }}>{selected.name} · {percent(strength)}</span>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(4,minmax(0,1fr))', gap: 8 }}>
@@ -137,6 +154,43 @@ export function LookGallery(): JSX.Element {
           <button type="button" onClick={() => void setLook({ adjust: {} })} className="me-btn" style={{ alignSelf: 'flex-start', border: '1px solid #262b34', borderRadius: 7, padding: '5px 9px', fontSize: 10.5, color: '#c4cad3', background: '#0e1116', cursor: 'pointer' }}>Reset adjustments</button>
         </div>
       )}
+
+      <div style={{ borderTop: '1px solid #1d2129', paddingTop: 13, display: 'flex', flexDirection: 'column', gap: 11 }}>
+        <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '.6px', color: '#5b616f' }}>TRANSITION STYLE</span>
+          <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: 9.5, color: '#8a909c' }}>{activeStyle}</span>
+        </div>
+        <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 7 }}>
+          {styles.map((s) => {
+            const on = activeStyle === s
+            const bg = s === 'Cinematic' ? 'linear-gradient(135deg,#26333a,#1d1714)' : s === 'Intense' ? 'linear-gradient(135deg,#3a1d25,#141820)' : s === 'Heartfelt' ? 'linear-gradient(135deg,#3a2b24,#15171d)' : s === 'Clean' ? 'linear-gradient(135deg,#26313a,#15171d)' : '#0e1116'
+            return (
+              <button
+                key={s}
+                type="button"
+                disabled={disabled}
+                title={styleTips[s]}
+                onClick={() => handleStyleChange(s)}
+                style={{
+                  textAlign: 'left',
+                  border: on ? '1px solid var(--accent)' : '1px solid #23272f',
+                  color: on ? '#f2f4f7' : '#8a909c',
+                  background: bg,
+                  borderRadius: 8,
+                  padding: 8,
+                  cursor: disabled ? 'not-allowed' : 'pointer',
+                  minHeight: 52,
+                  opacity: disabled ? 0.55 : 1
+                }}
+              >
+                <div style={{ fontSize: 11.5, fontWeight: 700 }}>{s}</div>
+                <div style={{ fontSize: 9.5, color: on ? '#cdd2da' : '#6a7180', lineHeight: 1.25, marginTop: 3 }}>{styleTips[s]}</div>
+              </button>
+            )
+          })}
+        </div>
+      </div>
     </div>
   )
 }
+

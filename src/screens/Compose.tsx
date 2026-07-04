@@ -222,8 +222,8 @@ function MediaTab({ fileInputRef }: { fileInputRef: React.RefObject<HTMLInputEle
             )}
             <div style={{ position: 'absolute', inset: 0, background: overlayBackground(betaOpts.overlay) }} />
             <div onClick={() => {
-              const nextOn = !(project?.kenBurns ?? true)
-              void setMotionPreset(nextOn ? (project?.motionPreset === 'off' ? 'subtle' : project?.motionPreset ?? 'subtle') : 'off')
+              const nextMotion: MotionPreset = (project?.motionPreset ?? (project?.kenBurns ? 'subtle' : 'off')) === 'off' ? 'subtle' : 'off'
+              void setMotionPreset(nextMotion)
             }} title="Smart motion across each image. GPU preview/render uses eased zoom and pan; CPU fallback keeps a simpler zoom only." style={{ position: 'absolute', top: 14, left: 14, border: project?.kenBurns ?? true ? '1px solid var(--accent)' : '1px dashed rgba(255,255,255,.3)', borderRadius: 7, padding: '5px 9px', fontSize: 10, color: project?.kenBurns ?? true ? 'var(--accent)' : '#cdd2da', fontFamily: 'var(--font-mono)', background: project?.kenBurns ?? true ? 'var(--accent-soft)' : 'transparent', cursor: 'pointer' }}>Motion {project?.kenBurns ?? true ? 'on' : 'off'}</div>
             <div style={{ position: 'absolute', bottom: 12, left: 14, right: 14, height: 6, borderRadius: 4, background: 'rgba(255,255,255,.18)', overflow: 'hidden' }}><div style={{ width: '35%', height: '100%', background: 'var(--accent)' }} /></div>
           </div>
@@ -447,22 +447,7 @@ function StyleTab(): JSX.Element {
             </div>
           )}
         </div>
-        <div>
-          <div style={{ fontSize: 10.5, color: '#6a7180', marginBottom: 7 }}>Style (transitions &amp; text effects)</div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 7 }}>
-            {styles.map((s) => {
-              const on = o.style === s
-              const bg = s === 'Cinematic' ? 'linear-gradient(135deg,#26333a,#1d1714)' : s === 'Intense' ? 'linear-gradient(135deg,#3a1d25,#141820)' : s === 'Heartfelt' ? 'linear-gradient(135deg,#3a2b24,#15171d)' : s === 'Clean' ? 'linear-gradient(135deg,#26313a,#15171d)' : '#0e1116'
-              return (
-                <button key={s} type="button" title={styleTips[s]} onClick={() => patch({ style: s })} style={{ textAlign: 'left', border: on ? '1px solid var(--accent)' : '1px solid #23272f', color: on ? '#f2f4f7' : '#8a909c', background: bg, borderRadius: 8, padding: 8, cursor: 'pointer', minHeight: 54 }}>
-                  <div style={{ fontSize: 11.5, fontWeight: 700 }}>{s}</div>
-                  <div style={{ fontSize: 9.5, color: on ? '#cdd2da' : '#6a7180', lineHeight: 1.25, marginTop: 3 }}>{styleTips[s]}</div>
-                </button>
-              )
-            })}
-          </div>
-          <div style={{ fontSize: 9.5, color: '#6a7180', marginTop: 6 }}>The style auto-applies transitions + text effects. Fine-tune the raw plan in the Advanced tab.</div>
-        </div>
+        <div style={{ fontSize: 9.5, color: '#6a7180', marginTop: 6 }}>Fine-tune transitions + text effects in the Advanced tab.</div>
       </div>
     </div>
   )
@@ -555,76 +540,40 @@ function QuickButton({
 
 function QuickPanel({ customizeOpen, onCustomizeToggle }: { customizeOpen: boolean; onCustomizeToggle: () => void }): JSX.Element | null {
   const project = useData((s) => s.activeProject)
-  const setCaptions = useData((s) => s.setCaptions)
-  const setMotionPreset = useData((s) => s.setMotion)
-  const setLook = useData((s) => s.setLook)
   if (!project) return null
 
   const betaOpts = asBetaOpts(project.betaOpts)
   const selectedLook = LOOKS.find((look) => look.id === (project.lookLut ?? 'off')) ?? LOOKS[0]
   const lookStrength = selectedLook.id === 'off' ? 0 : Math.max(0, Math.min(1, project.lookStrength ?? selectedLook.defaultStrength))
   const motionPreset: MotionPreset = project.motionPreset ?? (project.kenBurns ? 'subtle' : 'off')
-  const patchBeta = (patch: Partial<BetaVideoOpts>): void => {
-    void setCaptions({ betaOpts: { ...betaOpts, ...patch } })
-  }
-  const setMotion = (preset: MotionPreset): void => {
-    void setMotionPreset(preset)
-  }
+  const captionPreset = project.captionPreset ?? 'Hormozi'
+  const aspect = project.captionAspect ?? '16:9'
+  const style = betaOpts.style
+
+  const badge = (label: string, value: string, accent?: boolean) => (
+    <div style={{ border: accent ? '1px solid var(--accent)' : '1px solid #262b34', borderRadius: 8, padding: '6px 10px', background: accent ? 'var(--accent-soft)' : '#0e1116', fontSize: 10.5, color: accent ? 'var(--accent)' : '#cdd2da', fontFamily: 'var(--font-mono)' }}>
+      <div style={{ fontSize: 8.5, letterSpacing: '.5px', color: '#5b616f', marginBottom: 3 }}>{label}</div>
+      <div style={{ fontWeight: 700, fontSize: 11.5 }}>{value}</div>
+    </div>
+  )
 
   return (
-    <div style={{ border: '1px solid #1d2129', borderRadius: 14, background: '#12151b', marginBottom: 18, padding: 14, display: 'grid', gridTemplateColumns: 'minmax(0,1.1fr) minmax(0,1fr)', gap: 14 }}>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 7 }}>
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, color: '#5b616f' }}>LOOK</span>
-            <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: 9.5, color: '#8a909c' }}>{selectedLook.name} · {Math.round(lookStrength * 100)}%</span>
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(5,minmax(0,1fr))', gap: 6 }}>
-            {LOOKS.slice(0, 5).map((look) => (
-              <QuickButton key={look.id} active={selectedLook.id === look.id} title={look.description} onClick={() => void setLook({ lut: look.id, strength: look.id === 'off' ? 0 : look.defaultStrength })}>{look.name}</QuickButton>
-            ))}
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '72px minmax(0,1fr) 40px', alignItems: 'center', gap: 8, marginTop: 8, fontSize: 10.5, color: '#8a909c' }}>
-            <span>Intensity</span>
-            <input type="range" min={0} max={100} value={Math.round(lookStrength * 100)} onChange={(e) => void setLook({ lut: selectedLook.id === 'off' ? 'clean' : selectedLook.id, strength: Math.max(0, Math.min(100, Number(e.target.value))) / 100 })} style={{ width: '100%', accentColor: 'var(--accent)' }} />
-            <span style={{ fontFamily: 'var(--font-mono)', textAlign: 'right' }}>{Math.round(lookStrength * 100)}%</span>
-          </div>
-        </div>
-        <div>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, color: '#5b616f', marginBottom: 7 }}>CAPTIONS</div>
-          <CaptionGallery presets={QUICK_CAPTION_PRESETS} compact />
-        </div>
+    <div style={{ border: '1px solid #1d2129', borderRadius: 14, background: '#12151b', marginBottom: 18, padding: 14, display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '.6px', color: '#5b616f' }}>PROJECT SETTINGS</span>
+        <span style={{ marginLeft: 'auto', fontSize: 9.5, color: '#6a7180' }}>Read-only summary · click Customize to edit</span>
       </div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
-        <div>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, color: '#5b616f', marginBottom: 7 }}>MOTION</div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 6 }}>
-            {(['off', 'subtle', 'cinematic'] as MotionPreset[]).map((preset) => (
-              <QuickButton key={preset} active={motionPreset === preset} onClick={() => setMotion(preset)}>{preset === 'off' ? 'Off' : preset === 'subtle' ? 'Subtle' : 'Cinema'}</QuickButton>
-            ))}
-          </div>
-        </div>
-        <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(0,1fr)', gap: 10 }}>
-          <div>
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, color: '#5b616f', marginBottom: 7 }}>B-ROLL</div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(2,minmax(0,1fr))', gap: 6 }}>
-              <QuickButton active={betaOpts.broll.enabled} onClick={() => patchBeta({ broll: { ...betaOpts.broll, enabled: !betaOpts.broll.enabled } })}>{betaOpts.broll.enabled ? 'Auto on' : 'Off'}</QuickButton>
-              <QuickButton active={betaOpts.broll.density === 'sparse'} onClick={() => patchBeta({ broll: { ...betaOpts.broll, enabled: true, density: betaOpts.broll.density === 'sparse' ? 'full' : 'sparse' } })}>{betaOpts.broll.density === 'sparse' ? 'Sparse' : 'Full'}</QuickButton>
-            </div>
-          </div>
-          <div>
-            <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, color: '#5b616f', marginBottom: 7 }}>ASPECT</div>
-            <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,minmax(0,1fr))', gap: 6 }}>
-              {CAPTION_ASPECTS.map((aspect) => (
-                <QuickButton key={aspect} active={(project.captionAspect ?? '16:9') === aspect} onClick={() => void setCaptions({ captionAspect: aspect })}>{aspect}</QuickButton>
-              ))}
-            </div>
-          </div>
-        </div>
-        <button type="button" onClick={onCustomizeToggle} className="me-btn" style={{ alignSelf: 'flex-start', border: customizeOpen ? '1px solid var(--accent)' : '1px solid #262b34', background: customizeOpen ? 'var(--accent-soft)' : '#15181f', borderRadius: 9, padding: '8px 13px', fontSize: 11.5, color: customizeOpen ? 'var(--accent)' : '#c4cad3', fontWeight: 700, cursor: 'pointer' }}>
-          {customizeOpen ? 'Hide customize' : 'Customize'}
-        </button>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit, minmax(100px, 1fr))', gap: 8 }}>
+        {badge('LOOK', `${selectedLook.name} · ${Math.round(lookStrength * 100)}%`, selectedLook.id !== 'off')}
+        {badge('MOTION', motionPreset === 'off' ? 'Off' : motionPreset === 'subtle' ? 'Subtle' : 'Cinematic', motionPreset !== 'off')}
+        {badge('CAPTIONS', captionPreset)}
+        {badge('ASPECT', aspect)}
+        {badge('STYLE', style)}
+        {badge('B-ROLL', betaOpts.broll.enabled ? `On · ${betaOpts.broll.density}` : 'Off', betaOpts.broll.enabled)}
       </div>
+      <button type="button" onClick={onCustomizeToggle} className="me-btn" style={{ alignSelf: 'flex-start', border: '1px solid var(--accent)', background: 'var(--accent-soft)', borderRadius: 9, padding: '8px 16px', fontSize: 11.5, color: 'var(--accent)', fontWeight: 700, cursor: 'pointer' }}>
+        Customize
+      </button>
     </div>
   )
 }
@@ -748,7 +697,6 @@ function CaptionsTab(): JSX.Element {
           )}
           <div style={{ display: 'flex', gap: 9 }}>
             <div onClick={() => void setCaptions({ keywords: !project?.keywords })} style={{ flex: 1, border: '1px solid #1d2129', borderRadius: 9, padding: 9, background: '#0e1116', cursor: 'pointer' }}><div style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ fontSize: 11, fontWeight: 600, color: '#dde0e5' }}>Keywords</span><span style={{ marginLeft: 'auto', fontSize: 8.5, fontWeight: 700, background: project?.keywords ? '#1f9c6b' : '#2b303b', color: '#fff', borderRadius: 9, padding: '1px 6px' }}>{project?.keywords ? 'ON' : 'OFF'}</span></div><div style={{ fontSize: 9, color: '#6a7180', marginTop: 4 }}>Auto-highlight</div></div>
-            <div onClick={() => void setCaptions({ punchZoom: !project?.punchZoom })} style={{ flex: 1, border: '1px solid #1d2129', borderRadius: 9, padding: 9, background: '#0e1116', cursor: 'pointer' }}><div style={{ display: 'flex', alignItems: 'center', gap: 5 }}><span style={{ fontSize: 11, fontWeight: 600, color: '#dde0e5' }}>Punch</span><span style={{ marginLeft: 'auto', fontSize: 8.5, fontWeight: 700, background: project?.punchZoom ? '#1f9c6b' : '#2b303b', color: '#fff', borderRadius: 9, padding: '1px 6px' }}>{project?.punchZoom ? 'ON' : 'OFF'}</span></div><div style={{ fontSize: 9, color: '#6a7180', marginTop: 4 }}>Zoom on hit</div></div>
           </div>
         </div>
         {/* BetaPanel moved to the "Style" and "Advanced" tabs */}
