@@ -19,7 +19,7 @@ import { outputDir } from '../services/queue'
 import { itemDirForProject, itemImagesDir, itemThumbDir, cacheDir, ensureDir, writeProjectManifest, videoIdFromProjectId } from '../services/storage'
 import { buildAss } from '../services/captions'
 import { buildCachedBrollPreviewSegments } from '../services/broll'
-import { cancelRender, overlayGradientPath, runRender } from '../services/render'
+import { cancelRender, consumeCancelIntent, overlayGradientPath, runRender } from '../services/render'
 import { probeRenderCapabilities } from '../services/engine/caps'
 import { buildGpuRenderSpec, gpuDimensions } from '../services/engine/gpu/spec'
 import { ffmpegPath } from '../services/bin'
@@ -442,7 +442,12 @@ async function previewProject(projectId: string): Promise<string> {
   // share jobId `preview-${projectId}`; without this, they pile up as separate ffmpeg
   // processes and blow past the GPU's concurrent NVENC session limit, producing
   // "invalid argument" encoder-open failures (see ELECTRON-2). Kill the stale one first.
+  // cancelRender marks a cancel intent for this jobId; nothing ever consumes it for
+  // preview jobs (only the render queue does, per real job), so it would linger and
+  // make the *next* preview's real failures look like intentional cancels — skipping
+  // the GPU retry/wrap and leaking a raw unhandled ffmpeg error (see ELECTRON-5).
   cancelRender(`preview-${projectId}`, 'cancel')
+  consumeCancelIntent(`preview-${projectId}`)
 
   const settings = getSettings()
   // Previews are throwaway and short, but they still honor the user's encoder choice.
