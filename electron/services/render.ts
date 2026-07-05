@@ -84,12 +84,34 @@ function codecArgsForFilterOutput(
 // set the right post-kill status instead of marking it a render error.
 const running = new Map<string, ChildProcess>()
 const intents = new Map<string, 'cancel' | 'delete'>()
+// Children WE deliberately SIGKILL (cancel/delete, or replacing a stale preview). A
+// killed process exits with code `null`, which looks identical to a crash unless we
+// remember we did it. Without this, an intentional kill was mislabeled as a "GPU encode
+// failed" error, retried (spawning more work), and reported to Sentry ("ffmpeg exited
+// null…" — ELECTRON-2/5). Tracking the child object directly avoids the race where two
+// jobs share a jobId (e.g. rapid `preview-<id>` re-renders) and a stale intent bleeds.
+const killedChildren = new WeakSet<ChildProcess>()
+
+/** Thrown when an ffmpeg child is terminated by us (cancel/delete/preview-replace)
+ *  rather than failing to encode. Callers rethrow it untouched — never retry or wrap it. */
+export class RenderCancelledError extends Error {
+  readonly cancelled = true
+  constructor(message = 'render cancelled') {
+    super(message)
+    this.name = 'RenderCancelledError'
+  }
+}
+
+function isCancellation(e: unknown, jobId?: string): boolean {
+  return (e instanceof RenderCancelledError) || (!!e && (e as { cancelled?: boolean }).cancelled === true) || hasCancelIntent(jobId)
+}
 
 /** Kill the ffmpeg encode for a job (if running) and record why. Returns true if one was killed. */
 export function cancelRender(jobId: string, mode: 'cancel' | 'delete'): boolean {
   const child = running.get(jobId)
   if (!child) return false
   intents.set(jobId, mode)
+  killedChildren.add(child)
   child.kill('SIGKILL')
   running.delete(jobId)
   return true
@@ -528,7 +550,9 @@ export async function runRender(inp: RenderInputs, onProgress?: (p: FfmpegProgre
     try {
       await spawnFfmpeg(args, inp.project.durationSec, onProgress, inp.jobId)
     } catch (e) {
-      if (hasCancelIntent(inp.jobId)) throw e
+      // Cancellation (we killed it / a newer job replaced it) is not an encode failure:
+      // bubble it up untouched — do NOT retry (that would spawn a fresh encode) or wrap it.
+      if (isCancellation(e, inp.jobId)) throw e
       if ((inp.settings.encoder ?? 'cpu') === 'cpu') throw e
       // Consumer NVENC/QSV/AMF sessions can fail to open transiently (driver
       // session-limit contention with another app, brief GPU-context hiccup).
@@ -540,7 +564,7 @@ export async function runRender(inp: RenderInputs, onProgress?: (p: FfmpegProgre
       await spawnFfmpeg(args, inp.project.durationSec, onProgress, inp.jobId)
     }
   } catch (e) {
-    if (hasCancelIntent(inp.jobId)) throw e
+    if (isCancellation(e, inp.jobId)) throw e
     if ((inp.settings.encoder ?? 'cpu') === 'cpu') throw e
     const gpuError = (e as Error).message
     if (inp.logPath) appendFileSync(inp.logPath, `\n[ffmpeg:gpu-failed] ${gpuError}\n`)
@@ -567,6 +591,9 @@ function spawnFfmpeg(args: string[], durationSec: number, onProgress?: (p: Ffmpe
   return new Promise((resolve, reject) => {
     const child = spawn(ffmpegPath(), ['-progress', 'pipe:1', '-nostats', ...args], { windowsHide: true })
     const smooth = createProgressSmoother(durationSec)
+    // Only clear the map entry if it still points at THIS child: a newer job may have
+    // reused the jobId (rapid preview re-render) and registered its own child already.
+    const clearIfCurrent = (): void => { if (jobId && running.get(jobId) === child) running.delete(jobId) }
     if (jobId) running.set(jobId, child)
     let err = ''
     child.stdout.on('data', (d: Buffer) => {
@@ -575,17 +602,24 @@ function spawnFfmpeg(args: string[], durationSec: number, onProgress?: (p: Ffmpe
     })
     child.stderr.on('data', (d: Buffer) => (err += d))
     child.on('error', (e) => {
-      if (jobId) running.delete(jobId)
-      reject(e)
+      clearIfCurrent()
+      // A spawn failure on a child we already killed is still just a cancellation.
+      reject(killedChildren.has(child) ? new RenderCancelledError() : e)
     })
     child.on('close', (code) => {
-      if (jobId) running.delete(jobId)
+      clearIfCurrent()
       if (code === 0) {
         onProgress?.({ outTimeSec: durationSec, pct: 100, speed: 1, etaSec: 0, etaState: 'stable' })
         resolve()
-      } else {
-        reject(new Error(`ffmpeg exited ${code}: ${ffmpegErrorTail(err)}`))
+        return
       }
+      // We killed it (cancel/delete/preview-replace) → exit code null. Surface a
+      // cancellation, NOT an encode failure: the caller must not retry or wrap it.
+      if (killedChildren.has(child)) {
+        reject(new RenderCancelledError())
+        return
+      }
+      reject(new Error(`ffmpeg exited ${code}: ${ffmpegErrorTail(err)}`))
     })
   })
 }

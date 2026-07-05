@@ -450,16 +450,13 @@ async function previewProject(projectId: string): Promise<string> {
   consumeCancelIntent(`preview-${projectId}`)
 
   const settings = getSettings()
-  // Previews are throwaway (640x360, <=5s) and always encode on the CPU (libx264
-  // ultrafast), regardless of the user's chosen encoder. A GPU encoder buys nothing on
-  // a clip this small, and honoring NVENC/QSV/AMF here was the sole source of the
-  // preview freeze + "ffmpeg exited null / Could not open encoder" failures: consumer
-  // GPUs cap concurrent encode sessions, so rapid previews (and the cancel-stale-then-
-  // restart flow) collide on that limit, then the strict-GPU no-fallback policy retries
-  // into the same wall and hard-errors (ELECTRON-2 / ELECTRON-5). libx264 has no such
-  // session limit and finishes a preview in well under a second. Final/queued renders
-  // still honor the user's GPU encoder — only previews are pinned to CPU.
-  const previewSettings = { ...settings, encoder: 'cpu' as const, quality: '720p' as const }
+  // Previews honor the user's chosen encoder (GPU included). The old "preview freeze +
+  // ffmpeg exited null" failures were NOT the GPU's fault — they were the app killing
+  // its own in-flight preview (cancel-stale-then-restart) and then mislabeling that
+  // SIGKILL as a GPU encode failure, retrying it, and reporting it to Sentry. That is
+  // fixed at the source in render.ts (RenderCancelledError: an intentional kill is a
+  // cancellation, never an encode failure), so GPU previews are safe again.
+  const previewSettings = { ...settings, quality: '720p' as const }
   const caps = probeRenderCapabilities()
   const previewSec = Math.max(1, Math.min(5, project.durationSec || 5))
   const dir = cacheDir('previews')
@@ -516,11 +513,7 @@ async function previewProject(projectId: string): Promise<string> {
   const previewBeta = { ...beta, broll: { ...beta.broll, enabled: false } }
 
   await runRender({
-    // motionPreset:'off' keeps the preview motion-free (as it always was under the
-    // default GPU encoder, where CPU motion filters are skipped) now that previews
-    // encode on the CPU — otherwise Ken Burns/punch would suddenly appear in previews
-    // but not in a GPU final render, and slow the throwaway encode down.
-    project: { ...project, durationSec: previewSec, kenBurns: false, punchZoom: false, motionPreset: 'off', betaOpts: previewBeta },
+    project: { ...project, durationSec: previewSec, kenBurns: false, punchZoom: false, betaOpts: previewBeta },
     images,
     assPath,
     outPath,
