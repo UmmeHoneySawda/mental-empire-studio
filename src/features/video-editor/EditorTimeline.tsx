@@ -6,7 +6,7 @@ import { useData } from '../../store/useData'
 import { QUICK_CAPTION_PRESETS, captionPresetPatch } from './captionPresets'
 import {
   buildBrollTimeline,
-  buildCaptionTimeline,
+  buildCaptionGroupTimeline,
   buildVisualTimeline,
   clampTimelineSec,
   rangeToPct,
@@ -420,7 +420,7 @@ export function EditorTimeline({
     ...buildVisualTimeline(images, durationSec),
     ...buildBrollTimeline(broll, durationSec)
   ].sort((a, b) => a.startSec - b.startSec || (a.kind === 'broll' ? -1 : 1)), [images, broll, durationSec])
-  const captionBlocks = useMemo(() => buildCaptionTimeline(words, durationSec), [words, durationSec])
+  const captionBlocks = useMemo(() => buildCaptionGroupTimeline(words, durationSec), [words, durationSec])
   const playhead = rangeToPct(clampTimelineSec(playheadSec, durationSec), clampTimelineSec(playheadSec, durationSec) + 0.05, durationSec).leftPct
   const activeKey = selectionKey(selection)
   const seekFromClick = (e: MouseEvent<HTMLDivElement>): void => {

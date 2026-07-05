@@ -25,6 +25,13 @@ export class CaptionLayer {
     this.ctx = ctx
   }
 
+  /** Swap in a new caption model without reallocating the canvas — used when only
+   *  captions/text-effects change so the compositor doesn't need a full rebuild. */
+  setModel(model: CaptionFrameModel): void {
+    this.model = model
+    this.lastKey = ' ' // force the next draw() to repaint even if timeSec is unchanged
+  }
+
   /** Font size in px derived from height + preset (mirrors the ffmpeg/ASS sizing). */
   private fontSizePx(): number {
     const aspectTall = this.height > this.width

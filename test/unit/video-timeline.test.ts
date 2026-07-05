@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import type { ProjectImage, TranscriptWord } from '@shared/types'
-import { buildBrollTimeline, buildCaptionTimeline, buildVisualTimeline, clampTimelineSec, rangeToPct } from '../../src/features/video-editor/timelineModel'
+import { buildBrollTimeline, buildCaptionGroupTimeline, buildCaptionTimeline, buildVisualTimeline, clampTimelineSec, rangeToPct } from '../../src/features/video-editor/timelineModel'
 import { previewImagesKey } from '../../src/features/video-editor/previewKeys'
 
 function image(patch: Partial<ProjectImage>): ProjectImage {
@@ -90,5 +90,34 @@ describe('video timeline model', () => {
     expect(blocks[0].startSec).toBeLessThan(10)
     expect(blocks[0].endSec).toBe(10)
     expect(blocks[0].leftPct + blocks[0].widthPct).toBeLessThanOrEqual(100)
+  })
+
+  it('coalesces adjacent words into phrase blocks for the timeline Captions track', () => {
+    // 6 close-together words should collapse into a single phrase block.
+    const words = Array.from({ length: 6 }, (_, i) => word({ id: `w-${i}`, ord: i, word: `word${i}`, start: i * 0.3, end: i * 0.3 + 0.25 }))
+    const blocks = buildCaptionGroupTimeline(words, 10)
+    expect(blocks.length).toBe(1)
+    expect(blocks[0].id).toBe('w-0')
+    expect(blocks[0].label).toBe('word0 word1 word2 word3 word4 word5')
+  })
+
+  it('splits caption groups on a large timing gap', () => {
+    const words = [
+      word({ id: 'a', start: 0, end: 0.3 }),
+      word({ id: 'b', start: 0.4, end: 0.7 }),
+      word({ id: 'c', start: 3, end: 3.3 }), // >0.6s gap after the previous word
+      word({ id: 'd', start: 3.4, end: 3.7 })
+    ]
+    const blocks = buildCaptionGroupTimeline(words, 10)
+    expect(blocks.length).toBe(2)
+    expect(blocks[0].id).toBe('a')
+    expect(blocks[1].id).toBe('c')
+  })
+
+  it('caps a caption group at a maximum word count', () => {
+    const words = Array.from({ length: 20 }, (_, i) => word({ id: `w-${i}`, ord: i, word: `w${i}`, start: i * 0.1, end: i * 0.1 + 0.08 }))
+    const blocks = buildCaptionGroupTimeline(words, 10)
+    expect(blocks.length).toBeGreaterThan(1)
+    expect(blocks.length).toBeLessThan(words.length)
   })
 })

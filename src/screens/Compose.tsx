@@ -1,4 +1,4 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { memo, useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store/useStore'
 import { useData } from '../store/useData'
 import { ScreenPad, Eyebrow, Title } from '../components/primitives'
@@ -578,6 +578,21 @@ function QuickPanel({ customizeOpen, onCustomizeToggle }: { customizeOpen: boole
   )
 }
 
+/** Memoized so an emphasis toggle (which only replaces the touched word's object
+ *  reference — see useData.toggleWordEmphasis/setWordsEmphasis) re-renders one span
+ *  instead of diffing every word in the transcript. */
+const TranscriptWordSpan = memo(function TranscriptWordSpan({ word, onToggle }: { word: TranscriptWord; onToggle: (id: string) => void }): JSX.Element {
+  return (
+    <span onClick={() => onToggle(word.id)} style={{ cursor: 'pointer', background: word.emphasis ? '#1f9c6b' : undefined, color: word.emphasis ? '#fff' : undefined, borderRadius: 4, padding: word.emphasis ? '0 5px' : undefined, fontWeight: word.emphasis ? 600 : undefined }}>{word.word} </span>
+  )
+})
+
+const TranscriptWordChip = memo(function TranscriptWordChip({ word, onToggle }: { word: TranscriptWord; onToggle: (id: string) => void }): JSX.Element {
+  return (
+    <span onClick={() => onToggle(word.id)} style={{ flexShrink: 0, border: word.emphasis ? '1px solid #1f9c6b' : '1px solid #2c303b', borderRadius: 6, padding: '5px 9px', fontSize: 11.5, color: word.emphasis ? '#fff' : '#aab0bb', background: word.emphasis ? '#1f9c6b' : '#0e1116', fontWeight: word.emphasis ? 600 : undefined, cursor: 'pointer' }}>{word.word}{word.emphasis ? ' ★' : ''}</span>
+  )
+})
+
 function CaptionsTab(): JSX.Element {
   const project = useData((s) => s.activeProject)
   const transcript = useData((s) => s.transcript)
@@ -741,18 +756,20 @@ function CaptionsTab(): JSX.Element {
             <span style={{ color: '#4f5662', fontSize: 12 }}>— no transcript yet · click Re-transcribe to generate word-level timings —</span>
           ) : (
             transcript.map((w: TranscriptWord) => (
-              <span key={w.id} onClick={() => void toggleWordEmphasis(w.id)} style={{ cursor: 'pointer', background: w.emphasis ? '#1f9c6b' : undefined, color: w.emphasis ? '#fff' : undefined, borderRadius: 4, padding: w.emphasis ? '0 5px' : undefined, fontWeight: w.emphasis ? 600 : undefined }}>{w.word} </span>
+              <TranscriptWordSpan key={w.id} word={w} onToggle={toggleWordEmphasis} />
             ))
           )}
         </div>
-        <div style={{ border: '1px solid #1d2129', borderRadius: 12, padding: 14, background: '#12151b', marginTop: 14 }}>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, color: '#5b616f', marginBottom: 10 }}>WORD TIMELINE — click ★ to mark a word for karaoke emphasis</div>
-          <div style={{ display: 'flex', gap: 5, alignItems: 'center', overflowX: 'auto', paddingBottom: 6 }}>
-            {transcript.map((w) => (
-              <span key={w.id} onClick={() => void toggleWordEmphasis(w.id)} style={{ flexShrink: 0, border: w.emphasis ? '1px solid #1f9c6b' : '1px solid #2c303b', borderRadius: 6, padding: '5px 9px', fontSize: 11.5, color: w.emphasis ? '#fff' : '#aab0bb', background: w.emphasis ? '#1f9c6b' : '#0e1116', fontWeight: w.emphasis ? 600 : undefined, cursor: 'pointer' }}>{w.word}{w.emphasis ? ' ★' : ''}</span>
-            ))}
-          </div>
-        </div>
+        {transcript.length > 0 && (
+          <details style={{ border: '1px solid #1d2129', borderRadius: 12, padding: 14, background: '#12151b', marginTop: 14 }}>
+            <summary style={{ cursor: 'pointer', fontFamily: 'var(--font-mono)', fontSize: 9.5, color: '#5b616f' }}>WORD TIMELINE — click ★ to mark a word for karaoke emphasis</summary>
+            <div style={{ display: 'flex', gap: 5, alignItems: 'center', overflowX: 'auto', paddingBottom: 6, marginTop: 10 }}>
+              {transcript.map((w) => (
+                <TranscriptWordChip key={w.id} word={w} onToggle={toggleWordEmphasis} />
+              ))}
+            </div>
+          </details>
+        )}
       </div>
     </div>
   )
@@ -774,7 +791,9 @@ export function Compose(): JSX.Element {
   const [openingDownloadId, setOpeningDownloadId] = useState('')
   const [videoPlayheadSec, setVideoPlayheadSec] = useState(0)
   const [videoSelection, setVideoSelection] = useState<EditorSelection>({ kind: 'project' })
-  const [videoCustomizeOpen, setVideoCustomizeOpen] = useState(false)
+  // Default into Customize so the effect controls + timeline are live as soon as a
+  // project is open, instead of landing on the read-only Quick summary.
+  const [videoCustomizeOpen, setVideoCustomizeOpen] = useState(true)
   const fileInputRef = useRef<HTMLInputElement>(null)
   const previewBroll = previewSpec?.broll ?? []
   const selectedLabel = useMemo(() => editorSelectionLabel(videoSelection, images, transcript, previewBroll, project), [videoSelection, images, transcript, previewBroll, project])
@@ -791,7 +810,7 @@ export function Compose(): JSX.Element {
   useEffect(() => {
     setVideoPlayheadSec(0)
     setVideoSelection({ kind: 'project' })
-    setVideoCustomizeOpen(false)
+    setVideoCustomizeOpen(true)
   }, [project?.id])
 
   const sendToRender = async (): Promise<void> => {

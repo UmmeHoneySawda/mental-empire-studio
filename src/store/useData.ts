@@ -137,7 +137,8 @@ let subscribed = false
 let previewSpecRequestSeq = 0
 
 /** Debounced trailing-edge call to loadPreviewSpec. Coalesces rapid effect changes
- *  (slider drags, quick toggle clicks) into a single IPC round-trip after 300ms of quiet.
+ *  (slider drags, quick toggle clicks) into a single IPC round-trip after a short quiet
+ *  period, so a toggle still feels immediate without spraying redundant IPC calls on drag.
  *  Runs immediately in test environments to keep unit tests synchronous. */
 let previewDebounceTimer: ReturnType<typeof setTimeout> | null = null
 function debouncedLoadPreviewSpec(projectId: string, get: () => DataState): void {
@@ -150,7 +151,7 @@ function debouncedLoadPreviewSpec(projectId: string, get: () => DataState): void
   previewDebounceTimer = setTimeout(() => {
     previewDebounceTimer = null
     void get().loadPreviewSpec(projectId)
-  }, 300)
+  }, 120)
 }
 
 /** Throttle trailing-edge: coalesces bursty progress-event reloads to at most one call
@@ -530,16 +531,19 @@ export const useData = create<DataState>((set, get) => ({
     const a = api()
     const p = get().activeProject
     if (!a || !p) return
+    // Optimistic single-word patch — avoids refetching the whole transcript (expensive
+    // for long videos) just to flip one boolean.
+    set((s) => ({ transcript: s.transcript.map((w) => (w.id === wordId ? { ...w, emphasis: !w.emphasis } : w)) }))
     await a.transcribe.toggleEmphasis(wordId)
-    set({ transcript: await a.transcribe.get(p.id) })
     debouncedLoadPreviewSpec(p.id, get)
   },
   setWordsEmphasis: async (wordIds, emphasis) => {
     const a = api()
     const p = get().activeProject
     if (!a || !p || wordIds.length === 0) return
+    const idSet = new Set(wordIds)
+    set((s) => ({ transcript: s.transcript.map((w) => (idSet.has(w.id) ? { ...w, emphasis } : w)) }))
     await a.transcribe.setEmphasis(wordIds, emphasis)
-    set({ transcript: await a.transcribe.get(p.id) })
     debouncedLoadPreviewSpec(p.id, get)
   },
   sendActiveToRender: async () => {

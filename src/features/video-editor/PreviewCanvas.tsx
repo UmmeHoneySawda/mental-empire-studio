@@ -121,7 +121,7 @@ export function PreviewCanvas({
   );
   const externalPlayheadSec = controlledPlayheadSec ?? localPlayheadSec;
   const playheadSec = playing ? localPlayheadSec : externalPlayheadSec;
-  const { status, error } = usePreviewCompositor(canvasRef, spec, playheadSec);
+  const { status, error, drawAt } = usePreviewCompositor(canvasRef, spec, playheadSec);
   const activeBroll = spec?.broll?.find(
     (seg) => playheadSec >= seg.startSec && playheadSec < seg.endSec,
   );
@@ -235,32 +235,34 @@ export function PreviewCanvas({
     if (!playing || !canDraw) return;
     let raf = 0;
     let last = performance.now();
+    let t = playheadSec;
     const audio = audioRef.current;
 
     if (audio) {
-      audio.currentTime = playheadSec;
+      audio.currentTime = t;
       audio.play().catch((e) => console.error("Audio play failed:", e));
     }
 
     const tick = (now: number): void => {
       const dt = Math.min(0.25, (now - last) / 1000);
       last = now;
-
-      setPreviewPlayhead(
-        (t) => {
-          let next = t + dt;
-          if (audio && !audio.paused) {
-            next = audio.currentTime;
-          }
-          if (next >= durationSec) {
-            setPlaying(false);
-            if (audio) audio.pause();
-            return durationSec;
-          }
-          return next;
-        },
-        { throttle: true },
-      );
+      let next = t + dt;
+      if (audio && !audio.paused) {
+        next = audio.currentTime;
+      }
+      if (next >= durationSec) {
+        t = durationSec;
+        drawAt(t);
+        setPreviewPlayhead(t);
+        setPlaying(false);
+        if (audio) audio.pause();
+        return;
+      }
+      t = next;
+      // Draw every frame directly (no React state) so playback stays smooth; only
+      // push the throttled state update needed for the scrubber/time label + parent.
+      drawAt(t);
+      setPreviewPlayhead(t, { throttle: true });
       raf = requestAnimationFrame(tick);
     };
     raf = requestAnimationFrame(tick);
@@ -268,7 +270,8 @@ export function PreviewCanvas({
       cancelAnimationFrame(raf);
       if (audio) audio.pause();
     };
-  }, [playing, canDraw, durationSec]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [playing, canDraw, durationSec, drawAt]);
 
   if (!videoEditorV2) return null;
 

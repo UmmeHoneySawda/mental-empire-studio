@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState, type RefObject } from 'react'
+import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import type { GpuRenderSpec, RenderImageSpec } from '@shared/renderSpec'
 import { Compositor } from '../../render-worker/compositor'
 import { CaptionLayer } from '../../render-worker/captions'
@@ -10,10 +10,10 @@ type PreviewStatus = 'idle' | 'loading' | 'ready' | 'error'
 interface PreviewRuntime {
   compositor: Compositor
   captions: CaptionLayer
-  bitmaps: ImageBitmap[]
+  /** Decoded stills keyed by resolved path, reused across edits so unchanged images
+   *  are never re-fetched/re-decoded. */
+  bitmapCache: Map<string, ImageBitmap>
   overlay: ImageBitmap | null
-  /** Key used to detect when a full rebuild is needed vs. an incremental update */
-  structuralKey: string
 }
 
 function clampTime(t: number, durationSec: number): number {
@@ -48,7 +48,9 @@ function imageElement(url: string): Promise<HTMLImageElement> {
 
 async function loadBitmap(path: string, width: number, height: number): Promise<ImageBitmap> {
   if (!path || isCssImageValue(path) || path.startsWith('browser://')) return fallbackBitmap(width, height)
-  const url = `${mediaSrc(path)}?t=${Date.now()}`
+  // No cache-busting query param: paths are content-addressable (thumbs are hashed),
+  // so re-fetching on every edit only wasted decode time.
+  const url = mediaSrc(path)
   try {
     const res = await fetch(url)
     if (!res.ok) throw new Error(`HTTP ${res.status}`)
@@ -64,7 +66,7 @@ async function loadBitmap(path: string, width: number, height: number): Promise<
 
 async function loadOverlay(path?: string): Promise<ImageBitmap | null> {
   if (!path) return null
-  const url = `${mediaSrc(path)}?t=${Date.now()}`
+  const url = mediaSrc(path)
   try {
     const res = await fetch(url)
     if (!res.ok) return null
@@ -91,35 +93,22 @@ async function specForPreview(spec: GpuRenderSpec): Promise<{ spec: GpuRenderSpe
   return { spec: { ...spec, broll: undefined, images }, images }
 }
 
-/**
- * Structural key — changes here require a FULL compositor rebuild (new images,
- * new dimensions, new overlay, or significantly different caption structure).
- */
-function specStructuralKey(spec: GpuRenderSpec): string {
-  return [
-    spec.width,
-    spec.height,
-    spec.durationSec,
-    spec.images.map(im => `${im.path}|${im.startSec}|${im.endSec}`).join(','),
-    spec.overlayPath ?? '',
-    spec.broll?.map(b => `${b.path}|${b.startSec}|${b.endSec}`).join(',') ?? '',
-    spec.captions.groups.length,
-    spec.captions.preset,
-    spec.captions.font,
-    spec.captions.animation,
-    spec.captions.mode,
-    spec.captions.position,
-    spec.captions.lines,
-    spec.captions.highlightColor,
-    spec.captions.wordsPerPage ?? '',
-    spec.captions.hook?.text ?? '',
-    JSON.stringify(spec.captions.highlightBox ?? ''),
-  ].join('|')
+/** Dimensions key — the ONLY thing that forces a full Compositor/CaptionLayer rebuild. */
+function specDimsKey(spec: GpuRenderSpec): string {
+  return `${spec.width}x${spec.height}`
 }
 
-/**
- * Grade key — changes here only need a LUT swap + spec reference update (no rebuild).
- */
+/** Images key — changes here (new stills, new B-roll, reordering, range edits) require
+ *  reconciling the bitmap cache and re-uploading the image texture set. Per-image motion
+ *  metadata is NOT included: that's read live off the spec reference each frame. */
+function specImagesKey(spec: GpuRenderSpec): string {
+  return [
+    spec.images.map((im) => `${im.path}|${im.startSec}|${im.endSec}`).join(','),
+    spec.broll?.map((b) => `${b.path}|${b.startSec}|${b.endSec}`).join(',') ?? ''
+  ].join('#')
+}
+
+/** Grade key — changes here only need a LUT swap (no rebuild, no re-decode). */
 function specGradeKey(spec: GpuRenderSpec): string {
   const g = spec.grade
   return [
@@ -140,71 +129,107 @@ function specGradeKey(spec: GpuRenderSpec): string {
   ].join('|')
 }
 
+/** Captions key — any change to caption content/styling/hook swaps the caption model
+ *  in place (no texture rebuild, no image re-decode). */
+function specCaptionsKey(spec: GpuRenderSpec): string {
+  return JSON.stringify(spec.captions)
+}
+
 export function usePreviewCompositor(
   canvasRef: RefObject<HTMLCanvasElement>,
   spec: GpuRenderSpec | null,
   playheadSec: number
-): { status: PreviewStatus; error: string } {
+): { status: PreviewStatus; error: string; drawAt: (t: number) => void } {
   const runtimeRef = useRef<PreviewRuntime | null>(null)
   const rafRef = useRef<number | null>(null)
   const [status, setStatus] = useState<PreviewStatus>('idle')
   const [error, setError] = useState('')
+  const [captionTick, setCaptionTick] = useState(0)
 
-  // Track keys to detect what changed
-  const prevStructuralKeyRef = useRef<string>('')
+  const prevImagesKeyRef = useRef<string>('')
+  const prevOverlayPathRef = useRef<string>('')
   const prevGradeKeyRef = useRef<string>('')
+  const prevCaptionsKeyRef = useRef<string>('')
 
-  // Full rebuild effect — only fires when structural key changes
+  // Full rebuild — only fires when the canvas dimensions change (or the spec/canvas
+  // appears/disappears). Every other kind of edit is handled incrementally below.
   useEffect(() => {
-    let cancelled = false
     const canvas = canvasRef.current
-    const currentStructuralKey = spec ? specStructuralKey(spec) : ''
-
-    // If structural key hasn't changed and we have a runtime, skip rebuild
-    if (
-      runtimeRef.current &&
-      currentStructuralKey &&
-      currentStructuralKey === prevStructuralKeyRef.current
-    ) {
-      return () => { cancelled = true }
-    }
-
-    // Full teardown needed
-    runtimeRef.current?.bitmaps.forEach((bmp) => bmp.close())
-    runtimeRef.current?.overlay?.close()
-    runtimeRef.current = null
     if (!canvas || !spec) {
       setStatus('idle')
-      prevStructuralKeyRef.current = ''
-      prevGradeKeyRef.current = ''
-      return () => { cancelled = true }
+      return
     }
 
-    prevStructuralKeyRef.current = currentStructuralKey
-    prevGradeKeyRef.current = spec ? specGradeKey(spec) : ''
-    setStatus('loading')
-    setError('')
+    let runtime: PreviewRuntime | null = null
+    try {
+      canvas.width = spec.width
+      canvas.height = spec.height
+      const compositor = new Compositor(canvas, spec)
+      const captions = new CaptionLayer(spec.captions, spec.width, spec.height)
+      runtime = { compositor, captions, bitmapCache: new Map(), overlay: null }
+      runtimeRef.current = runtime
+      // Force every incremental effect to re-populate the fresh runtime.
+      prevImagesKeyRef.current = ''
+      prevOverlayPathRef.current = ''
+      prevGradeKeyRef.current = ''
+      prevCaptionsKeyRef.current = ''
+      setStatus('loading')
+      setError('')
+    } catch (e) {
+      runtimeRef.current = null
+      setError((e as Error).message)
+      setStatus('error')
+    }
+
+    return () => {
+      if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
+      if (runtime && runtimeRef.current === runtime) {
+        runtime.compositor.dispose()
+        runtime.bitmapCache.forEach((bmp) => bmp.close())
+        runtime.overlay?.close()
+        runtimeRef.current = null
+      }
+    }
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [canvasRef, spec ? specDimsKey(spec) : ''])
+
+  // Images/B-roll — reconcile the bitmap cache (load new paths, evict removed ones)
+  // and re-upload only the resulting texture set. Unchanged images are never re-fetched.
+  useEffect(() => {
+    let cancelled = false
+    const rt = runtimeRef.current
+    if (!rt || !spec) return
+    const key = specImagesKey(spec)
+    if (key === prevImagesKeyRef.current) return
+    prevImagesKeyRef.current = key
     void (async () => {
       try {
-        const preview = await specForPreview(spec)
-        if (cancelled) return
-        canvas.width = preview.spec.width
-        canvas.height = preview.spec.height
-        const compositor = new Compositor(canvas, preview.spec)
-        const imageSpecs = preview.images.length ? preview.images : []
-        const bitmaps = await Promise.all(imageSpecs.map((im) => loadBitmap(im.path, preview.spec.width, preview.spec.height)))
-        const overlay = await loadOverlay(preview.spec.overlayPath)
-        if (cancelled) {
-          bitmaps.forEach((bmp) => bmp.close())
-          overlay?.close()
-          return
+        const { images } = await specForPreview(spec)
+        if (cancelled || runtimeRef.current !== rt) return
+        const wanted = new Set(images.map((im) => im.path))
+        for (const [path, bmp] of rt.bitmapCache) {
+          if (!wanted.has(path)) {
+            bmp.close()
+            rt.bitmapCache.delete(path)
+          }
         }
-        compositor.setImages(bitmaps)
-        compositor.setOverlay(overlay)
-        compositor.setLut(lutTextureById(preview.spec.grade.lut))
-        const captions = new CaptionLayer(preview.spec.captions, preview.spec.width, preview.spec.height)
-        runtimeRef.current = { compositor, captions, bitmaps, overlay, structuralKey: currentStructuralKey }
+        for (const im of images) {
+          if (!rt.bitmapCache.has(im.path)) {
+            const bmp = await loadBitmap(im.path, spec.width, spec.height)
+            if (cancelled || runtimeRef.current !== rt) {
+              bmp.close()
+              return
+            }
+            rt.bitmapCache.set(im.path, bmp)
+          }
+        }
+        if (cancelled || runtimeRef.current !== rt) return
+        const ordered = images
+          .map((im) => rt.bitmapCache.get(im.path))
+          .filter((b): b is ImageBitmap => !!b)
+        rt.compositor.setImages(ordered)
         setStatus('ready')
+        setError('')
       } catch (e) {
         if (!cancelled) {
           setError((e as Error).message)
@@ -212,38 +237,74 @@ export function usePreviewCompositor(
         }
       }
     })()
+    return () => { cancelled = true }
+  }, [spec, canvasRef])
 
-    return () => {
-      cancelled = true
-      if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
-      runtimeRef.current?.bitmaps.forEach((bmp) => bmp.close())
-      runtimeRef.current?.overlay?.close()
-      runtimeRef.current = null
-    }
-    // Only depend on the structural key (derived from spec), not the spec reference itself
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [canvasRef, spec ? specStructuralKey(spec) : ''])
+  // Overlay gradient — swapped independently of the image set.
+  useEffect(() => {
+    let cancelled = false
+    const rt = runtimeRef.current
+    if (!rt || !spec) return
+    const path = spec.overlayPath ?? ''
+    if (path === prevOverlayPathRef.current) return
+    prevOverlayPathRef.current = path
+    void (async () => {
+      try {
+        const overlay = await loadOverlay(spec.overlayPath)
+        if (cancelled || runtimeRef.current !== rt) {
+          overlay?.close()
+          return
+        }
+        rt.overlay?.close()
+        rt.overlay = overlay
+        rt.compositor.setOverlay(overlay)
+      } catch (e) {
+        if (!cancelled) {
+          setError((e as Error).message)
+          setStatus('error')
+        }
+      }
+    })()
+    return () => { cancelled = true }
+  }, [spec, canvasRef])
 
-  // Incremental grade/motion update — fires when only grade/motion/grain changes
+  // Keep the compositor's spec reference fresh (motion/grain/punch/per-image motion are
+  // read directly off it every frame) and swap the LUT texture when the grade changes.
   useEffect(() => {
     const rt = runtimeRef.current
     if (!rt || !spec) return
-
-    const currentGradeKey = specGradeKey(spec)
-    if (currentGradeKey === prevGradeKeyRef.current) return
-
-    prevGradeKeyRef.current = currentGradeKey
-
-    // Swap the LUT texture if the LUT id changed
-    rt.compositor.setLut(lutTextureById(spec.grade.lut))
-    // Update the spec reference in place so drawFrame reads the new grade/motion/grain values
     rt.compositor.updateSpec(spec)
-    // Rebuild captions if the caption data changed (already handled by structural key,
-    // but update the reference just in case)
-    rt.captions = new CaptionLayer(spec.captions, spec.width, spec.height)
+    const gradeKey = specGradeKey(spec)
+    if (gradeKey !== prevGradeKeyRef.current) {
+      prevGradeKeyRef.current = gradeKey
+      rt.compositor.setLut(lutTextureById(spec.grade.lut))
+    }
   }, [spec])
 
-  // Draw frame on playhead change
+  // Captions — swap the model in place; no rebuild, no image re-decode.
+  useEffect(() => {
+    const rt = runtimeRef.current
+    if (!rt || !spec) return
+    const key = specCaptionsKey(spec)
+    if (key === prevCaptionsKeyRef.current) return
+    prevCaptionsKeyRef.current = key
+    rt.captions.setModel(spec.captions)
+    setCaptionTick((t) => t + 1)
+  }, [spec])
+
+  // Imperative draw — lets a playback loop redraw the canvas every frame without
+  // pushing React state (and re-rendering the surrounding UI) 60x/sec.
+  const drawAt = useCallback((t: number) => {
+    const rt = runtimeRef.current
+    if (!rt || !spec) return
+    const time = clampTime(t, spec.durationSec)
+    if (rt.captions.draw(time)) rt.compositor.updateCaption(rt.captions.canvas)
+    rt.compositor.drawFrame(time)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [spec])
+
+  // Draw frame on playhead/caption/spec change (scrubbing, not playback — playback
+  // uses drawAt directly).
   useEffect(() => {
     const rt = runtimeRef.current
     if (!rt || !spec) return
@@ -256,7 +317,7 @@ export function usePreviewCompositor(
     return () => {
       if (rafRef.current != null) cancelAnimationFrame(rafRef.current)
     }
-  }, [playheadSec, spec, status])
+  }, [playheadSec, spec, status, captionTick])
 
-  return { status, error }
+  return { status, error, drawAt }
 }

@@ -92,3 +92,48 @@ export function buildCaptionTimeline(words: TranscriptWord[], durationSec: numbe
     }
   })
 }
+
+const CAPTION_GROUP_GAP_SEC = 0.6
+const CAPTION_GROUP_MAX_WORDS = 8
+const CAPTION_GROUP_MAX_SEC = 3
+
+/** Coalesces adjacent words into phrase-sized blocks for the timeline's Captions track,
+ *  so a long transcript renders dozens of blocks instead of one per word. Each block's
+ *  `id` is its first word's id, so existing per-word selection/inspector lookups keep
+ *  working when a block is clicked. */
+export function buildCaptionGroupTimeline(words: TranscriptWord[], durationSec: number): TimelineBlock[] {
+  const duration = Math.max(0.001, durationSec)
+  const blocks: TimelineBlock[] = []
+  let group: TranscriptWord[] = []
+
+  const flush = (): void => {
+    if (group.length === 0) return
+    const first = group[0]
+    const last = group[group.length - 1]
+    const startSec = Math.min(clampTimelineSec(first.start, duration), Math.max(0, duration - 0.05))
+    const endSec = Math.min(duration, Math.max(startSec + 0.05, clampTimelineSec(last.end || last.start + 0.25, duration)))
+    blocks.push({
+      id: first.id,
+      label: group.map((w) => w.word).join(' '),
+      startSec,
+      endSec,
+      ...rangeToPct(startSec, endSec, durationSec)
+    })
+    group = []
+  }
+
+  for (const word of words) {
+    if (group.length > 0) {
+      const prev = group[group.length - 1]
+      const gap = word.start - (prev.end || prev.start)
+      const span = (word.end || word.start) - group[0].start
+      if (gap > CAPTION_GROUP_GAP_SEC || group.length >= CAPTION_GROUP_MAX_WORDS || span > CAPTION_GROUP_MAX_SEC) {
+        flush()
+      }
+    }
+    group.push(word)
+  }
+  flush()
+
+  return blocks
+}

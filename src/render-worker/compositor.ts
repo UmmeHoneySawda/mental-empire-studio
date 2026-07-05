@@ -152,6 +152,9 @@ function compile(gl: WebGL2RenderingContext, type: number, src: string): WebGLSh
 export class Compositor {
   private gl: WebGL2RenderingContext
   private program: WebGLProgram
+  private vs: WebGLShader
+  private fs: WebGLShader
+  private buffer: WebGLBuffer
   private imgTextures: WebGLTexture[] = []
   private overlayTex: WebGLTexture | null = null
   private lutTex: WebGLTexture | null = null
@@ -160,6 +163,7 @@ export class Compositor {
   private videoTexA: WebGLTexture
   private videoTexB: WebGLTexture
   private uniforms: Record<string, WebGLUniformLocation | null> = {}
+  private disposed = false
 
   constructor(public canvas: HTMLCanvasElement | OffscreenCanvas, private spec: GpuRenderSpec) {
     const gl = canvas.getContext('webgl2', { preserveDrawingBuffer: true, premultipliedAlpha: false })
@@ -168,6 +172,8 @@ export class Compositor {
 
     const vs = compile(gl, gl.VERTEX_SHADER, VERT)
     const fs = compile(gl, gl.FRAGMENT_SHADER, FRAG)
+    this.vs = vs
+    this.fs = fs
     const program = gl.createProgram()
     if (!program) throw new Error('createProgram failed')
     gl.attachShader(program, vs)
@@ -181,6 +187,8 @@ export class Compositor {
 
     // Full-screen triangle pair.
     const buf = gl.createBuffer()
+    if (!buf) throw new Error('createBuffer failed')
+    this.buffer = buf
     gl.bindBuffer(gl.ARRAY_BUFFER, buf)
     gl.bufferData(gl.ARRAY_BUFFER, new Float32Array([-1, -1, 1, -1, -1, 1, -1, 1, 1, -1, 1, 1]), gl.STATIC_DRAW)
     const loc = gl.getAttribLocation(program, 'a_pos')
@@ -216,9 +224,11 @@ export class Compositor {
     return tex
   }
 
-  /** Upload the slideshow stills as textures (called once). */
+  /** Upload the slideshow stills as textures. Frees any previously-uploaded image
+   *  textures first — callers may invoke this repeatedly as the image set changes. */
   setImages(bitmaps: ImageBitmap[]): void {
     const gl = this.gl
+    this.imgTextures.forEach((t) => gl.deleteTexture(t))
     this.imgTextures = bitmaps.map((bmp) => {
       const tex = this.newTexture()
       gl.bindTexture(gl.TEXTURE_2D, tex)
@@ -235,8 +245,12 @@ export class Compositor {
   }
 
   setOverlay(bitmap: ImageBitmap | null): void {
-    if (!bitmap) return
     const gl = this.gl
+    if (this.overlayTex) {
+      gl.deleteTexture(this.overlayTex)
+      this.overlayTex = null
+    }
+    if (!bitmap) return
     this.overlayTex = this.newTexture()
     gl.bindTexture(gl.TEXTURE_2D, this.overlayTex)
     gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, bitmap)
@@ -313,6 +327,7 @@ export class Compositor {
 
   /** Draw one frame at time `t`. Assumes updateCaption() already ran for this frame. */
   drawFrame(timeSec: number): void {
+    if (this.disposed) return
     const gl = this.gl
     const g = this.spec.grade
 
@@ -374,5 +389,26 @@ export class Compositor {
     gl.uniform1i(this.uniforms.u_hasLut, this.lutTex && lutStrength > 0 ? 1 : 0)
 
     gl.drawArrays(gl.TRIANGLES, 0, 6)
+  }
+
+  /** Free every GPU resource this compositor owns. The canvas's WebGL2 context is left
+   *  intact (contexts are per-canvas and reused by the next Compositor on the same canvas). */
+  dispose(): void {
+    if (this.disposed) return
+    this.disposed = true
+    const gl = this.gl
+    this.imgTextures.forEach((t) => gl.deleteTexture(t))
+    this.imgTextures = []
+    if (this.overlayTex) gl.deleteTexture(this.overlayTex)
+    this.overlayTex = null
+    if (this.lutTex) gl.deleteTexture(this.lutTex)
+    this.lutTex = null
+    gl.deleteTexture(this.captionTex)
+    gl.deleteTexture(this.videoTexA)
+    gl.deleteTexture(this.videoTexB)
+    gl.deleteBuffer(this.buffer)
+    gl.deleteProgram(this.program)
+    gl.deleteShader(this.vs)
+    gl.deleteShader(this.fs)
   }
 }
