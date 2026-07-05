@@ -6,6 +6,7 @@ import type { GpuRenderSpec } from '../../../../shared/renderSpec'
 import { GPU_CHANNELS, type GpuDoneMsg, type GpuErrorMsg, type GpuProgressMsg, type GpuReadyMsg } from '../../../../shared/gpuIpc'
 import { ffmpegPath } from '../../bin'
 import { masterAudioTwoPass } from '../audio-master'
+import { ffmpegErrorTail } from '../ffmpeg-error'
 import { logger } from '../../logger'
 
 // Main-process host for the hidden GPU render-worker window. Owns the worker lifecycle
@@ -143,7 +144,7 @@ function ffmpegMux(spec: GpuRenderSpec, logPath?: string): Promise<void> {
     let err = ''
     child.stderr.on('data', (d: Buffer) => (err += d))
     child.on('error', reject)
-    child.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`ffmpeg mux exited ${code}: ${err.slice(-300)}`))))
+    child.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`ffmpeg mux exited ${code}: ${ffmpegErrorTail(err)}`))))
   })
 }
 

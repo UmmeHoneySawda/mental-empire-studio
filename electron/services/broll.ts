@@ -8,6 +8,7 @@ import { ffmpegPath, ffprobePath } from './bin'
 import type { RenderCapabilities } from '../../shared/types'
 import { FALLBACK_CAPS } from './engine/encoder'
 import { createProgressSmoother, parseFfmpegProgressBlock, type FfmpegProgress } from './engine/progress'
+import { ffmpegErrorTail } from './engine/ffmpeg-error'
 import { logger } from './logger'
 import { cacheDir } from './storage'
 import { poolKeyForNiche, nicheSearchThemes, dimsForOrientation, planPoolPrune } from './niche'
@@ -942,7 +943,7 @@ function spawnNormalize(
     child.on('close', (code) => {
       if (settled) return
       if (code === 0) done()
-      else done(new Error(`broll normalize ffmpeg ${code}: ${err.slice(-240)}`))
+      else done(new Error(`broll normalize ffmpeg ${code}: ${ffmpegErrorTail(err, 240)}`))
     })
   })
 }
@@ -1128,7 +1129,7 @@ export async function assembleBed(
     })
     child.stderr.on('data', (d: Buffer) => (err += d))
     child.on('error', reject)
-    child.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`broll ffmpeg ${code}: ${err.slice(-200)}`))))
+    child.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`broll ffmpeg ${code}: ${ffmpegErrorTail(err, 200)}`))))
   })
   return bed
 }

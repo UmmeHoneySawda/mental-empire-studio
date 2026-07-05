@@ -11,6 +11,7 @@ import { FPS, LONG_FORM_FAST_SEC, crfFor } from './engine/render-config'
 import { createProgressSmoother, parseFfmpegProgressBlock, type FfmpegProgress } from './engine/progress'
 import { gradeChain } from './engine/grade'
 import { masterAudioTwoPass } from './engine/audio-master'
+import { ffmpegErrorTail } from './engine/ffmpeg-error'
 import type { BrollSegment } from './broll'
 import { logger } from './logger'
 import { ffmpegPath, ffprobePath } from './bin'
@@ -570,7 +571,7 @@ function spawnFfmpeg(args: string[], durationSec: number, onProgress?: (p: Ffmpe
         onProgress?.({ outTimeSec: durationSec, pct: 100, speed: 1, etaSec: 0, etaState: 'stable' })
         resolve()
       } else {
-        reject(new Error(`ffmpeg exited ${code}: ${err.slice(-300)}`))
+        reject(new Error(`ffmpeg exited ${code}: ${ffmpegErrorTail(err)}`))
       }
     })
   })
