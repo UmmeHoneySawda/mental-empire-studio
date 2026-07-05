@@ -97,25 +97,46 @@ if (haveBoth && !process.env.FORCE) {
     rmSync(work, { recursive: true, force: true })
     console.log(`✓ vendored ${name} (evermeet, libass)`)
   }
-} else {
-  // BtbN: a single archive contains bin/ffmpeg(.exe) + bin/ffprobe(.exe).
-  const asset = isWin
-    ? { name: 'ffmpeg-master-latest-win64-gpl.zip', ext: 'zip' }
-    : { name: 'ffmpeg-master-latest-linux64-gpl.tar.xz', ext: 'txz' }
-  const archive = join(tmpdir(), `me-ffmpeg.${asset.ext}`)
+} else if (isWin) {
+  // gyan.dev "release" builds track tagged ffmpeg releases (not a git master nightly),
+  // with libass + hardware encoders (nvenc/qsv/amf) included. BtbN's Windows asset is a
+  // continuously-rebuilt master-branch nightly, which is prone to hardware-encoder
+  // regressions (its NVENC support can drift ahead of what an installed NVIDIA driver's
+  // NVENC SDK version actually supports) — that caused unreproducible "GPU encode
+  // failed... Generic error in an external library" NVENC crashes in the field.
+  const archive = join(tmpdir(), 'me-ffmpeg.zip')
   const work = join(tmpdir(), 'me-ffmpeg-x')
   rmSync(work, { recursive: true, force: true })
   mkdirSync(work, { recursive: true })
-  const url = `https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/${asset.name}`
+  const url = 'https://www.gyan.dev/ffmpeg/builds/ffmpeg-release-essentials.zip'
   console.log(`Downloading ${url}`)
   await download(url, archive)
-  // tar (bsdtar) on Windows 10+ extracts zip; -xJf for the linux tar.xz.
-  execSync(isWin ? `tar -xf "${archive}" -C "${work}"` : `tar -xJf "${archive}" -C "${work}"`)
+  execSync(`tar -xf "${archive}" -C "${work}"`) // bsdtar extracts zip on Windows 10+
+  for (const exe of [ffmpegExe, ffprobeExe]) {
+    const src = findFile(work, exe)
+    if (!src) throw new Error(`${exe} not found in gyan.dev archive`)
+    copyFileSync(src, join(binDir, exe))
+    console.log(`✓ vendored ${exe} (gyan.dev release, libass)`)
+  }
+  rmSync(archive, { force: true })
+  rmSync(work, { recursive: true, force: true })
+} else {
+  // BtbN: a single archive contains bin/ffmpeg + bin/ffprobe. Linux only builds a
+  // master-branch nightly, but this path is only exercised by headless CI smokes
+  // (fixture-driven, no real hardware encode), so nightly drift isn't a stability risk here.
+  const archive = join(tmpdir(), 'me-ffmpeg.txz')
+  const work = join(tmpdir(), 'me-ffmpeg-x')
+  rmSync(work, { recursive: true, force: true })
+  mkdirSync(work, { recursive: true })
+  const url = 'https://github.com/BtbN/FFmpeg-Builds/releases/download/latest/ffmpeg-master-latest-linux64-gpl.tar.xz'
+  console.log(`Downloading ${url}`)
+  await download(url, archive)
+  execSync(`tar -xJf "${archive}" -C "${work}"`)
   for (const exe of [ffmpegExe, ffprobeExe]) {
     const src = findFile(work, exe)
     if (!src) throw new Error(`${exe} not found in BtbN archive`)
     copyFileSync(src, join(binDir, exe))
-    if (!isWin) chmodSync(join(binDir, exe), 0o755)
+    chmodSync(join(binDir, exe), 0o755)
     console.log(`✓ vendored ${exe} (BtbN, libass)`)
   }
   rmSync(archive, { force: true })
