@@ -1,6 +1,7 @@
 import log from 'electron-log/main'
 import { app } from 'electron'
 import { existsSync } from 'node:fs'
+import { captureException } from './sentry'
 
 // Central logger (electron-log). Writes a rolling file the user can find + send back
 // when something fails on their machine — this is how we debug native issues we can't
@@ -27,8 +28,8 @@ export function logFilePath(): string {
 
 /** Crash-proof global handlers so nothing fails silently. */
 export function installGlobalLogging(): void {
-  process.on('uncaughtException', (e) => log.error('UNCAUGHT EXCEPTION', e))
-  process.on('unhandledRejection', (e) => log.error('UNHANDLED REJECTION', e))
+  process.on('uncaughtException', (e) => { log.error('UNCAUGHT EXCEPTION', e); captureException(e) })
+  process.on('unhandledRejection', (e) => { log.error('UNHANDLED REJECTION', e); captureException(e) })
 }
 
 /**

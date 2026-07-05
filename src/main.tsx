@@ -33,10 +33,27 @@ async function bootstrap(): Promise<void> {
   // packaged Electron renderer's main chunk — it's a separate lazy chunk that the
   // real app (where window.api is set by preload) never fetches. Must run before
   // the stores hydrate.
+  let telemetryOn = false
   if (!window.api) {
     await import('./mockApi')
+  } else {
+    try {
+      telemetryOn = !!(await window.api.settings.get())?.telemetryEnabled
+    } catch {
+      telemetryOn = false
+    }
   }
-  ReactDOM.createRoot(document.getElementById('root')!).render(
+
+  const root = ReactDOM.createRoot(document.getElementById('root')!)
+
+  // Sentry's renderer SDK (and its bundle chunk) only ever loads when the user's
+  // telemetry switch is on — flipping it off in Settings removes Sentry from the
+  // running app entirely, not just from what it sends.
+  if (telemetryOn) {
+    const { initSentryRenderer } = await import('./lib/sentry')
+    initSentryRenderer()
+  }
+  root.render(
     <React.StrictMode>
       <App />
     </React.StrictMode>

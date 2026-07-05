@@ -29,6 +29,7 @@ import { buildSfxTrack } from './services/sfx'
 import { buildMasterLoudnormFilter, buildSecondPassLoudnormFilter } from './services/engine/audio-master'
 import { readFileSync as readFileSyncSfx } from 'node:fs'
 import { L, installGlobalLogging, logStartupDiagnostics, logFilePath } from './services/logger'
+import { instrumentIpcMain, setSentryEnabled, telemetryForcedOff } from './services/sentry'
 import { runAll, lastMaxActive } from './services/queue'
 import { destroyGpuWorker } from './services/engine/gpu/host'
 import { runProfile, newVideos } from './ipc/automation'
@@ -40,6 +41,16 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 // Set a stable app name so userData (DB + settings) lands in a dedicated folder
 // rather than the generic "Electron" dir shared with other dev apps.
 app.setName('Mental Empire Studio')
+
+// Wrap ipcMain.handle app-wide BEFORE any handler registers, so every renderer→main
+// call (across every electron/ipc/* module) gets Sentry tracing for free once telemetry
+// is on. No-ops entirely when telemetry is off or during headless smokes.
+instrumentIpcMain()
+
+// Sentry.init() MUST run before the 'ready' event fires (it hooks the protocol
+// registration Electron does at startup) — settings/telemetryEnabled just needs
+// electron-store, which only needs app.getPath('userData') and works pre-ready.
+setSentryEnabled(!telemetryForcedOff() && initSettings().telemetryEnabled)
 
 // Single-instance: a second launch focuses the existing window instead of starting
 // a duplicate (important once the app lives in the tray). Skipped in headless smokes.
@@ -194,7 +205,7 @@ ipcMain.on('window:close', () => mainWindow?.close())
 /** Bring up persistence before any window or IPC: electron-store + the SQLite DB. */
 function initPersistence(): void {
   installGlobalLogging()
-  initSettings()
+  initSettings() // re-reconciles in case defaults changed between the pre-ready read above and now
   const dbPath = join(app.getPath('userData'), 'mental-empire.db')
   try {
     initDatabase(dbPath)

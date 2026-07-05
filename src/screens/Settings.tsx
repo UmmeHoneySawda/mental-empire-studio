@@ -236,6 +236,14 @@ export function Settings(): JSX.Element {
             </div>
           ))}
         </Card>
+        <Card label="TELEMETRY · SENTRY">
+          <Row
+            on={settings.telemetryEnabled}
+            label="Send crash & performance reports"
+            hint="Sends errors, IPC/DB call traces, and CPU/RAM/GPU usage samples to Sentry for debugging. Takes effect immediately, no restart. Turn off any time to fully disable."
+            onClick={() => saved({ telemetryEnabled: !settings.telemetryEnabled })}
+          />
+        </Card>
       </div>
     ),
     beta: (
