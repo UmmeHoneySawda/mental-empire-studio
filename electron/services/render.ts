@@ -525,7 +525,20 @@ export async function runRender(inp: RenderInputs, onProgress?: (p: FfmpegProgre
       appendFileSync(inp.logPath, `\n[render] encoder=${enc} encode=${gpuEncode ? 'GPU' : 'CPU'} scale=${cudaScale ? 'GPU(cuda)' : 'CPU'} subtitles=CPU(libass) kenBurns/punch=${motion ? 'on' : 'off (disabled when a GPU encoder is selected, to keep filters light)'} quality=${inp.settings.quality}${inp.previewDimensions ? ` preview=${inp.previewDimensions.w}x${inp.previewDimensions.h}` : ''} durationSec=${inp.project.durationSec.toFixed(2)}\n`)
       appendFileSync(inp.logPath, `\n[ffmpeg]\n${ffmpegCommandLine(args)}\n`)
     }
-    await spawnFfmpeg(args, inp.project.durationSec, onProgress, inp.jobId)
+    try {
+      await spawnFfmpeg(args, inp.project.durationSec, onProgress, inp.jobId)
+    } catch (e) {
+      if (hasCancelIntent(inp.jobId)) throw e
+      if ((inp.settings.encoder ?? 'cpu') === 'cpu') throw e
+      // Consumer NVENC/QSV/AMF sessions can fail to open transiently (driver
+      // session-limit contention with another app, brief GPU-context hiccup).
+      // One same-encoder retry clears most of these without masking a real
+      // driver/hardware problem, which will fail again and still surface below.
+      const firstError = (e as Error).message
+      if (inp.logPath) appendFileSync(inp.logPath, `\n[ffmpeg:gpu-failed-retrying] ${firstError}\n`)
+      logger.scope('render').warn(`GPU encode failed (${inp.settings.encoder}), retrying once: ${firstError}`)
+      await spawnFfmpeg(args, inp.project.durationSec, onProgress, inp.jobId)
+    }
   } catch (e) {
     if (hasCancelIntent(inp.jobId)) throw e
     if ((inp.settings.encoder ?? 'cpu') === 'cpu') throw e
