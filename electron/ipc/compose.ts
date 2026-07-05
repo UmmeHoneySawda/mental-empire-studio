@@ -19,7 +19,7 @@ import { outputDir } from '../services/queue'
 import { itemDirForProject, itemImagesDir, itemThumbDir, cacheDir, ensureDir, writeProjectManifest, videoIdFromProjectId } from '../services/storage'
 import { buildAss } from '../services/captions'
 import { buildCachedBrollPreviewSegments } from '../services/broll'
-import { overlayGradientPath, runRender } from '../services/render'
+import { cancelRender, overlayGradientPath, runRender } from '../services/render'
 import { probeRenderCapabilities } from '../services/engine/caps'
 import { buildGpuRenderSpec, gpuDimensions } from '../services/engine/gpu/spec'
 import { ffmpegPath } from '../services/bin'
@@ -437,6 +437,12 @@ async function previewProject(projectId: string): Promise<string> {
   const project = repos.getProject(projectId)
   if (!project) throw new Error(`Unknown project: ${projectId}`)
   validateDownloadedAudio(project.downloadId, project.mp3Path, project.durationSec)
+  // The frontend can re-request a preview for the same project before the previous
+  // one finishes (WebGL fallback effects re-firing, rapid style edits). Both attempts
+  // share jobId `preview-${projectId}`; without this, they pile up as separate ffmpeg
+  // processes and blow past the GPU's concurrent NVENC session limit, producing
+  // "invalid argument" encoder-open failures (see ELECTRON-2). Kill the stale one first.
+  cancelRender(`preview-${projectId}`, 'cancel')
 
   const settings = getSettings()
   // Previews are throwaway and short, but they still honor the user's encoder choice.
