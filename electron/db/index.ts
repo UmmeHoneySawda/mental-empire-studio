@@ -1,4 +1,5 @@
 import Database from 'better-sqlite3'
+import { traceObject } from '../services/sentry'
 import type {
   DownloadedVideo,
   MyChannel,
@@ -472,7 +473,7 @@ export function initDatabase(filePath: string): Repositories {
   db.exec(SCHEMA)
   migrate(db)
   seedIfEmpty(db)
-  repos = buildRepositories(db)
+  repos = traceObject(buildRepositories(db), 'db')
   return repos
 }
 

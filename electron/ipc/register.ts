@@ -14,6 +14,7 @@ import { tick, start as schedulerStart } from '../services/scheduler'
 import { applyLoginItem } from '../services/background'
 import { probeRenderCapabilities } from '../services/engine/caps'
 import { runUploadDetection } from '../services/uploads-detect'
+import { setSentryEnabled, telemetryForcedOff } from '../services/sentry'
 
 // All native capability the renderer can reach is registered here as invoke
 // handlers and exposed through the typed preload bridge (window.api.*).
@@ -34,6 +35,7 @@ export function registerIpc(): void {
     // React to background/auto-scrape changes: re-register login item + scheduler.
     if (patch.background?.startOnSignIn !== undefined) applyLoginItem(next)
     if (patch.autoScrape !== undefined) schedulerStart()
+    if (patch.telemetryEnabled !== undefined) setSentryEnabled(!telemetryForcedOff() && next.telemetryEnabled)
     return next
   })
   ipcMain.handle('caps:get', (_e, force?: boolean) => probeRenderCapabilities(!!force))

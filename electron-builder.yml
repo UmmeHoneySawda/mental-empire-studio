@@ -6,12 +6,19 @@ directories:
   output: dist
   buildResources: build
 
-# electron-vite emits to out/ ; ship that + package.json.
+# electron-vite emits to out/ ; ship that + package.json. node_modules is required
+# too: better-sqlite3, electron-log, electron-store, electron-updater and
+# @sentry/electron are externalized (externalizeDepsPlugin) rather than bundled into
+# main.js, so they must physically exist in the packaged app or it fails at launch
+# with "Cannot find module". electron-builder prunes this to production deps only.
 files:
   - out/**
   - package.json
+  - node_modules/**
 
 # better-sqlite3 ships a native .node that cannot run from inside the asar.
+# (@sentry/electron needs no entry here — it has no native binaries of its own; it
+# uses Electron's built-in Crashpad crash reporter.)
 asarUnpack:
   - "**/node_modules/better-sqlite3/**"
 

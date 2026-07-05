@@ -725,6 +725,9 @@ export interface AppSettings {
   detection: { auto: boolean; confirmBand: [number, number] }
   /** duplicate-download behavior for source videos already uploaded to owned channels */
   dedup: { allowReupload: boolean }
+  /** global Sentry kill switch — crash reports, perf traces, and resource sampling.
+   *  Flipping this off fully disables telemetry app-wide, live, no restart needed. */
+  telemetryEnabled: boolean
 }
 
 export interface RenderCapabilities {
@@ -763,7 +766,8 @@ export const DEFAULT_SETTINGS: AppSettings = {
   beta: { enabled: false, pexelsKey: '', pixabayKey: '', coverrKey: '' },
   features: { workflowP1: true, videoEditorV2: true, thumbEditorV2: true },
   detection: { auto: true, confirmBand: [0.6, 0.82] },
-  dedup: { allowReupload: false }
+  dedup: { allowReupload: false },
+  telemetryEnabled: true
 }
 
 /** Recursive partial — used for settings patches that touch only nested keys. */
