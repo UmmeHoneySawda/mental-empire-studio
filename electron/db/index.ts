@@ -665,7 +665,7 @@ function buildRepositories(d: Database.Database): Repositories {
     deleteSourceChannel: (id) => {
       const tx = d.transaction(() => {
         d.prepare('DELETE FROM source_videos WHERE sourceId=?').run(id)
-        d.prepare('UPDATE my_channels SET linkedSourceId=NULL, source="" WHERE linkedSourceId=?').run(id)
+        d.prepare("UPDATE my_channels SET linkedSourceId=NULL, source='' WHERE linkedSourceId=?").run(id)
         d.prepare('DELETE FROM source_channels WHERE id=?').run(id)
       })
       tx()
