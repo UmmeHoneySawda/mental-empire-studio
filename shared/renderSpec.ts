@@ -153,9 +153,6 @@ export interface GpuRenderSpec {
   grain: GrainParams
   /** edge-gradient darkening overlay, rendered directly in the shader (preferred) */
   overlay?: OverlayParams
-  /** legacy PNG/PAM darkening overlay sampled as a texture — retained for the ffmpeg path
-   *  only; the GPU compositor now uses `overlay` and ignores this. Removed in Phase 5. */
-  overlayPath?: string
   captions: CaptionFrameModel
   audio: { voicePath: string; sfxPath?: string }
   encoder: { codec: 'avc'; bitrateMbps: number; keyIntervalSec: number }

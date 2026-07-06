@@ -59,7 +59,6 @@ export interface EncodeCallbacks {
 export async function encodeSpec(
   spec: GpuRenderSpec,
   images: ImageBitmap[],
-  overlay: ImageBitmap | null,
   decoders: (SegmentDecoder | null)[],
   handle: StreamingWriteHandle,
   cb: EncodeCallbacks
@@ -67,7 +66,6 @@ export async function encodeSpec(
   const canvas = new OffscreenCanvas(spec.width, spec.height)
   const compositor = new Compositor(canvas, spec)
   compositor.setImages(images)
-  compositor.setOverlay(overlay)
   compositor.setLut(lutTextureById(spec.grade.lut))
   const captions = new CaptionLayer(spec.captions, spec.width, spec.height)
   const muxer = new VideoMuxer({ width: spec.width, height: spec.height, fps: spec.fps, handle })

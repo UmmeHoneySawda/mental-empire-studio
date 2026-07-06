@@ -23,7 +23,6 @@ out vec4 fragColor;
 
 uniform sampler2D u_imgA;
 uniform sampler2D u_imgB;
-uniform sampler2D u_overlay;
 uniform sampler2D u_caption;
 uniform sampler2D u_lut;
 
@@ -43,7 +42,6 @@ uniform float u_grain;
 uniform float u_grainSeed;
 uniform float u_sharpen;
 uniform vec2  u_texel;
-uniform bool  u_hasOverlay;
 uniform bool  u_hasLut;
 uniform vec4  u_ovEdges;      // edge flags: (top, right, bottom, left), 1 = on
 uniform float u_ovIntensity;  // 0–100, 0 = off
@@ -125,12 +123,6 @@ void main() {
     col = mix(col, sampleLut(col), clamp(u_lutStrength, 0.0, 1.0));
   }
 
-  // legacy overlay texture (dormant — GPU path uses the computed ramp below; removed Phase 5)
-  if (u_hasOverlay) {
-    vec4 ov = texture(u_overlay, v_uv);
-    col = mix(col, ov.rgb, ov.a);
-  }
-
   // edge-gradient darkening overlay — computed in-shader to match overlayAlphaAt()
   // (renderSpec.ts): extent 0.12–0.60, max alpha 0–200/255, eased by pow(ramp, 1.7).
   if (u_ovIntensity > 0.0) {
@@ -171,7 +163,6 @@ export class Compositor {
   private fs: WebGLShader
   private buffer: WebGLBuffer
   private imgTextures: WebGLTexture[] = []
-  private overlayTex: WebGLTexture | null = null
   private lutTex: WebGLTexture | null = null
   private lutSize = 0
   private captionTex: WebGLTexture
@@ -210,7 +201,7 @@ export class Compositor {
     gl.enableVertexAttribArray(loc)
     gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0)
 
-    for (const name of ['u_imgA', 'u_imgB', 'u_overlay', 'u_caption', 'u_lut', 'u_mix', 'u_scaleA', 'u_scaleB', 'u_panA', 'u_panB', 'u_lutSize', 'u_lutStrength', 'u_saturation', 'u_contrast', 'u_brightness', 'u_colorBalance', 'u_vignette', 'u_grain', 'u_grainSeed', 'u_sharpen', 'u_texel', 'u_hasOverlay', 'u_hasLut', 'u_ovEdges', 'u_ovIntensity']) {
+    for (const name of ['u_imgA', 'u_imgB', 'u_caption', 'u_lut', 'u_mix', 'u_scaleA', 'u_scaleB', 'u_panA', 'u_panB', 'u_lutSize', 'u_lutStrength', 'u_saturation', 'u_contrast', 'u_brightness', 'u_colorBalance', 'u_vignette', 'u_grain', 'u_grainSeed', 'u_sharpen', 'u_texel', 'u_hasLut', 'u_ovEdges', 'u_ovIntensity']) {
       this.uniforms[name] = gl.getUniformLocation(program, name)
     }
 
@@ -257,18 +248,6 @@ export class Compositor {
       gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, 1, 1, 0, gl.RGBA, gl.UNSIGNED_BYTE, new Uint8Array([17, 19, 22, 255]))
       this.imgTextures = [tex]
     }
-  }
-
-  setOverlay(bitmap: ImageBitmap | null): void {
-    const gl = this.gl
-    if (this.overlayTex) {
-      gl.deleteTexture(this.overlayTex)
-      this.overlayTex = null
-    }
-    if (!bitmap) return
-    this.overlayTex = this.newTexture()
-    gl.bindTexture(gl.TEXTURE_2D, this.overlayTex)
-    gl.texImage2D(gl.TEXTURE_2D, 0, gl.RGBA, gl.RGBA, gl.UNSIGNED_BYTE, bitmap)
   }
 
   setLut(lut: LutTexture | null): void {
@@ -371,9 +350,6 @@ export class Compositor {
     gl.activeTexture(gl.TEXTURE1)
     gl.bindTexture(gl.TEXTURE_2D, textureB)
     gl.uniform1i(this.uniforms.u_imgB, 1)
-    gl.activeTexture(gl.TEXTURE2)
-    gl.bindTexture(gl.TEXTURE_2D, this.overlayTex ?? (this.imgTextures.length ? this.imgTextures[0] : this.videoTexA))
-    gl.uniform1i(this.uniforms.u_overlay, 2)
     gl.activeTexture(gl.TEXTURE3)
     gl.bindTexture(gl.TEXTURE_2D, this.captionTex)
     gl.uniform1i(this.uniforms.u_caption, 3)
@@ -400,7 +376,6 @@ export class Compositor {
     gl.uniform1f(this.uniforms.u_grainSeed, this.spec.grain.temporal ? (timeSec * this.spec.fps) % 4096 : 1)
     gl.uniform1f(this.uniforms.u_sharpen, g.sharpen)
     gl.uniform2f(this.uniforms.u_texel, 1 / this.canvas.width, 1 / this.canvas.height)
-    gl.uniform1i(this.uniforms.u_hasOverlay, this.overlayTex ? 1 : 0)
     gl.uniform1i(this.uniforms.u_hasLut, this.lutTex && lutStrength > 0 ? 1 : 0)
     const ov = this.spec.overlay
     gl.uniform4f(this.uniforms.u_ovEdges, ov?.top ? 1 : 0, ov?.right ? 1 : 0, ov?.bottom ? 1 : 0, ov?.left ? 1 : 0)
@@ -417,8 +392,6 @@ export class Compositor {
     const gl = this.gl
     this.imgTextures.forEach((t) => gl.deleteTexture(t))
     this.imgTextures = []
-    if (this.overlayTex) gl.deleteTexture(this.overlayTex)
-    this.overlayTex = null
     if (this.lutTex) gl.deleteTexture(this.lutTex)
     this.lutTex = null
     gl.deleteTexture(this.captionTex)

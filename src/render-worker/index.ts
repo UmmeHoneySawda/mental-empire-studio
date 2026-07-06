@@ -25,21 +25,11 @@ async function run(spec: GpuRenderSpec): Promise<void> {
     const isSelfTest = spec.jobId === 'selftest'
     console.log(`[worker] run start: job=${spec.jobId} isSelfTest=${isSelfTest} imageCount=${spec.images.length} brollCount=${spec.broll?.length ?? 0} durationSec=${spec.durationSec}`)
     let images: ImageBitmap[] = []
-    let overlay: ImageBitmap | null = null
 
     if (!isSelfTest) {
-      // Load slideshow stills + optional overlay.
+      // Load slideshow stills.
       images = await Promise.all(spec.images.map((im) => loadBitmap(im.path)))
       console.log(`[worker] loaded ${images.length} slides`)
-      if (spec.overlayPath) {
-        try {
-          overlay = await loadBitmap(spec.overlayPath)
-          console.log(`[worker] loaded overlay: ${spec.overlayPath}`)
-        } catch {
-          overlay = null
-          console.warn(`[worker] failed to load overlay at: ${spec.overlayPath}`)
-        }
-      }
     }
 
     // Initialize placeholders for B-roll decoders to be lazy-loaded in the encode loop
@@ -60,7 +50,7 @@ async function run(spec: GpuRenderSpec): Promise<void> {
     }
 
     console.log(`[worker] starting frame loop with encodeSpec`)
-    await encodeSpec(spec, images, overlay, decoders, handle, {
+    await encodeSpec(spec, images, decoders, handle, {
       onProgress: (framesDone, frames) => {
         console.log(`[worker] encode progress: ${framesDone}/${frames} frames`)
         worker!.progress({ jobId: spec.jobId, framesDone, totalFrames: frames, fps: spec.fps })
@@ -75,7 +65,6 @@ async function run(spec: GpuRenderSpec): Promise<void> {
     console.log(`[worker] job completed successfully`)
 
     images.forEach((b) => b.close())
-    overlay?.close()
   } catch (e) {
     console.error(`[worker] FATAL ERROR in render run:`, e)
     // Close the file handle on error so we don't leak it.

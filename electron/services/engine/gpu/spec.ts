@@ -141,8 +141,6 @@ export interface GpuSpecInputs {
   settings: AppSettings
   /** times (sec) where an emphasized word fires a punch-zoom (from buildAss zoomHits) */
   zoomHits: number[]
-  /** optional darkening overlay PNG/PAM path (matches the ffmpeg overlay) */
-  overlayPath?: string
   /** mastered/normalized narration audio path (or the raw mp3) */
   voicePath: string
   /** optional transition SFX track */
@@ -208,8 +206,6 @@ export function buildGpuRenderSpec(inp: GpuSpecInputs): GpuRenderSpec {
     grade,
     grain,
     overlay,
-    // overlayPath intentionally omitted: the compositor renders the overlay from `overlay`
-    // (shader ramp). Passing overlayPath too would double-darken via the worker's texture path.
     captions,
     audio: { voicePath: inp.voicePath, sfxPath: inp.sfxPath },
     encoder: { codec: 'avc', bitrateMbps: gpuBitrateMbpsFor(settings.quality), keyIntervalSec: GPU_KEY_INTERVAL_SEC },

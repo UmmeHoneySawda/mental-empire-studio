@@ -368,7 +368,6 @@ function installMock(): void {
         sharpen: adjust?.sharpen ?? baseGrade.sharpen
       },
       grain: { strength: adjust?.grain ?? (style === 'Cinematic' ? 0.03 : 0), temporal: style === 'Cinematic' },
-      overlayPath: undefined,
       captions: {
         groups,
         preset: p.captionPreset,

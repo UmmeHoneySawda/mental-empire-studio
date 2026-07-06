@@ -207,7 +207,7 @@ describe('buildGpuRenderSpec', () => {
   it('builds a complete spec mirroring the ffmpeg decisions', () => {
     const spec = buildGpuRenderSpec({
       project: project(), images, words, settings: settings({ beta: { ...DEFAULT_SETTINGS.beta, enabled: true } }),
-      zoomHits: [0.8], voicePath: '/x/a.mp3', overlayPath: '/x/ov.pam', sfxPath: '/x/sfx.wav', hookText: 'hi',
+      zoomHits: [0.8], voicePath: '/x/a.mp3', sfxPath: '/x/sfx.wav', hookText: 'hi',
       out: { h264Path: '/x/o.gpu.mp4', finalPath: '/x/o.mp4' }
     })
     expect(spec.width).toBe(1920)
@@ -218,19 +218,15 @@ describe('buildGpuRenderSpec', () => {
     expect(spec.encoder.bitrateMbps).toBeGreaterThan(0)
     expect(spec.audio.voicePath).toBe('/x/a.mp3')
     expect(spec.audio.sfxPath).toBe('/x/sfx.wav')
-    // The GPU compositor renders the overlay from `overlay` params (shader ramp), never
-    // from a .pam texture — so overlayPath is intentionally omitted even when passed in.
-    expect(spec.overlayPath).toBeUndefined()
     expect(spec.captions.hook?.text).toBe('hi')
     expect(spec.motion.punchAtSec).toContain(0.8) // punchZoom on + not long-form
   })
-  it('derives the edge overlay from beta.overlay (no .pam path)', () => {
+  it('derives the edge overlay from beta.overlay', () => {
     const spec = buildGpuRenderSpec({
       project: project({ betaOpts: { ...DEFAULT_BETA_OPTS, overlay: { bottom: true, top: false, left: false, right: true, intensity: 70 } } }),
       images, words, settings: settings(), zoomHits: [], voicePath: '/x/a.mp3',
       out: { h264Path: '/x/o.gpu.mp4', finalPath: '/x/o.mp4' }
     })
-    expect(spec.overlayPath).toBeUndefined()
     expect(spec.overlay).toEqual({ top: false, right: true, bottom: true, left: false, intensity: 70 })
   })
   it('omits the overlay when no edge is enabled', () => {

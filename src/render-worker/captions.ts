@@ -13,6 +13,17 @@ function withFont(family: string): string {
   return `${family}, ${FONT_FALLBACK}`
 }
 
+/** Font size in px derived from height + preset (mirrors the ffmpeg/ASS sizing). Pure so
+ *  preview (smaller canvas) and final (larger canvas) provably share one sizing formula —
+ *  the only difference between them is the height it's evaluated at. */
+export function captionFontSizePx(width: number, height: number, preset: CaptionFrameModel['preset']): number {
+  const aspectTall = height > width
+  const base = aspectTall ? height * 0.11 : height * 0.085
+  const px = Math.round(Math.max(64, Math.min(aspectTall ? 150 : 108, base)))
+  if (preset === 'Submagic') return Math.round(px * 1.04)
+  return preset === 'Word' ? Math.round(px * 1.12) : px
+}
+
 export class CaptionLayer {
   readonly canvas: OffscreenCanvas
   private ctx: OffscreenCanvasRenderingContext2D
@@ -32,13 +43,8 @@ export class CaptionLayer {
     this.lastKey = ' ' // force the next draw() to repaint even if timeSec is unchanged
   }
 
-  /** Font size in px derived from height + preset (mirrors the ffmpeg/ASS sizing). */
   private fontSizePx(): number {
-    const aspectTall = this.height > this.width
-    const base = aspectTall ? this.height * 0.11 : this.height * 0.085
-    const px = Math.round(Math.max(64, Math.min(aspectTall ? 150 : 108, base)))
-    if (this.model.preset === 'Submagic') return Math.round(px * 1.04)
-    return this.model.preset === 'Word' ? Math.round(px * 1.12) : px
+    return captionFontSizePx(this.width, this.height, this.model.preset)
   }
 
   /** Vertical baseline anchor for the caption block, by position. */
