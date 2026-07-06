@@ -1,9 +1,9 @@
 import { useCallback, useEffect, useRef, useState, type RefObject } from 'react'
 import type { GpuRenderSpec, RenderImageSpec } from '@shared/renderSpec'
-import { Compositor } from '../../render-worker/compositor'
-import { CaptionLayer } from '../../render-worker/captions'
-import { lutTextureById } from '../../render-worker/lut'
-import { isCssImageValue, mediaSrc } from '../../lib/media'
+import { Compositor } from '../../../render-worker/compositor'
+import { CaptionLayer } from '../../../render-worker/captions'
+import { lutTextureById } from '../../../render-worker/lut'
+import { isCssImageValue, mediaSrc } from '../../../lib/media'
 
 type PreviewStatus = 'idle' | 'loading' | 'ready' | 'error'
 
@@ -13,7 +13,6 @@ interface PreviewRuntime {
   /** Decoded stills keyed by resolved path, reused across edits so unchanged images
    *  are never re-fetched/re-decoded. */
   bitmapCache: Map<string, ImageBitmap>
-  overlay: ImageBitmap | null
 }
 
 function clampTime(t: number, durationSec: number): number {
@@ -60,22 +59,6 @@ async function loadBitmap(path: string, width: number, height: number): Promise<
       return createImageBitmap(await imageElement(url))
     } catch {
       return fallbackBitmap(width, height)
-    }
-  }
-}
-
-async function loadOverlay(path?: string): Promise<ImageBitmap | null> {
-  if (!path) return null
-  const url = mediaSrc(path)
-  try {
-    const res = await fetch(url)
-    if (!res.ok) return null
-    return createImageBitmap(await res.blob())
-  } catch {
-    try {
-      return createImageBitmap(await imageElement(url))
-    } catch {
-      return null
     }
   }
 }
@@ -147,7 +130,6 @@ export function usePreviewCompositor(
   const [captionTick, setCaptionTick] = useState(0)
 
   const prevImagesKeyRef = useRef<string>('')
-  const prevOverlayPathRef = useRef<string>('')
   const prevGradeKeyRef = useRef<string>('')
   const prevCaptionsKeyRef = useRef<string>('')
 
@@ -166,11 +148,10 @@ export function usePreviewCompositor(
       canvas.height = spec.height
       const compositor = new Compositor(canvas, spec)
       const captions = new CaptionLayer(spec.captions, spec.width, spec.height)
-      runtime = { compositor, captions, bitmapCache: new Map(), overlay: null }
+      runtime = { compositor, captions, bitmapCache: new Map() }
       runtimeRef.current = runtime
       // Force every incremental effect to re-populate the fresh runtime.
       prevImagesKeyRef.current = ''
-      prevOverlayPathRef.current = ''
       prevGradeKeyRef.current = ''
       prevCaptionsKeyRef.current = ''
       setStatus('loading')
@@ -186,7 +167,6 @@ export function usePreviewCompositor(
       if (runtime && runtimeRef.current === runtime) {
         runtime.compositor.dispose()
         runtime.bitmapCache.forEach((bmp) => bmp.close())
-        runtime.overlay?.close()
         runtimeRef.current = null
       }
     }
@@ -240,36 +220,9 @@ export function usePreviewCompositor(
     return () => { cancelled = true }
   }, [spec, canvasRef])
 
-  // Overlay gradient — swapped independently of the image set.
-  useEffect(() => {
-    let cancelled = false
-    const rt = runtimeRef.current
-    if (!rt || !spec) return
-    const path = spec.overlayPath ?? ''
-    if (path === prevOverlayPathRef.current) return
-    prevOverlayPathRef.current = path
-    void (async () => {
-      try {
-        const overlay = await loadOverlay(spec.overlayPath)
-        if (cancelled || runtimeRef.current !== rt) {
-          overlay?.close()
-          return
-        }
-        rt.overlay?.close()
-        rt.overlay = overlay
-        rt.compositor.setOverlay(overlay)
-      } catch (e) {
-        if (!cancelled) {
-          setError((e as Error).message)
-          setStatus('error')
-        }
-      }
-    })()
-    return () => { cancelled = true }
-  }, [spec, canvasRef])
-
-  // Keep the compositor's spec reference fresh (motion/grain/punch/per-image motion are
-  // read directly off it every frame) and swap the LUT texture when the grade changes.
+  // Keep the compositor's spec reference fresh (motion/grain/punch/per-image motion AND the
+  // edge-gradient overlay are read directly off it every frame) and swap the LUT texture
+  // when the grade changes.
   useEffect(() => {
     const rt = runtimeRef.current
     if (!rt || !spec) return

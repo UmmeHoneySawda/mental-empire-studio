@@ -10,10 +10,10 @@ import { getSettings } from '../store/settings'
 import { formatOutputName, probeDuration } from './audio'
 import { buildAss } from './captions'
 import { LONG_FORM_FAST_SEC, CAPTION_PHRASE_WORD_COUNT, BROLL_MAX_SEGMENTS_DEFAULT, BROLL_MAX_SEGMENTS_LONG, type RenderEngine } from './engine/render-config'
-import { runRender, dimensions, consumeCancelIntent, hasCancelIntent, canUseCudaFinalFilters, overlayGradientPath } from './render'
+import { runRender, dimensions, consumeCancelIntent, hasCancelIntent, canUseCudaFinalFilters } from './render'
 import { buildBrollManifest, recordClipUsage, type BrollManifestSegment } from './broll'
 import { buildGpuRenderSpec } from './engine/gpu/spec'
-import { runGpuRender, probeGpuEngine } from './engine/gpu/host'
+import { runGpuRender, probeGpuEngine, runGpuSelfTest } from './engine/gpu/host'
 import { probeRenderCapabilities } from './engine/caps'
 import { selectEncoder } from './engine/encoder'
 import type { FfmpegProgress } from './engine/progress'
@@ -104,7 +104,10 @@ export async function runJob(job: RenderJob): Promise<void> {
   const settings = getSettings()
   const caps = probeRenderCapabilities()
   const enc = selectEncoder(settings, caps)
-  const strictGpuPipeline = enc.device === 'gpu'
+  // Strict GPU when EITHER the encoder is a hardware device OR the user picked the GPU
+  // (WebCodecs) engine. In strict mode resolveEngine throws instead of silently dropping to
+  // the CPU ffmpeg filtergraph — "GPU only, never CPU" is enforced here.
+  const strictGpuPipeline = enc.device === 'gpu' || settings.renderEngine === 'gpu'
   let filterDevice: RenderProgress['filterDevice'] = strictGpuPipeline ? 'gpu' : 'cpu'
   let encoderDetail = strictGpuPipeline ? `${enc.label} encode · GPU compositor preferred` : `${enc.label} encode`
   let filterDetail = strictGpuPipeline ? 'GPU compositor/captions' : undefined
@@ -371,15 +374,12 @@ export async function runJob(job: RenderJob): Promise<void> {
       const h264Path = join(dir, `${base}.gpu.mp4`)
       gpuTempPath = h264Path
       try {
-        const { w, h } = dimensions(settings.quality, renderProject.captionAspect)
-        const overlayPath = overlayGradientPath(beta.overlay, w, h)
         const spec = buildGpuRenderSpec({
           project: renderProject,
           images,
           words,
           settings,
           zoomHits,
-          overlayPath,
           voicePath: renderProject.mp3Path,
           sfxPath,
           hookText,
@@ -481,13 +481,31 @@ export async function runJob(job: RenderJob): Promise<void> {
 /** Render every queued job, at most `settings.concurrency` in flight at a time. */
 export async function runAll(): Promise<void> {
   const jobs = getRepos().queuedJobs()
+  if (!jobs.length) return
   const settings = getSettings()
   const requested = Math.max(1, settings.concurrency)
   // Hardware mode is intentionally one-at-a-time. Even with NVENC/WebCodecs, captions,
   // muxing, disk IO and stock normalization still have CPU-side work; parallel jobs made
   // the user's machine peg CPU and turned ETA into fiction.
   const enc = selectEncoder(settings, probeRenderCapabilities())
-  const concurrency = enc.device === 'gpu' ? 1 : requested
+  const strictGpuBatch = enc.device === 'gpu' || settings.renderEngine === 'gpu'
+  const concurrency = strictGpuBatch ? 1 : requested
+
+  // Preflight the whole batch on the WebCodecs GPU engine before touching any job: a real
+  // short encode (not just the capability probe `resolveEngine` runs per-job), so a broken
+  // driver/environment fails once, clearly, up front — never a silent per-job CPU fallback.
+  if (strictGpuBatch) {
+    const selfTest = await runGpuSelfTest()
+    if (!selfTest.ok) {
+      const message = `GPU preflight failed: ${selfTest.error ?? 'hardware H.264 encode unavailable'}. CPU fallback is disabled — fix the GPU/driver and retry.`
+      for (const job of jobs) {
+        getRepos().setRenderStatus(job.id, { status: 'error', pct: 0, error: message })
+        emitR({ jobId: job.id, pct: 0, stage: 'error', done: true, error: message })
+      }
+      return
+    }
+  }
+
   let idx = 0
   let active = 0
   maxActive = 0

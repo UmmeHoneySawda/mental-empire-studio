@@ -54,6 +54,10 @@ const api: NativeApi = {
     get: (force?: boolean) => ipcRenderer.invoke('caps:get', !!force)
   },
 
+  gpu: {
+    status: () => ipcRenderer.invoke('gpu:status')
+  },
+
   effects: {
     generate: (projectId: string, style: string) => ipcRenderer.invoke('effects:generate', projectId, style)
   },

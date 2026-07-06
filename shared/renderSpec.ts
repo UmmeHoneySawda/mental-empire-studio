@@ -91,6 +91,40 @@ export interface CaptionFrameModel {
   hook?: { text: string; untilSec: number }
 }
 
+/** Edge-gradient darkening overlay params. Rendered directly in the compositor shader
+ *  (replaces the old .pam texture that browsers could not decode). `intensity` 0–100:
+ *  0 = off, 50 = default, 100 = heavy. */
+export interface OverlayParams {
+  top: boolean
+  right: boolean
+  bottom: boolean
+  left: boolean
+  intensity: number
+}
+
+/**
+ * Normalized [0,1] darkening alpha of the edge overlay at fractional coords (xN, yN both
+ * in [0,1], origin top-left). Pure — the single source of truth for the ramp shared by the
+ * WebGL shader (see render-worker/compositor.ts) and any raster fallback. Mirrors the ramp
+ * the old overlayGradientPath() baked into a .pam: extent 0.12–0.60 of the frame, max alpha
+ * 0–200/255, eased by pow(ramp, 1.7). Returns 0 when disabled or no edge is enabled.
+ */
+export function overlayAlphaAt(xN: number, yN: number, o: OverlayParams): number {
+  const intensity = Math.max(0, Math.min(100, o.intensity))
+  if (intensity === 0 || (!o.top && !o.right && !o.bottom && !o.left)) return 0
+  const extentRatio = 0.12 + (intensity / 100) * 0.48
+  const maxAlpha = ((intensity / 100) * 200) / 255
+  const ramps = [
+    o.bottom ? (yN - (1 - extentRatio)) / extentRatio : 0,
+    o.top ? (extentRatio - yN) / extentRatio : 0,
+    o.left ? (extentRatio - xN) / extentRatio : 0,
+    o.right ? (xN - (1 - extentRatio)) / extentRatio : 0
+  ]
+  let ramp = 0
+  for (const r of ramps) ramp = Math.max(ramp, Math.min(1, Math.max(0, r)))
+  return maxAlpha * Math.pow(ramp, 1.7)
+}
+
 /** Optional per-frame motion (Ken Burns / punch zoom). */
 export interface MotionSpec {
   kenBurns: boolean
@@ -117,7 +151,10 @@ export interface GpuRenderSpec {
   motion: MotionSpec
   grade: GradeParams
   grain: GrainParams
-  /** existing PNG/PAM darkening overlay, sampled as a texture (optional) */
+  /** edge-gradient darkening overlay, rendered directly in the shader (preferred) */
+  overlay?: OverlayParams
+  /** legacy PNG/PAM darkening overlay sampled as a texture — retained for the ffmpeg path
+   *  only; the GPU compositor now uses `overlay` and ignores this. Removed in Phase 5. */
   overlayPath?: string
   captions: CaptionFrameModel
   audio: { voicePath: string; sfxPath?: string }

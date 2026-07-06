@@ -45,6 +45,8 @@ uniform float u_sharpen;
 uniform vec2  u_texel;
 uniform bool  u_hasOverlay;
 uniform bool  u_hasLut;
+uniform vec4  u_ovEdges;      // edge flags: (top, right, bottom, left), 1 = on
+uniform float u_ovIntensity;  // 0–100, 0 = off
 
 vec2 zoomUv(vec2 uv, vec2 scale, vec2 pan) {
   return (uv - 0.5) / scale + 0.5 - pan;
@@ -123,10 +125,23 @@ void main() {
     col = mix(col, sampleLut(col), clamp(u_lutStrength, 0.0, 1.0));
   }
 
-  // overlay (darkening gradient PNG/PAM)
+  // legacy overlay texture (dormant — GPU path uses the computed ramp below; removed Phase 5)
   if (u_hasOverlay) {
     vec4 ov = texture(u_overlay, v_uv);
     col = mix(col, ov.rgb, ov.a);
+  }
+
+  // edge-gradient darkening overlay — computed in-shader to match overlayAlphaAt()
+  // (renderSpec.ts): extent 0.12–0.60, max alpha 0–200/255, eased by pow(ramp, 1.7).
+  if (u_ovIntensity > 0.0) {
+    float extentRatio = 0.12 + (u_ovIntensity / 100.0) * 0.48;
+    float maxAlpha = (u_ovIntensity / 100.0) * 200.0 / 255.0;
+    float rTop    = u_ovEdges.x > 0.5 ? (extentRatio - v_uv.y) / extentRatio : 0.0;
+    float rRight  = u_ovEdges.y > 0.5 ? (v_uv.x - (1.0 - extentRatio)) / extentRatio : 0.0;
+    float rBottom = u_ovEdges.z > 0.5 ? (v_uv.y - (1.0 - extentRatio)) / extentRatio : 0.0;
+    float rLeft   = u_ovEdges.w > 0.5 ? (extentRatio - v_uv.x) / extentRatio : 0.0;
+    float ramp = clamp(max(max(rTop, rRight), max(rBottom, rLeft)), 0.0, 1.0);
+    col = mix(col, vec3(0.0), maxAlpha * pow(ramp, 1.7));
   }
 
   // captions on top
@@ -195,7 +210,7 @@ export class Compositor {
     gl.enableVertexAttribArray(loc)
     gl.vertexAttribPointer(loc, 2, gl.FLOAT, false, 0, 0)
 
-    for (const name of ['u_imgA', 'u_imgB', 'u_overlay', 'u_caption', 'u_lut', 'u_mix', 'u_scaleA', 'u_scaleB', 'u_panA', 'u_panB', 'u_lutSize', 'u_lutStrength', 'u_saturation', 'u_contrast', 'u_brightness', 'u_colorBalance', 'u_vignette', 'u_grain', 'u_grainSeed', 'u_sharpen', 'u_texel', 'u_hasOverlay', 'u_hasLut']) {
+    for (const name of ['u_imgA', 'u_imgB', 'u_overlay', 'u_caption', 'u_lut', 'u_mix', 'u_scaleA', 'u_scaleB', 'u_panA', 'u_panB', 'u_lutSize', 'u_lutStrength', 'u_saturation', 'u_contrast', 'u_brightness', 'u_colorBalance', 'u_vignette', 'u_grain', 'u_grainSeed', 'u_sharpen', 'u_texel', 'u_hasOverlay', 'u_hasLut', 'u_ovEdges', 'u_ovIntensity']) {
       this.uniforms[name] = gl.getUniformLocation(program, name)
     }
 
@@ -387,6 +402,9 @@ export class Compositor {
     gl.uniform2f(this.uniforms.u_texel, 1 / this.canvas.width, 1 / this.canvas.height)
     gl.uniform1i(this.uniforms.u_hasOverlay, this.overlayTex ? 1 : 0)
     gl.uniform1i(this.uniforms.u_hasLut, this.lutTex && lutStrength > 0 ? 1 : 0)
+    const ov = this.spec.overlay
+    gl.uniform4f(this.uniforms.u_ovEdges, ov?.top ? 1 : 0, ov?.right ? 1 : 0, ov?.bottom ? 1 : 0, ov?.left ? 1 : 0)
+    gl.uniform1f(this.uniforms.u_ovIntensity, ov ? Math.max(0, Math.min(100, ov.intensity)) : 0)
 
     gl.drawArrays(gl.TRIANGLES, 0, 6)
   }

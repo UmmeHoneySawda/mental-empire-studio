@@ -3,6 +3,7 @@
 // these types define the contract the UI is built against now.
 
 import type { GpuRenderSpec } from './renderSpec'
+import type { GpuEngineStatus } from './gpuStatus'
 
 export type AccentName = 'Amber' | 'Violet' | 'Emerald' | 'Crimson'
 
@@ -856,6 +857,10 @@ export interface NativeApi {
   }
   caps: {
     get(force?: boolean): Promise<RenderCapabilities>
+  }
+  gpu: {
+    /** WebCodecs hardware-encode probe + vendor name, for the Compose GPU status chip. */
+    status(): Promise<GpuEngineStatus>
   }
   effects: {
     /** beta: generate a validated effect-plan JSON for a project via Groq */

@@ -172,6 +172,12 @@ export function buildGpuRenderSpec(inp: GpuSpecInputs): GpuRenderSpec {
     ? [...new Set([...inp.zoomHits, ...inp.words.filter((w) => w.emphasis).map((w) => w.start)])].sort((a, b) => a - b)
     : []
 
+  // Edge-gradient darkening overlay: rendered in the shader from these params (no .pam).
+  const ov = beta.overlay
+  const overlay = (ov.top || ov.right || ov.bottom || ov.left) && (ov.intensity ?? 50) > 0
+    ? { top: ov.top, right: ov.right, bottom: ov.bottom, left: ov.left, intensity: ov.intensity ?? 50 }
+    : undefined
+
   const captions = buildCaptionModel(inp.words, project, {
     highlightColor: project.captionHighlightColor ?? (project.captionPreset === 'Submagic' ? '#111111' : '#ffd93d'),
     highlightBox: project.captionPreset === 'Submagic'
@@ -201,7 +207,9 @@ export function buildGpuRenderSpec(inp: GpuSpecInputs): GpuRenderSpec {
     motion: { kenBurns, punchAtSec },
     grade,
     grain,
-    overlayPath: inp.overlayPath,
+    overlay,
+    // overlayPath intentionally omitted: the compositor renders the overlay from `overlay`
+    // (shader ramp). Passing overlayPath too would double-darken via the worker's texture path.
     captions,
     audio: { voicePath: inp.voicePath, sfxPath: inp.sfxPath },
     encoder: { codec: 'avc', bitrateMbps: gpuBitrateMbpsFor(settings.quality), keyIntervalSec: GPU_KEY_INTERVAL_SEC },

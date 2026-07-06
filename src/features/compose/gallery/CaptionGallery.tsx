@@ -1,4 +1,4 @@
-import { useData } from "../../store/useData";
+import { useData } from "../../../store/useData";
 import {
   CAPTION_PRESETS,
   captionPresetPatch,

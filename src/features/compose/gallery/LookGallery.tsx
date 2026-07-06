@@ -2,7 +2,7 @@ import { useEffect, useMemo, useState } from 'react'
 import type { LookAdjust, VideoStyle } from '@shared/types'
 import { asBetaOpts } from '@shared/types'
 import { LOOKS, lookById, type LookPreset } from '@shared/looks'
-import { useData } from '../../store/useData'
+import { useData } from '../../../store/useData'
 
 function clamp(n: number, min: number, max: number): number {
   return Math.max(min, Math.min(max, Number.isFinite(n) ? n : min))
@@ -193,4 +193,3 @@ export function LookGallery(): JSX.Element {
     </div>
   )
 }
-

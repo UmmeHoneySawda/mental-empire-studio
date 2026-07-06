@@ -13,6 +13,7 @@ import { registerAutomationIpc, upsertProfileAndWarm } from './automation'
 import { tick, start as schedulerStart } from '../services/scheduler'
 import { applyLoginItem } from '../services/background'
 import { probeRenderCapabilities } from '../services/engine/caps'
+import { probeGpuEngine } from '../services/engine/gpu/host'
 import { runUploadDetection } from '../services/uploads-detect'
 import { setSentryEnabled, telemetryForcedOff } from '../services/sentry'
 
@@ -39,6 +40,19 @@ export function registerIpc(): void {
     return next
   })
   ipcMain.handle('caps:get', (_e, force?: boolean) => probeRenderCapabilities(!!force))
+  // Compose's GPU status chip: combine the ffmpeg/nvidia-smi vendor probe (fast, cached)
+  // with the actual WebCodecs hardware-encode probe the Compose render path depends on.
+  ipcMain.handle('gpu:status', async () => {
+    const caps = probeRenderCapabilities()
+    const ready = await probeGpuEngine()
+    return {
+      hardware: ready.hardware,
+      supported: ready.supported,
+      detail: ready.detail,
+      vendor: caps.gpuVendor,
+      gpuName: caps.nvidiaGpuName || undefined
+    }
+  })
   ipcMain.handle('appMeta:get', (_e, key: string) => getRepos().appMeta(reqId(key, 'key')) ?? '')
   ipcMain.handle('appMeta:set', (_e, key: string, value: string) => {
     getRepos().setAppMeta(reqId(key, 'key'), String(value))

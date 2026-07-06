@@ -1,7 +1,7 @@
 import { describe, it, expect } from 'vitest'
 import { gradeParams } from '../../electron/services/engine/grade'
 import { buildGpuRenderSpec, buildCaptionModel, buildImageSpecs, effectiveMotionPreset, gpuCaptionMode, gpuDimensions, imageMotionFor } from '../../electron/services/engine/gpu/spec'
-import { activeCaptionGroup, activeWordInGroup, activeImageIndex, totalFrames } from '../../shared/renderSpec'
+import { activeCaptionGroup, activeWordInGroup, activeImageIndex, totalFrames, overlayAlphaAt } from '../../shared/renderSpec'
 import { DEFAULT_SETTINGS, DEFAULT_BETA_OPTS, type AppSettings, type Project, type ProjectImage, type TranscriptWord } from '../../shared/types'
 
 const settings = (over: Partial<AppSettings> = {}): AppSettings => ({ ...DEFAULT_SETTINGS, ...over })
@@ -176,6 +176,33 @@ describe('buildCaptionModel', () => {
   })
 })
 
+describe('overlayAlphaAt', () => {
+  const bottom = { top: false, right: false, bottom: true, left: false, intensity: 50 }
+  it('is 0 when disabled or no edge is enabled', () => {
+    expect(overlayAlphaAt(0.5, 0.99, { ...bottom, intensity: 0 })).toBe(0)
+    expect(overlayAlphaAt(0.5, 0.99, { top: false, right: false, bottom: false, left: false, intensity: 100 })).toBe(0)
+  })
+  it('is 0 in the interior and ramps up toward the enabled edge', () => {
+    expect(overlayAlphaAt(0.5, 0.2, bottom)).toBe(0) // top half — outside bottom extent
+    const mid = overlayAlphaAt(0.5, 0.85, bottom)
+    const edge = overlayAlphaAt(0.5, 1.0, bottom)
+    expect(mid).toBeGreaterThan(0)
+    expect(edge).toBeGreaterThan(mid) // monotonic toward the edge
+  })
+  it('matches the analytic ramp at the very edge (maxAlpha = intensity/100*200/255)', () => {
+    // extentRatio(50)=0.36, ramp at yN=1 is 1 → alpha = maxAlpha * 1^1.7 = maxAlpha
+    expect(overlayAlphaAt(0.5, 1.0, bottom)).toBeCloseTo((50 / 100) * 200 / 255, 6)
+    expect(overlayAlphaAt(0.5, 1.0, { ...bottom, intensity: 100 })).toBeCloseTo(200 / 255, 6)
+  })
+  it('takes the max across multiple enabled edges', () => {
+    const all = { top: true, right: true, bottom: true, left: true, intensity: 60 }
+    // A bottom-left corner pixel is inside both the bottom and left ramps.
+    const corner = overlayAlphaAt(0.02, 0.98, all)
+    const bottomOnly = overlayAlphaAt(0.02, 0.98, { ...all, left: false })
+    expect(corner).toBeGreaterThanOrEqual(bottomOnly)
+  })
+})
+
 describe('buildGpuRenderSpec', () => {
   it('builds a complete spec mirroring the ffmpeg decisions', () => {
     const spec = buildGpuRenderSpec({
@@ -191,9 +218,28 @@ describe('buildGpuRenderSpec', () => {
     expect(spec.encoder.bitrateMbps).toBeGreaterThan(0)
     expect(spec.audio.voicePath).toBe('/x/a.mp3')
     expect(spec.audio.sfxPath).toBe('/x/sfx.wav')
-    expect(spec.overlayPath).toBe('/x/ov.pam')
+    // The GPU compositor renders the overlay from `overlay` params (shader ramp), never
+    // from a .pam texture — so overlayPath is intentionally omitted even when passed in.
+    expect(spec.overlayPath).toBeUndefined()
     expect(spec.captions.hook?.text).toBe('hi')
     expect(spec.motion.punchAtSec).toContain(0.8) // punchZoom on + not long-form
+  })
+  it('derives the edge overlay from beta.overlay (no .pam path)', () => {
+    const spec = buildGpuRenderSpec({
+      project: project({ betaOpts: { ...DEFAULT_BETA_OPTS, overlay: { bottom: true, top: false, left: false, right: true, intensity: 70 } } }),
+      images, words, settings: settings(), zoomHits: [], voicePath: '/x/a.mp3',
+      out: { h264Path: '/x/o.gpu.mp4', finalPath: '/x/o.mp4' }
+    })
+    expect(spec.overlayPath).toBeUndefined()
+    expect(spec.overlay).toEqual({ top: false, right: true, bottom: true, left: false, intensity: 70 })
+  })
+  it('omits the overlay when no edge is enabled', () => {
+    const spec = buildGpuRenderSpec({
+      project: project({ betaOpts: { ...DEFAULT_BETA_OPTS, overlay: { bottom: false, top: false, left: false, right: false, intensity: 80 } } }),
+      images, words, settings: settings(), zoomHits: [], voicePath: '/x/a.mp3',
+      out: { h264Path: '/x/o.gpu.mp4', finalPath: '/x/o.mp4' }
+    })
+    expect(spec.overlay).toBeUndefined()
   })
   it('disables motion on long-form jobs', () => {
     const spec = buildGpuRenderSpec({

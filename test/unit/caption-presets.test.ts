@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { CAPTION_PRESETS, QUICK_CAPTION_PRESETS, captionPresetPatch } from '../../src/features/video-editor/captionPresets'
+import { CAPTION_PRESETS, QUICK_CAPTION_PRESETS, captionPresetPatch } from '../../src/features/compose/gallery/captionPresets'
 
 describe('captionPresetPatch', () => {
   it('keeps ordinary presets to the selected preset only', () => {

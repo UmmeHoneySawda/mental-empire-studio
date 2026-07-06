@@ -1,8 +1,8 @@
 import { useEffect, useMemo, useRef, useState } from "react";
-import { useStore } from "../../store/useStore";
-import { useData } from "../../store/useData";
-import { usePreviewCompositor } from "./usePreviewCompositor";
-import { mediaSrc, videoSrc } from "../../lib/media";
+import { useStore } from "../../../store/useStore";
+import { useData } from "../../../store/useData";
+import { usePreviewCompositor } from "../hooks/usePreviewCompositor";
+import { mediaSrc } from "../../../lib/media";
 import { previewImagesKey } from "./previewKeys";
 
 function fmt(sec: number): string {
@@ -72,12 +72,6 @@ export function PreviewCanvas({
   const audioRef = useRef<HTMLAudioElement | null>(null);
   const [localPlayheadSec, setLocalPlayheadSec] = useState(0);
   const [playing, setPlaying] = useState(false);
-  const [fallbackPath, setFallbackPath] = useState("");
-  const [fallbackState, setFallbackState] = useState<
-    "idle" | "rendering" | "ready" | "error"
-  >("idle");
-  const [fallbackError, setFallbackError] = useState("");
-  const [fallbackForKey, setFallbackForKey] = useState("");
   const lastPlayheadEmitMs = useRef(0);
 
   const projectKey = useMemo(() => {
@@ -173,60 +167,6 @@ export function PreviewCanvas({
     loadPreviewSpec,
   ]);
 
-  const fallbackKey = `${project?.id ?? ""}|${projectKey}|${imagesKey}|${transcriptKey}`;
-  useEffect(() => {
-    setFallbackPath("");
-    setFallbackState("idle");
-    setFallbackError("");
-    setFallbackForKey("");
-  }, [fallbackKey]);
-
-  // Clear fallback state immediately when WebGL has no error
-  useEffect(() => {
-    if (!error) {
-      setFallbackPath("");
-      setFallbackState("idle");
-      setFallbackError("");
-      setFallbackForKey("");
-    }
-  }, [error]);
-
-  useEffect(() => {
-    if (
-      !videoEditorV2 ||
-      !project ||
-      !error ||
-      fallbackForKey === fallbackKey ||
-      fallbackState === "rendering"
-    )
-      return;
-    let cancelled = false;
-    setFallbackForKey(fallbackKey);
-    setFallbackState("rendering");
-    setFallbackError("");
-    const preview = window.api?.compose.preview;
-    if (!preview) {
-      setFallbackState("error");
-      setFallbackError("Backend preview is unavailable.");
-      return;
-    }
-    void preview(project.id)
-      .then((path) => {
-        if (cancelled) return;
-        setFallbackPath(path);
-        setFallbackState("ready");
-      })
-      .catch((e) => {
-        if (cancelled) return;
-        setFallbackPath("");
-        setFallbackError((e as Error).message);
-        setFallbackState("error");
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [videoEditorV2, project?.id, error, fallbackKey, fallbackForKey]);
-
   useEffect(() => {
     if (playheadSec > durationSec) setPreviewPlayhead(durationSec);
   }, [durationSec]);
@@ -275,19 +215,16 @@ export function PreviewCanvas({
 
   if (!videoEditorV2) return null;
 
+  // This IS the real render (same compositor/spec builder as the final GPU export) —
+  // there is no ffmpeg fallback to render a separate clip when WebGL errors.
   const statusText =
     previewLoading || status === "loading"
       ? "Building preview"
-      : fallbackState === "rendering"
-        ? "Backend preview"
-        : fallbackState === "ready"
-          ? "Backend preview ready"
-          : previewError || fallbackError || error
-            ? "Preview unavailable"
-            : spec?.broll?.length
-              ? "Live still preview · B-roll poster"
-              : "Live still preview";
-  const fallbackMediaSrc = videoSrc(fallbackPath);
+      : previewError || error
+        ? "Preview unavailable"
+        : spec?.broll?.length
+          ? "Live still preview · B-roll poster"
+          : "Live still preview";
 
   return (
     <div
@@ -321,25 +258,9 @@ export function PreviewCanvas({
             style={{
               width: "100%",
               height: "100%",
-              display: fallbackMediaSrc ? "none" : "block",
+              display: "block",
             }}
           />
-          {fallbackMediaSrc && (
-            <video
-              src={fallbackMediaSrc}
-              muted
-              loop
-              playsInline
-              controls
-              style={{
-                width: "100%",
-                height: "100%",
-                objectFit: "contain",
-                display: "block",
-                background: "#080a0e",
-              }}
-            />
-          )}
           {!project && (
             <div
               style={{
@@ -354,7 +275,7 @@ export function PreviewCanvas({
               Choose a downloaded clip to preview.
             </div>
           )}
-          {activeBroll && !fallbackMediaSrc && (
+          {activeBroll && (
             <div
               title={activeBroll.path}
               style={{
@@ -374,9 +295,7 @@ export function PreviewCanvas({
               ▶ video poster
             </div>
           )}
-          {(previewLoading ||
-            status === "loading" ||
-            fallbackState === "rendering") && (
+          {(previewLoading || status === "loading") && (
             <div
               style={{
                 position: "absolute",
@@ -390,14 +309,12 @@ export function PreviewCanvas({
                 background: "rgba(8,10,14,.78)",
               }}
             >
-              {fallbackState === "rendering" ? "Fallback" : "Loading"}
+              Loading
             </div>
           )}
-          {(previewError ||
-            fallbackError ||
-            (error && fallbackState !== "rendering" && !fallbackMediaSrc)) && (
+          {(previewError || error) && (
             <div
-              title={previewError || fallbackError || error}
+              title={previewError || error}
               style={{
                 position: "absolute",
                 left: 12,
@@ -411,7 +328,7 @@ export function PreviewCanvas({
                 background: "rgba(20,10,14,.86)",
               }}
             >
-              {previewError || fallbackError || error}
+              {previewError || error}
             </div>
           )}
         </div>
@@ -694,9 +611,7 @@ export function PreviewCanvas({
               background: "#0e1116",
             }}
           >
-            <b style={{ color: "#cdd2da" }}>
-              {spec?.overlayPath ? "On" : "Off"}
-            </b>
+            <b style={{ color: "#cdd2da" }}>{spec?.overlay ? "On" : "Off"}</b>
             <br />
             overlay
           </div>

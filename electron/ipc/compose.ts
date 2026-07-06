@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron'
-import { existsSync, mkdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync } from 'node:fs'
 import { spawn } from 'node:child_process'
 import { createHash } from 'node:crypto'
 import { join } from 'node:path'
@@ -19,8 +19,6 @@ import { outputDir } from '../services/queue'
 import { itemDirForProject, itemImagesDir, itemThumbDir, cacheDir, ensureDir, writeProjectManifest, videoIdFromProjectId } from '../services/storage'
 import { buildAss } from '../services/captions'
 import { buildCachedBrollPreviewSegments } from '../services/broll'
-import { cancelRender, consumeCancelIntent, overlayGradientPath, runRender } from '../services/render'
-import { probeRenderCapabilities } from '../services/engine/caps'
 import { buildGpuRenderSpec, gpuDimensions } from '../services/engine/gpu/spec'
 import { ffmpegPath } from '../services/bin'
 
@@ -339,7 +337,6 @@ function previewSpec(projectId: string, draftOverrides?: Partial<Project>): GpuR
     wordsPerPage: draftProject.captionWordsPerPage
   })
   const dims = gpuDimensions(settings.quality, draftProject.captionAspect)
-  const overlayPath = overlayGradientPath(beta.overlay, dims.w, dims.h)
   const dir = cacheDir('preview-specs')
   mkdirSync(dir, { recursive: true })
   const base = `${safeName(draftProject.title)}-${Date.now()}`
@@ -360,7 +357,6 @@ function previewSpec(projectId: string, draftOverrides?: Partial<Project>): GpuR
     words,
     settings,
     zoomHits,
-    overlayPath,
     voicePath: draftProject.mp3Path,
     hookText,
     out: {
@@ -393,142 +389,14 @@ function posterFrame(videoPath: string): Promise<string> {
   })
 }
 
-function previewRenderDimensions(aspect: Project['captionAspect']): { w: number; h: number } {
-  if (aspect === '9:16') return { w: 360, h: 640 }
-  if (aspect === '1:1') return { w: 480, h: 480 }
-  return { w: 640, h: 360 }
-}
-
-function previewStillPath(imagePath: string, dir: string, maxWidth: number): Promise<string> {
-  if (!imagePath || !existsSync(imagePath)) return Promise.resolve(imagePath)
-  let key = ''
-  try {
-    const st = statSync(imagePath)
-    key = createHash('sha1').update(`${imagePath}:${st.size}:${st.mtimeMs}:w${maxWidth}`).digest('hex').slice(0, 24)
-  } catch {
-    key = createHash('sha1').update(`${imagePath}:w${maxWidth}`).digest('hex').slice(0, 24)
-  }
-  const out = join(dir, `preview-still-${key}.jpg`)
-  if (existsSync(out)) return Promise.resolve(out)
-
-  return new Promise((resolve) => {
-    const args = [
-      '-y',
-      '-hide_banner',
-      '-loglevel', 'error',
-      '-i', imagePath,
-      '-frames:v', '1',
-      '-vf', `scale=${maxWidth}:-2:force_original_aspect_ratio=decrease`,
-      '-q:v', '6',
-      out
-    ]
-    const child = spawn(ffmpegPath(), args, { windowsHide: true })
-    child.stderr.resume()
-    child.on('error', () => resolve(imagePath))
-    child.on('close', (code) => {
-      if (code === 0 && existsSync(out)) resolve(out)
-      else resolve(imagePath)
-    })
-  })
-}
-
-async function previewProject(projectId: string): Promise<string> {
-  const repos = getRepos()
-  const project = repos.getProject(projectId)
-  if (!project) throw new Error(`Unknown project: ${projectId}`)
-  validateDownloadedAudio(project.downloadId, project.mp3Path, project.durationSec)
-  // The frontend can re-request a preview for the same project before the previous
-  // one finishes (WebGL fallback effects re-firing, rapid style edits). Both attempts
-  // share jobId `preview-${projectId}`; without this, they pile up as separate ffmpeg
-  // processes and blow past the GPU's concurrent NVENC session limit, producing
-  // "invalid argument" encoder-open failures (see ELECTRON-2). Kill the stale one first.
-  // cancelRender marks a cancel intent for this jobId; nothing ever consumes it for
-  // preview jobs (only the render queue does, per real job), so it would linger and
-  // make the *next* preview's real failures look like intentional cancels — skipping
-  // the GPU retry/wrap and leaking a raw unhandled ffmpeg error (see ELECTRON-5).
-  cancelRender(`preview-${projectId}`, 'cancel')
-  consumeCancelIntent(`preview-${projectId}`)
-
-  const settings = getSettings()
-  // Previews honor the user's chosen encoder (GPU included). The old "preview freeze +
-  // ffmpeg exited null" failures were NOT the GPU's fault — they were the app killing
-  // its own in-flight preview (cancel-stale-then-restart) and then mislabeling that
-  // SIGKILL as a GPU encode failure, retrying it, and reporting it to Sentry. That is
-  // fixed at the source in render.ts (RenderCancelledError: an intentional kill is a
-  // cancellation, never an encode failure), so GPU previews are safe again.
-  const previewSettings = { ...settings, quality: '720p' as const }
-  const caps = probeRenderCapabilities()
-  const previewSec = Math.max(1, Math.min(5, project.durationSec || 5))
-  const dir = cacheDir('previews')
-  mkdirSync(dir, { recursive: true })
-  const base = `${safeName(project.title)}-preview-${Date.now()}`
-  const assPath = join(dir, `${base}.ass`)
-  const outPath = join(dir, `${base}.mp4`)
-  const logPath = join(dir, `${base}.render.log`)
-
-  const beta = projectVideoOpts(project)
-  const words = repos.getTranscript(projectId).filter((w) => w.start < previewSec)
-  const hookText = beta.hook.enabled
-    ? (beta.hook.text.trim() || words.slice(0, 8).map((w) => w.word).join(' '))
-    : ''
-  const style = beta.style
-  const styleLead = styleCaptionLead(style)
-  const plan = beta.effectPlanJson.trim()
-    ? validateEffectPlan(beta.effectPlanJson, previewSec).plan
-    : deriveStylePlan(words, style, previewSec)
-  const { ass } = buildAss(words, {
-    preset: project.captionPreset,
-    font: project.captionFont,
-    animation: project.captionAnim,
-    aspect: project.captionAspect,
-    lines: project.captionLines ?? 1,
-    position: project.captionPosition ?? 'bottom',
-    mode: 'phrase',
-    keywords: project.keywords || beta.autoHighlight,
-    hook: hookText ? { text: hookText, untilSec: Math.min(2.6, previewSec) } : undefined,
-    styleLead,
-    textEffects: plan.textEffects,
-    highlightColor: project.captionHighlightColor,
-    highlightBox: project.captionPreset === 'Submagic'
-      ? { enabled: true, boxColor: project.captionBoxColor ?? '#ffd93d', textColor: project.captionHighlightColor ?? '#111111' }
-      : undefined,
-    wordsPerPage: project.captionWordsPerPage
-  })
-  writeFileSync(assPath, ass)
-
-  const previewDims = previewRenderDimensions(project.captionAspect)
-  const existingImages = repos.getProjectImages(projectId)
-  const previewImagePath = existingImages[0]
-    ? await previewStillPath(existingImages[0].thumb || existingImages[0].path, dir, previewDims.w)
-    : ''
-  const images: ProjectImage[] = existingImages[0]
-    ? [{
-        ...existingImages[0],
-        path: previewImagePath,
-        thumb: previewImagePath,
-        rangeStart: 0,
-        rangeEnd: previewSec
-      }]
-    : []
-  const previewBeta = { ...beta, broll: { ...beta.broll, enabled: false } }
-
-  await runRender({
-    project: { ...project, durationSec: previewSec, kenBurns: false, punchZoom: false, betaOpts: previewBeta },
-    images,
-    assPath,
-    outPath,
-    settings: previewSettings,
-    caps,
-    transition: style !== 'None' ? styleTransition(style) : undefined,
-    plan,
-    jobId: `preview-${projectId}`,
-    logPath,
-    skipAudioMaster: true,
-    previewDimensions: previewDims,
-    cpuPreset: 'ultrafast'
-  })
-  pushActivity({ t: hhmm(), icon: '▶', color: '#8b7cff', text: `Preview rendered: ${project.title.slice(0, 42)}` })
-  return outPath
+// The rendered preview clip (a real ffmpeg/NVENC encode) has been removed. Rapidly
+// (re)spawning it while editing was the source of the preview freezes and the mislabeled
+// "GPU encode failed / ffmpeg exited null" errors. The live WebGL preview (compose:previewSpec
+// → usePreviewCompositor) now renders everything the final video does — gradient included —
+// so it is the single preview. This handler is kept only so the preload/IPC contract stays
+// stable; nothing in the UI calls it anymore.
+async function previewProject(_projectId: string): Promise<string> {
+  throw new Error('Rendered preview clips were removed; the live on-screen preview is authoritative.')
 }
 
 export function registerComposeIpc(): void {

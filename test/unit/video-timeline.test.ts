@@ -1,7 +1,7 @@
 import { describe, expect, it } from 'vitest'
 import type { ProjectImage, TranscriptWord } from '@shared/types'
-import { buildBrollTimeline, buildCaptionGroupTimeline, buildCaptionTimeline, buildVisualTimeline, clampTimelineSec, rangeToPct } from '../../src/features/video-editor/timelineModel'
-import { previewImagesKey } from '../../src/features/video-editor/previewKeys'
+import { buildBrollTimeline, buildCaptionGroupTimeline, buildCaptionTimeline, buildVisualTimeline, clampTimelineSec, rangeToPct } from '../../src/features/compose/timeline/timelineModel'
+import { previewImagesKey } from '../../src/features/compose/preview/previewKeys'
 
 function image(patch: Partial<ProjectImage>): ProjectImage {
   return {
