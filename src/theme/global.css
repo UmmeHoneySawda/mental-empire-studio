@@ -70,6 +70,16 @@ body {
     transform: rotate(360deg);
   }
 }
+/* Indeterminate progress sweep for long operations with no measurable percentage
+   (e.g. a yt-dlp channel scrape). */
+@keyframes meIndeterminate {
+  0% {
+    transform: translateX(-100%);
+  }
+  100% {
+    transform: translateX(350%);
+  }
+}
 
 .me-screen {
   opacity: 1;

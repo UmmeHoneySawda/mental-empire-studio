@@ -9,6 +9,7 @@ import type {
   ProjectImage,
   ProjectImageMotionPatch,
   ScrapeOrder,
+  ScrapeProgress,
   ScrapedVideo,
   RecentUpload,
   TranscriptWord,
@@ -49,6 +50,8 @@ interface DataState {
   fetching: boolean
   sourceError: string
   scraping: boolean
+  /** live phase/message of the in-flight channel scrape (null when idle) */
+  scrapeStatus: ScrapeProgress | null
   dlProgress: Record<string, DownloadProgress>
   activeProject: Project | null
   projectImages: ProjectImage[]
@@ -80,6 +83,7 @@ interface DataState {
   deleteChannel: (id: string) => Promise<void>
   rescrapeAll: () => Promise<void>
   updateGoals: (id: string, patch: { weekGoal?: number; monthGoal?: number; reminder?: string; reminderNote?: string }) => Promise<void>
+  linkChannelSource: (channelId: string, linkedSourceId: string | null) => Promise<void>
   loadSources: () => Promise<void>
   addSource: (url: string) => Promise<SourceChannel | null>
   refreshSource: (id: string) => Promise<void>
@@ -181,6 +185,7 @@ export const useData = create<DataState>((set, get) => ({
   fetching: false,
   sourceError: '',
   scraping: false,
+  scrapeStatus: null,
   dlProgress: {},
   activeProject: null,
   projectImages: [],
@@ -219,6 +224,7 @@ export const useData = create<DataState>((set, get) => ({
     const reloadDownloads = throttle(() => { void get().loadDownloads(); void get().loadWorkItems() }, 400)
     const reloadRenderJobs = throttle(() => { void get().loadRenderJobs(); void get().loadWorkItems() }, 400)
     a.onActivity((row) => set((s) => ({ activity: [row, ...s.activity].slice(0, 30) })))
+    a.onScrapeProgress((p) => set({ scrapeStatus: p.phase === 'done' || p.phase === 'error' ? null : p }))
     a.onDownloadProgress((p) => {
       set((s) => ({ dlProgress: { ...s.dlProgress, [p.downloadId]: p } }))
       if (p.done) void Promise.all([get().loadDownloads(), get().loadWorkItems()])
@@ -292,6 +298,12 @@ export const useData = create<DataState>((set, get) => ({
     const a = api()
     if (!a) return
     const channels = await a.db.updateChannelGoals(id, patch)
+    set({ channels })
+  },
+  linkChannelSource: async (channelId, linkedSourceId) => {
+    const a = api()
+    if (!a) return
+    const channels = await a.db.setChannelSource(channelId, linkedSourceId)
     set({ channels })
   },
 

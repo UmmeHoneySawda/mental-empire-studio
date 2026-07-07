@@ -1,3 +1,4 @@
+import { useState } from 'react'
 import { useStore } from '../store/useStore'
 import { useData } from '../store/useData'
 import { ScreenPad } from '../components/primitives'
@@ -107,6 +108,7 @@ export function Home(): JSX.Element {
   const selected = useStore((s) => s.workspaceChannel)
   const setWorkspaceChannel = useStore((s) => s.setWorkspaceChannel)
   const setActive = useStore((s) => s.setActive)
+  const [openError, setOpenError] = useState('')
 
   const sourceNames = [...new Set(workItems.map((w) => w.channel))].sort((a, b) => a.localeCompare(b))
   const activeItems = workItems.filter((w) => !w.archived && (!selected || w.channel === selected))
@@ -114,9 +116,18 @@ export function Home(): JSX.Element {
   for (const item of activeItems) byColumn[classifyWorkItem(item)].push(item)
 
   const openNext = async (item: WorkItem): Promise<void> => {
-    const step = nextStepFor(item)
-    if (step.openProjectId) await openProject(step.openProjectId)
-    setActive(step.screen)
+    // Was fire-and-forget (`void openNext(...)` at the call sites below): if the underlying
+    // download hadn't actually finished writing its MP3 yet, this threw an unhandled
+    // rejection with no feedback and the screen still switched away. Now it's caught and
+    // shown, and navigation only happens once the project is actually open.
+    setOpenError('')
+    try {
+      const step = nextStepFor(item)
+      if (step.openProjectId) await openProject(step.openProjectId)
+      setActive(step.screen)
+    } catch (e) {
+      setOpenError((e as Error).message || 'Could not open this item yet.')
+    }
   }
 
   const resume = resumeCandidate(activeItems)
@@ -129,6 +140,7 @@ export function Home(): JSX.Element {
 
   return (
     <ScreenPad>
+      {openError && <div style={{ marginBottom: 16, border: '1px solid #5a2530', background: 'rgba(255,90,110,.1)', color: '#ff8a96', borderRadius: 10, padding: '10px 12px', fontSize: 12 }}>{openError}</div>}
       <div style={{ display: 'flex', alignItems: 'flex-end', gap: 16, marginBottom: 20 }}>
         <div>
           <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, letterSpacing: '1px', color: 'var(--accent)', marginBottom: 7 }}>HOME</div>

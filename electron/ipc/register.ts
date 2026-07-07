@@ -84,6 +84,10 @@ export function registerIpc(): void {
     getRepos().updateChannelGoals(reqId(id), patch)
     return getRepos().myChannels()
   })
+  ipcMain.handle('db:setChannelSource', (_e, id: string, linkedSourceId: string | null) => {
+    getRepos().setChannelSource(reqId(id), linkedSourceId ? reqId(linkedSourceId) : null)
+    return getRepos().myChannels()
+  })
   ipcMain.handle('db:deleteMyChannel', (_e, id: string) => {
     getRepos().deleteMyChannel(reqId(id))
     return getRepos().myChannels()

@@ -97,7 +97,7 @@ export function Compose(): JSX.Element {
         {downloads.length > 0 ? (
           <select
             value={project?.downloadId ?? ''}
-            onChange={(e) => { if (e.target.value) void openProject(e.target.value) }}
+            onChange={(e) => { if (e.target.value) void openComposeProject(e.target.value) }}
             style={{ border: '1px solid #23272f', borderRadius: 9, padding: '7px 12px', fontSize: 12, color: '#dde0e5', background: '#0e1116', maxWidth: 280, outline: 'none', cursor: 'pointer' }}
           >
             {!project && <option value="">Choose a downloaded clip...</option>}

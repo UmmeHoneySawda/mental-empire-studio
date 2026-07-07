@@ -148,6 +148,7 @@ export function Download(): JSX.Element {
   const sourceChannels = useData((s) => s.sourceChannels)
   const dlProgress = useData((s) => s.dlProgress)
   const fetching = useData((s) => s.fetching)
+  const scrapeStatus = useData((s) => s.scrapeStatus)
   const sourceError = useData((s) => s.sourceError)
   const addSource = useData((s) => s.addSource)
   const refreshSource = useData((s) => s.refreshSource)
@@ -255,7 +256,32 @@ export function Download(): JSX.Element {
     }
   }
 
+  // Opening a download that's mid-download/mid-resume (its "Downloaded only" stage flag can
+  // race the file actually finishing) rejects with a specific error (e.g. "has no MP3 path
+  // yet"). This used to be unhandled — the button fired-and-forgot into `compose`, so the
+  // rejection surfaced as an uncaught error with no feedback and the user landed on an empty
+  // Compose screen. Now it's caught, shown via the existing `message` row, and navigation
+  // only happens on success.
+  const openForCompose = async (downloadId: string): Promise<void> => {
+    setMessage('')
+    try {
+      await openProject(downloadId)
+      setActive('compose')
+    } catch (e) {
+      setMessage((e as Error).message || 'Could not open this download yet.')
+    }
+  }
+
   const videosLoaded = sourceVideos.length > 0
+  const SCRAPE_PHASE_LABEL: Record<string, string> = {
+    start: 'Fetching channel from YouTube…',
+    stats: 'Saving channel stats…',
+    uploads: 'Saving uploads…',
+    mapping: 'Matching your uploads…'
+  }
+  const scrapePhaseText = fetching
+    ? (scrapeStatus ? (SCRAPE_PHASE_LABEL[scrapeStatus.phase] ?? scrapeStatus.message) : 'Fetching channel from YouTube…')
+    : ''
 
   return (
     <ScreenPad style={{ position: 'relative' }}>
@@ -267,8 +293,21 @@ export function Download(): JSX.Element {
           <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="#5b616f" strokeWidth="2"><path d="M10 13a5 5 0 007 0l2-2a5 5 0 00-7-7l-1 1" /><path d="M14 11a5 5 0 00-7 0l-2 2a5 5 0 007 7l1-1" /></svg>
           <input value={url} onChange={(e) => setUrl(e.target.value)} onKeyDown={(e) => { if (e.key === 'Enter') void fetchVids() }} placeholder="youtube.com/@PowerWithinOfficial" style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', fontSize: 13, color: '#dde0e5', fontFamily: 'var(--font-mono)' }} />
         </div>
-        <button type="button" disabled={!canFetch} onClick={() => void fetchVids()} className="me-btn" style={{ border: 0, background: 'linear-gradient(180deg,var(--accent),var(--accent-deep))', color: 'var(--accent-ink)', fontWeight: 600, fontSize: 13, padding: '0 20px', borderRadius: 11, cursor: canFetch ? 'pointer' : 'not-allowed', boxShadow: '0 4px 16px -4px var(--accent-glow)', opacity: canFetch ? 1 : 0.5 }}>{fetching ? 'Saving…' : '+ Add source'}</button>
+        <button type="button" disabled={!canFetch} onClick={() => void fetchVids()} className="me-btn" style={{ border: 0, background: 'linear-gradient(180deg,var(--accent),var(--accent-deep))', color: 'var(--accent-ink)', fontWeight: 600, fontSize: 13, padding: '0 20px', borderRadius: 11, cursor: canFetch ? 'pointer' : 'not-allowed', boxShadow: '0 4px 16px -4px var(--accent-glow)', opacity: canFetch ? 1 : 0.5 }}>{fetching ? 'Adding…' : '+ Add source'}</button>
       </div>
+      {/* Live scrape progress — replaces the old dead "Saving…" button state with a phase
+          label + indeterminate bar so it's clear what's happening during the long fetch. */}
+      {fetching && (
+        <div style={{ marginBottom: 12, border: '1px solid #23272f', background: '#12151b', borderRadius: 10, padding: '10px 12px' }}>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 12, color: '#c4cad3', marginBottom: 8 }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.5" style={{ animation: 'meSpin 1s linear infinite', flex: 'none' }}><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" /></svg>
+            <span className="me-ellipsis">{scrapeStatus?.channelName && scrapeStatus.channelName !== scrapeStatus.channelId ? `${scrapeStatus.channelName} · ` : ''}{scrapePhaseText}</span>
+          </div>
+          <div style={{ height: 5, borderRadius: 4, background: '#1a1e26', overflow: 'hidden' }}>
+            <div style={{ width: '40%', height: '100%', borderRadius: 4, background: 'linear-gradient(90deg,var(--accent),var(--accent-deep))', animation: 'meIndeterminate 1.2s ease-in-out infinite' }} />
+          </div>
+        </div>
+      )}
       {sourceError && <div title={sourceError} className="me-clamp-2" style={{ marginBottom: 12, border: '1px solid #4a2530', background: 'rgba(255,90,110,.08)', color: '#ff8a96', borderRadius: 10, padding: '9px 12px', fontSize: 12, lineHeight: 1.4 }}>{sourceError}</div>}
 
       {!activeSource && (
@@ -447,7 +486,7 @@ export function Download(): JSX.Element {
                   <div style={{ width: 140 }}><div style={{ height: 5, borderRadius: 4, background: '#1a1e26', overflow: 'hidden' }}><div style={{ width: pct, height: '100%', background: barColor }} /></div></div>
                   <div style={{ width: 130, display: 'flex', justifyContent: 'flex-end', gap: 5 }}>
                     {done && (
-                      <span onClick={() => { void openProject(d.id); setActive('compose') }} className="me-btn" style={{ display: 'inline-block', border: '1px solid var(--accent)', background: 'var(--accent-soft)', borderRadius: 7, padding: '5px 10px', fontSize: 10.5, color: 'var(--accent)', cursor: 'pointer', fontWeight: 600 }}>→ Compose</span>
+                      <span onClick={() => void openForCompose(d.id)} className="me-btn" style={{ display: 'inline-block', border: '1px solid var(--accent)', background: 'var(--accent-soft)', borderRadius: 7, padding: '5px 10px', fontSize: 10.5, color: 'var(--accent)', cursor: 'pointer', fontWeight: 600 }}>→ Compose</span>
                     )}
                     {currentStage === 'Downloading' && <span onClick={() => void cancelDownload(d.id)} className="me-btn" style={{ display: 'inline-block', border: '1px solid #4a3540', background: '#1b1217', borderRadius: 7, padding: '5px 10px', fontSize: 10.5, color: '#ff8a96', cursor: 'pointer' }}>Cancel</span>}
                     {currentStage !== 'Downloading' && currentStage !== 'Downloaded only' && <span onClick={() => void resumeDownload(d.id)} className="me-btn" style={{ display: 'inline-block', border: '1px solid #262b34', background: '#15181f', borderRadius: 7, padding: '5px 10px', fontSize: 10.5, color: '#dde0e5', cursor: 'pointer' }}>Resume</span>}

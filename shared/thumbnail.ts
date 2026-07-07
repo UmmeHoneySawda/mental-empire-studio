@@ -108,8 +108,11 @@ function normalizeTextLines(raw: Record<string, unknown>, fallbackText: string):
         return { text: text(row.text, ''), size: clamp(finite(row.size, 72), 8, 260) }
       })
     : []
-  const clean = fromLines.filter((line) => line.text !== '' || fromLines.length === 1)
-  if (clean.length) return clean
+  // Keep blank lines when a `lines` array is present: normalizeThumbnailLayer runs on every
+  // keystroke, and the old filter stripped the trailing empty line the instant the user
+  // pressed Enter — so Enter appeared to do nothing and multiline was only reachable by
+  // pasting. We only fall back to splitting `text` when there is no lines array at all.
+  if (fromLines.length) return fromLines
   const rawText = text(raw.text, fallbackText)
   const rows = rawText.split(/\r?\n/).filter((row) => row.trim() !== '')
   return (rows.length ? rows : [rawText || fallbackText]).map((line) => ({ text: line, size: 72 }))

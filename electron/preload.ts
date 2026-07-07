@@ -77,6 +77,7 @@ const api: NativeApi = {
     saveTemplate: (t: ThumbnailTemplate) => ipcRenderer.invoke('db:saveTemplate', t),
     recentUploads: (limit?: number) => ipcRenderer.invoke('db:recentUploads', limit),
     updateChannelGoals: (id: string, patch: GoalsPatch) => ipcRenderer.invoke('db:updateChannelGoals', id, patch),
+    setChannelSource: (id: string, linkedSourceId: string | null) => ipcRenderer.invoke('db:setChannelSource', id, linkedSourceId),
     deleteMyChannel: (id: string) => ipcRenderer.invoke('db:deleteMyChannel', id),
     workItems: () => ipcRenderer.invoke('db:workItems')
   },

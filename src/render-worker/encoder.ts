@@ -47,6 +47,16 @@ function waitForDrain(encoder: VideoEncoder): Promise<void> {
   })
 }
 
+// Keep the host's no-progress watchdog alive across long awaits (the first B-roll clip's
+// demux/decode can take several seconds before any frame is composited). Any progress
+// message resets the watchdog, so we emit one immediately and on an interval until `work`
+// settles. Without this, a legitimately-slow-but-working b-roll prep is misread as a hang.
+function heartbeatWhile<T>(work: Promise<T>, beat: () => void, intervalMs = 5000): Promise<T> {
+  beat()
+  const timer = setInterval(beat, intervalMs)
+  return work.finally(() => clearInterval(timer))
+}
+
 export interface EncodeCallbacks {
   onProgress: (framesDone: number, totalFrames: number) => void
 }
@@ -113,12 +123,12 @@ export async function encodeSpec(
       if (!decoders[idx]) {
         console.log(`[encoder] playhead t=${t.toFixed(2)}s: lazy-initializing active segment ${idx} path=${segA.path}`)
         const buffer = window.gpuWorker!.readFile(segA.path)
-        const dec = new SegmentDecoder(buffer)
-        await dec.init()
+        const dec = new SegmentDecoder(buffer, segA.path)
+        await heartbeatWhile(dec.init(), () => cb.onProgress(f, frames))
         decoders[idx] = dec
         console.log(`[encoder] playhead t=${t.toFixed(2)}s: active segment ${idx} initialized (found ${dec.getSamplesCount()} samples)`)
       }
-      await decoders[idx]!.decodeUntil(t - segA.startSec)
+      await heartbeatWhile(decoders[idx]!.decodeUntil(t - segA.startSec), () => cb.onProgress(f, frames))
 
       // 2. On-demand initialization and decoding of segB (if in crossfade range)
       if (nextIdx !== idx && t >= segA.endSec - 0.4) {
@@ -126,12 +136,12 @@ export async function encodeSpec(
           const segB = spec.broll![nextIdx]
           console.log(`[encoder] playhead t=${t.toFixed(2)}s: lazy-initializing crossfade segment ${nextIdx} path=${segB.path}`)
           const buffer = window.gpuWorker!.readFile(segB.path)
-          const dec = new SegmentDecoder(buffer)
-          await dec.init()
+          const dec = new SegmentDecoder(buffer, segB.path)
+          await heartbeatWhile(dec.init(), () => cb.onProgress(f, frames))
           decoders[nextIdx] = dec
           console.log(`[encoder] playhead t=${t.toFixed(2)}s: crossfade segment ${nextIdx} initialized (found ${dec.getSamplesCount()} samples)`)
         }
-        await decoders[nextIdx]!.decodeUntil(t - spec.broll![nextIdx].startSec)
+        await heartbeatWhile(decoders[nextIdx]!.decodeUntil(t - spec.broll![nextIdx].startSec), () => cb.onProgress(f, frames))
       }
 
       // 3. Close any decoders that are no longer needed (indices < idx)

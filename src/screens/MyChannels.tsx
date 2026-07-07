@@ -1,12 +1,17 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import { ScreenPad, Eyebrow, Title } from '../components/primitives'
 import { useData } from '../store/useData'
 
 export function MyChannels(): JSX.Element {
   const channels = useData((s) => s.channels)
+  const sourceChannels = useData((s) => s.sourceChannels)
+  const loadSources = useData((s) => s.loadSources)
+  const linkChannelSource = useData((s) => s.linkChannelSource)
   const addChannel = useData((s) => s.addChannel)
   const deleteChannel = useData((s) => s.deleteChannel)
   const updateGoals = useData((s) => s.updateGoals)
+
+  useEffect(() => { void loadSources() }, [loadSources])
   const [url, setUrl] = useState('')
   const [connecting, setConnecting] = useState(false)
   const [connectError, setConnectError] = useState('')
@@ -124,10 +129,21 @@ export function MyChannels(): JSX.Element {
                     <div style={{ width: `${Math.min(100, Math.round((c.monthDone / Math.max(1, c.monthGoal)) * 100))}%`, height: '100%', background: '#3a4150' }} />
                   </div>
                 </div>
-                {/* Source map */}
-                <div style={{ display: 'inline-flex', alignItems: 'center', gap: 6, border: '1px solid #23272f', borderRadius: 7, padding: '3px 8px', background: '#0e1116', maxWidth: '100%' }}>
+                {/* Source link picker — choose which source channel's downloads map to this
+                    channel's uploads. Was previously a static "no source linked" label. */}
+                <div style={{ display: 'flex', alignItems: 'center', gap: 6, border: '1px solid #23272f', borderRadius: 7, padding: '3px 8px', background: '#0e1116', maxWidth: '100%' }}>
                   <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="#6a7180" strokeWidth="2" style={{ flex: 'none' }}><path d="M7 7h10l-3-3M17 17H7l3 3" /></svg>
-                  <span title={c.source} className="me-ellipsis" style={{ fontSize: 10, color: '#8a909c', fontFamily: 'var(--font-mono)', flex: 1 }}>{c.source || 'no source linked'}</span>
+                  <select
+                    value={c.linkedSourceId ?? ''}
+                    onChange={(e) => void linkChannelSource(c.id, e.target.value || null)}
+                    title="Link a source channel to track which of its downloads you've uploaded here"
+                    style={{ flex: 1, minWidth: 0, border: 'none', outline: 'none', background: 'transparent', color: c.linkedSourceId ? '#c4cad3' : '#6a7180', fontSize: 10.5, fontFamily: 'var(--font-mono)', cursor: 'pointer' }}
+                  >
+                    <option value="">no source linked</option>
+                    {sourceChannels.map((s) => (
+                      <option key={s.id} value={s.id}>{s.handle || s.name || s.url}</option>
+                    ))}
+                  </select>
                   <span style={{ fontSize: 10, color: mapColor, fontWeight: 600, flex: 'none' }}>{c.mapDone}/{c.mapTotal}</span>
                 </div>
               </div>

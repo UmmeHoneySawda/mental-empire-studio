@@ -396,6 +396,8 @@ export interface Repositories {
   setChannelGoalProgress(id: string, weekDone: number, monthDone: number): void
   markDownloadMatches(matches: Array<{ downloadId: string; uploadId: string }>): void
   updateChannelGoals(id: string, patch: GoalsPatch): void
+  /** Link/unlink a source channel to an owned channel (null clears the link). */
+  setChannelSource(id: string, linkedSourceId: string | null): void
   /** Remove an owned channel and its scraped uploads. */
   deleteMyChannel(id: string): void
   // ---- M4 download + compose writes ----
@@ -808,6 +810,13 @@ function buildRepositories(d: Database.Database): Repositories {
         }
       }
       if (sets.length) d.prepare(`UPDATE my_channels SET ${sets.join(', ')} WHERE id=@id`).run(params)
+    },
+    setChannelSource: (id, linkedSourceId) => {
+      // Store both the FK and the source handle (shown on the card). Clearing resets the
+      // mapping counters; a subsequent scrape/refresh recomputes matches for the new link.
+      const src = linkedSourceId ? (d.prepare('SELECT handle FROM source_channels WHERE id=?').get(linkedSourceId) as { handle?: string } | undefined) : undefined
+      d.prepare('UPDATE my_channels SET linkedSourceId=?, source=?, mapDone=0, mapTotal=0 WHERE id=?')
+        .run(linkedSourceId ?? null, src?.handle ?? '', id)
     },
     deleteMyChannel: (id) => {
       const tx = d.transaction(() => {

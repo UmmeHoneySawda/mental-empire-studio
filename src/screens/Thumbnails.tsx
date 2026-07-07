@@ -348,7 +348,6 @@ function SelectionToolbar(): JSX.Element | null {
   const layers = useStore((s) => s.layers)
   const selectedLayerIds = useStore((s) => s.selectedLayerIds)
   const updateLayers = useStore((s) => s.updateLayers)
-  const updateGeometries = useStore((s) => s.updateGeometries)
   const duplicateLayer = useStore((s) => s.duplicateLayer)
   const deleteLayer = useStore((s) => s.deleteLayer)
   const thumbEditorV2 = useStore((s) => s.settings.features.thumbEditorV2)
@@ -405,18 +404,14 @@ function SelectionToolbar(): JSX.Element | null {
     }))
   }
 
-  const moveGroup = (dx: number, dy: number): void => {
-    if (dx === 0 && dy === 0) return
-    updateGeometries(selected.map((layer) => ({ id: layer.id, frame: { x: layer.frame.x + dx, y: layer.frame.y + dy } })))
-  }
-
-  const alignGroup = (kind: 'left' | 'center' | 'right' | 'top' | 'middle' | 'bottom'): void => {
-    if (kind === 'left') moveGroup(-bounds.x, 0)
-    else if (kind === 'center') moveGroup((THUMB_W - bounds.width) / 2 - bounds.x, 0)
-    else if (kind === 'right') moveGroup(THUMB_W - (bounds.x + bounds.width), 0)
-    else if (kind === 'top') moveGroup(0, -bounds.y)
-    else if (kind === 'middle') moveGroup(0, (THUMB_H - bounds.height) / 2 - bounds.y)
-    else moveGroup(0, THUMB_H - (bounds.y + bounds.height))
+  // Text alignment (left/center/right within the text block). Replaces the old layer-
+  // position anchor buttons (L/C/R/T/M/B) — layers are positioned by dragging them with
+  // the mouse now, and this controls how the wrapped headline lines align to each other.
+  const currentAlign: TextLayer['align'] | undefined = hasText
+    ? (selectedText.every((l) => (l.align ?? 'left') === (selectedText[0].align ?? 'left')) ? (selectedText[0].align ?? 'left') : undefined)
+    : undefined
+  const setTextAlign = (align: TextLayer['align']): void => {
+    updateLayers(selectedText.map((layer) => ({ id: layer.id, patch: { align } as Partial<TextLayer> })))
   }
 
   const firstSelectedId = selected[0]?.id
@@ -463,13 +458,14 @@ function SelectionToolbar(): JSX.Element | null {
           ))}
         </div>
       )}
-      <div style={{ width: 1, alignSelf: 'stretch', background: '#262b34', flex: 'none' }} />
-      <ToolbarButton title="Align left" onClick={() => alignGroup('left')}>L</ToolbarButton>
-      <ToolbarButton title="Align center" onClick={() => alignGroup('center')}>C</ToolbarButton>
-      <ToolbarButton title="Align right" onClick={() => alignGroup('right')}>R</ToolbarButton>
-      <ToolbarButton title="Align top" onClick={() => alignGroup('top')}>T</ToolbarButton>
-      <ToolbarButton title="Align middle" onClick={() => alignGroup('middle')}>M</ToolbarButton>
-      <ToolbarButton title="Align bottom" onClick={() => alignGroup('bottom')}>B</ToolbarButton>
+      {hasText && (
+        <>
+          <div style={{ width: 1, alignSelf: 'stretch', background: '#262b34', flex: 'none' }} />
+          <ToolbarButton title="Align text left" active={currentAlign === 'left'} onClick={() => setTextAlign('left')}>L</ToolbarButton>
+          <ToolbarButton title="Align text center" active={currentAlign === 'center'} onClick={() => setTextAlign('center')}>C</ToolbarButton>
+          <ToolbarButton title="Align text right" active={currentAlign === 'right'} onClick={() => setTextAlign('right')}>R</ToolbarButton>
+        </>
+      )}
       {firstSelectedId && (
         <>
           <div style={{ width: 1, alignSelf: 'stretch', background: '#262b34', flex: 'none' }} />

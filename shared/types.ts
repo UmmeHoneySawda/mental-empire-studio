@@ -690,6 +690,9 @@ export interface RenderQueueRow {
   missing: string[]
   projectDurationSec: number
   firstImagePath?: string
+  /** True when the project renders from an auto-B-roll clip pool instead of still images.
+   *  The queue checklist uses this so 0 still-images isn't flagged as an error. */
+  broll?: boolean
 }
 
 
@@ -880,6 +883,9 @@ export interface NativeApi {
     saveTemplate(template: ThumbnailTemplate): Promise<ThumbnailTemplate[]>
     recentUploads(limit?: number): Promise<RecentUpload[]>
     updateChannelGoals(id: string, patch: GoalsPatch): Promise<MyChannel[]>
+    /** link (or unlink, with null) a source channel to this owned channel so uploads can be
+     *  matched against its downloaded videos */
+    setChannelSource(id: string, linkedSourceId: string | null): Promise<MyChannel[]>
     /** remove an owned channel (and its scraped uploads) */
     deleteMyChannel(id: string): Promise<MyChannel[]>
     /** per-video pipeline read model (computed stages + persisted upload/archive state) */

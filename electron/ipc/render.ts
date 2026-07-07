@@ -2,6 +2,7 @@ import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
 import type { RenderQueueRow } from '../../shared/types'
+import { projectVideoOpts } from '../../shared/types'
 import { getRepos } from '../db'
 import { runAll, outputDir } from '../services/queue'
 import { cancelRender, markCancelIntent } from '../services/render'
@@ -24,6 +25,7 @@ function jobsView(): RenderQueueRow[] {
       existsSync(join(thumbsDir, `${safeName(project.title)}.png`))
     )
     const hasMp3 = !!project?.mp3Path && existsSync(project.mp3Path)
+    const broll = projectVideoOpts(project).broll.enabled
     // Only the audio actually blocks a render (the graph falls back to a solid
     // background with no images, and captions/thumbnail are optional). hasThumb /
     // hasCaptions / images are still surfaced as advisory checklist columns.
@@ -39,7 +41,8 @@ function jobsView(): RenderQueueRow[] {
       isReady: missing.length === 0,
       missing,
       projectDurationSec: project?.durationSec ?? 0,
-      firstImagePath: images[0]?.path
+      firstImagePath: images[0]?.path,
+      broll
     }
   })
 }

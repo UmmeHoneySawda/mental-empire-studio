@@ -284,7 +284,13 @@ export function ThumbCanvas(): JSX.Element {
         node.on('mousedown tap', (e) => {
           e.cancelBubble = true
           const evt = e.evt as MouseEvent | KeyboardEvent
-          selectLayer(id, !!(evt.shiftKey || evt.ctrlKey || evt.metaKey))
+          const additive = !!(evt.shiftKey || evt.ctrlKey || evt.metaKey)
+          // Re-selecting churns the selection state, and this effect rebuilds the whole
+          // scene on any selection change — which destroys the node under the cursor before
+          // the drag begins, so dragging never takes. Skip the no-op select for an already
+          // sole-selected layer so you can grab and drag it in one motion.
+          if (!additive && selectedLayerIds.length === 1 && selectedLayerIds[0] === id) return
+          selectLayer(id, additive)
         })
         if (layer.kind === 'text') {
           node.on('dblclick dbltap', () => {

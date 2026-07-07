@@ -41,19 +41,30 @@ function StageStepper({ p }: { p?: RenderProgress }): JSX.Element {
 }
 
 function AssetChips({ r }: { r: RenderQueueRow }): JSX.Element {
+  // In auto-B-roll mode there are intentionally no still images, so surface a B-roll chip
+  // instead of flagging "0 img" as an error. The thumbnail is advisory (not required to
+  // render), so it's shown neutrally rather than as a failure when absent.
   const chips = [
     { label: 'MP3', ok: r.hasMp3 },
-    { label: `${r.images} img`, ok: r.images > 0 },
-    { label: 'Thumb', ok: r.hasThumb },
+    r.broll
+      ? { label: 'B-roll', ok: true }
+      : { label: `${r.images} img`, ok: r.images > 0 },
+    { label: 'Thumb', ok: r.hasThumb, neutral: !r.hasThumb },
     { label: 'Captions', ok: r.hasCaptions }
   ]
   return (
     <div style={{ display: 'flex', gap: 5, flexWrap: 'wrap', marginTop: 6 }}>
-      {chips.map((c) => (
-        <span key={c.label} style={{ fontSize: 10, fontFamily: 'var(--font-mono)', border: `1px solid ${c.ok ? '#1e2f28' : '#3a2025'}`, color: c.ok ? '#4fd6a0' : '#ff8a96', background: c.ok ? 'rgba(54,201,142,.08)' : 'rgba(255,90,110,.08)', borderRadius: 5, padding: '2px 7px' }}>
-          {c.ok ? '✓' : '✗'} {c.label}
-        </span>
-      ))}
+      {chips.map((c) => {
+        const neutral = 'neutral' in c && c.neutral && !c.ok
+        const border = c.ok ? '#1e2f28' : neutral ? '#2a3040' : '#3a2025'
+        const color = c.ok ? '#4fd6a0' : neutral ? '#8b93a7' : '#ff8a96'
+        const bg = c.ok ? 'rgba(54,201,142,.08)' : neutral ? 'rgba(139,147,167,.08)' : 'rgba(255,90,110,.08)'
+        return (
+          <span key={c.label} style={{ fontSize: 10, fontFamily: 'var(--font-mono)', border: `1px solid ${border}`, color, background: bg, borderRadius: 5, padding: '2px 7px' }}>
+            {c.ok ? '✓' : neutral ? '·' : '✗'} {c.label}
+          </span>
+        )
+      })}
     </div>
   )
 }

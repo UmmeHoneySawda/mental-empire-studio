@@ -56,16 +56,28 @@ export class CaptionLayer {
     }
   }
 
-  /** Split a group's words into the requested number of lines. */
-  private toLines(group: CaptionGroupModel): string[][] {
-    const words = group.words.map((w) => w.text.toUpperCase())
-    if (this.model.wordsPerPage && words.length <= this.model.wordsPerPage) return [words]
-    const lines = this.model.lines
-    if (lines <= 1 || words.length <= 2) return [words]
-    const perLine = Math.ceil(words.length / lines)
-    const out: string[][] = []
-    for (let i = 0; i < words.length; i += perLine) out.push(words.slice(i, i + perLine))
-    return out
+  /** Greedily wrap words into lines so no line exceeds maxWidth — keeps captions inside the
+   *  frame regardless of phrase length (the old count-based split could overflow horizontally
+   *  and push text off-screen). Word order is preserved so the flat active-word index still
+   *  maps to group.words. `ctx.font` must already be set. */
+  private wrapByWidth(words: string[], maxWidth: number, spaceW: number): string[][] {
+    const lines: string[][] = []
+    let cur: string[] = []
+    let curW = 0
+    for (const word of words) {
+      const w = this.ctx.measureText(word).width
+      const add = cur.length ? spaceW + w : w
+      if (cur.length && curW + add > maxWidth) {
+        lines.push(cur)
+        cur = [word]
+        curW = w
+      } else {
+        cur.push(word)
+        curW += add
+      }
+    }
+    if (cur.length) lines.push(cur)
+    return lines.length ? lines : [words]
   }
 
   /**
@@ -142,16 +154,30 @@ export class CaptionLayer {
 
   private drawGroup(group: CaptionGroupModel, activeWordIdx: number): void {
     const ctx = this.ctx
-    const size = this.fontSizePx()
-    const lineH = size * 1.12
+    // Emphasis "pop": the active word is drawn slightly larger. Layout reserves this scaled
+    // width so the enlarged (yellow) word never overlaps its neighbours — the old code only
+    // reserved the unscaled width, which is why highlighted words collided.
+    const ACTIVE_SCALE = 1.1
+    let size = this.fontSizePx()
     ctx.save()
     ctx.font = `700 ${size}px ${withFont(this.model.font)}`
     ctx.textAlign = 'center'
     ctx.textBaseline = 'middle'
     ctx.lineJoin = 'round'
-    ctx.lineWidth = size * 0.12
+    ctx.miterLimit = 2
 
-    const lines = this.toLines(group)
+    const words = group.words.map((w) => w.text.toUpperCase())
+    // Keep captions inside a title-safe width. If a single word is still too wide (long
+    // compound word on a narrow 9:16 frame), shrink the font so it fits rather than clip.
+    const safeMaxW = this.width * 0.9
+    const widestWord = words.reduce((m, w) => Math.max(m, ctx.measureText(w).width), 0)
+    if (widestWord > safeMaxW && widestWord > 0) {
+      size = Math.max(28, Math.floor((size * safeMaxW) / (widestWord * ACTIVE_SCALE)))
+      ctx.font = `700 ${size}px ${withFont(this.model.font)}`
+    }
+    const lineH = size * 1.16
+    const spaceW = ctx.measureText(' ').width
+    const lines = this.wrapByWidth(words, safeMaxW, spaceW)
     const totalH = lines.length * lineH
     const startY = this.anchorY() - totalH / 2 + lineH / 2
     const cx = this.width / 2
@@ -160,17 +186,18 @@ export class CaptionLayer {
     let flat = 0
     lines.forEach((line, li) => {
       const y = startY + li * lineH
-      // measure full line width to position words left-to-right around centre
-      const spaceW = ctx.measureText(' ').width
       const widths = line.map((w) => ctx.measureText(w).width)
-      const lineW = widths.reduce((a, b) => a + b, 0) + spaceW * (line.length - 1)
+      // Reserve the *scaled* width for the active word so nothing overlaps it.
+      const effWidths = line.map((w, wi) => widths[wi] * (flat + wi === activeWordIdx ? ACTIVE_SCALE : 1))
+      const lineW = effWidths.reduce((a, b) => a + b, 0) + spaceW * (line.length - 1)
       let x = cx - lineW / 2
       line.forEach((word, wi) => {
-        const isActive = flat === activeWordIdx
-        const wordModel = group.words[flat]
+        const globalIdx = flat + wi
+        const isActive = globalIdx === activeWordIdx
+        const wordModel = group.words[globalIdx]
         const emphasized = !!wordModel?.emphasis
-        const wx = x + widths[wi] / 2
-        const scale = isActive ? 1.12 : 1
+        const wx = x + effWidths[wi] / 2
+        const scale = isActive ? ACTIVE_SCALE : 1
         const box = this.model.highlightBox
         const boxed = isActive && !!box?.enabled
         ctx.save()
@@ -184,15 +211,27 @@ export class CaptionLayer {
           ctx.fillStyle = box?.boxColor ?? this.model.highlightColor
           ctx.fill()
         }
-        ctx.lineWidth = boxed ? Math.max(1.5, size * 0.035) : size * 0.12
-        ctx.strokeStyle = boxed ? 'rgba(0,0,0,0.25)' : 'rgba(0,0,0,0.9)'
-        ctx.fillStyle = boxed ? (box?.textColor ?? '#111111') : isActive || emphasized ? this.model.highlightColor : '#ffffff'
+        // Cleaner, more professional finish: a crisp outline plus a soft drop shadow for
+        // separation from the footage (instead of a single flat heavy stroke).
+        if (!boxed) {
+          ctx.shadowColor = 'rgba(0,0,0,0.55)'
+          ctx.shadowBlur = size * 0.10
+          ctx.shadowOffsetX = 0
+          ctx.shadowOffsetY = Math.round(size * 0.04)
+        }
+        ctx.lineWidth = boxed ? Math.max(1.5, size * 0.03) : size * 0.11
+        ctx.strokeStyle = boxed ? 'rgba(0,0,0,0.25)' : 'rgba(0,0,0,0.92)'
         ctx.strokeText(word, 0, 0)
+        // Turn the shadow off for the fill so glyph interiors stay crisp.
+        ctx.shadowColor = 'transparent'
+        ctx.shadowBlur = 0
+        ctx.shadowOffsetY = 0
+        ctx.fillStyle = boxed ? (box?.textColor ?? '#111111') : isActive || emphasized ? this.model.highlightColor : '#ffffff'
         ctx.fillText(word, 0, 0)
         ctx.restore()
-        x += widths[wi] + spaceW
-        flat++
+        x += effWidths[wi] + spaceW
       })
+      flat += line.length
     })
     ctx.restore()
   }

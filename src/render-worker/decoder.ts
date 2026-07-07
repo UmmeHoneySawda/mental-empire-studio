@@ -6,6 +6,18 @@ import { MP4Demuxer } from './demuxer'
 // the nearest decoded frame, while immediately closing and disposing of past frames to
 // prevent GPU memory leaks.
 
+// Upper bound on demux + decoder configuration. mp4box can hang on an unexpected container;
+// without this the host's 60s no-progress watchdog would fire with a generic message.
+const INIT_TIMEOUT_MS = 20_000
+
+function withTimeout<T>(work: Promise<T>, ms: number, what: string): Promise<T> {
+  let timer: ReturnType<typeof setTimeout>
+  const guard = new Promise<never>((_, reject) => {
+    timer = setTimeout(() => reject(new Error(`${what} timed out after ${Math.round(ms / 1000)}s`)), ms)
+  })
+  return Promise.race([work, guard]).finally(() => clearTimeout(timer)) as Promise<T>
+}
+
 export class SegmentDecoder {
   private decoder!: VideoDecoder
   private demuxer: MP4Demuxer
@@ -15,11 +27,19 @@ export class SegmentDecoder {
   private flushed = false
   private decodeError: Error | null = null
 
-  constructor(buffer: ArrayBuffer) {
+  constructor(buffer: ArrayBuffer, private label = 'b-roll clip') {
     this.demuxer = new MP4Demuxer(buffer)
   }
 
   async init(): Promise<void> {
+    // Bound demux + sample extraction: mp4box can silently never fire onReady/onSamples
+    // for an unexpected container, which would otherwise hang the whole encode loop until
+    // the host's 60s no-progress watchdog kills it with a useless generic error. Surface a
+    // specific, actionable failure instead.
+    await withTimeout(this.demuxAndConfigure(), INIT_TIMEOUT_MS, `${this.label}: demux/decoder init`)
+  }
+
+  private async demuxAndConfigure(): Promise<void> {
     const meta = await this.demuxer.parse()
     this.decoder = new VideoDecoder({
       output: (frame) => {
@@ -36,7 +56,11 @@ export class SegmentDecoder {
       codedWidth: meta.width,
       codedHeight: meta.height,
       description: meta.description,
-      hardwareAcceleration: 'prefer-hardware'
+      // Software decode on purpose: the encode already holds a hardware NVENC session, and
+      // running NVDEC concurrently on consumer GPUs (e.g. GTX 1660 Ti) can silently stall
+      // (no frame output, no error). B-roll clips are short, so software H.264 decode is
+      // cheap and reliable. The output is still composited on the GPU and encoded on NVENC.
+      hardwareAcceleration: 'prefer-software'
     })
 
     // Extract samples metadata at init time

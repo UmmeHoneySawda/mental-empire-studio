@@ -35,7 +35,13 @@ export function CaptionTranscriptEditor(): JSX.Element {
         <button type="button" disabled={transcribing || transcript.length === 0} title="Mark meaningful words (≥4 chars, non-stop-words) for karaoke emphasis" onClick={() => {
           const stopWords = new Set(['that', 'this', 'with', 'from', 'they', 'have', 'were', 'been', 'will', 'your', 'when', 'then', 'than', 'what', 'also', 'just', 'like', 'more', 'some', 'into', 'their', 'there', 'about', 'which', 'would', 'could', 'should', 'these', 'those', 'being', 'after', 'over'])
           const candidates = transcript.filter((w) => w.word.length >= 4 && !stopWords.has(w.word.toLowerCase().replace(/[^a-z]/g, '')))
-          const toMark = candidates.filter((_, i) => i % 3 === 0).slice(0, 30)
+          // Spread emphasis evenly across the ENTIRE transcript (previously a slice(0,30)
+          // cap only ever marked ~10 words at the very start). Aim for ~1 highlight per 10
+          // transcript words, sampled at a stride over the candidate list so coverage runs
+          // start→end regardless of length.
+          const target = Math.max(1, Math.round(transcript.length / 10))
+          const stride = Math.max(1, Math.round(candidates.length / target))
+          const toMark = candidates.filter((_, i) => i % stride === 0)
           void setWordsEmphasis(toMark.filter((w) => !w.emphasis).map((w) => w.id), true)
         }} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 8, padding: '5px 10px', fontSize: 10.5, color: '#c4cad3', cursor: transcript.length === 0 ? 'not-allowed' : 'pointer', opacity: transcript.length === 0 ? 0.45 : 1 }}>Auto-detect emphasis</button>
         <button type="button" disabled={transcribing} onClick={() => void runTranscribe()} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 8, padding: '5px 10px', fontSize: 10.5, color: '#c4cad3', cursor: transcribing ? 'not-allowed' : 'pointer', opacity: transcribing ? 0.55 : 1 }}>{transcribing ? 'Transcribing…' : 'Re-transcribe ↻'}</button>

@@ -211,27 +211,39 @@ function drawText(l: TextLayer): Konva.Group {
   const hl = l.highlight ?? { ...DEFAULT_TEXT_HIGHLIGHT, enabled: l.highlightSquare, boxColor: l.highlightColor }
   const sizes = l.lines.map((ln) => ln.size)
   const maxSize = sizes.length ? Math.max(...sizes) : 72
-  // Uniform line box: advance every line by the SAME height and vertically center
-  // each line inside it. A pixel gap lets mixed-size lines stay visually even.
-  const lineBox = typeof l.lineGap === 'number'
-    ? maxSize + Math.max(0, l.lineGap)
-    : maxSize * (l.lineHeight && l.lineHeight > 0 ? l.lineHeight : 1.12)
-  let cy = 0
-  for (const line of l.lines) {
+  const baseLh = l.lineHeight && l.lineHeight > 0 ? l.lineHeight : 1.12
+  // Constant gap between consecutive lines, independent of each line's font size. Lines are
+  // top-stacked and advanced by (own size + gap), so the visual space between any two lines
+  // is identical even when per-line sizes differ (e.g. 102/86/137). Centering each line in a
+  // uniform box (the old model) made the gap depend on the average of the two line sizes,
+  // which is why line 1→2 looked larger than 2→3. gap = literal px when lineGap is set, else
+  // derived from the line-height multiplier.
+  const lineGapPx = typeof l.lineGap === 'number' ? Math.max(0, l.lineGap) : maxSize * (baseLh - 1)
+  const align = l.align ?? 'left'
+  const wordSpacing = (fontSize: number): number => fontSize * 0.28
+  // Pre-measure each line so we can left/center/right align it within the text block
+  // (block width = the widest line). Also fixes the "always left" bug.
+  const measured = l.lines.map((line) => {
     const text = caps ? line.text.toUpperCase() : line.text
-    const fontSize = line.size
-    // center this line's glyphs within the uniform line box
-    const lineY = cy + (lineBox - fontSize) / 2
-    let cx = 0
-    // split into words so the highlighted word can get a box behind it
     const words = text.split(' ')
-    for (let i = 0; i < words.length; i++) {
-      const w = words[i]
+    const widths = words.map((w) => new Konva.Text({ text: w, fontFamily: POSTER_FONT, fontSize: line.size }).width())
+    const gap = wordSpacing(line.size)
+    const lineWidth = widths.reduce((a, b) => a + b, 0) + gap * Math.max(0, words.length - 1)
+    return { words, widths, gap, fontSize: line.size, lineWidth }
+  })
+  const blockWidth = measured.reduce((m, ln) => Math.max(m, ln.lineWidth), 0)
+  let cy = 0
+  for (const ln of measured) {
+    const lineY = cy
+    const fontSize = ln.fontSize
+    const startX = align === 'center' ? (blockWidth - ln.lineWidth) / 2 : align === 'right' ? blockWidth - ln.lineWidth : 0
+    let cx = startX
+    for (let i = 0; i < ln.words.length; i++) {
+      const w = ln.words[i]
+      const wWidth = ln.widths[i]
       const isHi = highlights.has(normWord(w))
       const fill = isHi && hl.enabled ? hl.textColor : isHi ? l.highlightColor : l.color
       const base = { x: cx, y: lineY, text: w, fontFamily: POSTER_FONT, fontSize }
-      const measure = new Konva.Text({ ...base })
-      const wWidth = measure.width()
 
       // Highlighted-word box sits behind the glyph.
       if (isHi && hl.enabled) {
@@ -271,9 +283,9 @@ function drawText(l: TextLayer): Konva.Group {
         node.shadowOffset({ x: Math.cos(a) * shadow.distance, y: Math.sin(a) * shadow.distance })
       }
       group.add(node)
-      cx += wWidth + fontSize * 0.28
+      cx += wWidth + ln.gap
     }
-    cy += lineBox
+    cy += fontSize + lineGapPx
   }
   return group
 }

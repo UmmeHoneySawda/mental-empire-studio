@@ -1,6 +1,6 @@
 import type { Project, ProjectImage, TranscriptWord } from '@shared/types'
 import type { GpuBrollSegment } from '@shared/renderSpec'
-import { useMemo, type MouseEvent, type ReactNode } from 'react'
+import { useMemo, useState, useRef, type MouseEvent, type WheelEvent, type ReactNode } from 'react'
 import { TimelineInspector } from './TimelineInspector'
 import {
   buildBrollTimeline,
@@ -23,25 +23,24 @@ function selectionKey(selection: EditorSelection): string {
   return selection.kind === 'image' || selection.kind === 'broll' || selection.kind === 'caption' ? `${selection.kind}:${selection.id}` : selection.kind
 }
 
-function Track({
-  label,
-  children,
-  playheadPct,
-  onSeek
-}: {
-  label: string
-  children: ReactNode
-  playheadPct: number
-  onSeek: (e: MouseEvent<HTMLDivElement>) => void
-}): JSX.Element {
+const TRACK_H = 28
+const TRACK_GAP = 8
+const TRACK_LABELS = ['Visual', 'Captions', 'Look', 'Audio']
+
+// Content-only track box. Sized to the (possibly zoomed) inner timeline width so blocks
+// positioned by percentage spread out as the user zooms in. A shared playhead + label
+// column live in the parent so all tracks scroll together.
+function TrackBox({ children, onSeek }: { children: ReactNode; onSeek: (e: MouseEvent<HTMLDivElement>) => void }): JSX.Element {
   return (
-    <div style={{ display: 'grid', gridTemplateColumns: '62px minmax(0,1fr)', alignItems: 'center', gap: 10 }}>
-      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, color: '#5b616f', textTransform: 'uppercase' }}>{label}</div>
-      <div onClick={onSeek} style={{ position: 'relative', height: 28, border: '1px solid #1d2129', borderRadius: 8, background: '#0b0d12', overflow: 'hidden', cursor: 'crosshair' }}>
-        {children}
-        <span style={{ position: 'absolute', left: `${playheadPct}%`, top: 0, bottom: 0, width: 1, background: 'var(--accent)', boxShadow: '0 0 0 1px rgba(245,179,35,.25)', pointerEvents: 'none', zIndex: 5 }} />
-      </div>
+    <div onClick={onSeek} style={{ position: 'relative', height: TRACK_H, border: '1px solid #1d2129', borderRadius: 8, background: '#0b0d12', overflow: 'hidden', cursor: 'crosshair' }}>
+      {children}
     </div>
+  )
+}
+
+function ZoomButton({ label, title, onClick, disabled }: { label: string; title: string; onClick: () => void; disabled?: boolean }): JSX.Element {
+  return (
+    <button type="button" title={title} onClick={onClick} disabled={disabled} style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 7, padding: '3px 9px', fontSize: 11, fontFamily: 'var(--font-mono)', color: disabled ? '#4a5060' : '#c4cad3', cursor: disabled ? 'not-allowed' : 'pointer', lineHeight: 1.2 }}>{label}</button>
   )
 }
 
@@ -125,6 +124,8 @@ export function EditorTimeline({
   onSelect: (selection: EditorSelection) => void
 }): JSX.Element {
   const durationSec = Math.max(0.05, project.durationSec || 0.05)
+  const [zoom, setZoom] = useState(1)
+  const scrollRef = useRef<HTMLDivElement>(null)
   const visualBlocks: VisualTimelineBlock[] = useMemo(() => [
     ...buildVisualTimeline(images, durationSec),
     ...buildBrollTimeline(broll, durationSec)
@@ -137,6 +138,18 @@ export function EditorTimeline({
     const x = Math.max(0, Math.min(rect.width, e.clientX - rect.left))
     onSeek((x / Math.max(1, rect.width)) * durationSec)
   }
+  const ZOOM_MIN = 1
+  const ZOOM_MAX = 16
+  const setZoomClamped = (next: number): void => setZoom(Math.max(ZOOM_MIN, Math.min(ZOOM_MAX, Math.round(next * 100) / 100)))
+  // Ctrl/⌘ + wheel zooms (CapCut-style); plain vertical wheel scrolls the timeline
+  // horizontally when zoomed in so a dense caption track is navigable.
+  const onWheel = (e: WheelEvent<HTMLDivElement>): void => {
+    if (e.ctrlKey || e.metaKey) {
+      setZoomClamped(zoom * (e.deltaY < 0 ? 1.15 : 1 / 1.15))
+    } else if (scrollRef.current && zoom > 1 && e.deltaY !== 0) {
+      scrollRef.current.scrollLeft += e.deltaY
+    }
+  }
 
   return (
     <div style={{ border: '1px solid #1d2129', borderRadius: 14, background: '#12151b', marginBottom: 20, padding: 14 }}>
@@ -146,42 +159,60 @@ export function EditorTimeline({
           <div style={{ fontFamily: 'var(--font-display)', fontSize: 17, fontWeight: 700, color: '#eef0f3' }}>Timeline</div>
         </div>
         <div style={{ flex: 1 }} />
+        <div style={{ display: 'flex', alignItems: 'center', gap: 6, marginRight: 12 }}>
+          <ZoomButton label="−" title="Zoom out" onClick={() => setZoomClamped(zoom / 1.5)} disabled={zoom <= ZOOM_MIN} />
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#8a909c', minWidth: 34, textAlign: 'center' }}>{Math.round(zoom * 100)}%</span>
+          <ZoomButton label="+" title="Zoom in" onClick={() => setZoomClamped(zoom * 1.5)} disabled={zoom >= ZOOM_MAX} />
+          <ZoomButton label="Fit" title="Fit whole project" onClick={() => setZoom(1)} disabled={zoom === 1} />
+        </div>
         <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, color: '#8a909c' }}>{fmt(playheadSec)} / {fmt(durationSec)}</span>
       </div>
       <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) 260px', gap: 14, alignItems: 'start' }}>
-        <div style={{ position: 'relative', display: 'flex', flexDirection: 'column', gap: 8 }}>
-          <Track label="Visual" playheadPct={playhead} onSeek={seekFromClick}>
-            {visualBlocks.map((block) => {
-              const key = `${block.kind}:${block.id}`
-              return (
-                <Block
-                  key={key}
-                  block={block}
-                  tone={block.kind === 'broll' ? 'broll' : 'visual'}
-                  badge={block.badge}
-                  active={activeKey === key}
-                  onClick={(e) => {
-                    e.stopPropagation()
-                    onSelect({ kind: block.kind, id: block.id })
-                    onSeek(block.startSec)
-                  }}
-                />
-              )
-            })}
-            {visualBlocks.length === 0 && <span style={{ position: 'absolute', left: 10, top: 7, fontSize: 10.5, color: '#5b616f' }}>No images yet</span>}
-          </Track>
-          <Track label="Captions" playheadPct={playhead} onSeek={seekFromClick}>
-            {captionBlocks.map((block) => (
-              <Block key={block.id} block={block} tone="caption" active={activeKey === `caption:${block.id}`} onClick={(e) => { e.stopPropagation(); onSelect({ kind: 'caption', id: block.id }); onSeek(block.startSec) }} />
+        <div style={{ display: 'grid', gridTemplateColumns: '62px minmax(0,1fr)', gap: 10, alignItems: 'start' }}>
+          {/* fixed label column, aligned to each track row */}
+          <div style={{ display: 'flex', flexDirection: 'column', gap: TRACK_GAP }}>
+            {TRACK_LABELS.map((l) => (
+              <div key={l} style={{ height: TRACK_H, display: 'flex', alignItems: 'center', fontFamily: 'var(--font-mono)', fontSize: 9.5, color: '#5b616f', textTransform: 'uppercase' }}>{l}</div>
             ))}
-            {captionBlocks.length === 0 && <span style={{ position: 'absolute', left: 10, top: 7, fontSize: 10.5, color: '#5b616f' }}>No transcript yet</span>}
-          </Track>
-          <Track label="Look" playheadPct={playhead} onSeek={seekFromClick}>
-            <Block block={{ id: 'look', label: project.lookLut && project.lookLut !== 'off' ? `${project.lookLut} ${Math.round((project.lookStrength ?? 0) * 100)}%` : 'Look off', startSec: 0, endSec: durationSec, ...rangeToPct(0, durationSec, durationSec) }} tone="look" active={selection.kind === 'look'} onClick={(e) => { e.stopPropagation(); onSelect({ kind: 'look' }); onSeek(0) }} />
-          </Track>
-          <Track label="Audio" playheadPct={playhead} onSeek={(e) => { seekFromClick(e); onSelect({ kind: 'audio' }) }}>
-            <Waveform />
-          </Track>
+          </div>
+          {/* shared horizontal-scroll viewport: all tracks + playhead share one width so they stay in sync */}
+          <div ref={scrollRef} onWheel={onWheel} style={{ overflowX: zoom > 1 ? 'auto' : 'hidden', overflowY: 'hidden' }}>
+            <div style={{ position: 'relative', width: `${zoom * 100}%`, minWidth: '100%', display: 'flex', flexDirection: 'column', gap: TRACK_GAP }}>
+              <TrackBox onSeek={seekFromClick}>
+                {visualBlocks.map((block) => {
+                  const key = `${block.kind}:${block.id}`
+                  return (
+                    <Block
+                      key={key}
+                      block={block}
+                      tone={block.kind === 'broll' ? 'broll' : 'visual'}
+                      badge={block.badge}
+                      active={activeKey === key}
+                      onClick={(e) => {
+                        e.stopPropagation()
+                        onSelect({ kind: block.kind, id: block.id })
+                        onSeek(block.startSec)
+                      }}
+                    />
+                  )
+                })}
+                {visualBlocks.length === 0 && <span style={{ position: 'absolute', left: 10, top: 7, fontSize: 10.5, color: '#5b616f' }}>No images yet</span>}
+              </TrackBox>
+              <TrackBox onSeek={seekFromClick}>
+                {captionBlocks.map((block) => (
+                  <Block key={block.id} block={block} tone="caption" active={activeKey === `caption:${block.id}`} onClick={(e) => { e.stopPropagation(); onSelect({ kind: 'caption', id: block.id }); onSeek(block.startSec) }} />
+                ))}
+                {captionBlocks.length === 0 && <span style={{ position: 'absolute', left: 10, top: 7, fontSize: 10.5, color: '#5b616f' }}>No transcript yet</span>}
+              </TrackBox>
+              <TrackBox onSeek={seekFromClick}>
+                <Block block={{ id: 'look', label: project.lookLut && project.lookLut !== 'off' ? `${project.lookLut} ${Math.round((project.lookStrength ?? 0) * 100)}%` : 'Look off', startSec: 0, endSec: durationSec, ...rangeToPct(0, durationSec, durationSec) }} tone="look" active={selection.kind === 'look'} onClick={(e) => { e.stopPropagation(); onSelect({ kind: 'look' }); onSeek(0) }} />
+              </TrackBox>
+              <TrackBox onSeek={(e) => { seekFromClick(e); onSelect({ kind: 'audio' }) }}>
+                <Waveform />
+              </TrackBox>
+              <span style={{ position: 'absolute', left: `${playhead}%`, top: 0, bottom: 0, width: 1, background: 'var(--accent)', boxShadow: '0 0 0 1px rgba(245,179,35,.25)', pointerEvents: 'none', zIndex: 5 }} />
+            </div>
+          </div>
         </div>
         <TimelineInspector project={project} images={images} broll={broll} words={words} selection={selection} />
       </div>
