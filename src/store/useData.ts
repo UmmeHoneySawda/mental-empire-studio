@@ -15,6 +15,8 @@ import type {
   TranscriptWord,
   RenderQueueRow,
   RenderProgress,
+  PublishItem,
+  LibraryAsset,
   Profile,
   LookAdjust,
   MotionPreset,
@@ -64,6 +66,9 @@ interface DataState {
   transcribeError: string
   renderJobs: RenderQueueRow[]
   renderProgress: Record<string, RenderProgress>
+  publishItems: PublishItem[]
+  publishLoading: boolean
+  libraryAssets: LibraryAsset[]
   rendering: boolean
   profiles: Profile[]
   runningProfileId: string | null
@@ -118,6 +123,10 @@ interface DataState {
   requeueJob: (id: string) => Promise<void>
   openRenderFile: (id: string) => Promise<void>
   openRenderFolder: (id: string) => Promise<void>
+  loadPublishItems: () => Promise<void>
+  revealPublishFile: (path: string) => Promise<void>
+  startPublishDrag: (path: string) => void
+  loadLibraryAssets: () => Promise<void>
   deleteDownload: (id: string) => Promise<void>
   loadProfiles: () => Promise<void>
   runProfile: (id: string) => Promise<string[]>
@@ -198,6 +207,9 @@ export const useData = create<DataState>((set, get) => ({
   transcribeError: '',
   renderJobs: [],
   renderProgress: {},
+  publishItems: [],
+  publishLoading: false,
+  libraryAssets: [],
   rendering: false,
   profiles: [],
   runningProfileId: null,
@@ -620,6 +632,29 @@ export const useData = create<DataState>((set, get) => ({
     const a = api()
     if (!a) return
     await a.render.openFolder(id)
+  },
+  loadPublishItems: async () => {
+    const a = api()
+    if (!a) return
+    set({ publishLoading: true })
+    try {
+      set({ publishItems: await a.publish.list() })
+    } finally {
+      set({ publishLoading: false })
+    }
+  },
+  revealPublishFile: async (path) => {
+    const a = api()
+    if (!a) return
+    await a.publish.reveal(path)
+  },
+  startPublishDrag: (path) => {
+    api()?.publish.startDrag(path)
+  },
+  loadLibraryAssets: async () => {
+    const a = api()
+    if (!a) return
+    set({ libraryAssets: await a.assets.list() })
   },
   deleteDownload: async (id) => {
     const a = api()

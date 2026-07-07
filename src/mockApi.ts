@@ -755,6 +755,26 @@ function installMock(): void {
       openFile: async () => {},
       openFolder: async () => {}
     }),
+    assets: ns({
+      list: async () => []
+    }),
+    publish: ns({
+      list: async () => renderRows
+        .filter((r) => r.job.status === 'done')
+        .map((r) => ({
+          jobId: r.job.id,
+          projectId: r.job.projectId,
+          title: r.job.title,
+          channel: r.job.channel,
+          videoPath: r.job.outputPath ?? '',
+          thumbPath: null,
+          durationSec: r.projectDurationSec,
+          renderedAt: r.job.createdAt,
+          uploadStatus: 'not-uploaded' as const
+        })),
+      reveal: async () => {},
+      startDrag: () => {}
+    }),
     effects: ns({
       generate: async () => JSON.stringify({
         transitions: [{ atSec: 3, type: 'fadeblack', durationSec: 0.5 }, { atSec: 8, type: 'zoomin', durationSec: 0.6 }],

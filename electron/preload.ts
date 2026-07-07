@@ -173,6 +173,16 @@ const api: NativeApi = {
     openFolder: (jobId: string) => ipcRenderer.invoke('render:openFolder', jobId)
   },
 
+  assets: {
+    list: () => ipcRenderer.invoke('assets:list')
+  },
+
+  publish: {
+    list: () => ipcRenderer.invoke('publish:list'),
+    reveal: (path: string) => ipcRenderer.invoke('publish:reveal', path),
+    startDrag: (path: string) => ipcRenderer.send('publish:startDrag', path)
+  },
+
   automation: {
     runProfile: (profileId: string, headless?: boolean) => ipcRenderer.invoke('automation:runProfile', profileId, headless),
     runSource: (sourceId: string, headless?: boolean) => ipcRenderer.invoke('automation:runSource', sourceId, headless),

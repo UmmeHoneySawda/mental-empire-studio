@@ -1560,6 +1560,33 @@ app.whenReady().then(() => {
       setTimeout(async () => {
         const wc = mainWindow!.webContents
         const accent = await wc.executeJavaScript('document.documentElement.getAttribute("data-accent")')
+        // ME_SHOOT_NAV=<sidebar label>: click that nav item before capturing, so a
+        // screenshot can target any screen (not just the one the app boots to).
+        const navLabel = process.env['ME_SHOOT_NAV']
+        if (navLabel) {
+          await wc.executeJavaScript(
+            `(() => { const items=[...document.querySelectorAll('.me-nav')]; const el=items.find(e=>e.textContent.trim().startsWith(${JSON.stringify(navLabel)})); if(el){el.click();return true;} return false; })()`
+          )
+          await new Promise((r) => setTimeout(r, 400))
+        }
+        // ME_SHOOT_CLICKS=<comma-separated texts>: after the nav click, click each in
+        // order (any element whose own trimmed text starts with it, deepest-first so a
+        // button's own label wins over an ancestor container), waiting briefly between.
+        const clickSeq = process.env['ME_SHOOT_CLICKS']
+        if (clickSeq) {
+          for (const text of clickSeq.split(',')) {
+            await wc.executeJavaScript(
+              `(() => { const all=[...document.querySelectorAll('button,span,div')].reverse(); const el=all.find(e=>e.textContent.trim().startsWith(${JSON.stringify(text)}) && e.offsetParent); if(el){el.click();return true;} return false; })()`
+            )
+            await new Promise((r) => setTimeout(r, 400))
+          }
+        }
+        if (process.env['ME_SHOOT_SCROLL']) {
+          await wc.executeJavaScript(
+            '(() => { const el=[...document.querySelectorAll("div")].find(e=>e.scrollHeight>e.clientHeight+40); if(el) el.scrollTop=el.scrollHeight; })()'
+          )
+          await new Promise((r) => setTimeout(r, 200))
+        }
         const img = await wc.capturePage()
         const fs = await import('node:fs')
         fs.writeFileSync(shootPath, img.toPNG())

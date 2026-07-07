@@ -17,6 +17,7 @@ export type ScreenKey =
   | 'compose'
   | 'thumb'
   | 'render'
+  | 'publish'
   | 'niches'
   | 'profiles'
   | 'settings'
@@ -207,6 +208,14 @@ export interface RecentUpload {
   views: string
   publishedAt: string
   thumb?: string
+}
+
+/** An image previously used in some project, kept around so a later project targeting the
+ *  same channel can reuse the same set instead of re-picking from disk. */
+export interface LibraryAsset {
+  path: string
+  channel: string
+  addedAt: string
 }
 
 export interface GoalsPatch {
@@ -695,6 +704,24 @@ export interface RenderQueueRow {
   broll?: boolean
 }
 
+/** A finished render surfaced on the Library/Publish screen — the "did I already upload
+ *  this" view. Removes the manual folder-hunting: lists every rendered video with a fuzzy-
+ *  matched upload status against whichever "My Channel" its source is linked to. */
+export interface PublishItem {
+  jobId: string
+  projectId: string
+  title: string
+  /** source channel handle the video was scraped from (display only) */
+  channel: string
+  videoPath: string
+  thumbPath: string | null
+  durationSec: number
+  renderedAt: string
+  uploadStatus: 'uploaded' | 'not-uploaded' | 'unlinked'
+  /** the actual uploaded title it fuzzy-matched, when uploadStatus is 'uploaded' */
+  matchedTitle?: string
+}
+
 
 // ---- Settings (persisted via electron-store) ----
 export interface AppSettings {
@@ -1002,6 +1029,19 @@ export interface NativeApi {
     openFile(jobId: string): Promise<void>
     /** reveal the finished render in the OS file manager */
     openFolder(jobId: string): Promise<void>
+  }
+  assets: {
+    /** every image used in a past project, grouped client-side by channel */
+    list(): Promise<LibraryAsset[]>
+  }
+  publish: {
+    /** every finished render, with a fuzzy-matched upload status */
+    list(): Promise<PublishItem[]>
+    /** reveal an arbitrary file (video or thumbnail) in the OS file manager */
+    reveal(path: string): Promise<void>
+    /** begin a native OS drag of a file out of the app window (e.g. into a browser upload
+     *  dialog) — fire-and-forget, must be called synchronously from a DOM dragstart handler */
+    startDrag(path: string): void
   }
   automation: {
     /** run a profile's pipeline; interactive returns new project ids for quick-edit */

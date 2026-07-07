@@ -7,6 +7,8 @@ import { registerDownloadIpc } from './download'
 import { registerComposeIpc } from './compose'
 import { registerThumbnailsIpc } from './thumbnails'
 import { registerRenderIpc } from './render'
+import { registerPublishIpc } from './publish'
+import { registerAssetsIpc } from './assets'
 import { registerLibraryIpc } from './library'
 import { registerNicheIpc } from './niche'
 import { registerAutomationIpc, upsertProfileAndWarm } from './automation'
@@ -115,6 +117,12 @@ export function registerIpc(): void {
 
   // ---- render pipeline (M6) ----
   registerRenderIpc()
+
+  // ---- publish hub: uploaded/not-uploaded + drag-out (P2 H) ----
+  registerPublishIpc()
+
+  // ---- image library: reuse images across projects, grouped by channel (P2 I) ----
+  registerAssetsIpc()
 
   // ---- master library: reorganize-existing migration (P0) ----
   registerLibraryIpc()

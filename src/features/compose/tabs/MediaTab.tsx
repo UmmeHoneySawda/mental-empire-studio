@@ -1,9 +1,68 @@
-import { useRef } from 'react'
-import type { MotionPreset, ProjectImage } from '@shared/types'
+import { useMemo, useRef, useState } from 'react'
+import type { LibraryAsset, MotionPreset, ProjectImage } from '@shared/types'
 import { asBetaOpts } from '@shared/types'
 import { useData } from '../../../store/useData'
 import { isCssImageValue, mediaSrc } from '../../../lib/media'
 import { IMG_GRADS, fmt, overlayBackground } from '../shared'
+
+// Image library (P2 I): images used in any past project, grouped by channel, so the user
+// doesn't have to re-pick the same 6 images from disk every time they compose for the same
+// channel. Recorded automatically whenever setImages() runs (electron/ipc/compose.ts).
+function LibraryPicker({ onAdd, onClose }: { onAdd: (paths: string[]) => void; onClose: () => void }): JSX.Element {
+  const assets = useData((s) => s.libraryAssets)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const grouped = useMemo(() => {
+    const byChannel = new Map<string, LibraryAsset[]>()
+    for (const a of assets) {
+      const list = byChannel.get(a.channel) ?? []
+      list.push(a)
+      byChannel.set(a.channel, list)
+    }
+    return [...byChannel.entries()].sort((a, b) => a[0].localeCompare(b[0]))
+  }, [assets])
+  const toggle = (path: string): void => {
+    setSelected((s) => {
+      const next = new Set(s)
+      if (next.has(path)) next.delete(path)
+      else next.add(path)
+      return next
+    })
+  }
+
+  return (
+    <div style={{ border: '1px solid #1d2129', borderRadius: 11, background: '#0e1116', padding: 14, marginBottom: 14 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+        <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '.6px', color: '#6a7180' }}>IMAGE LIBRARY · GROUPED BY CHANNEL</span>
+        <div style={{ flex: 1 }} />
+        <button type="button" disabled={!selected.size} onClick={() => { onAdd([...selected]); onClose() }} className="me-btn" style={{ border: 0, background: selected.size ? 'var(--accent)' : '#23272f', color: selected.size ? 'var(--accent-ink)' : '#6a7180', borderRadius: 8, padding: '6px 12px', fontSize: 11, fontWeight: 600, cursor: selected.size ? 'pointer' : 'not-allowed' }}>Add {selected.size || ''} selected</button>
+        <button type="button" onClick={onClose} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 8, padding: '6px 12px', fontSize: 11, color: '#c4cad3', cursor: 'pointer' }}>Close</button>
+      </div>
+      {grouped.length === 0 ? (
+        <div style={{ fontSize: 11.5, color: '#5b616f', padding: '10px 0' }}>No past images yet — images you add to any project are remembered here.</div>
+      ) : (
+        <div style={{ display: 'flex', flexDirection: 'column', gap: 12, maxHeight: 320, overflowY: 'auto' }}>
+          {grouped.map(([channel, imgs]) => (
+            <div key={channel}>
+              <div style={{ fontSize: 10.5, color: '#8a909c', fontFamily: 'var(--font-mono)', marginBottom: 6 }}>{channel} <span style={{ opacity: 0.6 }}>· {imgs.length}</span></div>
+              <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(72px,1fr))', gap: 7 }}>
+                {imgs.map((a) => {
+                  const on = selected.has(a.path)
+                  const src = mediaSrc(a.path)
+                  return (
+                    <div key={a.path} onClick={() => toggle(a.path)} title={a.path.split(/[\\/]/).pop()} style={{ position: 'relative', aspectRatio: '1', borderRadius: 8, overflow: 'hidden', cursor: 'pointer', border: on ? '2px solid var(--accent)' : '1px solid #23272f', background: '#15181f' }}>
+                      {src && <img src={src} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />}
+                      {on && <span style={{ position: 'absolute', top: 4, right: 4, width: 16, height: 16, borderRadius: '50%', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 10, fontWeight: 700, display: 'grid', placeItems: 'center' }}>✓</span>}
+                    </div>
+                  )
+                })}
+              </div>
+            </div>
+          ))}
+        </div>
+      )}
+    </div>
+  )
+}
 
 export function MediaTab({ fileInputRef }: { fileInputRef: React.RefObject<HTMLInputElement> }): JSX.Element {
   const project = useData((s) => s.activeProject)
@@ -12,8 +71,10 @@ export function MediaTab({ fileInputRef }: { fileInputRef: React.RefObject<HTMLI
   const setMotionPreset = useData((s) => s.setMotion)
   const setProjectImages = useData((s) => s.setProjectImages)
   const reorderProjectImages = useData((s) => s.reorderProjectImages)
+  const loadLibraryAssets = useData((s) => s.loadLibraryAssets)
   const mode = project?.imageMode ?? 'sequence'
   const dragId = useRef<string | null>(null)
+  const [showLibrary, setShowLibrary] = useState(false)
   const durationMissing = !project || !project.durationSec || project.durationSec <= 0
   const betaOpts = asBetaOpts(project?.betaOpts)
   const brollEnabled = betaOpts.broll.enabled
@@ -90,7 +151,20 @@ export function MediaTab({ fileInputRef }: { fileInputRef: React.RefObject<HTMLI
           </details>
         </div>
         <div style={{ flex: 1 }}>
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '.6px', color: '#6a7180', marginBottom: 10 }}>IMAGES · EVEN AUTO-SPLIT</div>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '.6px', color: '#6a7180' }}>IMAGES · EVEN AUTO-SPLIT</span>
+            <div style={{ flex: 1 }} />
+            <button type="button" onClick={() => { setShowLibrary((v) => !v); void loadLibraryAssets() }} title="Reuse images from a past project instead of picking from disk" className="me-btn" style={{ display: 'flex', alignItems: 'center', gap: 6, border: showLibrary ? '1px solid var(--accent)' : '1px solid #262b34', background: showLibrary ? 'var(--accent-soft)' : '#15181f', color: showLibrary ? 'var(--accent)' : '#c4cad3', borderRadius: 8, padding: '5px 10px', fontSize: 10.5, cursor: 'pointer' }}>
+              <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M3 7a2 2 0 012-2h4l2 2h8a2 2 0 012 2v8a2 2 0 01-2 2H5a2 2 0 01-2-2V7z" /></svg>
+              {showLibrary ? 'Hide library' : 'Library'}
+            </button>
+          </div>
+          {showLibrary && (
+            <LibraryPicker
+              onAdd={(paths) => void setProjectImages([...images.map((im) => im.path), ...paths])}
+              onClose={() => setShowLibrary(false)}
+            />
+          )}
           <div style={{ display: 'flex', flexDirection: 'column', gap: 9 }}>
             {images.map((im: ProjectImage, i) => (
               <div key={im.id} draggable onDragStart={() => { dragId.current = im.id }} onDragOver={(e) => e.preventDefault()} onDrop={() => moveImage(im.id)} className="me-row" style={{ display: 'flex', alignItems: 'center', gap: 12, border: '1px solid #1d2129', borderRadius: 11, padding: 10, background: '#12151b' }}>

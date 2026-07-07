@@ -22,7 +22,8 @@ import type {
   MotionDirection,
   WorkItem,
   Niche,
-  SourceAutomationPatch
+  SourceAutomationPatch,
+  LibraryAsset
 } from '../../shared/types'
 import { asBetaOpts, DEFAULT_BETA_OPTS } from '../../shared/types'
 import { seedIfEmpty, seedDemoData, seedDefaultThumbnailTemplates } from './seed'
@@ -93,6 +94,9 @@ CREATE TABLE IF NOT EXISTS transcript_words (
 );
 CREATE TABLE IF NOT EXISTS app_meta (
   key TEXT PRIMARY KEY, value TEXT
+);
+CREATE TABLE IF NOT EXISTS assets (
+  path TEXT PRIMARY KEY, channel TEXT, addedAt TEXT
 );
 CREATE TABLE IF NOT EXISTS work_item_state (
   videoId TEXT PRIMARY KEY,
@@ -410,6 +414,10 @@ export interface Repositories {
   updateProject(id: string, patch: Partial<Project>): Project | undefined
   replaceProjectImages(projectId: string, rows: ProjectImage[]): void
   getProjectImages(projectId: string): ProjectImage[]
+  /** Record images as reusable library assets (dedup by path) so a later project can pick
+   *  the same set again instead of re-selecting from disk. */
+  recordAssets(paths: string[], channel: string): void
+  listAssets(): LibraryAsset[]
   setImageRanges(projectId: string, ranges: Array<{ id: string; rangeStart: number; rangeEnd: number }>): void
   setImageMotion(projectId: string, updates: ProjectImageMotionPatch[]): void
   replaceTranscript(projectId: string, rows: TranscriptWord[]): void
@@ -880,6 +888,16 @@ function buildRepositories(d: Database.Database): Repositories {
     },
     getProjectImages: (projectId) =>
       (d.prepare('SELECT * FROM project_images WHERE projectId=? ORDER BY ord').all(projectId) as Array<Record<string, unknown>>).map(rowToImage),
+    recordAssets: (paths, channel) => {
+      const tx = d.transaction(() => {
+        const ins = d.prepare('INSERT INTO assets (path,channel,addedAt) VALUES (?,?,?) ON CONFLICT(path) DO UPDATE SET channel=excluded.channel, addedAt=excluded.addedAt')
+        const now = new Date().toISOString()
+        for (const path of paths) ins.run(path, channel, now)
+      })
+      tx()
+    },
+    listAssets: () =>
+      d.prepare('SELECT path, channel, addedAt FROM assets ORDER BY addedAt DESC').all() as LibraryAsset[],
     setImageRanges: (projectId, ranges) => {
       const tx = d.transaction(() => {
         const up = d.prepare('UPDATE project_images SET rangeStart=@rangeStart, rangeEnd=@rangeEnd, manual=1 WHERE id=@id AND projectId=@projectId')

@@ -9,6 +9,7 @@ import { MyChannels } from './screens/MyChannels'
 import { Download } from './screens/Download'
 import { Compose } from './screens/Compose'
 import { RenderQueue } from './screens/RenderQueue'
+import { Publish } from './screens/Publish'
 import { Profiles } from './screens/Profiles'
 import { Niches } from './screens/Niches'
 import { Settings } from './screens/Settings'
@@ -29,6 +30,7 @@ const SCREENS: Record<ScreenKey, ComponentType> = {
   compose: Compose,
   thumb: Thumbnails,
   render: RenderQueue,
+  publish: Publish,
   niches: Niches,
   profiles: Profiles,
   settings: Settings

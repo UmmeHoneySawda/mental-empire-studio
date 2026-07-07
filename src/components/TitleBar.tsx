@@ -13,6 +13,7 @@ const LABELS: Record<ScreenKey, string> = {
   compose: 'Compose',
   thumb: 'Thumbnails',
   render: 'Render Queue',
+  publish: 'Publish',
   niches: 'B-roll Pools',
   profiles: 'Automations',
   settings: 'Settings'

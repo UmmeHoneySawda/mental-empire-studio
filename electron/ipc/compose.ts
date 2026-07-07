@@ -62,7 +62,7 @@ function defaultProject(downloadId: string, title: string, channel: string, mp3P
   }
 }
 
-function effectiveThumbnailPath(project: Project): string | null {
+export function effectiveThumbnailPath(project: Project): string | null {
   if (project.thumbPath) return project.thumbPath
   // Per-item thumb (new layout) first, then the legacy flat output/thumbnails path.
   const perItem = join(itemThumbDir(itemDirForProject(project)), `${safeName(project.title)}.png`)
@@ -115,6 +115,9 @@ function setImages(projectId: string, paths: string[]): ProjectImage[] {
   }))
   repos.replaceProjectImages(projectId, rows)
   writeProjectManifest(itemDirForProject(project), { imagePaths: rows.map((r) => r.path) })
+  // Remember these as reusable library assets for this channel (P2 I) so a later project
+  // targeting the same channel can pick the same set again instead of re-selecting from disk.
+  repos.recordAssets(rows.map((r) => r.path), project.channel)
   return rows
 }
 
