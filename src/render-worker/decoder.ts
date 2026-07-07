@@ -40,14 +40,19 @@ export class SegmentDecoder {
   }
 
   private async demuxAndConfigure(): Promise<void> {
-    const meta = await this.demuxer.parse()
+    // demux() parses the container AND extracts every sample in one pass — see the comment
+    // on MP4Demuxer.demux() for why splitting parse/extract into two calls silently hung
+    // (the actual b-roll GPU stall bug: onSamples never fired, so decode never started).
+    const meta = await this.demuxer.demux()
+    this.samples = meta.samples
+    console.log(`[decoder:${this.label}] demuxed ${meta.samples.length} samples, codec=${meta.codec} ${meta.width}x${meta.height}`)
     this.decoder = new VideoDecoder({
       output: (frame) => {
         this.frames.push(frame)
       },
       error: (e) => {
         this.decodeError = e instanceof Error ? e : new Error(String(e))
-        console.error('VideoDecoder error:', e)
+        console.error(`[decoder:${this.label}] VideoDecoder error:`, e)
       }
     })
 
@@ -56,19 +61,15 @@ export class SegmentDecoder {
       codedWidth: meta.width,
       codedHeight: meta.height,
       description: meta.description,
-      // Software decode on purpose: the encode already holds a hardware NVENC session, and
-      // running NVDEC concurrently on consumer GPUs (e.g. GTX 1660 Ti) can silently stall
-      // (no frame output, no error). B-roll clips are short, so software H.264 decode is
-      // cheap and reliable. The output is still composited on the GPU and encoded on NVENC.
+      // Software decode: confirmed live (real GPU, real NVENC-normalized clips) that this
+      // WebCodecs implementation cannot run two concurrent hardware VideoDecoder instances
+      // that both produce output — the second one silently emits zero frames forever. The
+      // encoder now only ever keeps one B-roll decoder open at a time (see encoder.ts), so
+      // that specific hazard no longer applies, but software decode remains the safer
+      // choice: clips are short, the cost is negligible, and it avoids any future
+      // reintroduction of overlapping decoders (e.g. a future crossfade) hitting the same
+      // wall. The composite + encode still run on the GPU (NVENC).
       hardwareAcceleration: 'prefer-software'
-    })
-
-    // Extract samples metadata at init time
-    await new Promise<void>((resolve) => {
-      this.demuxer.extractSamples((samples) => {
-        this.samples = samples
-        resolve()
-      })
     })
   }
 

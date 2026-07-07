@@ -5,19 +5,42 @@ import * as MP4Box from 'mp4box'
 // codec, and the avcC extradata/description required by VideoDecoder), and yields
 // individual encoded frames as EncodedVideoChunk data.
 
+export interface DemuxResult {
+  codec: string
+  width: number
+  height: number
+  description: Uint8Array
+  samples: any[]
+}
+
 export class MP4Demuxer {
   private file: any
-  private track: any
-  private info: any
 
   constructor(private buffer: ArrayBuffer) {
     this.file = MP4Box.createFile()
   }
 
-  async parse(): Promise<{ codec: string; width: number; height: number; description: Uint8Array }> {
+  /**
+   * Parse the container AND extract every sample in one pass. mp4box.js only delivers
+   * `onSamples` for data it processes WHILE extraction is armed (setExtractionOptions +
+   * start()) — arming it only after a separate appendBuffer()/flush() has already fully
+   * consumed the buffer means it waits forever for data that will never arrive again,
+   * since we hand it the whole file in one shot. That was the actual cause of the b-roll
+   * GPU render stall: decode never even started because sample extraction silently never
+   * fired. Fix: call setExtractionOptions + start() from inside onReady, before appendBuffer
+   * finishes walking the rest of the box tree, so the still-in-flight parse delivers samples.
+   */
+  async demux(): Promise<DemuxResult> {
     return new Promise((resolve, reject) => {
+      let meta: Omit<DemuxResult, 'samples'> | null = null
+      let settled = false
+      const settle = (samples: any[]): void => {
+        if (settled || !meta) return
+        settled = true
+        resolve({ ...meta, samples })
+      }
+
       this.file.onReady = (info: any) => {
-        this.info = info
         const videoTrack = info.videoTracks[0]
         if (!videoTrack) {
           reject(new Error('No video track found in MP4 B-roll segment'))
@@ -43,18 +66,16 @@ export class MP4Demuxer {
           return
         }
 
-        this.track = videoTrack
-        resolve({
-          codec: videoTrack.codec,
-          width: videoTrack.video.width,
-          height: videoTrack.video.height,
-          description
-        })
+        meta = { codec: videoTrack.codec, width: videoTrack.video.width, height: videoTrack.video.height, description }
+
+        // Arm extraction now, still inside onReady/appendBuffer's call stack, so mp4box
+        // delivers samples as it continues parsing the buffer we already handed it.
+        this.file.onSamples = (_id: number, _user: any, samples: any[]) => settle(samples)
+        this.file.setExtractionOptions(videoTrack.id, null, { nbSamples: 100000 })
+        this.file.start()
       }
 
-      this.file.onError = (e: any) => {
-        reject(new Error(`MP4Box error: ${e}`))
-      }
+      this.file.onError = (e: any) => reject(new Error(`MP4Box error: ${e}`))
 
       // Attach fileStart offset and append buffer to start parsing
       const ab = this.buffer as any
@@ -62,13 +83,5 @@ export class MP4Demuxer {
       this.file.appendBuffer(ab)
       this.file.flush()
     })
-  }
-
-  extractSamples(onSamples: (samples: any[]) => void): void {
-    this.file.onSamples = (id: number, user: any, samples: any[]) => {
-      onSamples(samples)
-    }
-    this.file.setExtractionOptions(this.track.id, null, { nbSamples: 100000 })
-    this.file.start()
   }
 }

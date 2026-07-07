@@ -107,10 +107,15 @@ export async function encodeSpec(
     if (encodeError) throw encodeError
     const t = f / spec.fps
 
-    // If B-roll is active, fetch the current video frame(s) and upload them to WebGL
+    // If B-roll is active, fetch the current video frame and upload it to WebGL. Segments
+    // hard-cut rather than cross-dissolve: only one B-roll SegmentDecoder is ever open at a
+    // time. A prior version pre-decoded the next segment ~0.4s early for a dissolve blend,
+    // which required two concurrent VideoDecoder instances — confirmed live (real GPU,
+    // real clips) that this WebCodecs implementation only ever produces output from ONE of
+    // them; the second silently emits zero frames forever, hanging the whole render. See
+    // decoder.ts for the full account.
     if (isBroll && decoders.length > 0) {
       const idx = activeImageIndex(spec.broll! as any, t)
-      const nextIdx = Math.min(idx + 1, Math.max(0, spec.broll!.length - 1))
 
       if (idx !== lastActiveIdx) {
         console.log(`[encoder] playhead t=${t.toFixed(2)}s: active B-roll segment changed to idx=${idx} (path=${spec.broll![idx].path})`)
@@ -119,7 +124,7 @@ export async function encodeSpec(
 
       const segA = spec.broll![idx]
 
-      // 1. On-demand initialization and decoding of segA
+      // On-demand initialization and decoding of the active segment.
       if (!decoders[idx]) {
         console.log(`[encoder] playhead t=${t.toFixed(2)}s: lazy-initializing active segment ${idx} path=${segA.path}`)
         const buffer = window.gpuWorker!.readFile(segA.path)
@@ -130,21 +135,8 @@ export async function encodeSpec(
       }
       await heartbeatWhile(decoders[idx]!.decodeUntil(t - segA.startSec), () => cb.onProgress(f, frames))
 
-      // 2. On-demand initialization and decoding of segB (if in crossfade range)
-      if (nextIdx !== idx && t >= segA.endSec - 0.4) {
-        if (!decoders[nextIdx]) {
-          const segB = spec.broll![nextIdx]
-          console.log(`[encoder] playhead t=${t.toFixed(2)}s: lazy-initializing crossfade segment ${nextIdx} path=${segB.path}`)
-          const buffer = window.gpuWorker!.readFile(segB.path)
-          const dec = new SegmentDecoder(buffer, segB.path)
-          await heartbeatWhile(dec.init(), () => cb.onProgress(f, frames))
-          decoders[nextIdx] = dec
-          console.log(`[encoder] playhead t=${t.toFixed(2)}s: crossfade segment ${nextIdx} initialized (found ${dec.getSamplesCount()} samples)`)
-        }
-        await heartbeatWhile(decoders[nextIdx]!.decodeUntil(t - spec.broll![nextIdx].startSec), () => cb.onProgress(f, frames))
-      }
-
-      // 3. Close any decoders that are no longer needed (indices < idx)
+      // Close any decoders that are no longer needed (indices < idx) — at most one is ever
+      // open going forward, but this also cleans up after the old crossfade-era manifests.
       for (let i = 0; i < idx; i++) {
         if (decoders[i]) {
           console.log(`[encoder] playhead t=${t.toFixed(2)}s: closing completed segment decoder ${i}`)
@@ -154,14 +146,7 @@ export async function encodeSpec(
       }
 
       const frameA = decoders[idx] ? decoders[idx]!.getFrameAt(t - segA.startSec) : null
-
-      let frameB: VideoFrame | null = null
-      if (nextIdx !== idx && t >= segA.endSec - 0.4 && decoders[nextIdx]) {
-        const segB = spec.broll![nextIdx]
-        frameB = decoders[nextIdx]!.getFrameAt(t - segB.startSec)
-      }
-
-      compositor.updateVideoTextures(frameA, frameB)
+      compositor.updateVideoTextures(frameA, null)
     }
 
     if (captions.draw(t)) compositor.updateCaption(captions.canvas)

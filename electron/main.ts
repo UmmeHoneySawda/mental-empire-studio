@@ -1132,6 +1132,94 @@ async function runSmokeBrollReal(): Promise<void> {
 }
 
 /**
+ * Real GPU-worker B-roll render (ME_SMOKE=broll-gpu-real). Unlike runSmokeBrollReal
+ * (which renders through the ffmpeg/CPU-filter graph), this exercises the exact path a
+ * real user hits with an NVENC encoder selected: buildBrollManifest normalizes real local
+ * clips with ffmpeg (as production does), then those normalized segments are handed to
+ * the hidden-BrowserWindow GPU worker (runGpuRender) — the WebCodecs decode/composite/
+ * encode pipeline in src/render-worker/{decoder,encoder}.ts that the NVDEC/NVENC-
+ * contention stall fix targets. Requires a real NVENC-capable GPU; run on real hardware,
+ * not under xvfb-run.
+ */
+async function runSmokeBrollGpuReal(): Promise<void> {
+  const outDir = join(app.getPath('temp'), 'me-broll-gpu-real-out')
+  const localDir = join(process.cwd(), 'test', 'fixtures', 'broll', 'local')
+  const audioPath = join(process.cwd(), 'test', 'fixtures', 'audio', 'sample.mp3')
+  const durationSec = 9
+  try {
+    mkdirSync(outDir, { recursive: true })
+    const caps = probeRenderCapabilities(true)
+    if (!caps.hasNvenc) {
+      console.log('SMOKE_BROLL_GPU_REAL_SKIP no NVENC-capable GPU detected on this machine')
+      app.exit(0)
+      return
+    }
+    const settings = { ...getSettings(), outputFolder: outDir, quality: '720p' as const, encoder: 'nvenc' as const }
+    const logPath = join(outDir, 'broll-gpu-real.render.log')
+    writeFileSync(logPath, '')
+
+    process.env['ME_BROLL_LOCAL'] = localDir
+    const manifest = await buildBrollManifest({
+      settings,
+      caps,
+      words: [],
+      durationSec,
+      density: 'full',
+      poolSize: 3,
+      dims: dimensions(settings.quality, '16:9'),
+      fps: 24,
+      jobId: `broll-gpu-real-${Date.now()}`,
+      maxSegments: 3,
+      logPath
+    })
+    delete process.env['ME_BROLL_LOCAL']
+    if (!manifest?.segments.length) throw new Error('manifest missing or empty — normalize step failed before the GPU worker was ever reached')
+
+    const { runGpuRender, destroyGpuWorker: destroyWorker } = await import('./services/engine/gpu/host')
+    const h264Path = join(outDir, 'broll-gpu-real.gpu.mp4')
+    const finalPath = join(outDir, 'broll-gpu-real.mp4')
+    const spec = {
+      jobId: 'broll-gpu-real',
+      width: dimensions(settings.quality, '16:9').w,
+      height: dimensions(settings.quality, '16:9').h,
+      fps: 24,
+      durationSec,
+      images: [],
+      broll: manifest.segments.map((s) => ({ path: s.normalizedPath, startSec: s.start, endSec: s.end })),
+      motion: { kenBurns: false, punchAtSec: [] },
+      grade: { style: 'None' as const, saturation: 1, contrast: 1, brightness: 0, colorBalance: { r: 0, g: 0, b: 0 }, vignette: 0, sharpen: 0 },
+      grain: { strength: 0, temporal: false },
+      captions: { groups: [], preset: 'Clean' as const, font: 'Anton', animation: 'Pop-in', mode: 'word' as const, position: 'bottom' as const, lines: 1 as const, highlightColor: '#ffffff' },
+      audio: { voicePath: audioPath },
+      encoder: { codec: 'avc' as const, bitrateMbps: 6, keyIntervalSec: 2 },
+      out: { h264Path, finalPath }
+    }
+
+    const progressed: number[] = []
+    const startedAt = Date.now()
+    await runGpuRender(spec, { logPath, onProgress: (p) => progressed.push(p.framesDone) })
+    const elapsedMs = Date.now() - startedAt
+    destroyWorker()
+
+    const probe = ffprobe(finalPath)
+    const durationOk = !!probe && Math.abs(probe.duration - durationSec) < 1
+    const streamOk = !!probe && probe.video && probe.audio && probe.vcodec === 'h264'
+    const progressOk = progressed.length > 1
+    const ok = existsSync(finalPath) && durationOk && !!streamOk && progressOk
+    console.log(`SMOKE_BROLL_GPU_REAL ok=${ok} elapsedMs=${elapsedMs} segments=${manifest.segments.length} duration=${probe?.duration?.toFixed(2) ?? 'n/a'} durationOk=${durationOk} stream=${streamOk} progress=${progressOk} out=${finalPath}`)
+    app.exit(ok ? 0 : 1)
+  } catch (e) {
+    delete process.env['ME_BROLL_LOCAL']
+    console.log('SMOKE_BROLL_GPU_REAL_FAIL ' + (e as Error).message)
+    try {
+      const { destroyGpuWorker: destroyWorker } = await import('./services/engine/gpu/host')
+      destroyWorker()
+    } catch { /* ignore */ }
+    app.exit(1)
+  }
+}
+
+/**
  * Full end-to-end journey (ME_SMOKE=e2e) on one continuous DB: fixture scrape +
  * download + transcript, REAL images, and a REAL ffmpeg render — probed with
  * ffprobe. Exercises the three render branches (multi-image+xfade, single image,
@@ -1423,6 +1511,10 @@ app.whenReady().then(() => {
   }
   if (process.env['ME_SMOKE'] === 'broll-real') {
     void runSmokeBrollReal()
+    return
+  }
+  if (process.env['ME_SMOKE'] === 'broll-gpu-real') {
+    void runSmokeBrollGpuReal()
     return
   }
   // Demo-dependent smokes (M2–M7) assert against deterministic seeded rows. Production
