@@ -5,6 +5,7 @@ import { newVideos, runSource } from '../ipc/automation'
 import { refreshNichePools } from './pool-refresh'
 import { hhmm, pushActivity } from '../ipc/events'
 import { logger } from './logger'
+import { sentryLog } from './sentry'
 
 // Auto-watch scheduler (Workflow P5). On each tick it checks every watched source
 // for new uploads and runs the source-owned automation hands-free. Runs in the main
@@ -51,6 +52,14 @@ export async function tick(): Promise<void> {
       } catch (e) {
         const msg = (e as Error).message
         SCHED_LOG.warn(`auto-watch failed source=${s.name || s.handle} url=${s.url}: ${msg}`)
+        // Wide event + fmt: name is readable in the message; ids stay filterable attributes.
+        const sourceLabel = s.name || s.handle || s.id
+        sentryLog.warn(sentryLog.fmt`Auto-watch source failed: ${sourceLabel}`, {
+          source_id: s.id,
+          source_name: sourceLabel,
+          source_order: s.sourceOrder ?? 'Latest',
+          error_message: msg.slice(0, 200)
+        })
         pushActivity({ t: hhmm(), icon: '!', color: '#ff5a6e', text: `Auto-watch failed: ${s.name || s.handle} — ${msg.slice(0, 80)}` })
       }
       await sleep((settings.autoScrape.delaySec || 0) * 1000)

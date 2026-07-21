@@ -12,6 +12,7 @@ import { probeDuration } from '../../services/audio'
 import type { ProviderJob } from '../../../shared/talkingphotos'
 import type { TranscriptWord } from '../../../shared/types'
 import { L } from '../../services/logger'
+import { sentryLog } from '../../services/sentry'
 
 // Local-caption alternative to provider subtitles (plan §8). Downloads/reuses the
 // verified TalkingPhotos MP4, reuses the EXISTING Groq transcription + ASS caption
@@ -64,6 +65,14 @@ export async function applyLocalCaptions(providerJobId: string, opts: { aspect?:
   const assPath = join(scratch, 'captions.ass')
   const dest = `${job.localOutputPath.replace(/\.mp4$/i, '')}.captioned.mp4`
   const tmp = `${dest}.part`
+  const startedAt = Date.now()
+  const aspect = opts.aspect ?? '16:9'
+  sentryLog.info('TalkingPhotos local captions started', {
+    provider_job_id: job.id,
+    operation: 'local_captions',
+    aspect,
+    preset: opts.preset ?? 'Hormozi'
+  })
   try {
     const extract = await runFfmpeg(['-y', '-i', job.localOutputPath, '-vn', '-acodec', 'libmp3lame', '-q:a', '4', audioPath])
     if (extract.code !== 0 || !existsSync(audioPath)) throw new LocalCaptionFailure(`Could not extract audio for transcription: ${extract.stderr}`)
@@ -72,7 +81,6 @@ export async function applyLocalCaptions(providerJobId: string, opts: { aspect?:
     if (!rawWords.length) throw new LocalCaptionFailure('Transcription returned no words — cannot build captions.')
     const words = wordsToTranscriptWords(rawWords, job.id)
 
-    const aspect = opts.aspect ?? '16:9'
     const { ass } = buildAss(words, { preset: opts.preset ?? 'Hormozi', aspect, keywords: false })
     writeFileSync(assPath, ass, 'utf8')
 
@@ -97,9 +105,24 @@ export async function applyLocalCaptions(providerJobId: string, opts: { aspect?:
     renameSync(tmp, dest)
     repos.updateProviderJob(job.id, { localCaptionedOutputPath: dest })
     L.info(`talkingphotos local captions applied job=${job.id} output=${dest}`)
+    sentryLog.info('TalkingPhotos local captions applied', {
+      provider_job_id: job.id,
+      operation: 'local_captions',
+      aspect,
+      word_count: words.length,
+      duration_sec: Number(captionedDuration.toFixed(2)),
+      duration_ms: Date.now() - startedAt
+    })
     return repos.providerJob(job.id)!
   } catch (e) {
     try { if (existsSync(tmp)) unlinkSync(tmp) } catch { /* best-effort cleanup */ }
+    sentryLog.error('TalkingPhotos local captions failed', {
+      provider_job_id: job.id,
+      operation: 'local_captions',
+      aspect,
+      duration_ms: Date.now() - startedAt,
+      error_message: (e as Error).message.slice(0, 200)
+    })
     throw e
   } finally {
     try { rmSync(scratch, { recursive: true, force: true }) } catch { /* best-effort cleanup */ }

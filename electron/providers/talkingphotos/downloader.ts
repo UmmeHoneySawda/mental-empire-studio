@@ -13,6 +13,7 @@ import {
   type ProviderJob
 } from '../../../shared/talkingphotos'
 import { L } from '../../services/logger'
+import { sentryLog } from '../../services/sentry'
 
 // Generic provider-output downloader. The existing electron/services/downloader.ts is
 // a yt-dlp/ffmpeg orchestrator for YouTube audio extraction — not a generic HTTPS
@@ -145,11 +146,23 @@ export async function downloadProviderJobOutput(providerJobId: string): Promise<
     }
     renameSync(tmp, dest)
     repos.updateProviderJob(job.id, { status: 'completed', localOutputPath: dest, downloadedAt: new Date().toISOString(), errorCode: undefined, errorMessage: undefined })
+    sentryLog.info('TalkingPhotos output downloaded', {
+      provider_job_id: job.id,
+      operation: job.operation,
+      remote_project_id: job.remoteProjectId ?? '',
+      duration_sec: Number(durationSec.toFixed(2))
+    })
     return repos.providerJob(job.id)!
   } catch (e) {
     try { if (existsSync(tmp)) unlinkSync(tmp) } catch { /* best-effort cleanup */ }
     const message = (e as Error).message
     L.warn(`talkingphotos download failed job=${job.id}: ${message}`)
+    sentryLog.error('TalkingPhotos output download failed', {
+      provider_job_id: job.id,
+      operation: job.operation,
+      remote_project_id: job.remoteProjectId ?? '',
+      error_message: message.slice(0, 200)
+    })
     repos.updateProviderJob(job.id, { status: 'downloading', errorMessage: message })
     throw e
   }

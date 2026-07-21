@@ -15,6 +15,7 @@ import {
   type ProviderJobOperation
 } from '../../../shared/talkingphotos'
 import { L } from '../../services/logger'
+import { sentryLog } from '../../services/sentry'
 
 // Single main-process polling coordinator (plan §12). Polls known jobs by remote
 // project id (never the paginated project list — the HAR's own capture showed that
@@ -67,10 +68,43 @@ async function pollJobOnce(job: ProviderJob, state: PollState): Promise<void> {
     const updated = repos.providerJob(job.id)
     if (updated) emit('talkingphotos:job', updated)
 
+    // Milestone logs only when status actually changes — not every poll tick.
+    if (mappedStatus !== job.status) {
+      if (isTerminalProviderJobStatus(mappedStatus) || mappedStatus === 'attention') {
+        const level = mappedStatus === 'completed' ? 'info' : 'warn'
+        sentryLog[level](sentryLog.fmt`TalkingPhotos job reached ${mappedStatus}`, {
+          provider_job_id: job.id,
+          operation: job.operation,
+          remote_project_id: job.remoteProjectId ?? '',
+          job_status: mappedStatus,
+          previous_status: job.status,
+          progress: progress ?? 0,
+          internal_segment: !!job.internalSegment
+        })
+      } else if (mappedStatus === 'downloading' || mappedStatus === 'running' || mappedStatus === 'queued') {
+        sentryLog.info(sentryLog.fmt`TalkingPhotos job status: ${mappedStatus}`, {
+          provider_job_id: job.id,
+          operation: job.operation,
+          remote_project_id: job.remoteProjectId ?? '',
+          job_status: mappedStatus,
+          previous_status: job.status,
+          progress: progress ?? 0
+        })
+      }
+    }
+
     if (!job.internalSegment && mappedStatus === 'downloading' && !downloadsInFlight.has(job.id)) {
       downloadsInFlight.add(job.id)
+      sentryLog.info('TalkingPhotos auto-download started', {
+        provider_job_id: job.id,
+        operation: job.operation,
+        remote_project_id: job.remoteProjectId ?? ''
+      })
       void downloadProviderJobOutput(job.id)
-        .catch((e: Error) => L.warn(`talkingphotos auto-download failed job=${job.id}: ${e.message}`))
+        .catch((e: Error) => {
+          L.warn(`talkingphotos auto-download failed job=${job.id}: ${e.message}`)
+          // downloadProviderJobOutput already emits a structured error log; keep this local-only.
+        })
         .finally(() => {
           downloadsInFlight.delete(job.id)
           const after = repos.providerJob(job.id)
@@ -90,11 +124,19 @@ async function pollJobOnce(job: ProviderJob, state: PollState): Promise<void> {
       const conn = repos.providerConnection(TALKINGPHOTOS_CONNECTION_ID)
       if (conn) repos.upsertProviderConnection({ ...conn, status: 'reauth_required', lastError: e.normalized.message })
       repos.updateProviderJob(job.id, { status: 'attention', errorMessage: e.normalized.message })
+      sentryLog.error('TalkingPhotos poll paused — reauth required', {
+        provider_job_id: job.id,
+        operation: job.operation,
+        remote_project_id: job.remoteProjectId ?? '',
+        error_kind: 'authentication',
+        error_message: e.normalized.message.slice(0, 200)
+      })
       const updated = repos.providerJob(job.id)
       if (updated) emit('talkingphotos:job', updated)
       return
     }
     L.warn(`talkingphotos poll failed job=${job.id}: ${(e as Error).message}`)
+    // Transient poll noise is high-volume; only keep local log. Auth is the actionable case above.
     pollState.set(job.id, { streak: state.streak, nextPollAt: Date.now() + nextPollDelayMs({ sameStateStreak: state.streak + 1 }) })
   }
 }
@@ -115,12 +157,14 @@ async function tick(): Promise<void> {
 export function startTalkingPhotosPoller(): void {
   if (timer) return
   timer = setInterval(() => { void tick() }, TICK_MS)
+  sentryLog.info('TalkingPhotos poller started', { operation: 'poller', tick_ms: TICK_MS })
 }
 
 export function stopTalkingPhotosPoller(): void {
   if (timer) clearInterval(timer)
   timer = null
   pollState.clear()
+  sentryLog.info('TalkingPhotos poller stopped', { operation: 'poller' })
 }
 
 /** Immediately poll every non-terminal job, in-process (no waiting for the next
@@ -129,6 +173,10 @@ export async function reconcileNonTerminalProviderJobs(): Promise<void> {
   pausedUntilReconnect = false
   await advanceProviderOrchestrations()
   const jobs = getRepos().nonTerminalProviderJobs()
+  sentryLog.info('TalkingPhotos reconcile non-terminal jobs', {
+    operation: 'poller',
+    job_count: jobs.length
+  })
   for (const job of jobs) {
     await pollJobOnce(job, pollState.get(job.id) ?? { streak: 0, nextPollAt: 0 })
   }
@@ -171,14 +219,39 @@ export async function importRemoteProjects(): Promise<number> {
     repos.upsertProviderJob(job)
     imported++
   }
-  if (imported > 0) L.info(`talkingphotos: imported ${imported} remote project(s) not yet tracked locally`)
+  if (imported > 0) {
+    L.info(`talkingphotos: imported ${imported} remote project(s) not yet tracked locally`)
+    sentryLog.info('TalkingPhotos imported remote projects', {
+      operation: 'poller',
+      imported_count: imported,
+      remote_list_size: remoteList.length
+    })
+  }
   return imported
 }
 
 /** Manual "Sync" action: import any untracked remote projects, reconcile every
  *  non-terminal job now, and return the full, fresh local job list. */
 export async function syncAllProviderJobsNow(): Promise<ProviderJob[]> {
-  await importRemoteProjects()
-  await reconcileNonTerminalProviderJobs()
-  return getRepos().providerJobs()
+  const startedAt = Date.now()
+  sentryLog.info('TalkingPhotos sync started', { operation: 'poller' })
+  try {
+    const imported = await importRemoteProjects()
+    await reconcileNonTerminalProviderJobs()
+    const jobs = getRepos().providerJobs()
+    sentryLog.info('TalkingPhotos sync completed', {
+      operation: 'poller',
+      imported_count: imported,
+      job_count: jobs.length,
+      duration_ms: Date.now() - startedAt
+    })
+    return jobs
+  } catch (e) {
+    sentryLog.error('TalkingPhotos sync failed', {
+      operation: 'poller',
+      duration_ms: Date.now() - startedAt,
+      error_message: (e as Error).message.slice(0, 200)
+    })
+    throw e
+  }
 }

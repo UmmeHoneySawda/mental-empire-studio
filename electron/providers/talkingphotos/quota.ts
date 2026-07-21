@@ -2,6 +2,7 @@ import { getRepos } from '../../db'
 import { getCapabilities } from './client'
 import { computeSlotBudget, TALKINGPHOTOS_CONNECTION_ID, type ProviderCapabilities } from '../../../shared/talkingphotos'
 import { L } from '../../services/logger'
+import { sentryLog } from '../../services/sentry'
 
 // Provider submission control (plan §6 — release-critical for long-form use). Only
 // 'video' operation jobs (an actual POST /project call) consume a concurrency/daily
@@ -61,4 +62,9 @@ export function localActiveVideoSubmissionCount(): number {
 
 export function logBudgetExhausted(reason: 'concurrent' | 'daily', jobId: string): void {
   L.info(`talkingphotos: job=${jobId} queued locally — provider ${reason} limit reached, will retry on the next pass`)
+  sentryLog.warn('TalkingPhotos submission budget exhausted', {
+    provider_job_id: jobId,
+    operation: 'quota',
+    limit_reason: reason
+  })
 }

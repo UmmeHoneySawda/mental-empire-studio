@@ -10,6 +10,7 @@ import {
   type ProviderLanguage
 } from '../../../shared/talkingphotos'
 import { L } from '../../services/logger'
+import { sentryLog } from '../../services/sentry'
 
 // Provider-side subtitles (plan §8). The clone sent to POST /project/subtitles/create
 // is built and sanitized entirely in the main process (buildSubtitleCreatePayload) —
@@ -43,16 +44,34 @@ export async function createProviderSubtitles(sourceJobId: string, opts: { langu
 
   // Never log the raw source project — only that a sanitized clone was built and sent.
   L.info(`talkingphotos subtitles: submitting sanitized clone for source=${sourceJobId} remoteProjectId=${source.remoteProjectId}`)
-  const result = await createSubtitlesProject(payload)
+  try {
+    const result = await createSubtitlesProject(payload)
 
-  const now = new Date().toISOString()
-  const job: ProviderJob = {
-    id: `tpj-sub-${randomUUID()}`, provider: TALKINGPHOTOS_PROVIDER, connectionId: TALKINGPHOTOS_CONNECTION_ID,
-    operation: 'subtitles', parentProviderJobId: sourceJobId, projectId: source.projectId,
-    automationJobId: source.automationJobId, automationItemId: source.automationItemId,
-    remoteProjectId: result.id, status: result.status === 'processing' ? 'running' : 'queued', progress: 0,
-    remoteMediaUrl: result.mediaUrl, internalSegment: false, createdAt: now, updatedAt: now
+    const now = new Date().toISOString()
+    const job: ProviderJob = {
+      id: `tpj-sub-${randomUUID()}`, provider: TALKINGPHOTOS_PROVIDER, connectionId: TALKINGPHOTOS_CONNECTION_ID,
+      operation: 'subtitles', parentProviderJobId: sourceJobId, projectId: source.projectId,
+      automationJobId: source.automationJobId, automationItemId: source.automationItemId,
+      remoteProjectId: result.id, status: result.status === 'processing' ? 'running' : 'queued', progress: 0,
+      remoteMediaUrl: result.mediaUrl, internalSegment: false, createdAt: now, updatedAt: now
+    }
+    repos.upsertProviderJob(job)
+    sentryLog.info('TalkingPhotos provider subtitles submitted', {
+      provider_job_id: job.id,
+      operation: 'subtitles',
+      source_job_id: sourceJobId,
+      remote_project_id: result.id,
+      language: opts.language ?? 'default',
+      job_status: job.status
+    })
+    return job
+  } catch (e) {
+    sentryLog.error('TalkingPhotos provider subtitles failed', {
+      operation: 'subtitles',
+      source_job_id: sourceJobId,
+      remote_project_id: source.remoteProjectId ?? '',
+      error_message: (e as Error).message.slice(0, 200)
+    })
+    throw e
   }
-  repos.upsertProviderJob(job)
-  return job
 }

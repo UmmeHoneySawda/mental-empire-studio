@@ -5,6 +5,7 @@ import type { AppSettings, ScrapedVideo } from '../../shared/types'
 import { resolveBinDir, resolveYtdlpPath } from './bin'
 import { formatOutputName, probeDuration } from './audio'
 import { L } from './logger'
+import { sentryLog } from './sentry'
 
 /** Vendored ffmpeg dir if present, else undefined → yt-dlp falls back to PATH.
  *  yt-dlp's mp3 extraction needs BOTH ffmpeg and ffprobe in the same dir; we log a
@@ -105,35 +106,66 @@ export async function downloadAudio(params: DownloadParams): Promise<DownloadRes
   const { video, downloadId, channel, outDir, bitrate, settings, onProgress } = params
   mkdirSync(outDir, { recursive: true })
   const dest = targetPath(outDir, channel, video.title)
-
-  // Resume: a finished file is reused, never re-downloaded.
-  if (await isVerifiedAudio(dest)) {
-    onProgress?.(100)
-    return { filePath: dest, skipped: true }
+  const startedAt = Date.now()
+  const baseAttrs = {
+    video_id: video.id,
+    channel,
+    bitrate,
+    supervised: !!params.supervised
   }
 
-  // Offline seam: copy a recorded sample mp3 to simulate a completed download.
-  const fixture = process.env['ME_DOWNLOAD_FIXTURE']
-  if (fixture) {
-    copyFileSync(fixture, dest)
-    if (!await isVerifiedAudio(dest)) throw new DownloadFailure('Download fixture did not produce valid audio.', { stderrCategory: 'invalid-media' })
-    onProgress?.(100)
-    return { filePath: dest, skipped: false }
-  }
+  try {
+    // Resume: a finished file is reused, never re-downloaded.
+    if (await isVerifiedAudio(dest)) {
+      onProgress?.(100)
+      return { filePath: dest, skipped: true }
+    }
 
-  // A tiny/truncated file is never a completed cache hit. Quarantine it before yt-dlp
-  // resumes so a stale artifact cannot be mistaken for success on the next attempt.
-  quarantineIncomplete(dest)
-  if ((params.delaySec ?? 0) > 0) {
-    const delayMs = Math.round((params.delaySec as number) * 1000 + Math.random() * 750)
-    await new Promise((resolveDelay) => setTimeout(resolveDelay, delayMs))
-  }
-  await runYtdlpDownload(video, dest, bitrate, settings, onProgress, downloadId, !!params.supervised)
-  if (!await isVerifiedAudio(dest)) {
+    // Offline seam: copy a recorded sample mp3 to simulate a completed download.
+    const fixture = process.env['ME_DOWNLOAD_FIXTURE']
+    if (fixture) {
+      copyFileSync(fixture, dest)
+      if (!await isVerifiedAudio(dest)) throw new DownloadFailure('Download fixture did not produce valid audio.', { stderrCategory: 'invalid-media' })
+      onProgress?.(100)
+      sentryLog.info('Audio download completed', { ...baseAttrs, skipped: false, fixture: true, duration_ms: Date.now() - startedAt })
+      return { filePath: dest, skipped: false }
+    }
+
+    // A tiny/truncated file is never a completed cache hit. Quarantine it before yt-dlp
+    // resumes so a stale artifact cannot be mistaken for success on the next attempt.
     quarantineIncomplete(dest)
-    throw new DownloadFailure('Download completed without a valid, non-empty audio stream.', { stderrCategory: 'invalid-media' })
+    if ((params.delaySec ?? 0) > 0) {
+      const delayMs = Math.round((params.delaySec as number) * 1000 + Math.random() * 750)
+      await new Promise((resolveDelay) => setTimeout(resolveDelay, delayMs))
+    }
+    await runYtdlpDownload(video, dest, bitrate, settings, onProgress, downloadId, !!params.supervised)
+    if (!await isVerifiedAudio(dest)) {
+      quarantineIncomplete(dest)
+      throw new DownloadFailure('Download completed without a valid, non-empty audio stream.', { stderrCategory: 'invalid-media' })
+    }
+    // Wide success event — one row per finished download (skips cache hits above).
+    sentryLog.info('Audio download completed', {
+      ...baseAttrs,
+      skipped: false,
+      fixture: false,
+      duration_ms: Date.now() - startedAt
+    })
+    return { filePath: dest, skipped: false }
+  } catch (e) {
+    const msg = (e as Error).message || String(e)
+    // User cancel is expected noise — keep local logs only.
+    if (msg === 'download cancelled') throw e
+    const details = e instanceof DownloadFailure ? e.details : undefined
+    sentryLog.error('Audio download failed', {
+      ...baseAttrs,
+      duration_ms: Date.now() - startedAt,
+      exit_code: details?.exitCode ?? -1,
+      http_status: details?.httpStatus ?? 0,
+      stderr_category: details?.stderrCategory ?? (msg.includes('timed out') ? 'timeout' : 'unknown'),
+      error_message: msg.slice(0, 200)
+    })
+    throw e
   }
-  return { filePath: dest, skipped: false }
 }
 
 function runYtdlpDownload(

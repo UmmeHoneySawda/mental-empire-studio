@@ -13,6 +13,7 @@ import {
   type ProviderConnectionStatus
 } from '../../../shared/talkingphotos'
 import { L } from '../../services/logger'
+import { sentryLog } from '../../services/sentry'
 
 // Connection lifecycle: an isolated, persistent-partition login BrowserWindow plus
 // DB-backed connection state. provider_connections never stores cookies/tokens — only
@@ -60,12 +61,32 @@ function saveConnectionRow(patch: Partial<ProviderConnection>): ProviderConnecti
   return next
 }
 
+/** Statuses worth shipping as Sentry Logs (skip verifying ↔ waiting churn during login). */
+const LOGGED_CONNECTION_STATUSES = new Set<ProviderConnectionStatus>([
+  'connecting',
+  'waiting_for_login',
+  'connected',
+  'disconnected',
+  'reauth_required',
+  'attention'
+])
+
 /** The single place that changes connection status from here on: persists the row
  *  and pushes it to every renderer window over CONNECTION_STATUS_EVENT so the UI
  *  never has to infer progress/failure from a long-pending IPC promise. */
 function setStatus(status: ProviderConnectionStatus, extra: Partial<ProviderConnection> = {}): ProviderConnection {
+  const prev = loadConnectionRow().status
   const conn = saveConnectionRow({ status, ...extra })
   emit(CONNECTION_STATUS_EVENT, conn)
+  if (status !== prev && LOGGED_CONNECTION_STATUSES.has(status)) {
+    const level = status === 'attention' || status === 'reauth_required' ? 'warn' : 'info'
+    sentryLog[level](sentryLog.fmt`TalkingPhotos connection status: ${status}`, {
+      operation: 'session',
+      connection_status: status,
+      previous_status: prev,
+      has_error: !!conn.lastError
+    })
+  }
   return conn
 }
 
@@ -77,7 +98,10 @@ export async function getConnectionStatus(refresh = false): Promise<ProviderConn
   if (!refresh || current.status !== 'connected') return current
   const health = await healthCheck()
   if (health.ok) return saveConnectionRow({ status: 'connected', lastVerifiedAt: nowIso(), lastError: undefined })
-  if (health.reauthRequired) return saveConnectionRow({ status: 'reauth_required', lastError: health.message })
+  if (health.reauthRequired) {
+    // Route through setStatus so reauth gets a structured log + UI push event.
+    return setStatus('reauth_required', { lastError: health.message })
+  }
   return current // network/other failure: don't destroy the last known good status
 }
 
@@ -147,6 +171,10 @@ function finishFailure(message: string): void {
   settled = true
   teardownLoginFlow()
   L.warn(`talkingphotos connect: ${message}`)
+  sentryLog.warn('TalkingPhotos connect failed', {
+    operation: 'session',
+    error_message: message.slice(0, 200)
+  })
   setStatus('attention', { lastError: message })
 }
 
@@ -213,8 +241,13 @@ export async function connectTalkingPhotos(): Promise<ProviderConnection> {
   if (loginWindow && !loginWindow.isDestroyed()) {
     loginWindow.focus()
     loginWindow.show()
+    sentryLog.info('TalkingPhotos connect focused existing login window', {
+      operation: 'session',
+      connection_status: loadConnectionRow().status
+    })
     return loadConnectionRow()
   }
+  sentryLog.info('TalkingPhotos connect started', { operation: 'session' })
   setStatus('connecting', { lastError: undefined })
   return openLoginWindow()
 }
@@ -225,16 +258,23 @@ export async function connectTalkingPhotos(): Promise<ProviderConnection> {
  *  path bypasses the normal poll/signal machinery, so it can't rely on finishSuccess()'s
  *  `settled` guard (which assumes it's only reached from within an active flow). */
 export async function reconnectTalkingPhotos(): Promise<ProviderConnection> {
+  sentryLog.info('TalkingPhotos reconnect attempted', { operation: 'session' })
   const health = await healthCheck()
   if (health.ok) {
     settled = true
     teardownLoginFlow()
+    sentryLog.info('TalkingPhotos reconnect succeeded without login window', { operation: 'session' })
     return setStatus('connected', { connectedAt: nowIso(), lastVerifiedAt: nowIso(), lastError: undefined })
   }
+  sentryLog.info('TalkingPhotos reconnect needs interactive login', {
+    operation: 'session',
+    reauth_required: health.reauthRequired
+  })
   return connectTalkingPhotos()
 }
 
 export async function disconnectTalkingPhotos(): Promise<ProviderConnection> {
+  sentryLog.info('TalkingPhotos disconnect started', { operation: 'session' })
   settled = true
   teardownLoginFlow()
   await clearProviderSessionStorage()
@@ -252,6 +292,10 @@ const INTERRUPTIBLE_STATUSES: ProviderConnectionStatus[] = ['connecting', 'waiti
 export function reconcileInterruptedConnectionOnStartup(): void {
   const current = loadConnectionRow()
   if (INTERRUPTIBLE_STATUSES.includes(current.status)) {
+    sentryLog.warn('TalkingPhotos login interrupted by app restart', {
+      operation: 'session',
+      previous_status: current.status
+    })
     setStatus('attention', { lastError: 'TalkingPhotos login was interrupted by an app restart — click Connect to try again.' })
   }
 }

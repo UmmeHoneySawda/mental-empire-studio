@@ -38,6 +38,7 @@ import { fetchSubmissionBudget, logBudgetExhausted, type SubmissionBudget } from
 import { downloadProviderJobOutput, outputDir } from './downloader'
 import { mergeVideoFilesLocally } from './localMerge'
 import { L } from '../../services/logger'
+import { sentryLog } from '../../services/sentry'
 
 const inFlight = new Set<string>()
 const creationByFingerprint = new Map<string, Promise<ProviderJob>>()
@@ -79,9 +80,21 @@ function saveCreationFailure(jobId: string, error: unknown, fallbackCode: string
     const connection = repos.providerConnection(TALKINGPHOTOS_CONNECTION_ID)
     if (connection) repos.upsertProviderConnection({ ...connection, status: 'reauth_required', lastError: message })
     repos.updateProviderJob(jobId, { status: 'attention', errorCode: 'reauth_required', errorMessage: message })
+    sentryLog.error('TalkingPhotos creation needs attention', {
+      provider_job_id: jobId,
+      error_code: 'reauth_required',
+      error_kind: 'authentication',
+      error_message: message.slice(0, 200)
+    })
     return
   }
   repos.updateProviderJob(jobId, { status: 'attention', errorCode: fallbackCode, errorMessage: message })
+  sentryLog.error('TalkingPhotos creation needs attention', {
+    provider_job_id: jobId,
+    error_code: fallbackCode,
+    error_kind: 'creation',
+    error_message: message.slice(0, 200)
+  })
 }
 
 function validateInput(input: TalkingPhotosCreateInput): void {
@@ -563,7 +576,23 @@ export async function createScriptVideo(input: TalkingPhotosScriptCreateInput): 
       } satisfies TalkingPhotosScriptCreationState)
     }
     const { job: root, created } = getRepos().findOrCreateProviderJob(candidate)
-    if (created) L.info(`talkingphotos script creation queued job=${root.id} chunks=${segments.length}`)
+    if (created) {
+      L.info(`talkingphotos script creation queued job=${root.id} chunks=${segments.length}`)
+      sentryLog.info('TalkingPhotos script video queued', {
+        provider_job_id: root.id,
+        operation: root.operation,
+        style: input.style,
+        aspect_ratio: input.aspectRatio,
+        chunk_count: segments.length,
+        script_length: input.script.length,
+        has_project: !!input.projectId
+      })
+    } else {
+      sentryLog.info('TalkingPhotos script video reused existing job', {
+        provider_job_id: root.id,
+        operation: root.operation
+      })
+    }
     return processScriptRoot(root.id)
   })()
   creationByFingerprint.set(dedupeKey, creation)
@@ -618,7 +647,24 @@ export async function createUploadedAudioVideo(input: TalkingPhotosCreateInput):
     // Atomic lookup-or-insert enforced by the DB unique index — a lost race returns
     // the winner's row instead of raising a raw constraint error (plan §11).
     const { job: root, created } = getRepos().findOrCreateProviderJob(candidate)
-    if (created) L.info(`talkingphotos creation queued job=${root.id} segments=${segments.length} duration=${durationSec.toFixed(2)}s limit=${maxSegmentSec}s`)
+    if (created) {
+      L.info(`talkingphotos creation queued job=${root.id} segments=${segments.length} duration=${durationSec.toFixed(2)}s limit=${maxSegmentSec}s`)
+      sentryLog.info('TalkingPhotos uploaded-audio video queued', {
+        provider_job_id: root.id,
+        operation: root.operation,
+        style: input.style,
+        aspect_ratio: input.aspectRatio,
+        segment_count: segments.length,
+        duration_sec: Number(durationSec.toFixed(2)),
+        max_segment_sec: maxSegmentSec,
+        has_project: !!input.projectId
+      })
+    } else {
+      sentryLog.info('TalkingPhotos uploaded-audio video reused existing job', {
+        provider_job_id: root.id,
+        operation: root.operation
+      })
+    }
     return processRoot(root.id)
   })()
   creationByFingerprint.set(dedupeKey, creation)
@@ -661,9 +707,20 @@ async function attemptLocalMergeFallback(snapshot: ProviderJob, children: Provid
       errorCode: 'local_merge_fallback', errorMessage: `Remote merge ("${title}") was unavailable; merged locally from ${ordered.length} downloaded segments.`
     })
     L.info(`talkingphotos: local merge fallback succeeded job=${snapshot.id} output=${dest}`)
+    sentryLog.info('TalkingPhotos local merge fallback succeeded', {
+      provider_job_id: snapshot.id,
+      operation: 'video',
+      segment_count: ordered.length
+    })
   } catch (error) {
     L.warn(`talkingphotos: local merge fallback failed job=${snapshot.id}: ${(error as Error).message}`)
     repos.updateProviderJob(snapshot.id, { status: 'attention', errorCode: 'local_merge_failed', errorMessage: (error as Error).message })
+    sentryLog.error('TalkingPhotos local merge fallback failed', {
+      provider_job_id: snapshot.id,
+      operation: 'video',
+      error_code: 'local_merge_failed',
+      error_message: (error as Error).message.slice(0, 200)
+    })
   }
 }
 
@@ -679,6 +736,12 @@ async function advanceMergeRoot<S extends MergeableState>(snapshot: ProviderJob,
     .sort((a, b) => (a.segmentOrdinal ?? 0) - (b.segmentOrdinal ?? 0))
   if (children.some((job) => job.status === 'failed' || job.status === 'attention')) {
     repos.updateProviderJob(snapshot.id, { status: 'attention', errorCode: 'segment_failed', errorMessage: 'One or more TalkingPhotos segments need attention before merging.' })
+    sentryLog.warn('TalkingPhotos merge blocked by segment attention', {
+      provider_job_id: snapshot.id,
+      operation: 'video',
+      error_code: 'segment_failed',
+      segment_count: children.length
+    })
     return
   }
   if (children.length !== state.segments.length || children.some((job) => job.status !== 'completed' || !job.remoteProjectId)) return

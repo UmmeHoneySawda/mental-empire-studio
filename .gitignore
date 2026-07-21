@@ -9,3 +9,4 @@ dist/
 .preview/
 resources/bin/
 browser-test-out/
+.idea/

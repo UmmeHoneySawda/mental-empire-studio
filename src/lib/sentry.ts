@@ -9,5 +9,16 @@ export function initSentryRenderer(): void {
   // init()'s default integrations already capture uncaught window errors and
   // unhandled promise rejections (including uncaught React render errors), so no
   // separate error-boundary component is needed here.
-  Sentry.init({})
+  // enableLogs + consoleLoggingIntegration: console.warn/error become structured Logs.
+  Sentry.init({
+    enableLogs: true,
+    integrations: [
+      // Keep volume low: warn/error only (not every console.log from React/dev tools).
+      Sentry.consoleLoggingIntegration({ levels: ['warn', 'error'] })
+    ],
+    beforeSendLog: (entry) => {
+      if (entry.level === 'debug' || entry.level === 'trace') return null
+      return entry
+    }
+  })
 }

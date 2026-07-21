@@ -16,6 +16,7 @@ import { masterAudioTwoPass } from './engine/audio-master'
 import { ffmpegErrorTail } from './engine/ffmpeg-error'
 import type { BrollSegment } from './broll'
 import { logger } from './logger'
+import { sentryLog } from './sentry'
 import { ffmpegPath, ffprobePath } from './bin'
 
 // ffmpeg render: image(s) over the mp3 with Ken Burns + crossfades, burned ASS
@@ -607,15 +608,17 @@ export async function runRender(inp: RenderInputs, onProgress?: (p: FfmpegProgre
     return { outputPath: inp.outPath }
   }
 
+  const encoder = inp.settings.encoder ?? 'cpu'
+  const startedAt = Date.now()
+  let gpuRetried = false
   try {
     const args = buildRenderArgs(inp)
     if (inp.logPath) {
-      const enc = (inp.settings.encoder ?? 'cpu')
       const caps = inp.caps ?? FALLBACK_CAPS
-      const gpuEncode = enc !== 'cpu'
+      const gpuEncode = encoder !== 'cpu'
       const cudaScale = args.some((arg) => arg.includes('scale_cuda') || arg.includes('hwupload_cuda') || arg.includes('hwdownload'))
       const motion = args.some((arg) => arg.includes('zoompan'))
-      appendFileSync(inp.logPath, `\n[render] encoder=${enc} encode=${gpuEncode ? 'GPU' : 'CPU'} scale=${cudaScale ? 'GPU(cuda)' : 'CPU'} subtitles=CPU(libass) kenBurns/punch=${motion ? 'on' : 'off (static preset or long-form fast path)'} quality=${inp.settings.quality}${inp.previewDimensions ? ` preview=${inp.previewDimensions.w}x${inp.previewDimensions.h}` : ''} durationSec=${inp.project.durationSec.toFixed(2)}\n`)
+      appendFileSync(inp.logPath, `\n[render] encoder=${encoder} encode=${gpuEncode ? 'GPU' : 'CPU'} scale=${cudaScale ? 'GPU(cuda)' : 'CPU'} subtitles=CPU(libass) kenBurns/punch=${motion ? 'on' : 'off (static preset or long-form fast path)'} quality=${inp.settings.quality}${inp.previewDimensions ? ` preview=${inp.previewDimensions.w}x${inp.previewDimensions.h}` : ''} durationSec=${inp.project.durationSec.toFixed(2)}\n`)
       appendFileSync(inp.logPath, `\n[ffmpeg]\n${ffmpegCommandLine(args)}\n`)
     }
     try {
@@ -624,26 +627,66 @@ export async function runRender(inp: RenderInputs, onProgress?: (p: FfmpegProgre
       // Cancellation (we killed it / a newer job replaced it) is not an encode failure:
       // bubble it up untouched — do NOT retry (that would spawn a fresh encode) or wrap it.
       if (isCancellation(e, inp.jobId)) throw e
-      if ((inp.settings.encoder ?? 'cpu') === 'cpu') throw e
+      if (encoder === 'cpu') throw e
       // Consumer NVENC/QSV/AMF sessions can fail to open transiently (driver
       // session-limit contention with another app, brief GPU-context hiccup).
       // One same-encoder retry clears most of these without masking a real
       // driver/hardware problem, which will fail again and still surface below.
       const firstError = (e as Error).message
       if (inp.logPath) appendFileSync(inp.logPath, `\n[ffmpeg:gpu-failed-retrying] ${firstError}\n`)
-      logger.scope('render').warn(`GPU encode failed (${inp.settings.encoder}), retrying once: ${firstError}`)
+      logger.scope('render').warn(`GPU encode failed (${encoder}), retrying once: ${firstError}`)
+      gpuRetried = true
+      sentryLog.warn('GPU encode retrying', {
+        project_id: inp.project.id,
+        job_id: inp.jobId ?? '',
+        encoder,
+        error_message: firstError.slice(0, 200)
+      })
       await spawnFfmpeg(args, inp.project.durationSec, onProgress, inp.jobId)
     }
   } catch (e) {
     if (isCancellation(e, inp.jobId)) throw e
-    if ((inp.settings.encoder ?? 'cpu') === 'cpu') throw e
+    if (encoder === 'cpu') {
+      sentryLog.error('Render failed', {
+        project_id: inp.project.id,
+        job_id: inp.jobId ?? '',
+        encoder,
+        quality: String(inp.settings.quality ?? ''),
+        duration_sec: Number(inp.project.durationSec.toFixed(2)),
+        duration_ms: Date.now() - startedAt,
+        error_message: (e as Error).message.slice(0, 200)
+      })
+      throw e
+    }
     const gpuError = (e as Error).message
     if (inp.logPath) appendFileSync(inp.logPath, `\n[ffmpeg:gpu-failed] ${gpuError}\n`)
-    logger.scope('render').warn(`GPU encode failed (${inp.settings.encoder}): ${gpuError}`)
-    throw new Error(`GPU encode failed for ${inp.settings.encoder.toUpperCase()}; CPU fallback is disabled. Fix the GPU encoder/driver or choose CPU in Settings. ${gpuError}`)
+    logger.scope('render').warn(`GPU encode failed (${encoder}): ${gpuError}`)
+    sentryLog.error('Render failed', {
+      project_id: inp.project.id,
+      job_id: inp.jobId ?? '',
+      encoder,
+      quality: String(inp.settings.quality ?? ''),
+      duration_sec: Number(inp.project.durationSec.toFixed(2)),
+      duration_ms: Date.now() - startedAt,
+      gpu_retried: gpuRetried,
+      error_message: gpuError.slice(0, 200)
+    })
+    throw new Error(`GPU encode failed for ${encoder.toUpperCase()}; CPU fallback is disabled. Fix the GPU encoder/driver or choose CPU in Settings. ${gpuError}`)
   }
+  let audioMasterOk = true
   if (inp.skipAudioMaster) {
     if (inp.logPath) appendFileSync(inp.logPath, probeOutputLine(inp.outPath, inp.project.durationSec))
+    sentryLog.info('Render completed', {
+      project_id: inp.project.id,
+      job_id: inp.jobId ?? '',
+      encoder,
+      quality: String(inp.settings.quality ?? ''),
+      duration_sec: Number(inp.project.durationSec.toFixed(2)),
+      duration_ms: Date.now() - startedAt,
+      gpu_retried: gpuRetried,
+      audio_master: false,
+      audio_master_ok: true
+    })
     return { outputPath: inp.outPath }
   }
   if (inp.logPath) appendFileSync(inp.logPath, '\n[audio-master]\ntwo-pass loudnorm I=-14 TP=-1 LRA=11\n')
@@ -653,8 +696,26 @@ export async function runRender(inp: RenderInputs, onProgress?: (p: FfmpegProgre
     const msg = (e as Error).message
     if (inp.logPath) appendFileSync(inp.logPath, `[audio-master:warn] ${msg}\n`)
     logger.scope('render').warn(`audio-master failed; keeping rendered MP4: ${msg}`)
+    audioMasterOk = false
+    sentryLog.warn('Audio master failed; keeping rendered MP4', {
+      project_id: inp.project.id,
+      job_id: inp.jobId ?? '',
+      error_message: msg.slice(0, 200)
+    })
   }
   if (inp.logPath) appendFileSync(inp.logPath, probeOutputLine(inp.outPath, inp.project.durationSec))
+  // Wide success event — one searchable row per finished encode, not per ffmpeg phase.
+  sentryLog.info('Render completed', {
+    project_id: inp.project.id,
+    job_id: inp.jobId ?? '',
+    encoder,
+    quality: String(inp.settings.quality ?? ''),
+    duration_sec: Number(inp.project.durationSec.toFixed(2)),
+    duration_ms: Date.now() - startedAt,
+    gpu_retried: gpuRetried,
+    audio_master: true,
+    audio_master_ok: audioMasterOk
+  })
   return { outputPath: inp.outPath }
 }
 

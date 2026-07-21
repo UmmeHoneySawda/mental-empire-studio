@@ -3,6 +3,7 @@ import { existsSync, renameSync, unlinkSync, writeFileSync } from 'node:fs'
 import { ffmpegPath } from '../../services/bin'
 import { probeDuration } from '../../services/audio'
 import { L } from '../../services/logger'
+import { sentryLog } from '../../services/sentry'
 
 // Local FFmpeg merge fallback (plan §10). Remote merge_videos stays primary; this is
 // only ever invoked once every child segment's output has already been downloaded and
@@ -67,14 +68,48 @@ export async function mergeVideoFilesLocally(inputPaths: string[], outputPath: s
   }
   const tmp = `${outputPath}.part`
   const cleanup = (): void => { try { if (existsSync(tmp)) unlinkSync(tmp) } catch { /* best-effort cleanup */ } }
+  const startedAt = Date.now()
+  let usedTranscode = false
+  sentryLog.info('TalkingPhotos local merge started', {
+    operation: 'local_merge',
+    input_count: inputPaths.length
+  })
 
   let ok = await concatDemuxer(inputPaths, tmp)
   if (!ok || (await probeDuration(tmp).catch(() => 0)) <= 0) {
     cleanup()
+    usedTranscode = true
     ok = await transcodeConcat(inputPaths, tmp)
   }
-  if (!ok) { cleanup(); throw new LocalMergeFailure('Local FFmpeg merge failed with both the concat demuxer and the transcode fallback.') }
+  if (!ok) {
+    cleanup()
+    sentryLog.error('TalkingPhotos local merge failed', {
+      operation: 'local_merge',
+      input_count: inputPaths.length,
+      used_transcode: usedTranscode,
+      duration_ms: Date.now() - startedAt,
+      error_message: 'concat demuxer and transcode fallback both failed'
+    })
+    throw new LocalMergeFailure('Local FFmpeg merge failed with both the concat demuxer and the transcode fallback.')
+  }
   const durationSec = await probeDuration(tmp).catch(() => 0)
-  if (durationSec <= 0) { cleanup(); throw new LocalMergeFailure('Local merge produced a file with no readable media stream.') }
+  if (durationSec <= 0) {
+    cleanup()
+    sentryLog.error('TalkingPhotos local merge failed', {
+      operation: 'local_merge',
+      input_count: inputPaths.length,
+      used_transcode: usedTranscode,
+      duration_ms: Date.now() - startedAt,
+      error_message: 'output has no readable media stream'
+    })
+    throw new LocalMergeFailure('Local merge produced a file with no readable media stream.')
+  }
   renameSync(tmp, outputPath)
+  sentryLog.info('TalkingPhotos local merge completed', {
+    operation: 'local_merge',
+    input_count: inputPaths.length,
+    used_transcode: usedTranscode,
+    duration_sec: Number(durationSec.toFixed(2)),
+    duration_ms: Date.now() - startedAt
+  })
 }

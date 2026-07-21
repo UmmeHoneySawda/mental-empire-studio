@@ -4,6 +4,7 @@ import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import type { AppSettings } from '../../shared/types'
 import { L } from './logger'
+import { sentryLog } from './sentry'
 import { ffmpegPath, ffprobePath } from './bin'
 
 // Word-level transcription via Groq's free Whisper API (OpenAI-compatible). We
@@ -155,7 +156,26 @@ export async function transcribeAudio(mp3Path: string, settings: AppSettings, op
   L.info(`transcribe: starting Groq transcription for ${mp3Path} (${mb(size)})`)
   if (size <= MAX_DIRECT_BYTES) {
     opts.onProgress?.('Sending audio to Groq')
-    return transcribeOneWithRetry(mp3Path, apiKey, model, 'audio', opts.onProgress)
+    try {
+      const words = await transcribeOneWithRetry(mp3Path, apiKey, model, 'audio', opts.onProgress)
+      // One wide success log: word count + size + model — filterable without path PII.
+      sentryLog.info('Transcription completed', {
+        word_count: words.length,
+        audio_bytes: size,
+        chunked: false,
+        chunk_count: 1,
+        model
+      })
+      return words
+    } catch (e) {
+      sentryLog.error('Transcription failed', {
+        audio_bytes: size,
+        chunked: false,
+        model,
+        error_message: sanitizeError(e).slice(0, 200)
+      })
+      throw e
+    }
   }
 
   L.info(`transcribe: audio is ${mb(size)}; chunking for Groq upload limit`)
@@ -175,9 +195,23 @@ export async function transcribeAudio(mp3Path: string, settings: AppSettings, op
       opts.onProgress?.(`Merged ${i + 1}/${chunks.length} chunk${chunks.length === 1 ? '' : 's'}`)
     }
     L.info(`transcribe: merged ${out.length} word(s) from ${chunks.length} chunk(s)`)
+    sentryLog.info('Transcription completed', {
+      word_count: out.length,
+      audio_bytes: size,
+      chunked: true,
+      chunk_count: chunks.length,
+      model
+    })
     return out
   } catch (e) {
     L.error(`transcribe: failed; no partial transcript will be saved: ${sanitizeError(e)}`)
+    sentryLog.error('Transcription failed', {
+      audio_bytes: size,
+      chunked: true,
+      chunk_count: chunks.length,
+      model,
+      error_message: sanitizeError(e).slice(0, 200)
+    })
     throw e
   } finally {
     const dir = chunks[0] ? dirname(chunks[0]) : ''

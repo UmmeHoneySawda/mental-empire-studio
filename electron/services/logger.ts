@@ -1,7 +1,7 @@
 import log from 'electron-log/main'
 import { app } from 'electron'
 import { existsSync } from 'node:fs'
-import { captureException } from './sentry'
+import { captureException, sentryLog } from './sentry'
 
 // Central logger (electron-log). Writes a rolling file the user can find + send back
 // when something fails on their machine — this is how we debug native issues we can't
@@ -55,4 +55,32 @@ export function logStartupDiagnostics(extra: { ytdlp: string; ffmpeg: string; ff
   // classic cause of "ffprobe and ffmpeg not found" even when ffmpeg.exe is present.
   if (!existsSync(extra.ffprobe)) L.error('ffprobe binary NOT FOUND — mp3 downloads will fail with "ffprobe and ffmpeg not found". Run `npm run fetch:bin` or reinstall.')
   L.info('=========================================')
+
+  // One wide Sentry log (not a thin line per path) so production questions like
+  // "did this install have ffmpeg?" are filterable attributes, not free text.
+  const ytdlpPresent = existsSync(extra.ytdlp)
+  const ffmpegPresent = existsSync(extra.ffmpeg)
+  const ffprobePresent = existsSync(extra.ffprobe)
+  sentryLog.info('App startup diagnostics', {
+    app_version: app.getVersion(),
+    electron_version: process.versions.electron ?? '',
+    node_version: process.versions.node ?? '',
+    platform: process.platform,
+    arch: process.arch,
+    packaged: app.isPackaged,
+    ytdlp_present: ytdlpPresent,
+    ffmpeg_present: ffmpegPresent,
+    ffprobe_present: ffprobePresent,
+    db_present: existsSync(extra.dbPath)
+  })
+  // Parameterized messages (fmt) extract values as searchable message.parameter.N.
+  if (!ytdlpPresent) {
+    sentryLog.error(sentryLog.fmt`Required binary missing: ${'yt-dlp'}`, { binary: 'yt-dlp' })
+  }
+  if (!ffmpegPresent) {
+    sentryLog.error(sentryLog.fmt`Required binary missing: ${'ffmpeg'}`, { binary: 'ffmpeg' })
+  }
+  if (!ffprobePresent) {
+    sentryLog.error(sentryLog.fmt`Required binary missing: ${'ffprobe'}`, { binary: 'ffprobe' })
+  }
 }

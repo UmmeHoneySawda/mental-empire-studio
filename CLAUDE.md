@@ -37,6 +37,10 @@ Run the built app locally: `xvfb-run -a node_modules/electron/dist/electron --no
 - **Native modules** (better-sqlite3) are externalized (`externalizeDepsPlugin`) + `asarUnpack`'d.
 - **Fonts** are self-hosted via `@fontsource/*` imported in `src/main.tsx` (no CDN; CSP is `font-src
   'self'`).
+- **Sentry logging (required):** read `docs/SENTRY_LOGGING.md`. Instrument new pipeline / TalkingPhotos /
+  download / render / automation paths with `sentryLog` from `electron/services/sentry.ts`. Prefer wide
+  events + snake_case attributes; never log secrets. When debugging user-reported failures, search
+  **Sentry Issues + Logs** first (org `buft`, region `de`).
 
 ## Testing model (important)
 

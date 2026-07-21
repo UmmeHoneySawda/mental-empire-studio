@@ -14,6 +14,7 @@ import {
   type TalkingPhotosTtsState
 } from '../../../shared/talkingphotos'
 import { L } from '../../services/logger'
+import { sentryLog } from '../../services/sentry'
 
 // Main-process-only TTS service. The socket, and everything it carries, never
 // crosses into the renderer — the renderer only ever sees the resulting ProviderJob
@@ -132,6 +133,12 @@ export async function submitTts(input: SubmitTtsInput): Promise<ProviderJob> {
   }
   repos.upsertProviderJob(job)
   L.info(`talkingphotos tts submitted job=${job.id} uuid=${created.uuid}`)
+  sentryLog.info('TalkingPhotos TTS submitted', {
+    provider_job_id: job.id,
+    operation: 'tts',
+    has_project: !!input.projectId,
+    text_length: input.text.length
+  })
   return job
 }
 
@@ -152,6 +159,12 @@ export async function resolveTtsJob(jobId: string): Promise<ProviderJob> {
     const resolved: TalkingPhotosTtsState = {
       ...state, status: 'resolved', mediaId: outcome.mediaId, outPath: outcome.outPath, durationSec: outcome.durationSec, resolvedAt: new Date().toISOString()
     }
+    sentryLog.info('TalkingPhotos TTS resolved', {
+      provider_job_id: job.id,
+      operation: 'tts',
+      duration_sec: Number((outcome.durationSec ?? 0).toFixed(2)),
+      has_media_id: !!outcome.mediaId
+    })
     return saveTtsState(job.id, resolved, { status: 'completed', progress: 100, remoteMediaId: outcome.mediaId, errorCode: '', errorMessage: '' })
   }
   const failedStatus = outcome.kind === 'timeout' ? 'timeout' : outcome.kind === 'malformed' ? 'malformed' : 'closed_unresolved'
@@ -161,6 +174,12 @@ export async function resolveTtsJob(jobId: string): Promise<ProviderJob> {
       ? 'TalkingPhotos TTS WebSocket sent a malformed frame.'
       : 'TalkingPhotos TTS WebSocket closed before a result arrived.'
   L.warn(`talkingphotos tts unresolved job=${job.id} uuid=${state.uuid}: ${message}`)
+  sentryLog.warn('TalkingPhotos TTS unresolved', {
+    provider_job_id: job.id,
+    operation: 'tts',
+    failure_kind: failedStatus,
+    error_message: message.slice(0, 200)
+  })
   return saveTtsState(job.id, { ...state, status: failedStatus }, { status: 'attention', errorCode: 'tts_unresolved', errorMessage: message })
 }
 
@@ -186,7 +205,13 @@ export function reconcileUnresolvedTtsJobsOnStartup(): number {
     })
     marked++
   }
-  if (marked > 0) L.warn(`talkingphotos: marked ${marked} unresolved TTS job(s) attention after restart`)
+  if (marked > 0) {
+    L.warn(`talkingphotos: marked ${marked} unresolved TTS job(s) attention after restart`)
+    sentryLog.warn('TalkingPhotos TTS jobs need attention after restart', {
+      operation: 'tts',
+      marked_count: marked
+    })
+  }
   return marked
 }
 
@@ -206,5 +231,11 @@ export function confirmRecoveredTts(jobId: string, mediaId: string, durationSec:
   if (!job || job.operation !== 'tts') throw new Error(`Unknown TTS job: ${jobId}`)
   const state = ttsState(job)
   const resolved: TalkingPhotosTtsState = { ...state, status: 'resolved', mediaId, durationSec, resolvedAt: new Date().toISOString() }
+  sentryLog.info('TalkingPhotos TTS manually recovered', {
+    provider_job_id: job.id,
+    operation: 'tts',
+    duration_sec: Number(durationSec.toFixed(2)),
+    has_media_id: !!mediaId
+  })
   return saveTtsState(job.id, resolved, { status: 'completed', progress: 100, remoteMediaId: mediaId, errorCode: '', errorMessage: '' })
 }

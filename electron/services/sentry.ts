@@ -9,6 +9,22 @@ import log from 'electron-log/main'
  */
 export const SENTRY_DSN = 'https://85d01f4cd2136a24ac4e9d1477aa3aa4@o4511677078044672.ingest.de.sentry.io/4511677090758736'
 
+/** Searchable log attributes — only primitives (Sentry rejects objects/arrays/undefined). */
+export type SentryLogAttributes = Record<string, string | number | boolean>
+
+const SENSITIVE_ATTR_KEYS = new Set([
+  'api_key',
+  'apikey',
+  'password',
+  'token',
+  'secret',
+  'cookie',
+  'cookies',
+  'cookies_path',
+  'proxy',
+  'authorization'
+])
+
 let enabled = false
 let samplerHandle: ReturnType<typeof setInterval> | null = null
 
@@ -71,7 +87,26 @@ export function setSentryEnabled(next: boolean): void {
       release: `mental-empire-studio@${app.getVersion()}`,
       environment: app.isPackaged ? 'production' : 'development',
       tracesSampleRate: 1.0,
-      maxBreadcrumbs: 300
+      maxBreadcrumbs: 300,
+      // Structured logs (Sentry Logs) — opt-in; correlates with traces/errors via active spans.
+      enableLogs: true,
+      beforeSendLog: (entry) => {
+        // Drop high-cardinality noise; keep info/warn/error/fatal for production questions.
+        if (entry.level === 'debug' || entry.level === 'trace') return null
+        if (entry.attributes) {
+          for (const key of Object.keys(entry.attributes)) {
+            if (SENSITIVE_ATTR_KEYS.has(key.toLowerCase())) delete entry.attributes[key]
+          }
+        }
+        return entry
+      }
+    })
+    // Shared attributes on every log (and metrics) for this session.
+    Sentry.getGlobalScope().setAttributes({
+      service: 'mental-empire-studio',
+      platform: process.platform,
+      arch: process.arch,
+      packaged: app.isPackaged
     })
     enabled = true
     startResourceSampler()
@@ -88,6 +123,32 @@ export function setSentryEnabled(next: boolean): void {
 export function captureException(err: unknown): void {
   if (!enabled) return
   Sentry.captureException(err)
+}
+
+/**
+ * Structured Sentry Logs helpers. Prefer one "wide" event per operation with
+ * snake_case attributes you can filter on — not thin step-by-step spam.
+ * No-ops when telemetry is off.
+ *
+ * Agent rulebook: docs/SENTRY_LOGGING.md — instrument new pipeline paths here;
+ * use Sentry Issues + Logs when diagnosing production errors.
+ */
+function emitSentryLog(
+  level: 'info' | 'warn' | 'error' | 'debug',
+  message: string,
+  attributes?: SentryLogAttributes
+): void {
+  if (!enabled) return
+  Sentry.logger[level](message, attributes)
+}
+
+export const sentryLog = {
+  info: (message: string, attributes?: SentryLogAttributes): void => emitSentryLog('info', message, attributes),
+  warn: (message: string, attributes?: SentryLogAttributes): void => emitSentryLog('warn', message, attributes),
+  error: (message: string, attributes?: SentryLogAttributes): void => emitSentryLog('error', message, attributes),
+  debug: (message: string, attributes?: SentryLogAttributes): void => emitSentryLog('debug', message, attributes),
+  /** Parameterized message template — interpolated values become searchable message.parameter.N */
+  fmt: Sentry.logger.fmt
 }
 
 type IpcListener = (event: IpcMainInvokeEvent, ...args: unknown[]) => unknown
