@@ -1,4 +1,3 @@
-import { net } from 'electron'
 import { readFileSync } from 'node:fs'
 import { basename, extname } from 'node:path'
 import { randomUUID } from 'node:crypto'
@@ -34,11 +33,12 @@ import { L } from '../../services/logger'
 import { sentryLog } from '../../services/sentry'
 
 // Session-bound HTTP client for TalkingPhotos. Every request goes through
-// Electron's net.request bound to the isolated partition session (never the global
-// Node/undici fetch() other services use — that path does not carry this partition's
-// cookies). net.request's `session` option is documented and stable across Electron
-// versions; net.fetch's session-binding surface is newer and less certain, so
-// net.request is used uniformly here, including for the streaming downloader.
+// Electron Session.fetch on the isolated partition (never the global Node/undici
+// fetch other services use). Session.fetch carries partition cookies automatically
+// and avoids Chromium net.request POST failures we hit with manual Content-Length /
+// forbidden Origin/Referer headers (net::ERR_INVALID_ARGUMENT on
+// /project/video_duration_limit). Binary downloads still use net.request streaming
+// in downloader.ts.
 
 const PROVIDER_REQUEST_TIMEOUT_MS = 15_000
 
@@ -68,72 +68,60 @@ function providerRoute(path: string): string {
   return rawPath.replace(/\/[0-9a-f-]{8,}/gi, '/:id').replace(/\/\d+/g, '/:id')
 }
 
-/** Low-level session-bound request. Redirects are followed automatically (Electron
- *  default); reauth is instead detected from the FINAL response (401/403, or HTML
- *  where JSON was expected) — the HAR did not capture the exact login-redirect route
- *  (contract security.authentication), so we don't depend on intercepting it.
- *
- *  Every request has a hard timeout and abort. A provider/socket regression must never
- *  leave IPC, automation, or the login UI pending forever. */
-function rawRequest(path: string, opts: { method?: string; body?: string | Buffer; contentType?: string } = {}): Promise<RawResponse> {
+/** Low-level session-bound request via Session.fetch (partition cookies included).
+ *  Redirects are followed; reauth is detected from the FINAL response (401/403, or
+ *  HTML where JSON was expected). Every request has a hard timeout — a provider
+ *  regression must never leave IPC / automation / login pending forever. */
+async function rawRequest(
+  path: string,
+  opts: { method?: string; body?: string | Buffer; contentType?: string } = {}
+): Promise<RawResponse> {
   const method = opts.method ?? 'GET'
   const url = path.startsWith('http') ? path : `${TALKINGPHOTOS_BASE_URL}${path}`
-  return new Promise((resolve, reject) => {
-    let req: ReturnType<typeof net.request>
-    let finished = false
-    let timer: ReturnType<typeof setTimeout> | null = null
+  const headers: Record<string, string> = {
+    accept: 'application/json',
+    'x-requested-with': 'XMLHttpRequest'
+  }
 
-    const fail = (error: Error): void => {
-      if (finished) return
-      finished = true
-      if (timer) clearTimeout(timer)
-      reject(error)
-    }
-    const succeed = (response: RawResponse): void => {
-      if (finished) return
-      finished = true
-      if (timer) clearTimeout(timer)
-      resolve(response)
-    }
+  let body: string | Uint8Array | undefined
+  if (opts.body !== undefined) {
+    // Prefer Uint8Array for Buffer bodies so Chromium does not trip on Node Buffer quirks.
+    body = Buffer.isBuffer(opts.body) ? new Uint8Array(opts.body) : opts.body
+    headers['content-type'] = opts.contentType || (Buffer.isBuffer(opts.body) ? 'application/octet-stream' : 'application/json')
+  }
 
-    try {
-      req = net.request({ method, url, session: getProviderSession(), redirect: 'follow' })
-    } catch (e) {
-      fail(e as Error)
-      return
-    }
+  const session = getProviderSession() as Electron.Session & {
+    fetch: (input: string, init?: RequestInit) => Promise<Response>
+  }
+  if (typeof session.fetch !== 'function') {
+    throw new Error('TalkingPhotos session.fetch is unavailable in this Electron build.')
+  }
 
-    timer = setTimeout(() => {
-      if (finished) return
-      finished = true
-      try { (req as unknown as { abort?: () => void }).abort?.() } catch { /* best effort */ }
-      reject(new Error(`TalkingPhotos request timed out after ${PROVIDER_REQUEST_TIMEOUT_MS}ms`))
-    }, PROVIDER_REQUEST_TIMEOUT_MS)
-
-    req.setHeader('accept', 'application/json')
-    req.setHeader('x-requested-with', 'XMLHttpRequest')
-    if (opts.body) {
-      req.setHeader('content-type', opts.contentType || 'application/json')
-      req.setHeader('content-length', String(Buffer.byteLength(opts.body)))
-    }
-    req.on('response', (res) => {
-      const chunks: Buffer[] = []
-      res.on('data', (chunk: Buffer) => chunks.push(chunk))
-      res.on('end', () => {
-        const header = res.headers['content-type']
-        succeed({
-          status: res.statusCode,
-          contentType: Array.isArray(header) ? header[0] ?? null : (header as string | undefined) ?? null,
-          bodyText: Buffer.concat(chunks).toString('utf8')
-        })
-      })
-      res.on('error', (e: Error) => fail(e))
+  const controller = new AbortController()
+  const timer = setTimeout(() => controller.abort(), PROVIDER_REQUEST_TIMEOUT_MS)
+  try {
+    const res = await session.fetch(url, {
+      method,
+      headers,
+      body: body as RequestInit['body'],
+      signal: controller.signal,
+      redirect: 'follow'
     })
-    req.on('error', (e) => fail(e))
-    req.on('abort', () => fail(new Error('TalkingPhotos request was aborted.')))
-    if (opts.body) req.write(opts.body)
-    req.end()
-  })
+    const bodyText = await res.text()
+    return {
+      status: res.status,
+      contentType: res.headers.get('content-type'),
+      bodyText
+    }
+  } catch (error) {
+    const err = error as Error
+    if (err.name === 'AbortError' || /aborted|abort/i.test(err.message || '')) {
+      throw new Error(`TalkingPhotos request timed out after ${PROVIDER_REQUEST_TIMEOUT_MS}ms`)
+    }
+    throw err
+  } finally {
+    clearTimeout(timer)
+  }
 }
 
 /** GET/POST a JSON endpoint, returning the parsed body. Throws ProviderRequestError

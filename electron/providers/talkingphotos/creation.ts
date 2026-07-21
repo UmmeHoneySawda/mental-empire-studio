@@ -37,6 +37,7 @@ import { resolveTtsJob, submitTts } from './tts'
 import { fetchSubmissionBudget, logBudgetExhausted, type SubmissionBudget } from './quota'
 import { downloadProviderJobOutput, outputDir } from './downloader'
 import { mergeVideoFilesLocally } from './localMerge'
+import { markTalkingPhotosReauthRequired } from './session'
 import { L } from '../../services/logger'
 import { sentryLog } from '../../services/sentry'
 
@@ -77,8 +78,8 @@ function saveCreationFailure(jobId: string, error: unknown, fallbackCode: string
   const repos = getRepos()
   const message = error instanceof Error ? error.message : String(error)
   if (error instanceof ProviderRequestError && error.normalized.kind === 'authentication') {
-    const connection = repos.providerConnection(TALKINGPHOTOS_CONNECTION_ID)
-    if (connection) repos.upsertProviderConnection({ ...connection, status: 'reauth_required', lastError: message })
+    // Route through session so the UI receives the connectionStatus push event.
+    markTalkingPhotosReauthRequired(message)
     repos.updateProviderJob(jobId, { status: 'attention', errorCode: 'reauth_required', errorMessage: message })
     sentryLog.error('TalkingPhotos creation needs attention', {
       provider_job_id: jobId,

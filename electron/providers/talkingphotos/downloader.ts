@@ -67,7 +67,8 @@ function downloadOnce(url: string, tmpPath: string, allow: (u: string) => boolea
   return new Promise((resolve, reject) => {
     let req: ReturnType<typeof net.request>
     try {
-      req = net.request({ method: 'GET', url, session: getProviderSession(), redirect: 'follow' })
+      // useSessionCookies: must send partition cookies for authenticated CDN/media URLs.
+      req = net.request({ method: 'GET', url, session: getProviderSession(), useSessionCookies: true, redirect: 'follow' })
     } catch (e) {
       reject(e as Error)
       return

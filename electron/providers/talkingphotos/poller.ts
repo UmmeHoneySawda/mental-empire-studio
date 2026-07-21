@@ -4,6 +4,7 @@ import { getRepos } from '../../db'
 import { getProject, listProjects, ProviderRequestError } from './client'
 import { downloadProviderJobOutput } from './downloader'
 import { advanceProviderOrchestrations } from './creation'
+import { markTalkingPhotosReauthRequired } from './session'
 import { emit } from '../../ipc/events'
 import {
   TALKINGPHOTOS_CONNECTION_ID,
@@ -120,17 +121,23 @@ async function pollJobOnce(job: ProviderJob, state: PollState): Promise<void> {
     pollState.set(job.id, { streak, nextPollAt: Date.now() + nextPollDelayMs({ sameStateStreak: streak }) })
   } catch (e) {
     if (e instanceof ProviderRequestError && e.normalized.kind === 'authentication') {
+      const firstPause = !pausedUntilReconnect
       pausedUntilReconnect = true
-      const conn = repos.providerConnection(TALKINGPHOTOS_CONNECTION_ID)
-      if (conn) repos.upsertProviderConnection({ ...conn, status: 'reauth_required', lastError: e.normalized.message })
+      // Always surface reauth through session.setStatus so the renderer gets the
+      // connectionStatus push (direct DB writes left the UI stuck on "connected").
+      markTalkingPhotosReauthRequired(e.normalized.message)
       repos.updateProviderJob(job.id, { status: 'attention', errorMessage: e.normalized.message })
-      sentryLog.error('TalkingPhotos poll paused — reauth required', {
-        provider_job_id: job.id,
-        operation: job.operation,
-        remote_project_id: job.remoteProjectId ?? '',
-        error_kind: 'authentication',
-        error_message: e.normalized.message.slice(0, 200)
-      })
+      // One structured error per pause wave — otherwise every non-terminal job
+      // floods Sentry with identical "reauth required" rows in the same tick.
+      if (firstPause) {
+        sentryLog.error('TalkingPhotos poll paused — reauth required', {
+          provider_job_id: job.id,
+          operation: job.operation,
+          remote_project_id: job.remoteProjectId ?? '',
+          error_kind: 'authentication',
+          error_message: e.normalized.message.slice(0, 200)
+        })
+      }
       const updated = repos.providerJob(job.id)
       if (updated) emit('talkingphotos:job', updated)
       return
@@ -144,14 +151,16 @@ async function pollJobOnce(job: ProviderJob, state: PollState): Promise<void> {
 async function tick(): Promise<void> {
   if (pausedUntilReconnect) return
   await advanceProviderOrchestrations()
+  if (pausedUntilReconnect) return
   const jobs = getRepos().nonTerminalProviderJobs()
   const now = Date.now()
   for (const job of jobs) {
+    if (pausedUntilReconnect) break
     const state = pollState.get(job.id) ?? { streak: 0, nextPollAt: 0 }
     if (now < state.nextPollAt) continue
     await pollJobOnce(job, state)
   }
-  await advanceProviderOrchestrations()
+  if (!pausedUntilReconnect) await advanceProviderOrchestrations()
 }
 
 export function startTalkingPhotosPoller(): void {
@@ -172,15 +181,17 @@ export function stopTalkingPhotosPoller(): void {
 export async function reconcileNonTerminalProviderJobs(): Promise<void> {
   pausedUntilReconnect = false
   await advanceProviderOrchestrations()
+  if (pausedUntilReconnect) return
   const jobs = getRepos().nonTerminalProviderJobs()
   sentryLog.info('TalkingPhotos reconcile non-terminal jobs', {
     operation: 'poller',
     job_count: jobs.length
   })
   for (const job of jobs) {
+    if (pausedUntilReconnect) break
     await pollJobOnce(job, pollState.get(job.id) ?? { streak: 0, nextPollAt: 0 })
   }
-  await advanceProviderOrchestrations()
+  if (!pausedUntilReconnect) await advanceProviderOrchestrations()
 }
 
 function inferOperation(remoteType: string): ProviderJobOperation {

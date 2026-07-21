@@ -1,15 +1,13 @@
-import { EventEmitter } from 'node:events'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Session-bound request selection + reauth detection, exercised end-to-end against a
-// fake net.request — proves the client always binds to the TalkingPhotos partition
+// fake Session.fetch — proves the client always binds to the TalkingPhotos partition
 // session (never the global Node/undici fetch other services use) and that auth
 // failures are classified before any body is trusted.
 
-const SESSION_SENTINEL = { __sentinel: 'talkingphotos-partition-session' }
 let lastRequestOpts: Record<string, unknown> | null = null
 let lastHeaders: Record<string, string> = {}
 let lastBody = Buffer.alloc(0)
@@ -18,6 +16,58 @@ let nextResponse: { statusCode: number; headers: Record<string, string>; body: s
   statusCode: 200,
   headers: { 'content-type': 'application/json' },
   body: '{}'
+}
+
+const SESSION_SENTINEL = {
+  __sentinel: 'talkingphotos-partition-session',
+  fetch: async (url: string, init?: RequestInit) => {
+    lastRequestOpts = {
+      url,
+      method: init?.method ?? 'GET',
+      session: SESSION_SENTINEL
+    }
+    const rawHeaders = init?.headers
+    lastHeaders = {}
+    if (rawHeaders && typeof rawHeaders === 'object' && !Array.isArray(rawHeaders)) {
+      for (const [key, value] of Object.entries(rawHeaders as Record<string, string>)) {
+        lastHeaders[key.toLowerCase()] = value
+      }
+    }
+    if (init?.body != null) {
+      if (typeof init.body === 'string') lastBody = Buffer.from(init.body)
+      else if (init.body instanceof Uint8Array) lastBody = Buffer.from(init.body)
+      else if (Buffer.isBuffer(init.body)) lastBody = init.body
+      else lastBody = Buffer.from(String(init.body))
+    } else {
+      lastBody = Buffer.alloc(0)
+    }
+
+    if (hangRequest) {
+      return await new Promise<Response>((_resolve, reject) => {
+        const onAbort = (): void => {
+          const err = new Error('The operation was aborted')
+          err.name = 'AbortError'
+          reject(err)
+        }
+        if (init?.signal?.aborted) {
+          onAbort()
+          return
+        }
+        init?.signal?.addEventListener('abort', onAbort, { once: true })
+      })
+    }
+
+    const headerMap = new Map(
+      Object.entries(nextResponse.headers).map(([k, v]) => [k.toLowerCase(), v])
+    )
+    return {
+      status: nextResponse.statusCode,
+      headers: {
+        get: (name: string) => headerMap.get(name.toLowerCase()) ?? null
+      },
+      text: async () => nextResponse.body
+    } as Response
+  }
 }
 
 vi.mock('electron', () => ({
@@ -29,35 +79,7 @@ vi.mock('electron', () => ({
     getSystemMemoryInfo: () => ({ free: 0, total: 0 })
   },
   ipcMain: { handle: vi.fn() },
-  session: { fromPartition: () => SESSION_SENTINEL },
-  net: {
-    request: (opts: Record<string, unknown>) => {
-      lastRequestOpts = opts
-      const req = new EventEmitter() as EventEmitter & {
-        setHeader: (key: string, value: string) => void
-        write: (body: string | Buffer) => void
-        end: () => void
-        abort: () => void
-      }
-      req.setHeader = (key, value) => { lastHeaders[key] = value }
-      req.write = (body) => { lastBody = Buffer.isBuffer(body) ? body : Buffer.from(body) }
-      req.abort = () => { req.emit('abort') }
-      req.end = () => {
-        if (hangRequest) return
-        queueMicrotask(() => {
-          const res = new EventEmitter() as EventEmitter & { statusCode: number; headers: Record<string, string> }
-          res.statusCode = nextResponse.statusCode
-          res.headers = nextResponse.headers
-          req.emit('response', res)
-          queueMicrotask(() => {
-            res.emit('data', Buffer.from(nextResponse.body))
-            res.emit('end')
-          })
-        })
-      }
-      return req
-    }
-  }
+  session: { fromPartition: () => SESSION_SENTINEL }
 }))
 
 const { createHumanProject, fetchProviderJson, getDurationLimit, healthCheck, uploadLibraryMedia } = await import('../../electron/providers/talkingphotos/client')
@@ -75,7 +97,7 @@ describe('TalkingPhotos session-bound client', () => {
     vi.useRealTimers()
   })
 
-  it('binds every request to the TalkingPhotos partition session, never the global fetch', async () => {
+  it('binds every request to the TalkingPhotos partition session fetch, never the global fetch', async () => {
     await fetchProviderJson('/project/video_daily_usage')
     expect(lastRequestOpts?.session).toBe(SESSION_SENTINEL)
     expect(lastRequestOpts?.url).toContain('/project/video_daily_usage')
@@ -138,6 +160,7 @@ describe('TalkingPhotos session-bound client', () => {
   it('requests the style-specific Human duration limit', async () => {
     nextResponse.body = '{"maxDuration":60}'
     await expect(getDurationLimit('high_quality')).resolves.toBe(60)
+    expect(lastRequestOpts).toMatchObject({ method: 'POST', url: 'https://app.talkingphotos.ai/project/video_duration_limit' })
     expect(JSON.parse(lastBody.toString())).toEqual({ projectType: 'human', projectStyle: 'high_quality' })
   })
 

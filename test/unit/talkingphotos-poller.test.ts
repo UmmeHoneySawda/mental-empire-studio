@@ -8,6 +8,18 @@ import type { ProviderJob } from '../../shared/talkingphotos'
 
 vi.mock('../../electron/ipc/events', () => ({ emit: vi.fn() }))
 
+const markReauthMock = vi.fn((message: string) => {
+  connections.set(TALKINGPHOTOS_CONNECTION_ID, {
+    id: TALKINGPHOTOS_CONNECTION_ID,
+    status: 'reauth_required',
+    lastError: message
+  })
+  return connections.get(TALKINGPHOTOS_CONNECTION_ID)
+})
+vi.mock('../../electron/providers/talkingphotos/session', () => ({
+  markTalkingPhotosReauthRequired: (message: string) => markReauthMock(message)
+}))
+
 class FakeProviderRequestError extends Error {
   normalized: { kind: string; message: string }
   constructor(kind: string, message: string) {
@@ -65,6 +77,7 @@ beforeEach(() => {
   connections.set(TALKINGPHOTOS_CONNECTION_ID, { id: TALKINGPHOTOS_CONNECTION_ID, status: 'connected' })
   nextProjectResponses = {}
   downloadMock.mockClear()
+  markReauthMock.mockClear()
   vi.mocked(getProject).mockClear()
 })
 
@@ -105,9 +118,11 @@ describe('TalkingPhotos polling coordinator', () => {
     await reconcileNonTerminalProviderJobs()
 
     expect(jobs.get('j1')?.status).toBe('attention')
+    expect(markReauthMock).toHaveBeenCalledWith('session expired')
     expect(connections.get(TALKINGPHOTOS_CONNECTION_ID)?.status).toBe('reauth_required')
-    // The other job's poll still proceeds independently.
-    expect(jobs.get('j2')?.status).toBe('running')
+    // Reauth pauses the rest of the reconcile wave so we do not hammer every job.
+    expect(jobs.get('j2')?.status).toBe('queued')
+    expect(getProject).toHaveBeenCalledTimes(1)
   })
 
   it('leaves a job with no remoteProjectId alone (nothing to poll yet)', async () => {

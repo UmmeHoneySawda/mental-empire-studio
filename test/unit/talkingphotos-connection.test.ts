@@ -78,7 +78,10 @@ vi.mock('electron', () => {
         destroyed = true
         queueMicrotask(() => (win.emit as (e: string) => void)('closed'))
       },
-      loadURL(url: string): void { win.loadURLCalls.push(url) }
+      loadURL(url: string): Promise<void> {
+        win.loadURLCalls.push(url)
+        return Promise.resolve()
+      }
     } as unknown as FakeWindowHandle
     instances.push(win)
     return win
@@ -96,6 +99,11 @@ vi.mock('../../electron/ipc/events', () => ({ emit: emitMock }))
 
 const healthCheckMock = vi.fn(async () => ({ ok: false, reauthRequired: false }) as { ok: boolean; reauthRequired: boolean; message?: string })
 vi.mock('../../electron/providers/talkingphotos/client', () => ({ healthCheck: healthCheckMock }))
+
+const reconcileMock = vi.fn(async () => {})
+vi.mock('../../electron/providers/talkingphotos/poller', () => ({
+  reconcileNonTerminalProviderJobs: () => reconcileMock()
+}))
 
 const fakeCookies = new EventEmitter()
 const clearProviderSessionStorageMock = vi.fn(async () => {})
@@ -154,6 +162,8 @@ beforeEach(() => {
   clearProviderSessionStorageMock.mockClear()
   healthCheckMock.mockReset()
   healthCheckMock.mockResolvedValue({ ok: false, reauthRequired: false })
+  reconcileMock.mockReset()
+  reconcileMock.mockResolvedValue(undefined)
   electronMock.__instances.length = 0
   fakeCookies.removeAllListeners()
 })
@@ -183,9 +193,13 @@ describe('TalkingPhotos connect() — status transitions', () => {
 
     healthCheckMock.mockResolvedValue({ ok: true, reauthRequired: false })
     await vi.advanceTimersByTimeAsync(2_500)
+    // finishSuccess resumes the poller asynchronously via dynamic import.
+    await Promise.resolve()
+    await Promise.resolve()
 
     expect(emittedStatuses()).toEqual(['connecting', 'waiting_for_login', 'verifying', 'connected'])
     expect(latestWindow().isDestroyed()).toBe(true)
+    expect(reconcileMock).toHaveBeenCalled()
   })
 
   it('emits verifying -> connected when a did-navigate event triggers the debounced check', async () => {
@@ -228,15 +242,15 @@ describe('TalkingPhotos connect() — status transitions', () => {
     expect(lastEmittedConnection().status).toBe('connected')
   })
 
-  it('emits a terminal attention status (not connected) when the window is closed before success', async () => {
+  it('treats a user-closed login window as reauth_required cancel (not hard attention failure)', async () => {
     await connectTalkingPhotos()
     const win = latestWindow()
 
     win.close()
     await vi.advanceTimersByTimeAsync(0)
 
-    expect(emittedStatuses()).toEqual(['connecting', 'waiting_for_login', 'attention'])
-    expect(lastEmittedConnection().lastError).toBeTruthy()
+    expect(emittedStatuses()).toEqual(['connecting', 'waiting_for_login', 'reauth_required'])
+    expect(lastEmittedConnection().lastError).toMatch(/closed before authentication/i)
 
     // No dangling poll/timeout after teardown.
     healthCheckMock.mockClear()

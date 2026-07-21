@@ -82,7 +82,10 @@ function setStatus(status: ProviderConnectionStatus, extra: Partial<ProviderConn
   const prev = loadConnectionRow().status
   const conn = saveConnectionRow({ status, ...extra })
   emit(CONNECTION_STATUS_EVENT, conn)
-  if (status !== prev && LOGGED_CONNECTION_STATUSES.has(status)) {
+  // Skip verifying ↔ waiting_for_login churn (health poll every 2.5s) — that flooded
+  // Sentry with identical waiting_for_login rows during a single login attempt.
+  const skipChurnLog = status === 'waiting_for_login' && prev === 'verifying'
+  if (status !== prev && LOGGED_CONNECTION_STATUSES.has(status) && !skipChurnLog) {
     const level = status === 'attention' || status === 'reauth_required' ? 'warn' : 'info'
     sentryLog[level](sentryLog.fmt`TalkingPhotos connection status: ${status}`, {
       operation: 'session',
@@ -203,37 +206,41 @@ async function runHealthCheckNow(): Promise<void> {
   setStatus('verifying')
 
   try {
-    // The visible provider home screen is authoritative proof that interactive login
-    // completed. This path fixes sessions whose separate net.request probe stalls.
-    if (await loginWindowLooksAuthenticated()) {
-      if (!settled) {
-        sentryLog.info('TalkingPhotos login confirmed by provider window', {
-          operation: 'session',
-          verification_source: 'provider_window',
-          duration_ms: Date.now() - startedAt
-        })
-        finishSuccess()
-      }
-      return
-    }
+    // DOM shell is a hint that login may have completed — never authoritative alone.
+    // 2026-07-21: DOM said "connected" while net.request still got login HTML because
+    // partition cookies were not sent (missing useSessionCookies). Only API success
+    // may call finishSuccess.
+    const windowLooksAuthed = await loginWindowLooksAuthenticated()
 
     const health = await withTimeout(healthCheck(), HEALTH_CHECK_TIMEOUT_MS, 'TalkingPhotos API health check')
     if (settled) return
     if (health.ok) {
       sentryLog.info('TalkingPhotos login confirmed by API probe', {
         operation: 'session',
-        verification_source: 'api',
-        duration_ms: Date.now() - startedAt
+        verification_source: windowLooksAuthed ? 'api_and_window' : 'api',
+        duration_ms: Date.now() - startedAt,
+        window_looks_authenticated: windowLooksAuthed
       })
       finishSuccess()
     } else {
-      sentryLog.warn('TalkingPhotos verification did not confirm login', {
-        operation: 'session',
-        verification_source: 'api',
-        duration_ms: Date.now() - startedAt,
-        reauth_required: health.reauthRequired,
-        has_message: !!health.message
-      })
+      if (windowLooksAuthed) {
+        // User-visible home without API cookies still means "not connected" for us.
+        sentryLog.warn('TalkingPhotos window looks logged in but API still unauthenticated', {
+          operation: 'session',
+          verification_source: 'window_only',
+          duration_ms: Date.now() - startedAt,
+          reauth_required: health.reauthRequired,
+          has_message: !!health.message
+        })
+      } else {
+        sentryLog.warn('TalkingPhotos verification did not confirm login', {
+          operation: 'session',
+          verification_source: 'api',
+          duration_ms: Date.now() - startedAt,
+          reauth_required: health.reauthRequired,
+          has_message: !!health.message
+        })
+      }
       setStatus('waiting_for_login')
     }
   } catch (error) {
@@ -252,11 +259,27 @@ async function runHealthCheckNow(): Promise<void> {
   }
 }
 
+/** Resume the job poller after an interactive login succeeds. The reconnect IPC
+ *  path only reconciles when headless health already returns connected — when the
+ *  user finishes login in the window later, finishSuccess is the only resume hook. */
+function resumePollerAfterConnect(): void {
+  void import('./poller')
+    .then((m) => m.reconcileNonTerminalProviderJobs())
+    .catch((error) => {
+      L.warn(`talkingphotos post-connect reconcile failed: ${(error as Error).message}`)
+      sentryLog.warn('TalkingPhotos post-connect reconcile failed', {
+        operation: 'session',
+        error_message: ((error as Error).message || 'unknown').slice(0, 200)
+      })
+    })
+}
+
 function finishSuccess(): void {
   if (settled) return
   settled = true
   teardownLoginFlow()
   setStatus('connected', { connectedAt: nowIso(), lastVerifiedAt: nowIso(), lastError: undefined })
+  resumePollerAfterConnect()
 }
 
 function finishFailure(message: string): void {
@@ -269,6 +292,28 @@ function finishFailure(message: string): void {
     error_message: message.slice(0, 200)
   })
   setStatus('attention', { lastError: message })
+}
+
+/** User dismissed the login window — not a hard failure. Leave them on
+ *  reauth_required so Connect/Reconnect stays one click away instead of a
+ *  red "Needs attention" dead-end that looked like a product bug in Sentry. */
+function finishCancelled(message: string): void {
+  if (settled) return
+  settled = true
+  teardownLoginFlow()
+  L.info(`talkingphotos connect cancelled: ${message}`)
+  sentryLog.info('TalkingPhotos connect cancelled', {
+    operation: 'session',
+    error_message: message.slice(0, 200)
+  })
+  setStatus('reauth_required', { lastError: message })
+}
+
+/** Push reauth into the same setStatus path the UI / Sentry already watch.
+ *  Callers outside session (poller, creation) must not write provider_connections
+ *  rows directly — that skips the connectionStatus event. */
+export function markTalkingPhotosReauthRequired(message: string): ProviderConnection {
+  return setStatus('reauth_required', { lastError: message })
 }
 
 /** Opens the isolated TalkingPhotos login window, wires up every detection signal,
@@ -308,7 +353,8 @@ function openLoginWindow(): ProviderConnection {
   })
   win.on('closed', () => {
     loginWindow = null
-    finishFailure('TalkingPhotos login window closed before authentication was confirmed.')
+    // User closed the Connect window — cancel, do not treat as a hard failure.
+    finishCancelled('TalkingPhotos login window closed before authentication was confirmed.')
   })
 
   // Signal-only: the listener never reads/logs/persists/emits the cookie or cause
@@ -321,7 +367,10 @@ function openLoginWindow(): ProviderConnection {
   timeoutTimer = setTimeout(() => finishFailure('TalkingPhotos login timed out after 15 minutes.'), CONNECT_TIMEOUT_MS)
 
   const waiting = setStatus('waiting_for_login')
-  void win.loadURL(TALKINGPHOTOS_BASE_URL).catch(() => finishFailure('TalkingPhotos login page failed to load.'))
+  // loadURL returns a Promise in Electron; Promise.resolve() also covers sync mocks in tests.
+  void Promise.resolve(win.loadURL(TALKINGPHOTOS_BASE_URL)).catch(() =>
+    finishFailure('TalkingPhotos login page failed to load.')
+  )
   return waiting
 }
 
