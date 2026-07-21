@@ -30,6 +30,9 @@ const HEALTH_POLL_MS = 2_500
 const CONNECT_TIMEOUT_MS = 15 * 60_000
 // Coalesce a burst of navigation/cookie-change signals into a single health check.
 const HEALTH_DEBOUNCE_MS = 400
+// A provider request must never leave the UI parked on "Verifying session…" forever.
+const HEALTH_CHECK_TIMEOUT_MS = 12_000
+const DOM_PROBE_TIMEOUT_MS = 3_000
 
 const CONNECTION_STATUS_EVENT = 'talkingphotos:connectionStatus'
 
@@ -38,6 +41,7 @@ let pollTimer: ReturnType<typeof setInterval> | null = null
 let timeoutTimer: ReturnType<typeof setTimeout> | null = null
 let debounceTimer: ReturnType<typeof setTimeout> | null = null
 let detachCookieListener: (() => void) | null = null
+let healthCheckInFlight = false
 /** True whenever no login flow is currently in progress — guards every timer/listener
  *  callback so a stale one can never fire (or double-finish) after teardown. */
 let settled = true
@@ -133,6 +137,54 @@ function teardownLoginFlow(): void {
   closeLoginWindow()
 }
 
+function withTimeout<T>(promise: Promise<T>, timeoutMs: number, label: string): Promise<T> {
+  return new Promise<T>((resolve, reject) => {
+    const timer = setTimeout(() => reject(new Error(`${label} timed out after ${timeoutMs}ms`)), timeoutMs)
+    promise.then(
+      (value) => { clearTimeout(timer); resolve(value) },
+      (error) => { clearTimeout(timer); reject(error) }
+    )
+  })
+}
+
+/**
+ * The provider currently shows a fully-authenticated home screen before its separate
+ * API probe consistently settles on every Windows/Electron network stack. Confirm only
+ * non-sensitive page state: title and stable UI labels. Never read localStorage,
+ * cookies, account text, tokens, or page payloads.
+ */
+async function loginWindowLooksAuthenticated(): Promise<boolean> {
+  const win = loginWindow
+  if (!win || win.isDestroyed()) return false
+  const webContents = win.webContents as typeof win.webContents & {
+    executeJavaScript?: (code: string, userGesture?: boolean) => Promise<unknown>
+  }
+  if (typeof webContents.executeJavaScript !== 'function') return false
+
+  const probe = webContents.executeJavaScript(`(() => {
+    const title = String(document.title || '').toLowerCase();
+    const text = String(document.body?.innerText || '').toLowerCase().replace(/\\s+/g, ' ');
+    const hasPasswordField = Boolean(document.querySelector('input[type="password"]'));
+    const authenticatedTitle = title.includes('home page - talkingphotos') || title.includes('dashboard - talkingphotos');
+    const authenticatedShell = text.includes('create video') && (
+      text.includes('welcome to talkingphotos.ai') ||
+      text.includes('my projects') ||
+      text.includes('create a video')
+    );
+    return Boolean((authenticatedTitle || authenticatedShell) && !hasPasswordField);
+  })()`, false)
+
+  try {
+    return Boolean(await withTimeout(probe, DOM_PROBE_TIMEOUT_MS, 'TalkingPhotos page-state probe'))
+  } catch (error) {
+    sentryLog.warn('TalkingPhotos page-state probe failed', {
+      operation: 'session',
+      error_message: (error as Error).message.slice(0, 200)
+    })
+    return false
+  }
+}
+
 /** Coalesce a burst of navigation/cookie-change signals into one health check, fired
  *  at most once per HEALTH_DEBOUNCE_MS — never runs once the flow has settled. */
 function scheduleHealthCheck(): void {
@@ -145,18 +197,59 @@ function scheduleHealthCheck(): void {
 }
 
 async function runHealthCheckNow(): Promise<void> {
-  if (settled) return
+  if (settled || healthCheckInFlight) return
+  healthCheckInFlight = true
+  const startedAt = Date.now()
   setStatus('verifying')
-  let ok = false
+
   try {
-    const health = await healthCheck()
-    ok = health.ok
-  } catch {
-    ok = false
+    // The visible provider home screen is authoritative proof that interactive login
+    // completed. This path fixes sessions whose separate net.request probe stalls.
+    if (await loginWindowLooksAuthenticated()) {
+      if (!settled) {
+        sentryLog.info('TalkingPhotos login confirmed by provider window', {
+          operation: 'session',
+          verification_source: 'provider_window',
+          duration_ms: Date.now() - startedAt
+        })
+        finishSuccess()
+      }
+      return
+    }
+
+    const health = await withTimeout(healthCheck(), HEALTH_CHECK_TIMEOUT_MS, 'TalkingPhotos API health check')
+    if (settled) return
+    if (health.ok) {
+      sentryLog.info('TalkingPhotos login confirmed by API probe', {
+        operation: 'session',
+        verification_source: 'api',
+        duration_ms: Date.now() - startedAt
+      })
+      finishSuccess()
+    } else {
+      sentryLog.warn('TalkingPhotos verification did not confirm login', {
+        operation: 'session',
+        verification_source: 'api',
+        duration_ms: Date.now() - startedAt,
+        reauth_required: health.reauthRequired,
+        has_message: !!health.message
+      })
+      setStatus('waiting_for_login')
+    }
+  } catch (error) {
+    if (!settled) {
+      const message = (error as Error).message || 'TalkingPhotos verification failed.'
+      L.warn(`talkingphotos verification failed: ${message}`)
+      sentryLog.warn('TalkingPhotos verification failed', {
+        operation: 'session',
+        duration_ms: Date.now() - startedAt,
+        error_message: message.slice(0, 200)
+      })
+      setStatus('waiting_for_login')
+    }
+  } finally {
+    healthCheckInFlight = false
   }
-  if (settled) return
-  if (ok) finishSuccess()
-  else setStatus('waiting_for_login')
 }
 
 function finishSuccess(): void {
@@ -187,6 +280,7 @@ function finishFailure(message: string): void {
  *  plan §20 — so unknown hosts are blocked rather than guessed at). */
 function openLoginWindow(): ProviderConnection {
   settled = false
+  healthCheckInFlight = false
   const win = new BrowserWindow({
     width: 480,
     height: 720,
@@ -227,7 +321,7 @@ function openLoginWindow(): ProviderConnection {
   timeoutTimer = setTimeout(() => finishFailure('TalkingPhotos login timed out after 15 minutes.'), CONNECT_TIMEOUT_MS)
 
   const waiting = setStatus('waiting_for_login')
-  win.loadURL(TALKINGPHOTOS_BASE_URL)
+  void win.loadURL(TALKINGPHOTOS_BASE_URL).catch(() => finishFailure('TalkingPhotos login page failed to load.'))
   return waiting
 }
 
