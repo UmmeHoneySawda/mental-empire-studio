@@ -17,6 +17,10 @@ let nextResponse: { statusCode: number; headers: Record<string, string>; body: s
   headers: { 'content-type': 'application/json' },
   body: '{}'
 }
+// Per-path overrides for tests that drive multiple concurrent endpoints (e.g.
+// getCapabilities()'s Promise.all) where a single shared `nextResponse` can't
+// distinguish which in-flight call is which.
+let routedResponses: Record<string, { statusCode: number; headers: Record<string, string>; body: string }> = {}
 
 const SESSION_SENTINEL = {
   __sentinel: 'talkingphotos-partition-session',
@@ -24,7 +28,9 @@ const SESSION_SENTINEL = {
     lastRequestOpts = {
       url,
       method: init?.method ?? 'GET',
-      session: SESSION_SENTINEL
+      session: SESSION_SENTINEL,
+      redirect: init?.redirect,
+      hasAbortSignal: init?.signal instanceof AbortSignal
     }
     const rawHeaders = init?.headers
     lastHeaders = {}
@@ -57,15 +63,17 @@ const SESSION_SENTINEL = {
       })
     }
 
+    const pathname = new URL(url).pathname
+    const response = routedResponses[pathname] ?? nextResponse
     const headerMap = new Map(
-      Object.entries(nextResponse.headers).map(([k, v]) => [k.toLowerCase(), v])
+      Object.entries(response.headers).map(([k, v]) => [k.toLowerCase(), v])
     )
     return {
-      status: nextResponse.statusCode,
+      status: response.statusCode,
       headers: {
         get: (name: string) => headerMap.get(name.toLowerCase()) ?? null
       },
-      text: async () => nextResponse.body
+      text: async () => response.body
     } as Response
   }
 }
@@ -82,7 +90,7 @@ vi.mock('electron', () => ({
   session: { fromPartition: () => SESSION_SENTINEL }
 }))
 
-const { createHumanProject, fetchProviderJson, getDurationLimit, healthCheck, uploadLibraryMedia } = await import('../../electron/providers/talkingphotos/client')
+const { createHumanProject, fetchProviderJson, getCapabilities, getDurationLimit, healthCheck, uploadLibraryMedia } = await import('../../electron/providers/talkingphotos/client')
 
 describe('TalkingPhotos session-bound client', () => {
   beforeEach(() => {
@@ -91,6 +99,7 @@ describe('TalkingPhotos session-bound client', () => {
     lastBody = Buffer.alloc(0)
     hangRequest = false
     nextResponse = { statusCode: 200, headers: { 'content-type': 'application/json' }, body: '{}' }
+    routedResponses = {}
   })
 
   afterEach(() => {
@@ -101,6 +110,20 @@ describe('TalkingPhotos session-bound client', () => {
     await fetchProviderJson('/project/video_daily_usage')
     expect(lastRequestOpts?.session).toBe(SESSION_SENTINEL)
     expect(lastRequestOpts?.url).toContain('/project/video_daily_usage')
+  })
+
+  // Regression guard for the incident this transport replaced: the previous
+  // net.request client paired `redirect: 'follow'` with a manual `followRedirect()`
+  // call, which Chromium rejected with net::ERR_INVALID_ARGUMENT on any 3xx and took
+  // down every provider call (including capabilities) at once. Session.fetch has no
+  // such double-follow hazard, but this locks in the two properties that make it
+  // safe: redirects are followed automatically (no manual re-follow to get wrong),
+  // and every request carries an abort signal so a hung request can never wedge the
+  // capabilities/sync/create paths open forever.
+  it('requests redirect:"follow" (no manual re-follow) and a bounded abort signal', async () => {
+    await fetchProviderJson('/project/video_daily_usage')
+    expect(lastRequestOpts?.redirect).toBe('follow')
+    expect(lastRequestOpts?.hasAbortSignal).toBe(true)
   })
 
   it('treats HTTP 401 as reauth-required, not a generic failure', async () => {
@@ -137,6 +160,21 @@ describe('TalkingPhotos session-bound client', () => {
     nextResponse = { statusCode: 200, headers: { 'content-type': 'application/json' }, body: '{"data":{"dailyUsage":"3","dailyLimit":"100"}}' }
     await expect(healthCheck()).resolves.toEqual({ ok: true, reauthRequired: false })
     expect(lastRequestOpts?.url).toContain('/project/video_daily_usage')
+  })
+
+  // getCapabilities() is the exact call the original net::ERR_INVALID_ARGUMENT
+  // incident died on (it's what the renderer's loadCapabilities() invokes on every
+  // Talking Video screen load). It fires three concurrent requests via Promise.all,
+  // so route by path rather than relying on a single shared `nextResponse`.
+  it('resolves getCapabilities() from its three parallel endpoints', async () => {
+    routedResponses = {
+      '/project/video_duration_limit': { statusCode: 200, headers: { 'content-type': 'application/json' }, body: '{"maxDuration":60,"maxCharactersTTS":400}' },
+      '/project/concurrent_limit/human': { statusCode: 200, headers: { 'content-type': 'application/json' }, body: '{"concurrentCount":1,"concurrentLimit":3}' },
+      '/project/video_daily_usage': { statusCode: 200, headers: { 'content-type': 'application/json' }, body: '{"dailyUsage":4,"dailyLimit":20}' }
+    }
+    const capabilities = await getCapabilities()
+    expect(capabilities.limits).toMatchObject({ maxDurationSeconds: 60, maxCharactersTts: 400 })
+    expect(capabilities.usage).toMatchObject({ concurrentCount: 1, concurrentLimit: 3, dailyUsage: 4, dailyLimit: 20 })
   })
 
   it('aborts and rejects a provider request that never responds', async () => {
