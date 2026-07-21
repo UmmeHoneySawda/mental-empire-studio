@@ -247,17 +247,30 @@ export async function mergeProjects(input: { projectIds: string[]; title: string
   return project
 }
 
-/** Harmless authenticated read used both as the connect-flow probe and as the
- *  periodic health check. Reads video_daily_usage (contract-confirmed GET, no
- *  side effects). */
+/** Harmless authenticated reads used by the connect flow and periodic health check.
+ *  Authentication is already proven by fetchProviderJson: 401/403, login HTML,
+ *  malformed JSON, and non-2xx responses are rejected before this function returns.
+ *  Do not couple connection success to quota-field types or response envelopes — the
+ *  provider has returned those values as strings/nested objects while the account is
+ *  visibly authenticated. A project-list fallback also tolerates endpoint drift. */
 export async function healthCheck(): Promise<{ ok: boolean; reauthRequired: boolean; message?: string }> {
-  try {
-    const body = await fetchProviderJson<Record<string, unknown>>('/project/video_daily_usage')
-    return { ok: typeof body.dailyLimit === 'number' || typeof body.dailyUsage === 'number', reauthRequired: false }
-  } catch (e) {
-    if (e instanceof ProviderRequestError) return { ok: false, reauthRequired: e.normalized.kind === 'authentication', message: e.normalized.message }
-    return { ok: false, reauthRequired: false, message: (e as Error).message }
+  let lastFailure: string | undefined
+  for (const path of ['/project/video_daily_usage', '/project?page=1&limit=1']) {
+    try {
+      await fetchProviderJson<unknown>(path)
+      return { ok: true, reauthRequired: false }
+    } catch (e) {
+      if (e instanceof ProviderRequestError) {
+        if (e.normalized.kind === 'authentication') {
+          return { ok: false, reauthRequired: true, message: e.normalized.message }
+        }
+        lastFailure = e.normalized.message
+      } else {
+        lastFailure = (e as Error).message
+      }
+    }
   }
+  return { ok: false, reauthRequired: false, message: lastFailure }
 }
 
 export async function getCapabilities(): Promise<ProviderCapabilities> {
