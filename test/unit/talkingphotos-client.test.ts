@@ -2,7 +2,7 @@ import { EventEmitter } from 'node:events'
 import { mkdtempSync, rmSync, writeFileSync } from 'node:fs'
 import { join } from 'node:path'
 import { tmpdir } from 'node:os'
-import { beforeEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest'
 
 // Session-bound request selection + reauth detection, exercised end-to-end against a
 // fake net.request — proves the client always binds to the TalkingPhotos partition
@@ -13,6 +13,7 @@ const SESSION_SENTINEL = { __sentinel: 'talkingphotos-partition-session' }
 let lastRequestOpts: Record<string, unknown> | null = null
 let lastHeaders: Record<string, string> = {}
 let lastBody = Buffer.alloc(0)
+let hangRequest = false
 let nextResponse: { statusCode: number; headers: Record<string, string>; body: string } = {
   statusCode: 200,
   headers: { 'content-type': 'application/json' },
@@ -20,14 +21,29 @@ let nextResponse: { statusCode: number; headers: Record<string, string>; body: s
 }
 
 vi.mock('electron', () => ({
+  app: {
+    getVersion: () => '0.0.0-test',
+    isPackaged: false,
+    getAppMetrics: () => [],
+    getPath: () => '/tmp',
+    getSystemMemoryInfo: () => ({ free: 0, total: 0 })
+  },
+  ipcMain: { handle: vi.fn() },
   session: { fromPartition: () => SESSION_SENTINEL },
   net: {
     request: (opts: Record<string, unknown>) => {
       lastRequestOpts = opts
-      const req = new EventEmitter() as EventEmitter & { setHeader: (key: string, value: string) => void; write: (body: string | Buffer) => void; end: () => void }
+      const req = new EventEmitter() as EventEmitter & {
+        setHeader: (key: string, value: string) => void
+        write: (body: string | Buffer) => void
+        end: () => void
+        abort: () => void
+      }
       req.setHeader = (key, value) => { lastHeaders[key] = value }
       req.write = (body) => { lastBody = Buffer.isBuffer(body) ? body : Buffer.from(body) }
+      req.abort = () => { req.emit('abort') }
       req.end = () => {
+        if (hangRequest) return
         queueMicrotask(() => {
           const res = new EventEmitter() as EventEmitter & { statusCode: number; headers: Record<string, string> }
           res.statusCode = nextResponse.statusCode
@@ -51,7 +67,12 @@ describe('TalkingPhotos session-bound client', () => {
     lastRequestOpts = null
     lastHeaders = {}
     lastBody = Buffer.alloc(0)
+    hangRequest = false
     nextResponse = { statusCode: 200, headers: { 'content-type': 'application/json' }, body: '{}' }
+  })
+
+  afterEach(() => {
+    vi.useRealTimers()
   })
 
   it('binds every request to the TalkingPhotos partition session, never the global fetch', async () => {
@@ -94,6 +115,16 @@ describe('TalkingPhotos session-bound client', () => {
     nextResponse = { statusCode: 200, headers: { 'content-type': 'application/json' }, body: '{"data":{"dailyUsage":"3","dailyLimit":"100"}}' }
     await expect(healthCheck()).resolves.toEqual({ ok: true, reauthRequired: false })
     expect(lastRequestOpts?.url).toContain('/project/video_daily_usage')
+  })
+
+  it('aborts and rejects a provider request that never responds', async () => {
+    vi.useFakeTimers()
+    hangRequest = true
+    const rejected = expect(fetchProviderJson('/project/video_daily_usage')).rejects.toMatchObject({
+      normalized: { kind: 'network' }
+    })
+    await vi.advanceTimersByTimeAsync(15_000)
+    await rejected
   })
 
   it('submits the confirmed Human project JSON through the partition-bound client', async () => {
