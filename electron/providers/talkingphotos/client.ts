@@ -31,6 +31,7 @@ import {
   type TalkingPhotosTtsSettings
 } from '../../../shared/talkingphotos'
 import { L } from '../../services/logger'
+import { sentryLog } from '../../services/sentry'
 
 // Session-bound HTTP client for TalkingPhotos. Every request goes through
 // Electron's net.request bound to the isolated partition session (never the global
@@ -38,6 +39,8 @@ import { L } from '../../services/logger'
 // cookies). net.request's `session` option is documented and stable across Electron
 // versions; net.fetch's session-binding surface is newer and less certain, so
 // net.request is used uniformly here, including for the streaming downloader.
+
+const PROVIDER_REQUEST_TIMEOUT_MS = 15_000
 
 export class ProviderRequestError extends Error {
   readonly normalized: ProviderErrorNormalized
@@ -58,21 +61,55 @@ function looksLikeHtml(body: string): boolean {
   return /^\s*<(!doctype html|html)/i.test(body.slice(0, 200))
 }
 
+/** Stable, low-cardinality route label for logs. Never includes query strings, ids,
+ *  signed URLs, filenames, or payload data. */
+function providerRoute(path: string): string {
+  const rawPath = path.startsWith('http') ? new URL(path).pathname : path.split('?')[0]
+  return rawPath.replace(/\/[0-9a-f-]{8,}/gi, '/:id').replace(/\/\d+/g, '/:id')
+}
+
 /** Low-level session-bound request. Redirects are followed automatically (Electron
  *  default); reauth is instead detected from the FINAL response (401/403, or HTML
  *  where JSON was expected) — the HAR did not capture the exact login-redirect route
- *  (contract security.authentication), so we don't depend on intercepting it. */
+ *  (contract security.authentication), so we don't depend on intercepting it.
+ *
+ *  Every request has a hard timeout and abort. A provider/socket regression must never
+ *  leave IPC, automation, or the login UI pending forever. */
 function rawRequest(path: string, opts: { method?: string; body?: string | Buffer; contentType?: string } = {}): Promise<RawResponse> {
   const method = opts.method ?? 'GET'
   const url = path.startsWith('http') ? path : `${TALKINGPHOTOS_BASE_URL}${path}`
   return new Promise((resolve, reject) => {
     let req: ReturnType<typeof net.request>
+    let finished = false
+    let timer: ReturnType<typeof setTimeout> | null = null
+
+    const fail = (error: Error): void => {
+      if (finished) return
+      finished = true
+      if (timer) clearTimeout(timer)
+      reject(error)
+    }
+    const succeed = (response: RawResponse): void => {
+      if (finished) return
+      finished = true
+      if (timer) clearTimeout(timer)
+      resolve(response)
+    }
+
     try {
       req = net.request({ method, url, session: getProviderSession(), redirect: 'follow' })
     } catch (e) {
-      reject(e as Error)
+      fail(e as Error)
       return
     }
+
+    timer = setTimeout(() => {
+      if (finished) return
+      finished = true
+      try { (req as unknown as { abort?: () => void }).abort?.() } catch { /* best effort */ }
+      reject(new Error(`TalkingPhotos request timed out after ${PROVIDER_REQUEST_TIMEOUT_MS}ms`))
+    }, PROVIDER_REQUEST_TIMEOUT_MS)
+
     req.setHeader('accept', 'application/json')
     req.setHeader('x-requested-with', 'XMLHttpRequest')
     if (opts.body) {
@@ -84,15 +121,16 @@ function rawRequest(path: string, opts: { method?: string; body?: string | Buffe
       res.on('data', (chunk: Buffer) => chunks.push(chunk))
       res.on('end', () => {
         const header = res.headers['content-type']
-        resolve({
+        succeed({
           status: res.statusCode,
           contentType: Array.isArray(header) ? header[0] ?? null : (header as string | undefined) ?? null,
           bodyText: Buffer.concat(chunks).toString('utf8')
         })
       })
-      res.on('error', (e: Error) => reject(e))
+      res.on('error', (e: Error) => fail(e))
     })
-    req.on('error', (e) => reject(e))
+    req.on('error', (e) => fail(e))
+    req.on('abort', () => fail(new Error('TalkingPhotos request was aborted.')))
     if (opts.body) req.write(opts.body)
     req.end()
   })
@@ -102,12 +140,21 @@ function rawRequest(path: string, opts: { method?: string; body?: string | Buffe
  *  (normalized, redacted) on any auth/network/shape failure — a 200 status alone is
  *  never treated as success (plan §11). */
 export async function fetchProviderJson<T>(path: string, opts: { method?: string; body?: unknown } = {}): Promise<T> {
+  const method = opts.method ?? 'GET'
+  const route = providerRoute(path)
   let raw: RawResponse
   try {
     raw = await rawRequest(path, { method: opts.method, body: opts.body === undefined ? undefined : JSON.stringify(opts.body) })
   } catch (e) {
     const message = redactProviderText((e as Error).message || 'network error')
     L.warn(`talkingphotos request failed (network): ${path} — ${message}`)
+    sentryLog.warn('TalkingPhotos provider request failed', {
+      operation: 'provider_http',
+      route,
+      method,
+      failure_kind: message.toLowerCase().includes('timed out') ? 'timeout' : 'network',
+      error_message: message.slice(0, 200)
+    })
     throw new ProviderRequestError(classifyProviderError({ networkError: true, message }))
   }
 
@@ -118,34 +165,83 @@ export async function fetchProviderJson<T>(path: string, opts: { method?: string
   })
   if (reauthRequired) {
     L.warn(`talkingphotos reauth required: ${path} (status=${raw.status})`)
+    sentryLog.warn('TalkingPhotos provider authentication required', {
+      operation: 'provider_http',
+      route,
+      method,
+      status_code: raw.status
+    })
     throw new ProviderRequestError(classifyProviderError({ reauthRequired: true, httpStatus: raw.status, message: 'TalkingPhotos session expired — reconnect required.' }))
   }
   if (raw.status < 200 || raw.status >= 300) {
     const retryAfter = Number((raw.bodyText.match(/retry-after"?\s*[:=]\s*"?(\d+)/i) || [])[1]) || undefined
     const message = redactProviderText(raw.bodyText.slice(0, 300) || `HTTP ${raw.status}`)
     L.warn(`talkingphotos request failed: ${path} — status=${raw.status}`)
+    sentryLog.error('TalkingPhotos provider returned an error', {
+      operation: 'provider_http',
+      route,
+      method,
+      status_code: raw.status,
+      retryable: raw.status === 429 || raw.status >= 500,
+      error_message: message.slice(0, 200)
+    })
     throw new ProviderRequestError(classifyProviderError({ httpStatus: raw.status, retryAfterSec: retryAfter, message }))
   }
   try {
     return JSON.parse(raw.bodyText) as T
   } catch {
     L.warn(`talkingphotos invalid JSON response: ${path}`)
+    sentryLog.error('TalkingPhotos provider returned invalid JSON', {
+      operation: 'provider_http',
+      route,
+      method,
+      status_code: raw.status,
+      response_length: raw.bodyText.length
+    })
     throw new ProviderRequestError(classifyProviderError({ invalidShape: true, httpStatus: raw.status, message: 'TalkingPhotos returned an unexpected response.' }))
   }
 }
 
 async function fetchProviderBodyJson<T>(path: string, opts: { method: string; body: Buffer; contentType: string }): Promise<T> {
+  const route = providerRoute(path)
   let raw: RawResponse
   try {
     raw = await rawRequest(path, opts)
   } catch (e) {
     const message = redactProviderText((e as Error).message || 'network error')
+    sentryLog.warn('TalkingPhotos provider upload request failed', {
+      operation: 'provider_http',
+      route,
+      method: opts.method,
+      failure_kind: message.toLowerCase().includes('timed out') ? 'timeout' : 'network',
+      error_message: message.slice(0, 200)
+    })
     throw new ProviderRequestError(classifyProviderError({ networkError: true, message }))
   }
   const reauthRequired = detectReauthRequired({ status: raw.status, contentType: raw.contentType, bodyLooksHtml: looksLikeHtml(raw.bodyText) })
-  if (reauthRequired) throw new ProviderRequestError(classifyProviderError({ reauthRequired: true, httpStatus: raw.status, message: 'TalkingPhotos session expired — reconnect required.' }))
-  if (raw.status < 200 || raw.status >= 300) throw new ProviderRequestError(classifyProviderError({ httpStatus: raw.status, message: redactProviderText(raw.bodyText.slice(0, 300) || `HTTP ${raw.status}`) }))
+  if (reauthRequired) {
+    sentryLog.warn('TalkingPhotos provider upload needs authentication', { operation: 'provider_http', route, method: opts.method, status_code: raw.status })
+    throw new ProviderRequestError(classifyProviderError({ reauthRequired: true, httpStatus: raw.status, message: 'TalkingPhotos session expired — reconnect required.' }))
+  }
+  if (raw.status < 200 || raw.status >= 300) {
+    const message = redactProviderText(raw.bodyText.slice(0, 300) || `HTTP ${raw.status}`)
+    sentryLog.error('TalkingPhotos provider upload returned an error', {
+      operation: 'provider_http',
+      route,
+      method: opts.method,
+      status_code: raw.status,
+      error_message: message.slice(0, 200)
+    })
+    throw new ProviderRequestError(classifyProviderError({ httpStatus: raw.status, message }))
+  }
   try { return JSON.parse(raw.bodyText) as T } catch {
+    sentryLog.error('TalkingPhotos provider upload returned invalid JSON', {
+      operation: 'provider_http',
+      route,
+      method: opts.method,
+      status_code: raw.status,
+      response_length: raw.bodyText.length
+    })
     throw new ProviderRequestError(classifyProviderError({ invalidShape: true, httpStatus: raw.status, message: 'TalkingPhotos returned an unexpected response.' }))
   }
 }
