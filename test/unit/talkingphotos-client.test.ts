@@ -44,7 +44,7 @@ vi.mock('electron', () => ({
   }
 }))
 
-const { createHumanProject, fetchProviderJson, getDurationLimit, uploadLibraryMedia } = await import('../../electron/providers/talkingphotos/client')
+const { createHumanProject, fetchProviderJson, getDurationLimit, healthCheck, uploadLibraryMedia } = await import('../../electron/providers/talkingphotos/client')
 
 describe('TalkingPhotos session-bound client', () => {
   beforeEach(() => {
@@ -88,6 +88,12 @@ describe('TalkingPhotos session-bound client', () => {
   it('parses a valid JSON body on success', async () => {
     nextResponse = { statusCode: 200, headers: { 'content-type': 'application/json' }, body: '{"dailyUsage":3,"dailyLimit":100}' }
     await expect(fetchProviderJson('/project/video_daily_usage')).resolves.toEqual({ dailyUsage: 3, dailyLimit: 100 })
+  })
+
+  it('accepts an authenticated health response when quota values are strings or nested', async () => {
+    nextResponse = { statusCode: 200, headers: { 'content-type': 'application/json' }, body: '{"data":{"dailyUsage":"3","dailyLimit":"100"}}' }
+    await expect(healthCheck()).resolves.toEqual({ ok: true, reauthRequired: false })
+    expect(lastRequestOpts?.url).toContain('/project/video_daily_usage')
   })
 
   it('submits the confirmed Human project JSON through the partition-bound client', async () => {
