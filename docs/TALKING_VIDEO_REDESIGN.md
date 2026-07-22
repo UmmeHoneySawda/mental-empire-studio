@@ -124,7 +124,7 @@ TalkingPhotos.ai (G9).
 | **P0 — Liveliness** | `logic.ts` (+tests, behavior-preserving); My Videos rows; live `JobProgress` (from existing `progress`/`step`); inline `VideoPreview`; stagger + reduced-motion | No | `screens/talking-video/logic.ts`, `VideoRow`, `JobProgress`, `VideoPreview`, `TalkingVideo.tsx`, `global.css` |
 | **P1 — Parity** | `loadProjects()` + `unifyJobsAndProjects`; search/filter/pagination; part X/Y; retention; account menu + disconnect; **persist thumb + ETA/host on job** | **Yes (small)** — add `thumbnailUrl`, `etaSeconds`, `hostName` to `ProviderJob` + poller mapping | store, `Toolbar`, `Pagination`, `AccountMenu`, poller/normalize (main), `logic.ts` |
 | **P2 — Depth** | Visual motion picker; voice speed/pitch/emotion + negative prompt; subtitle-language picker; duplicate; TTS-recovery dialog; **generated-character preview** | **Yes** — a preview IPC/event for `create_image_from_prompt`+WS | create-form additions, `MotionPicker`, `TtsRecoveryDialog`, store wiring, provider preview event (main) |
-| **P3 — New features** | **User Merge Videos** (wire existing `mergeProjectsRemotely` → IPC/store/UI); **Delete**; **Cancel** | **Yes** — new IPC + (delete/cancel need endpoints; **Delete endpoint UNKNOWN — capture first**) | ipc, store, UI + provider |
+| **P3 — New features** | **User Merge Videos** (wire existing `mergeProjectsRemotely` → IPC/store/UI); **Delete** (`DELETE /project/{id}` ✅ confirmed live); **Cancel** only if endpoint captured | **Yes** — new IPC; Delete fully specified; Cancel still UNKNOWN | ipc, store, UI + provider |
 
 Each phase ships independently and leaves the app fully working. P0 is pure
 renderer/store (zero backend risk).
@@ -153,11 +153,18 @@ clears capabilities; TTS-recovery actions call the right IPC with validated args
 - Inline `<video>` restricted to local files or CDN-allowlisted URLs
   (`isAllowedProviderMediaUrl`).
 - Keep the `settings.integrations.talkingPhotos.enabled` gate.
-- **Do not invent** the Delete/Cancel endpoints — capture them (report §9) before P3.
+- **Do not invent** the Cancel endpoint — capture it before implementing Cancel.
+- **Delete is specified:** `DELETE /project/{id}` → 200 (see `LIVE-SESSION-REPORT.md`);
+  still needs IPC + UI confirm modal (P3).
 
 ## 9. Decisions taken (chose the better option)
 - Keep our palette/type; adopt Express's information design, not its skin.
-- My Videos = responsive **rows** (Express) that collapse to cards on narrow widths.
-- Merge/Delete/Cancel deferred to P3 (backend/endpoint work); Delete needs a capture first.
+- **Library = responsive card gallery** (final design in `TALKING_VIDEO_UX_PLAN.md` +
+  mockup), not Express's wide rows. Express informed *content* (thumb, badge, actions,
+  search, pagination), not the row chrome.
+- Create = **3-step guided flow** + sticky live preview (see handoff + mockup).
+- Merge/Delete deferred to P3 (backend/IPC); Delete endpoint is confirmed; Cancel is not.
 - Voice speed/pitch UI uses the **0–100** provider scale (50=neutral) per the HAR contract.
 - Tests = pure logic + store only (no React DOM in this harness).
+- Full implementer handoff: `docs/TALKING_VIDEO_HANDOFF.md`.
+- Clickable mockup: `docs/design/talking-video-mockup.html`.
