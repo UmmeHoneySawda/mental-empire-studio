@@ -359,8 +359,9 @@ export function buildTalkingPhotosHumanTtsPayload(
       ttsVoice: input.voice,
       ttsVoiceGender: '',
       ttsEmotion: input.voiceStyle,
-      ttsSpeed: input.speed,
-      ttsPitch: input.pitch,
+      // input.speed/pitch are project-scale 0–100 (50 = normal), matching live HAR.
+      ttsSpeed: clampProjectSpeedPitch(input.speed, input.pitch).speed,
+      ttsPitch: clampProjectSpeedPitch(input.speed, input.pitch).pitch,
       voiceCloneCategory: 'cloned',
       voiceCloneLanguage: 1,
       voiceCloneVoice: null,
@@ -792,6 +793,12 @@ export interface TalkingPhotosScriptCreateInput {
   language: string
   voice: string
   voiceStyle: string
+  /**
+   * Project-scale voice controls: **0–100 with 50 = normal**, matching
+   * `POST /project` `options.ttsSpeed` / `ttsPitch` (live HAR).
+   * Do **not** pass create_audio_vc's speed≈1 / pitch≈0 scale here — convert
+   * with `ttsApiSpeedPitchFromProjectScale` at the TTS submit boundary.
+   */
   speed: number
   pitch: number
   subtitleMode: TalkingPhotosSubtitleMode
@@ -799,6 +806,47 @@ export interface TalkingPhotosScriptCreateInput {
   automationItemId?: string
   projectId?: string
   creationIntentId?: string
+}
+
+/** Clamp to the provider project voice scale (0–100). */
+export function clampProjectSpeedPitch(speed100: number, pitch100: number): { speed: number; pitch: number } {
+  const s = Number.isFinite(speed100) ? speed100 : 50
+  const p = Number.isFinite(pitch100) ? pitch100 : 50
+  return {
+    speed: Math.max(0, Math.min(100, Math.round(s))),
+    pitch: Math.max(0, Math.min(100, Math.round(p)))
+  }
+}
+
+/**
+ * Convert UI/project 0–100 (50 = normal) → create_audio_vc scale (speed≈1, pitch≈0).
+ * Live capture: create_audio_vc uses speed:1,pitch:0 while project uses ttsSpeed/ttsPitch 0–100.
+ */
+export function ttsApiSpeedPitchFromProjectScale(speed100: number, pitch100: number): { speed: number; pitch: number } {
+  const { speed, pitch } = clampProjectSpeedPitch(speed100, pitch100)
+  // 50 → 1.0 speed; 50 → 0.0 pitch. Keep three decimals for stable wire values.
+  const round3 = (n: number) => Math.round(n * 1000) / 1000
+  return {
+    speed: round3(Math.max(0.25, Math.min(4, speed / 50))),
+    pitch: round3(Math.max(-1, Math.min(1, (pitch - 50) / 50)))
+  }
+}
+
+/**
+ * Convert legacy/automation TTS-ish controls into project 0–100.
+ * Automation historically used speed∈[0.5,2] (1=normal) and pitch∈[-20,20] (0=normal).
+ * Values that already look like 0–100 (speed > 2) are treated as project-scale.
+ */
+export function projectScaleSpeedPitchFromTtsApi(speed: number, pitch: number): { speed: number; pitch: number } {
+  const s = Number.isFinite(speed) ? speed : 1
+  const p = Number.isFinite(pitch) ? pitch : 0
+  if (s > 2) {
+    // Already project-scale (e.g. UI draft speed 50–100).
+    return clampProjectSpeedPitch(s, p > 2 || p < 0 ? p : p)
+  }
+  // pitch range: if |p| ≤ 1 treat as -1..1; else treat as -20..20 automation range.
+  const pitch100 = Math.abs(p) <= 1 ? 50 + p * 50 : 50 + p * (50 / 20)
+  return clampProjectSpeedPitch(s * 50, pitch100)
 }
 
 // ---- Subtitles / local captions (Phase 8) ----

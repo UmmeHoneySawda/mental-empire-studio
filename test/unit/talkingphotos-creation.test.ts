@@ -247,7 +247,7 @@ describe('TalkingPhotos script (TTS) orchestration', () => {
     return {
       title: 'Script video', script: 'A short script.', characterImagePath: imagePath, characterPrompt: 'A presenter',
       style: 'high_quality' as const, aspectRatio: '16:9' as const, motionId: 0,
-      language: 'en-US', voice: 'en-US-AndrewMultilingualNeural', voiceStyle: 'general', speed: 1, pitch: 0, subtitleMode: 'none' as const,
+      language: 'en-US', voice: 'en-US-AndrewMultilingualNeural', voiceStyle: 'general', speed: 50, pitch: 50, subtitleMode: 'none' as const,
       ...overrides
     }
   }
@@ -257,11 +257,28 @@ describe('TalkingPhotos script (TTS) orchestration', () => {
     const root = await createScriptVideo(scriptInput())
     expect(root.operation).toBe('video')
     expect(tts.submitTts).toHaveBeenCalledTimes(1)
+    // Dual-scale: create input stores 0–100 (50/50); create_audio_vc path gets ≈1 / 0.
+    const ttsCall = tts.submitTts.mock.calls[0][0] as { settings: { speed: number; pitch: number } }
+    expect(ttsCall.settings.speed).toBe(1)
+    expect(ttsCall.settings.pitch).toBe(0)
     expect(client.createHumanProject).toHaveBeenCalledTimes(1)
     const payload = client.createHumanProject.mock.calls[0][0]
     expect(payload.options.audioSource).toBe('tts')
     expect(payload.options.audioResultUuid).toBe('tts-uuid-1')
     expect(payload.options.ttsText).toBe('A short script.')
+    // Project payload keeps project-scale 0–100.
+    expect(payload.options.ttsSpeed).toBe(50)
+    expect(payload.options.ttsPitch).toBe(50)
+  })
+
+  it('converts non-default project-scale speed/pitch for TTS while keeping them on the project body', async () => {
+    state.nextTtsDurations = [10]
+    await createScriptVideo(scriptInput({ speed: 80, pitch: 60 }))
+    const ttsCall = tts.submitTts.mock.calls[0][0] as { settings: { speed: number; pitch: number } }
+    expect(ttsCall.settings).toMatchObject({ speed: 1.6, pitch: 0.2 })
+    const payload = client.createHumanProject.mock.calls[0][0]
+    expect(payload.options.ttsSpeed).toBe(80)
+    expect(payload.options.ttsPitch).toBe(60)
   })
 
   it('re-splits and regenerates when a TTS chunk exceeds the active duration limit, never reusing the oversized job', async () => {

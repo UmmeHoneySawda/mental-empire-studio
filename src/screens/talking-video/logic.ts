@@ -1,7 +1,13 @@
 /**
  * Pure view-logic for the Talking Video screen.
  * Vitest target (node, no DOM). Keep free of React/Electron imports.
+ * Shared dual-scale voice helpers live in `@shared/talkingphotos`.
  */
+
+import {
+  clampProjectSpeedPitch,
+  ttsApiSpeedPitchFromProjectScale
+} from '@shared/talkingphotos'
 
 // ---- Create draft ----------------------------------------------------------
 
@@ -178,20 +184,66 @@ export function kindFromOperation(operation?: string | null): LibraryKind {
   return 'ai_video'
 }
 
+/** True when the title is a fabricated fallback, not a real project/script name. */
+export function isSyntheticLibraryTitle(title: string, remoteProjectId?: string | null, id?: string): boolean {
+  const t = (title || '').trim()
+  if (!t) return true
+  if (remoteProjectId && t === `Project ${remoteProjectId}`) return true
+  if (id && (t === `Video ${id.slice(0, 8)}` || t === `Video ${id}`)) return true
+  return false
+}
+
+/**
+ * Prefer the user-facing title stored on the creation checkpoint (`requestJson.input.title`),
+ * then fall back to synthetic ids only when nothing better exists.
+ */
+export function titleFromProviderJob(job: {
+  id: string
+  remoteProjectId?: string | null
+  requestJson?: string | null
+}): string {
+  try {
+    const parsed = JSON.parse(job.requestJson || '') as { input?: { title?: unknown }; title?: unknown }
+    const fromInput = parsed?.input?.title
+    if (typeof fromInput === 'string' && fromInput.trim()) return fromInput.trim()
+    // Some checkpoints may stash a display title at the root.
+    if (typeof parsed?.title === 'string' && parsed.title.trim()) return parsed.title.trim()
+  } catch {
+    /* ignore malformed checkpoints */
+  }
+  if (job.remoteProjectId) return `Project ${job.remoteProjectId}`
+  return `Video ${job.id.slice(0, 8)}`
+}
+
 export function unifyJobsAndProjects(jobs: LibraryItem[], projects: LibraryItem[]): LibraryItem[] {
-  const byRemote = new Map<string, LibraryItem>()
+  const byRemote = new Map<string, number>() // remoteProjectId → index in result
   const result: LibraryItem[] = []
 
   for (const job of jobs) {
-    if (job.remoteProjectId) byRemote.set(String(job.remoteProjectId), job)
+    if (job.remoteProjectId) byRemote.set(String(job.remoteProjectId), result.length)
     result.push(job)
   }
 
   for (const project of projects) {
     const key = project.remoteProjectId ? String(project.remoteProjectId) : project.id
-    if (byRemote.has(key)) continue
-    // Also skip if a job id matches project id
-    if (result.some((j) => j.id === project.id || (j.remoteProjectId && String(j.remoteProjectId) === key))) continue
+    const existingIdx = byRemote.has(key)
+      ? byRemote.get(key)!
+      : result.findIndex((j) => j.id === project.id || (j.remoteProjectId && String(j.remoteProjectId) === key))
+
+    if (existingIdx >= 0) {
+      // Jobs win for in-flight state, but keep real remote titles/thumbs when the job title is synthetic.
+      const existing = result[existingIdx]
+      result[existingIdx] = {
+        ...existing,
+        title:
+          isSyntheticLibraryTitle(existing.title, existing.remoteProjectId, existing.id) && project.title
+            ? project.title
+            : existing.title,
+        thumbnailUrl: existing.thumbnailUrl || project.thumbnailUrl,
+        remoteMediaUrl: existing.remoteMediaUrl || project.remoteMediaUrl
+      }
+      continue
+    }
     result.push(project)
   }
 
@@ -409,14 +461,18 @@ export function defaultCreateDraft(overrides?: Partial<CreateDraft>): CreateDraf
   }
 }
 
-/** Map UI 0–100 speed/pitch (50 = normal) to legacy provider numeric fields if needed. */
+/**
+ * Map UI/project 0–100 (50 = normal) → create_audio_vc scale (speed≈1, pitch≈0).
+ * Re-exports the shared pure converter so view-logic tests lock the dual-scale contract.
+ */
 export function mapSpeedPitchToProvider(speed100: number, pitch100: number): { speed: number; pitch: number } {
-  // Provider createScript historically used speed:1, pitch:0; UI uses 0–100 with 50 neutral.
-  // Pass-through 0–100 for new wiring; callers that need 1.0-scale can convert.
-  return {
-    speed: Number.isFinite(speed100) ? speed100 : 50,
-    pitch: Number.isFinite(pitch100) ? pitch100 : 50
-  }
+  return ttsApiSpeedPitchFromProjectScale(speed100, pitch100)
+}
+
+/** Map UI 0–100 → POST /project ttsSpeed/ttsPitch (same scale, clamped). */
+export function mapSpeedPitchToProject(speed100: number, pitch100: number): { ttsSpeed: number; ttsPitch: number } {
+  const c = clampProjectSpeedPitch(speed100, pitch100)
+  return { ttsSpeed: c.speed, ttsPitch: c.pitch }
 }
 
 export function moodToVoiceStyle(mood: string): string {

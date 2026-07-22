@@ -11,6 +11,7 @@ import {
   planTalkingPhotosScriptChunks,
   planTalkingPhotosSegments,
   splitOversizedScriptChunk,
+  ttsApiSpeedPitchFromProjectScale,
   type ProviderAsset,
   type ProviderJob,
   type ProviderProjectSummary,
@@ -432,9 +433,18 @@ async function submitTtsChunks(root: ProviderJob, state: TalkingPhotosScriptCrea
 
     let ttsJob: ProviderJob | undefined = segment.ttsJobId ? repos.providerJob(segment.ttsJobId) : undefined
     if (!ttsJob) {
+      // Script input speed/pitch are project-scale 0–100; create_audio_vc wants ≈1 / 0.
+      const ttsScale = ttsApiSpeedPitchFromProjectScale(state.input.speed, state.input.pitch)
       ttsJob = await submitTts({
         text: segment.text,
-        settings: { language: state.input.language, voice: state.input.voice, voiceStyle: state.input.voiceStyle, speed: state.input.speed, pitch: state.input.pitch, autoTranslate: false },
+        settings: {
+          language: state.input.language,
+          voice: state.input.voice,
+          voiceStyle: state.input.voiceStyle,
+          speed: ttsScale.speed,
+          pitch: ttsScale.pitch,
+          autoTranslate: false
+        },
         projectStyle: state.input.style,
         automationJobId: state.input.automationJobId, automationItemId: state.input.automationItemId, projectId: state.input.projectId
       })

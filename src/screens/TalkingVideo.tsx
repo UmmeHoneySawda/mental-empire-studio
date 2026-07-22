@@ -31,6 +31,7 @@ import {
   retentionRemaining,
   rollupSegments,
   scriptLengthHint,
+  titleFromProviderJob,
   unifyJobsAndProjects,
   validateCreate,
   type CreateDraft,
@@ -282,22 +283,21 @@ function Field({
 
 function jobToLibraryItem(job: ProviderJob): LibraryItem {
   const created = Date.parse(job.createdAt) || 0
-  const title = job.remoteProjectId ? `Project ${job.remoteProjectId}` : `Video ${job.id.slice(0, 8)}`
   return {
     id: job.id,
-    title,
+    title: titleFromProviderJob(job),
     status: mapJobStatusToLibrary(job.status),
     kind: kindFromOperation(job.operation),
     createdAt: created,
-    thumbnailUrl: (job as ProviderJob & { thumbnailUrl?: string }).thumbnailUrl ?? null,
+    thumbnailUrl: job.thumbnailUrl ?? null,
     localOutputPath: job.localOutputPath ?? job.localCaptionedOutputPath ?? null,
     remoteMediaUrl: job.remoteMediaUrl ?? null,
     remoteProjectId: job.remoteProjectId ?? null,
     progress: job.progress,
     remoteStep: job.remoteStep,
     remoteStepsTotal: job.remoteStepsTotal,
-    etaSeconds: (job as ProviderJob & { etaSeconds?: number }).etaSeconds ?? null,
-    hostName: (job as ProviderJob & { hostName?: string }).hostName ?? null,
+    etaSeconds: job.etaSeconds ?? null,
+    hostName: job.hostName ?? null,
     segmentOrdinal: job.segmentOrdinal,
     parentId: job.parentProviderJobId ?? null,
     internalSegment: job.internalSegment,

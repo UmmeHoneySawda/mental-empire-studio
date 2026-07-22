@@ -321,12 +321,51 @@ describe('TTS create + WebSocket completion frame validation', () => {
 describe('Fresh TTS Human project payload (never a cloned/empty-TTS shape)', () => {
   it('populates real audioResultUuid/audioMediaId/ttsText/voice fields, unlike the uploaded-audio payload', () => {
     const payload = buildTalkingPhotosHumanTtsPayload(
-      { title: 'x', script: 'Hello there.', characterImagePath: '/p.png', characterPrompt: 'A presenter', style: 'high_quality', aspectRatio: '16:9', motionId: 0, language: 'en-US', voice: 'en-US-AndrewMultilingualNeural', voiceStyle: 'general', speed: 1, pitch: 0, subtitleMode: 'none' },
+      { title: 'x', script: 'Hello there.', characterImagePath: '/p.png', characterPrompt: 'A presenter', style: 'high_quality', aspectRatio: '16:9', motionId: 0, language: 'en-US', voice: 'en-US-AndrewMultilingualNeural', voiceStyle: 'general', speed: 50, pitch: 50, subtitleMode: 'none' },
       { audioMediaId: '999', audioResultUuid: 'tts-uuid-1', ttsText: 'Hello there.', characterDrivingMediaId: '123', characterResultUuid: 'char-uuid', title: 'Segment 1' }
     )
-    expect(payload.options).toMatchObject({ audioSource: 'tts', audioMediaId: 999, audioResultUuid: 'tts-uuid-1', ttsText: 'Hello there.', ttsVoice: 'en-US-AndrewMultilingualNeural', ttsLanguage: 'en-US' })
+    expect(payload.options).toMatchObject({
+      audioSource: 'tts',
+      audioMediaId: 999,
+      audioResultUuid: 'tts-uuid-1',
+      ttsText: 'Hello there.',
+      ttsVoice: 'en-US-AndrewMultilingualNeural',
+      ttsLanguage: 'en-US',
+      ttsSpeed: 50,
+      ttsPitch: 50
+    })
     expect(payload.options.audioResultUuid).not.toBe('')
     expect(payload.options.ttsText).not.toBe('')
+  })
+
+  it('maps project-scale speed/pitch 0–100 onto ttsSpeed/ttsPitch (not create_audio_vc 1/0)', () => {
+    const payload = buildTalkingPhotosHumanTtsPayload(
+      {
+        title: 'demo-tts-1',
+        script: 'Hi.',
+        characterPrompt: 'host',
+        style: 'close_up',
+        aspectRatio: '9:16',
+        motionId: 0,
+        language: 'en-US',
+        voice: 'en-US-NancyMultilingualNeural',
+        voiceStyle: 'excited',
+        speed: 80,
+        pitch: 60,
+        subtitleMode: 'none'
+      },
+      {
+        audioMediaId: '4161044',
+        audioResultUuid: 'uuid',
+        ttsText: 'Hi.',
+        characterDrivingMediaId: '0',
+        characterResultUuid: 'char',
+        title: 'demo-tts-1'
+      }
+    )
+    // Matches live s1-05-project.json: ttsSpeed:80, ttsPitch:60
+    expect(payload.options.ttsSpeed).toBe(80)
+    expect(payload.options.ttsPitch).toBe(60)
   })
 })
 

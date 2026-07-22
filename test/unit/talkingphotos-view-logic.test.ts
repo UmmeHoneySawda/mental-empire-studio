@@ -1,5 +1,11 @@
 import { describe, expect, it } from 'vitest'
 import {
+  buildTalkingPhotosHumanTtsPayload,
+  ttsApiSpeedPitchFromProjectScale,
+  clampProjectSpeedPitch,
+  projectScaleSpeedPitchFromTtsApi
+} from '../../shared/talkingphotos'
+import {
   buildDuplicatePrefill,
   defaultCreateDraft,
   describeProgress,
@@ -8,12 +14,15 @@ import {
   formatExactTime,
   formatRelativeTime,
   humanizeQuota,
+  isSyntheticLibraryTitle,
+  mapSpeedPitchToProject,
   mapSpeedPitchToProvider,
   moodToVoiceStyle,
   paginate,
   retentionRemaining,
   rollupSegments,
   scriptLengthHint,
+  titleFromProviderJob,
   unifyJobsAndProjects,
   validateCreate,
   type CreateDraft,
@@ -147,6 +156,30 @@ describe('library unify / rollup / filter / paginate', () => {
     expect(unified.find((x) => x.remoteProjectId === '77')?.title).toBe('remote-only')
   })
 
+  it('when job wins with a synthetic title, adopts the remote project title', () => {
+    const jobs = [item({ id: 'job-a', remoteProjectId: '99', title: 'Project 99', createdAt: 2000 })]
+    const projects = [item({ id: 'proj-99', remoteProjectId: '99', title: 'Weekly product update', createdAt: 3000 })]
+    const unified = unifyJobsAndProjects(jobs, projects)
+    expect(unified).toHaveLength(1)
+    expect(unified[0].title).toBe('Weekly product update')
+    expect(unified[0].id).toBe('job-a')
+  })
+
+  it('titleFromProviderJob reads requestJson.input.title (not fabricated Project id)', () => {
+    const title = titleFromProviderJob({
+      id: 'tpj-abc12345xyz',
+      remoteProjectId: '1047241',
+      requestJson: JSON.stringify({
+        version: 1,
+        kind: 'script',
+        input: { title: 'demo-tts-1', script: 'Hello' }
+      })
+    })
+    expect(title).toBe('demo-tts-1')
+    expect(isSyntheticLibraryTitle(title, '1047241', 'tpj-abc12345xyz')).toBe(false)
+    expect(titleFromProviderJob({ id: 'tpj-abcdef01', remoteProjectId: '9' })).toBe('Project 9')
+  })
+
   it('rolls internal segments under parent with part X/Y title', () => {
     const rolled = rollupSegments([
       item({ id: 'parent', title: 'long-script', segmentTotal: 2, segmentOrdinal: 1 }),
@@ -233,16 +266,76 @@ describe('time + retention + duplicate', () => {
   })
 })
 
-describe('mood / speed helpers', () => {
+describe('mood / speed helpers (dual scale)', () => {
   it('maps mood chips to voiceStyle values', () => {
     expect(moodToVoiceStyle('Neutral')).toBe('general')
     expect(moodToVoiceStyle('Excited')).toBe('excited')
     expect(moodToVoiceStyle('Unfriendly')).toBe('unfriendly')
   })
 
-  it('passes 0–100 speed/pitch through', () => {
-    expect(mapSpeedPitchToProvider(50, 50)).toEqual({ speed: 50, pitch: 50 })
-    expect(mapSpeedPitchToProvider(80, 40)).toEqual({ speed: 80, pitch: 40 })
+  it('converts UI/project 0–100 (50=normal) → create_audio_vc scale (1 / 0)', () => {
+    // Default UI draft 50/50 must become TTS speed:1 pitch:0 (live HAR create_audio_vc).
+    expect(mapSpeedPitchToProvider(50, 50)).toEqual({ speed: 1, pitch: 0 })
+    expect(ttsApiSpeedPitchFromProjectScale(50, 50)).toEqual({ speed: 1, pitch: 0 })
+    // Live session demo-tts-1 used ttsSpeed:80 ttsPitch:60 on the project.
+    expect(ttsApiSpeedPitchFromProjectScale(80, 60)).toEqual({ speed: 1.6, pitch: 0.2 })
+    expect(mapSpeedPitchToProvider(80, 60)).toEqual({ speed: 1.6, pitch: 0.2 })
+  })
+
+  it('keeps project ttsSpeed/ttsPitch on the 0–100 scale', () => {
+    expect(mapSpeedPitchToProject(50, 50)).toEqual({ ttsSpeed: 50, ttsPitch: 50 })
+    expect(mapSpeedPitchToProject(80, 60)).toEqual({ ttsSpeed: 80, ttsPitch: 60 })
+    expect(clampProjectSpeedPitch(80, 60)).toEqual({ speed: 80, pitch: 60 })
+  })
+
+  it('buildTalkingPhotosHumanTtsPayload uses project-scale 0–100 for ttsSpeed/ttsPitch (not TTS 1/0)', () => {
+    // Simulate a UI draft that submitted speed/pitch as 0–100 (what createScript stores).
+    const draft = defaultCreateDraft({
+      title: 'demo-tts-1',
+      scriptText: 'Hello there.',
+      characterPrompt: 'A presenter',
+      ttsSpeed: 80,
+      ttsPitch: 60,
+      ttsLanguage: 'en-US',
+      ttsVoice: 'en-US-NancyMultilingualNeural',
+      voiceStyle: 'excited'
+    })
+    const payload = buildTalkingPhotosHumanTtsPayload(
+      {
+        title: draft.title,
+        script: draft.scriptText,
+        characterImagePath: '',
+        characterPrompt: draft.characterPrompt,
+        style: 'close_up',
+        aspectRatio: '9:16',
+        motionId: 0,
+        language: draft.ttsLanguage || 'en-US',
+        voice: draft.ttsVoice || '',
+        voiceStyle: moodToVoiceStyle('Excited'),
+        speed: draft.ttsSpeed ?? 50,
+        pitch: draft.ttsPitch ?? 50,
+        subtitleMode: 'none'
+      },
+      {
+        audioMediaId: '4161044',
+        audioResultUuid: '8f05b9a5-e40d-410b-8652-e2568971deae',
+        ttsText: draft.scriptText,
+        characterDrivingMediaId: '0',
+        characterResultUuid: 'd5d19be7-dbbb-4ebb-92c6-5707efc77c5f',
+        title: 'demo-tts-1'
+      }
+    )
+    // Project wire values stay 0–100 (matches live s1-05-project.json).
+    expect(payload.options.ttsSpeed).toBe(80)
+    expect(payload.options.ttsPitch).toBe(60)
+    expect(payload.options.ttsEmotion).toBe('excited')
+    // TTS API scale for the same draft is different — used only by create_audio_vc.
+    expect(ttsApiSpeedPitchFromProjectScale(draft.ttsSpeed!, draft.ttsPitch!)).toEqual({ speed: 1.6, pitch: 0.2 })
+  })
+
+  it('converts legacy automation TTS-ish speed/pitch into project 0–100', () => {
+    expect(projectScaleSpeedPitchFromTtsApi(1, 0)).toEqual({ speed: 50, pitch: 50 })
+    expect(projectScaleSpeedPitchFromTtsApi(1.2, 0)).toEqual({ speed: 60, pitch: 50 })
   })
 })
 

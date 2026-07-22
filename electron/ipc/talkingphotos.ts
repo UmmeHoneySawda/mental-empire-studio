@@ -106,8 +106,9 @@ export function reqScriptCreateInput(v: unknown): TalkingPhotosScriptCreateInput
     language: requiredString('language'),
     voice: requiredString('voice'),
     voiceStyle: typeof q.voiceStyle === 'string' && q.voiceStyle.trim() ? q.voiceStyle : 'general',
-    speed: typeof q.speed === 'number' && Number.isFinite(q.speed) ? q.speed : 1,
-    pitch: typeof q.pitch === 'number' && Number.isFinite(q.pitch) ? q.pitch : 0,
+    // Project-scale 0–100 (50 = normal). Renderer/UI sends this scale.
+    speed: typeof q.speed === 'number' && Number.isFinite(q.speed) ? q.speed : 50,
+    pitch: typeof q.pitch === 'number' && Number.isFinite(q.pitch) ? q.pitch : 50,
     subtitleMode,
     automationJobId: optionalString('automationJobId'),
     automationItemId: optionalString('automationItemId'),

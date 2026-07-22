@@ -40,7 +40,7 @@ import { reconcileNonTerminalProviderJobs } from '../providers/talkingphotos/pol
 import { createProviderSubtitles } from '../providers/talkingphotos/subtitles'
 import { applyLocalCaptions } from '../providers/talkingphotos/localCaptions'
 import { transcribeAudio } from './transcribe'
-import { TALKINGPHOTOS_CONNECTION_ID, reconstructScriptFromWords } from '../../shared/talkingphotos'
+import { TALKINGPHOTOS_CONNECTION_ID, projectScaleSpeedPitchFromTtsApi, reconstructScriptFromWords } from '../../shared/talkingphotos'
 
 const LOG = logger.scope('automation-supervisor')
 let pumping = false
@@ -555,11 +555,15 @@ async function runStep(job: AutomationJob, step: AutomationWorkflowStep): Promis
             script = reconstructScriptFromWords(words)
             if (!script.trim()) throw new Error('Transcription produced no usable words to build a script from.')
           }
+          // Automation options use TTS-ish speed∈[0.5,2]/pitch∈[-20,20]; createScript
+          // expects project-scale 0–100 (50=normal) for POST /project ttsSpeed/ttsPitch.
+          const projectVoice = projectScaleSpeedPitchFromTtsApi(options.speed, options.pitch)
           providerJob = await createScriptVideo({
             title: item.title, script, characterImagePath,
             characterPrompt: options.characterPrompt, characterNegativePrompt: options.characterNegativePrompt,
             style: options.style, aspectRatio: options.aspectRatio, motionId: options.style === 'high_quality' ? 0 : options.motionId,
-            language: options.language, voice: options.voice, voiceStyle: options.voiceStyle, speed: options.speed, pitch: options.pitch,
+            language: options.language, voice: options.voice, voiceStyle: options.voiceStyle,
+            speed: projectVoice.speed, pitch: projectVoice.pitch,
             subtitleMode: options.subtitleMode, automationJobId: job.id, automationItemId: item.id
           })
         }
