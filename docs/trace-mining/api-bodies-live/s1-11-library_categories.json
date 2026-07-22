@@ -1,0 +1,5 @@
+// POST https://app.talkingphotos.ai/library/categories  -> 200
+// ===== REQUEST BODY =====
+{"title":"test"}
+// ===== RESPONSE BODY =====
+{"id":164062,"title":"test","titleShort":"test","user":{"id":14028,"email":"nazmulislampi06@gmail.com","fullName":"Nazmul Islam","roles":["ROLE_USER"],"groups":["basic","deluxe","bonus"],"secretCode":null,"createdDate":"2026-06-01T16:46:28+00:00","updatedDate":"2026-07-22T10:30:40+00:00","termsAcceptedDate":"2026-06-01T16:51:44+00:00","termsAcceptedReplicateDate":"2026-07-20T16:42:32+00:00","options":{"terms_agree":1,"images_per_day":{"2026-07-22":3},"videos_per_day":{"2026-07-22":3},"terms_replicate_agree":1},"enabled":true,"phone":"","isTrial":false,"isPartner":false,"isAdmin":false,"roleFullName":"Deluxe Bonus","roleColor":"#e07f16"},"userId":14028}

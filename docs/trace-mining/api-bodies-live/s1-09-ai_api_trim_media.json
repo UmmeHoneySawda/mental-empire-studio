@@ -1,0 +1,5 @@
+// POST https://app.talkingphotos.ai/ai_api/trim_media  -> 200
+// ===== REQUEST BODY =====
+{"mediaId":4161140,"timeStart":28.68,"timeEnd":43.43,"title":"Being a narcissist (15 sec)","useFadeOut":true}
+// ===== RESPONSE BODY =====
+{"success":true,"media":{"id":4161145,"title":"Being a narcissist (15 sec)","type":"audio","filename":"3a82daca13e68ace4010b66426f4d20214985803.mp3","extension":"mp3","category":"user_library","data":{"duration_ms":14790,"duration":14.789999999999999,"fps":25,"streams":1,"fileSize":236910,"fileSizeString":"231.36 KB"},"categoryId":163906,"userId":14028,"ownerId":null,"createdDate":"2026-07-22T10:29:58+00:00","updatedDate":"2026-07-22T10:30:01+00:00","mediaPath":"https:\/\/cdn.talkingphotos.ai\/14028\/audio\/3a82daca13e68ace4010b66426f4d20214985803.mp3","imagePath":"https:\/\/cdn.talkingphotos.ai\/14028\/image\/3a82daca13e68ace4010b66426f4d20214985803.mp3","smallThumb":null}}

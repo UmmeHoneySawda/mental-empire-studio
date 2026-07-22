@@ -1,0 +1,5 @@
+// POST https://app.talkingphotos.ai/ai_api/create_image_from_prompt  -> 200
+// ===== REQUEST BODY =====
+{"type":"human","prompt":"a friendly young woman, business casual, studio background","negativePrompt":"","aspectRatio":"9:16","gender":"female","ethnicity":"","characterStyle":"realistic","characterBeard":"shaven","characterAge":"adult","imageDrivingMediaId":0,"projectStyle":"close_up"}
+// ===== RESPONSE BODY =====
+{"success":true,"uuid":"d5d19be7-dbbb-4ebb-92c6-5707efc77c5f","message":""}

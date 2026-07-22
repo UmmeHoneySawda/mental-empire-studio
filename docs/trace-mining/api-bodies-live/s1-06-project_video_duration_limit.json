@@ -1,0 +1,5 @@
+// POST https://app.talkingphotos.ai/project/video_duration_limit  -> 200
+// ===== REQUEST BODY =====
+{"projectType":"human","projectStyle":"normal"}
+// ===== RESPONSE BODY =====
+{"maxDuration":300,"maxCharactersTTS":6000,"maxDurationPremium":300,"maxCharactersTTSPremium":6000}

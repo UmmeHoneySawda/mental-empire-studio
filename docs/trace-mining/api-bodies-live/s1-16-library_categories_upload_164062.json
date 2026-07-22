@@ -1,0 +1,5 @@
+// POST https://app.talkingphotos.ai/library/categories/upload/164062  -> 200
+// ===== REQUEST BODY =====
+(none)
+// ===== RESPONSE BODY =====
+{"id":4161234,"title":"Being a narcissist","type":"audio","filename":"82b66d58cb34c8e060fea7e8711086749fb6e152.mp3","extension":"mp3","category":"user_library","data":{"duration_ms":143600,"duration":143.59999999999999,"fps":25,"streams":1,"fileSize":1408359,"fileSizeString":"1.34 MB"},"categoryId":164062,"userId":14028,"ownerId":null,"createdDate":"2026-07-22T10:48:10+00:00","updatedDate":"2026-07-22T10:48:11+00:00","mediaPath":"https:\/\/cdn.talkingphotos.ai\/14028\/audio\/82b66d58cb34c8e060fea7e8711086749fb6e152.mp3","imagePath":"https:\/\/cdn.talkingphotos.ai\/14028\/image\/82b66d58cb34c8e060fea7e8711086749fb6e152.mp3","smallThumb":null}
