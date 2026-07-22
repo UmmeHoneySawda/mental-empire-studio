@@ -2,6 +2,7 @@ import { createHash, randomUUID } from 'node:crypto'
 import { createReadStream, existsSync, statSync } from 'node:fs'
 import { basename, extname, join } from 'node:path'
 import { getRepos } from '../../db'
+import { emit } from '../../ipc/events'
 import { probeDuration } from '../../services/audio'
 import {
   TALKINGPHOTOS_CONNECTION_ID,
@@ -627,6 +628,10 @@ export async function createScriptVideo(input: TalkingPhotosScriptCreateInput): 
         operation: root.operation
       })
     }
+    // Surface the job to the renderer immediately (not just after the whole
+    // create pipeline resolves), so the UI can leave the Submit screen and start
+    // tracking progress in the library/queue right away.
+    emit('talkingphotos:job', root)
     return processScriptRoot(root.id)
   })()
   creationByFingerprint.set(dedupeKey, creation)
@@ -699,6 +704,8 @@ export async function createUploadedAudioVideo(input: TalkingPhotosCreateInput):
         operation: root.operation
       })
     }
+    // Surface the job to the renderer immediately (see createScriptVideo).
+    emit('talkingphotos:job', root)
     return processRoot(root.id)
   })()
   creationByFingerprint.set(dedupeKey, creation)

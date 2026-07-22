@@ -1,6 +1,6 @@
 import { useMemo, useState, type CSSProperties } from 'react'
 import { ScreenPad, Eyebrow, Title } from '../components/primitives'
-import { useData } from '../store/useData'
+import { useData, type PendingSource } from '../store/useData'
 import { useStore } from '../store/useStore'
 import { DEFAULT_BETA_OPTS } from '@shared/types'
 import type { ScrapedVideo, ScrapeOrder, SourceAutomationPatch, SourceChannel } from '@shared/types'
@@ -71,6 +71,42 @@ function SourceAvatar({ source }: { source: SourceChannel }): JSX.Element {
   return (
     <div style={{ width: 48, height: 48, borderRadius: 12, overflow: 'hidden', background: fallback, display: 'grid', placeItems: 'center', color: '#f2f4f7', fontFamily: 'var(--font-display)', fontWeight: 700, flex: 'none' }}>
       {source.avatar && !failed ? <img src={source.avatar} alt="" onError={() => setFailed(true)} style={{ width: '100%', height: '100%', objectFit: 'cover' }} /> : (source.name || source.handle || '?').slice(0, 2).toUpperCase()}
+    </div>
+  )
+}
+
+function PendingSourceCard({ pending, onRetry, onDismiss }: { pending: PendingSource; onRetry: () => void; onDismiss: () => void }): JSX.Element {
+  const failed = pending.status === 'error'
+  const initials = (pending.handle.replace(/^@/, '') || '?').slice(0, 2).toUpperCase()
+  return (
+    <div className="me-card" style={{ border: `1px solid ${failed ? '#4a2530' : '#23272f'}`, borderRadius: 12, background: '#12151b', padding: 14, display: 'flex', flexDirection: 'column', gap: 13 }}>
+      <div style={{ display: 'flex', gap: 12, minWidth: 0 }}>
+        <div style={{ width: 48, height: 48, borderRadius: 12, background: 'linear-gradient(135deg,#23304a,#15171d)', display: 'grid', placeItems: 'center', color: '#f2f4f7', fontFamily: 'var(--font-display)', fontWeight: 700, flex: 'none' }}>{initials}</div>
+        <div style={{ minWidth: 0, flex: 1 }}>
+          <div title={pending.handle} style={{ color: '#eef0f3', fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 15, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pending.handle}</div>
+          <div title={pending.url} style={{ color: '#8a909c', fontFamily: 'var(--font-mono)', fontSize: 10.5, marginTop: 3, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{pending.url}</div>
+        </div>
+      </div>
+      <div style={{ border: `1px solid ${failed ? '#4a2530' : '#23272f'}`, borderRadius: 10, padding: '9px 10px', background: failed ? 'rgba(255,90,110,.08)' : '#0e1116' }}>
+        {failed ? (
+          <div className="me-clamp-2" title={pending.error} style={{ color: '#ff8a96', fontSize: 11.5, lineHeight: 1.4 }}>Couldn’t add this source. {pending.error}</div>
+        ) : (
+          <div style={{ display: 'flex', alignItems: 'center', gap: 8, color: '#c4cad3', fontSize: 11.5 }}>
+            <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="var(--accent)" strokeWidth="2.5" style={{ animation: 'meSpin 1s linear infinite', flex: 'none' }}><path d="M12 2v4M12 18v4M4.93 4.93l2.83 2.83M16.24 16.24l2.83 2.83M2 12h4M18 12h4M4.93 19.07l2.83-2.83M16.24 7.76l2.83-2.83" /></svg>
+            Adding source — fetching from YouTube…
+          </div>
+        )}
+      </div>
+      <div style={{ display: 'flex', gap: 8, marginTop: 'auto' }}>
+        {failed ? (
+          <>
+            <button type="button" onClick={onRetry} className="me-btn" style={{ flex: 1, border: 0, background: 'var(--accent)', color: 'var(--accent-ink)', borderRadius: 9, padding: '8px 10px', fontSize: 12, fontWeight: 700, cursor: 'pointer' }}>Retry</button>
+            <button type="button" onClick={onDismiss} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', color: '#c4cad3', borderRadius: 9, padding: '8px 12px', fontSize: 12, cursor: 'pointer' }}>Dismiss</button>
+          </>
+        ) : (
+          <button type="button" disabled title="Available once the source finishes adding" className="me-btn" style={{ flex: 1, border: '1px solid #262b34', background: '#15181f', color: '#5b616f', borderRadius: 9, padding: '8px 10px', fontSize: 12, fontWeight: 700, cursor: 'not-allowed' }}>Open</button>
+        )}
+      </div>
     </div>
   )
 }
@@ -146,6 +182,9 @@ export function Download(): JSX.Element {
   const workItems = useData((s) => s.workItems)
   const channels = useData((s) => s.channels)
   const sourceChannels = useData((s) => s.sourceChannels)
+  const pendingSources = useData((s) => s.pendingSources)
+  const retryPendingSource = useData((s) => s.retryPendingSource)
+  const dismissPendingSource = useData((s) => s.dismissPendingSource)
   const dlProgress = useData((s) => s.dlProgress)
   const fetching = useData((s) => s.fetching)
   const scrapeStatus = useData((s) => s.scrapeStatus)
@@ -203,12 +242,13 @@ export function Download(): JSX.Element {
   const fetchVids = async (): Promise<void> => {
     if (!canFetch) return
     setMessage('')
-    const source = await addSource(url)
-    if (source) {
-      setUrl('')
-      setActiveSourceId(source.id)
-      await openSource(source.id)
-    }
+    // Clear the input right away — the optimistic queued card now carries the
+    // feedback. We intentionally do NOT auto-open the source here: opening is
+    // disabled until the scrape completes, and it avoids a second redundant scrape.
+    const pendingUrl = url
+    setUrl('')
+    const source = await addSource(pendingUrl)
+    if (!source) setUrl(pendingUrl) // restore so the user can retry/fix on failure
   }
   const openSavedSource = async (source: SourceChannel): Promise<void> => {
     setActiveSourceId(source.id)
@@ -312,9 +352,12 @@ export function Download(): JSX.Element {
 
       {!activeSource && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))', gap: 14, marginTop: 18 }}>
-          {sourceChannels.length === 0 && (
+          {sourceChannels.length === 0 && pendingSources.length === 0 && (
             <div style={{ gridColumn: '1 / -1', padding: '34px 0', textAlign: 'center', fontSize: 12.5, color: '#5b616f', border: '1.5px dashed #23272f', borderRadius: 12 }}>Add a source once; its videos stay cached here.</div>
           )}
+          {pendingSources.map((p) => (
+            <PendingSourceCard key={p.key} pending={p} onRetry={() => void retryPendingSource(p.key)} onDismiss={() => dismissPendingSource(p.key)} />
+          ))}
           {sourceChannels.map((source) => {
             const linked = channels.find((c) => c.id === source.linkedMyChannelId)
             const watching = !!source.autoWatch

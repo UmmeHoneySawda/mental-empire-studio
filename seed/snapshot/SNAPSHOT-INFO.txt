@@ -1,0 +1,6 @@
+Pristine user-data snapshot captured before any test data was created.
+Captured: Thu Jul 23 02:32:00 BST 2026
+Used by: scripts/seed-restore.(ps1|cmd) to restore the user's real
+settings, API configs, sources, channels, and automations.
+db sha256:       c2694317eec1ff2044b08aa96df64a26a366f54b3ebcbecb7d87dbbc4873f154
+settings sha256: 33bd3cafb007b32988ec6535a936e945eed1f03800a6d05d03e8a3e45fe18255

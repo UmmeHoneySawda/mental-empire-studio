@@ -1,6 +1,8 @@
 import { Notification } from 'electron'
+import { existsSync } from 'node:fs'
 import type { AppSettings, MyChannel, ReminderHit } from '../../shared/types'
 import { getSettings } from '../store/settings'
+import { trayIconPath } from './background'
 import { logger } from './logger'
 
 // Behind-pace detection + desktop notifications (req #1 / #3). A channel is "behind
@@ -14,13 +16,25 @@ export const firedNotifications: ReminderHit[] = []
 export const firedMessages: Array<{ title: string; body: string }> = []
 const NOTIFY_LOG = logger.scope('notify')
 
+/** Branded toast icon, resolved once. Combined with app.setAppUserModelId() in
+ *  main.ts, this makes Windows toasts show the Mental Empire Studio identity + icon
+ *  instead of the generic "electron.app.*" label. Undefined if the asset is missing. */
+function notificationIcon(): string | undefined {
+  try {
+    const p = trayIconPath()
+    return existsSync(p) ? p : undefined
+  } catch {
+    return undefined
+  }
+}
+
 /** Generic desktop notification for run/render events, gated by the user setting. */
 export function notifyMessage(title: string, body: string): void {
   if (!getSettings().background.notifications) return
   firedMessages.push({ title, body })
   if (process.env['ME_SMOKE']) return // headless: capture only
   try {
-    if (Notification.isSupported()) new Notification({ title, body }).show()
+    if (Notification.isSupported()) new Notification({ title, body, icon: notificationIcon() }).show()
   } catch (e) {
     NOTIFY_LOG.warn(`notification failed title=${JSON.stringify(title)} error=${(e as Error).message}`)
   }
@@ -53,7 +67,7 @@ export function notify(hit: ReminderHit, settings: AppSettings): void {
   if (process.env['ME_SMOKE']) return // headless: capture only, no real toast
   try {
     if (Notification.isSupported()) {
-      new Notification({ title: 'Behind pace', body: hit.message }).show()
+      new Notification({ title: 'Behind pace', body: hit.message, icon: notificationIcon() }).show()
     }
   } catch (e) {
     NOTIFY_LOG.warn(`reminder notification failed channel=${hit.channelId} error=${(e as Error).message}`)

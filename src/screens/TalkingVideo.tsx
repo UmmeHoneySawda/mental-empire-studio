@@ -111,6 +111,44 @@ function IconPlay(): JSX.Element {
     </svg>
   )
 }
+function IconDownload(): JSX.Element {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M8 2v8m0 0L4.5 6.5M8 10l3.5-3.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+      <path d="M2.5 12.5h11" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+    </svg>
+  )
+}
+function IconFolder(): JSX.Element {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M1.75 4.25c0-.7.55-1.25 1.25-1.25h2.4c.35 0 .68.14.9.4l.7.85h5.1c.7 0 1.25.55 1.25 1.25v6.1c0 .7-.55 1.25-1.25 1.25H3c-.7 0-1.25-.55-1.25-1.25z" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+    </svg>
+  )
+}
+function IconCopy(): JSX.Element {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <rect x="5.5" y="5.5" width="8" height="8" rx="1.4" stroke="currentColor" strokeWidth="1.3" />
+      <path d="M10.5 5.5V4a1.4 1.4 0 0 0-1.4-1.4H4A1.4 1.4 0 0 0 2.6 4v5.1A1.4 1.4 0 0 0 4 10.5h1.5" stroke="currentColor" strokeWidth="1.3" strokeLinejoin="round" />
+    </svg>
+  )
+}
+function IconTrash(): JSX.Element {
+  return (
+    <svg width="15" height="15" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M2.75 4.25h10.5M6 4V2.9c0-.4.3-.65.7-.65h2.6c.4 0 .7.25.7.65V4M4 4.25l.6 8.15c.03.5.45.85.95.85h4.9c.5 0 .92-.35.95-.85L12 4.25" stroke="currentColor" strokeWidth="1.3" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
+function IconRefresh(): JSX.Element {
+  return (
+    <svg width="14" height="14" viewBox="0 0 16 16" fill="none" aria-hidden="true">
+      <path d="M12.5 4.8A5 5 0 1 0 13 8" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" />
+      <path d="M13 2.5V5h-2.5" stroke="currentColor" strokeWidth="1.5" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  )
+}
 
 // ---- combobox / file drop (kept local; a11y patterns from previous screen) -
 
@@ -417,6 +455,11 @@ function LiveJobCard({
   const progress = describeProgress(item)
   const src = playableSrc(item)
   const now = Date.now()
+  // A provider thumbnail URL can be expired/unreachable; fall back to the video
+  // first-frame (or a placeholder) instead of the browser's broken-image glyph.
+  const [thumbFailed, setThumbFailed] = useState(false)
+  useEffect(() => setThumbFailed(false), [item.thumbnailUrl])
+  const showThumb = !!item.thumbnailUrl && !thumbFailed
   const badgeClass =
     item.kind === 'merged' ? 'tv-badge-merge'
       : item.kind === 'captioned' ? 'tv-badge-caption'
@@ -433,12 +476,12 @@ function LiveJobCard({
       <div className="tv-thumb tv-relwrap">
         {making ? (
           <div className="tv-make-thumb" aria-hidden="true" />
-        ) : item.thumbnailUrl ? (
-          <img src={item.thumbnailUrl} alt={item.title} width={230} height={130} loading="lazy" />
+        ) : showThumb ? (
+          <img src={item.thumbnailUrl ?? undefined} alt="" width={230} height={130} loading="lazy" onError={() => setThumbFailed(true)} />
         ) : src ? (
           <video src={src} muted playsInline preload="metadata" />
         ) : (
-          <div className="tv-frame-ph" aria-hidden="true" />
+          <div className="tv-frame-ph" aria-hidden="true"><IconImage /><span>No preview</span></div>
         )}
         <span className={`tv-thumb-badge tv-badge ${badgeClass}`}>{badgeLabel}</span>
         {!making && src && (
@@ -472,27 +515,79 @@ function LiveJobCard({
               <div className="tv-hint" style={{ color: 'var(--err)' }}>{progress.label}</div>
             )}
             <div className="tv-card-actions">
-              {src && <button type="button" className="tv-icon-btn" aria-label="Play" onClick={onPlay}><IconPlay /></button>}
+              {src && <button type="button" className="tv-icon-btn" title="Play" aria-label="Play" onClick={onPlay}><IconPlay /></button>}
               {onDownload && (
-                <button type="button" className="tv-icon-btn" aria-label="Download" onClick={onDownload}>↓</button>
+                <button type="button" className="tv-icon-btn" title="Download to your computer" aria-label="Download" onClick={onDownload}><IconDownload /></button>
               )}
               {onOpenFolder && item.localOutputPath && (
-                <button type="button" className="tv-icon-btn" aria-label="Open folder" onClick={onOpenFolder}>📂</button>
+                <button type="button" className="tv-icon-btn" title="Show in folder" aria-label="Show in folder" onClick={onOpenFolder}><IconFolder /></button>
               )}
               {onDuplicate && (
-                <button type="button" className="tv-icon-btn" aria-label="Duplicate" onClick={onDuplicate}>⧉</button>
+                <button type="button" className="tv-icon-btn" title="Duplicate settings into a new video" aria-label="Duplicate" onClick={onDuplicate}><IconCopy /></button>
               )}
               {onRetry && item.status === 'failed' && (
-                <button type="button" className="tv-btn ghost" style={{ fontSize: 11 }} onClick={onRetry}>Try again</button>
+                <button type="button" className="tv-btn ghost tv-retry-btn" onClick={onRetry}><IconRefresh /> Try again</button>
               )}
+              <span style={{ flex: 1 }} />
               {onDelete && (
-                <button type="button" className="tv-icon-btn danger" aria-label="Delete" onClick={onDelete}>🗑</button>
+                <button type="button" className="tv-icon-btn danger" title="Delete" aria-label="Delete" onClick={onDelete}><IconTrash /></button>
               )}
             </div>
           </>
         )}
       </div>
     </article>
+  )
+}
+
+/** Full-screen playback modal: a clear video stage with a titled header, a close
+ *  affordance (button, backdrop click, or Esc), and explicit error / no-preview
+ *  states. Replaces the old cramped per-card inline <video>. */
+function TvPlayerModal({ item, onClose }: { item: LibraryItem | null; onClose: () => void }): JSX.Element | null {
+  const [failed, setFailed] = useState(false)
+  const [loading, setLoading] = useState(true)
+  useEffect(() => {
+    setFailed(false)
+    setLoading(true)
+    if (!item) return
+    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') onClose() }
+    window.addEventListener('keydown', onKey)
+    return () => window.removeEventListener('keydown', onKey)
+  }, [item, onClose])
+  if (!item) return null
+  const src = playableSrc(item)
+  return (
+    <div className="tv-player-modal" role="dialog" aria-modal="true" aria-label={`Playing ${item.title}`}>
+      <button type="button" className="tv-player-backdrop" aria-label="Close player" onClick={onClose} />
+      <div className="tv-player-shell">
+        <div className="tv-player-head">
+          <span className="tv-player-title" title={item.title}>{item.title}</span>
+          <button type="button" className="tv-icon-btn" aria-label="Close" title="Close (Esc)" onClick={onClose}><IconClose /></button>
+        </div>
+        <div className="tv-player-stage">
+          {src && !failed ? (
+            <>
+              {loading && <div className="tv-player-spinner" aria-hidden="true" />}
+              <video
+                key={src}
+                src={src}
+                controls
+                autoPlay
+                playsInline
+                onCanPlay={() => setLoading(false)}
+                onError={() => { setLoading(false); setFailed(true) }}
+              />
+            </>
+          ) : (
+            <div className="tv-player-error" role="alert">
+              <IconAlert />
+              <p>{failed ? "This video couldn't be played here." : 'No preview is available for this video yet.'}</p>
+              {item.localOutputPath && <p className="tv-hint">Use “Show in folder” on the card to open it in your media player.</p>}
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
   )
 }
 
@@ -540,6 +635,13 @@ export function TalkingVideo(): JSX.Element {
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [captionLang, setCaptionLang] = useState('')
   const [mood, setMood] = useState('Neutral')
+  // Submit lifecycle: `submitting` mirrors an in-flight create so the Submit screen
+  // leaves as soon as the job actually exists (via the early talkingphotos:job event),
+  // rather than blocking on the whole create+render pipeline promise. The refs make
+  // the "new job appeared" detection race-free between the event and the awaited call.
+  const [submitting, setSubmitting] = useState(false)
+  const submitHandledRef = useRef(false)
+  const submitKnownIdsRef = useRef<Set<string>>(new Set())
   const accountRef = useRef<HTMLDivElement>(null)
 
   const patch = (p: Partial<CreateDraft>): void => setDraft((d) => ({ ...d, ...p }))
@@ -664,6 +766,12 @@ export function TalkingVideo(): JSX.Element {
     const pitch = draft.ttsPitch ?? 50
     const imagePath = draft.characterImagePath || ''
 
+    // Snapshot the jobs we already know about so the effect below can spot the one
+    // this submit creates (it arrives via the early talkingphotos:job event).
+    submitHandledRef.current = false
+    submitKnownIdsRef.current = new Set(jobs.map((j) => j.id))
+    setSubmitting(true)
+
     const job = draft.sourceMode === 'audio'
       ? await createUploadedAudio({
         title: draft.title.trim(),
@@ -700,23 +808,46 @@ export function TalkingVideo(): JSX.Element {
         subtitleMode
       })
 
-    if (job) {
-      setDraft(defaultCreateDraft({
-        ttsLanguage: draft.ttsLanguage,
-        ttsVoice: draft.ttsVoice,
-        characterGender: draft.characterGender,
-        characterAge: draft.characterAge,
-        characterStyle: draft.characterStyle
-      }))
-      setAttemptedSubmit(false)
-      setTouched({})
-      setStep(1)
-      setToast('Video queued — tracking progress below')
-      setHighlightJobId(job.id)
-      setTab('library')
-      await sync()
-    }
+    if (job) finishSubmitToLibrary(job.id)
+    // If the create resolved without a job AND no job surfaced via the early event,
+    // it failed before anything was submitted — drop the busy state so the error
+    // banner is actionable. (The store never throws; it returns undefined on error.)
+    else if (!submitHandledRef.current) setSubmitting(false)
   }
+
+  /** Leave the Create screen for the Library the moment a real job exists (idempotent
+   *  — the early `talkingphotos:job` event and the awaited create both call this;
+   *  the first one wins). Prevents the "stuck on Submitting…" state and any duplicate
+   *  submit, since the wizard is reset and we navigate away. */
+  const finishSubmitToLibrary = (jobId: string): void => {
+    if (submitHandledRef.current) return
+    submitHandledRef.current = true
+    setDraft(defaultCreateDraft({
+      ttsLanguage: draft.ttsLanguage,
+      ttsVoice: draft.ttsVoice,
+      characterGender: draft.characterGender,
+      characterAge: draft.characterAge,
+      characterStyle: draft.characterStyle
+    }))
+    setAttemptedSubmit(false)
+    setTouched({})
+    setStep(1)
+    setToast('Video queued — tracking progress below')
+    setHighlightJobId(jobId)
+    setTab('library')
+    setSubmitting(false)
+    void sync()
+  }
+
+  // While a submit is in flight, the create service emits the job as soon as it is
+  // persisted; that lands in `jobs` before the long pipeline promise resolves. As
+  // soon as a job we didn't already know about shows up, move to the library.
+  useEffect(() => {
+    if (!submitting || submitHandledRef.current) return
+    const fresh = jobs.find((j) => !submitKnownIdsRef.current.has(j.id))
+    if (fresh) finishSubmitToLibrary(fresh.id)
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [jobs, submitting])
 
   const applyDuplicate = (item: LibraryItem): void => {
     setDraft((d) => ({
@@ -1173,8 +1304,8 @@ export function TalkingVideo(): JSX.Element {
                       )}
                       <div className="tv-step-actions">
                         <button type="button" className="tv-btn ghost" onClick={() => setStep(2)}>Back</button>
-                        <button type="button" className="tv-btn primary" disabled={creating} onClick={() => void submit()}>
-                          {creating ? 'Submitting…' : 'Create video'}
+                        <button type="button" className="tv-btn primary" disabled={creating || submitting} onClick={() => void submit()}>
+                          {creating || submitting ? 'Submitting…' : 'Create video'}
                         </button>
                       </div>
                       {attemptedSubmit && blocking && <div className="tv-cta-reason" role="alert">{blocking}</div>}
@@ -1199,8 +1330,8 @@ export function TalkingVideo(): JSX.Element {
                       <div>Captions <b>{draft.captionsOn ? 'On' : 'Off'}</b></div>
                     </div>
                     <div className="tv-quota">{quotaLine}</div>
-                    <button type="button" className="tv-btn primary block" disabled={creating} onClick={() => void submit()}>
-                      {creating ? 'Submitting…' : 'Create video'}
+                    <button type="button" className="tv-btn primary block" disabled={creating || submitting} onClick={() => void submit()}>
+                      {creating || submitting ? 'Submitting…' : 'Create video'}
                     </button>
                     {attemptedSubmit && blocking && <div className="tv-cta-reason">{blocking}</div>}
                   </div>
@@ -1274,12 +1405,6 @@ export function TalkingVideo(): JSX.Element {
                             </button>
                           </div>
                         )}
-                        {playingId === item.id && playableSrc(item) && (
-                          <div className="tv-inline-player">
-                            <video src={playableSrc(item)} controls autoPlay playsInline />
-                            <button type="button" className="tv-btn ghost" onClick={() => setPlayingId(null)}>Close</button>
-                          </div>
-                        )}
                       </div>
                     ))}
                   </div>
@@ -1296,6 +1421,10 @@ export function TalkingVideo(): JSX.Element {
           )}
         </div>
 
+        <TvPlayerModal
+          item={playingId ? libraryItems.find((i) => i.id === playingId) ?? null : null}
+          onClose={() => setPlayingId(null)}
+        />
         <ConfirmDialog
           open={!!deleteTarget}
           title="Delete this video?"

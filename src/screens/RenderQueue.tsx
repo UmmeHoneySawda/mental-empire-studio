@@ -4,6 +4,8 @@ import { useStore } from '../store/useStore'
 import { useData } from '../store/useData'
 import { useTalkingPhotos } from '../store/useTalkingPhotos'
 import type { RenderProgress, RenderQueueRow, RenderStage, RenderStatus } from '@shared/types'
+import type { ProviderJob } from '@shared/talkingphotos'
+import { rollupSegments, describeProgress, titleFromProviderJob, mapJobStatusToLibrary, kindFromOperation, type LibraryItem } from './talking-video/logic'
 import { mediaSrc } from '../lib/media'
 import { renderLiveState } from '../lib/renderProgress'
 import { PipelineRibbon } from '../components/PipelineRibbon'
@@ -11,26 +13,120 @@ import { PipelineRibbon } from '../components/PipelineRibbon'
 const PROVIDER_JOB_LABEL: Record<string, string> = {
   queued: 'Queued', running: 'Processing', downloading: 'Downloading', completed: 'Completed', failed: 'Failed', attention: 'Reconnect needed', cancelled: 'Cancelled'
 }
+const TP_JOB_TYPE: Record<string, string> = {
+  video: 'AI video', merge: 'AI video', subtitles: 'Captions', character: 'Presenter', tts: 'Voiceover', video_resize: 'Resized'
+}
 
-/** Read-only, additive TalkingPhotos section — presents provider_jobs alongside the
- *  local render queue without touching any local render row/state above. */
+// Shared status pill so every queue item reads its state at a glance instead of
+// inferring it from a bar colour.
+type Tone = 'idle' | 'active' | 'ok' | 'err' | 'warn'
+const TONE_STYLE: Record<Tone, { color: string; bg: string; border: string }> = {
+  idle: { color: '#aab0bb', bg: 'rgba(139,147,167,.10)', border: '#2a3040' },
+  active: { color: '#f5c860', bg: 'rgba(245,179,35,.10)', border: 'rgba(245,179,35,.35)' },
+  ok: { color: '#4fd6a0', bg: 'rgba(54,201,142,.10)', border: '#1e2f28' },
+  err: { color: '#ff8a96', bg: 'rgba(255,90,110,.10)', border: '#3a2025' },
+  warn: { color: '#f5c860', bg: 'rgba(245,179,35,.10)', border: 'rgba(245,179,35,.45)' }
+}
+const TP_TONE: Record<string, Tone> = {
+  queued: 'idle', running: 'active', downloading: 'active', completed: 'ok', failed: 'err', attention: 'warn', cancelled: 'idle'
+}
+function StatusPill({ label, tone }: { label: string; tone: Tone }): JSX.Element {
+  const s = TONE_STYLE[tone]
+  return <span style={{ flex: 'none', fontSize: 9.5, fontWeight: 700, fontFamily: 'var(--font-mono)', letterSpacing: '.4px', textTransform: 'uppercase', color: s.color, background: s.bg, border: `1px solid ${s.border}`, borderRadius: 999, padding: '2px 8px' }}>{label}</span>
+}
+
+function providerJobToItem(j: ProviderJob): LibraryItem {
+  return {
+    id: j.id,
+    title: titleFromProviderJob(j),
+    status: mapJobStatusToLibrary(j.status),
+    kind: kindFromOperation(j.operation),
+    createdAt: Date.parse(j.createdAt) || 0,
+    thumbnailUrl: j.thumbnailUrl ?? null,
+    localOutputPath: j.localOutputPath ?? j.localCaptionedOutputPath ?? null,
+    remoteMediaUrl: j.remoteMediaUrl ?? null,
+    remoteProjectId: j.remoteProjectId ?? null,
+    progress: j.progress,
+    remoteStep: j.remoteStep,
+    remoteStepsTotal: j.remoteStepsTotal,
+    etaSeconds: j.etaSeconds ?? null,
+    hostName: j.hostName ?? null,
+    segmentOrdinal: j.segmentOrdinal,
+    parentId: j.parentProviderJobId ?? null,
+    internalSegment: j.internalSegment,
+    errorMessage: j.errorMessage ?? null,
+    operation: j.operation
+  }
+}
+
+/** Talking Video (cloud) jobs, grouped so a multi-segment video shows as ONE parent
+ *  row (segments rolled up) instead of dozens of raw "…-segment-025" rows. Each row
+ *  shows job type, a clear status pill, live progress, errors / reconnect attention,
+ *  and completion actions. Reuses the same view-logic the Talking Video library uses. */
 function TalkingPhotosJobsSection(): JSX.Element | null {
   const enabled = useStore((s) => s.settings.integrations.talkingPhotos.enabled)
   const jobs = useTalkingPhotos((s) => s.jobs)
   const loadJobs = useTalkingPhotos((s) => s.loadJobs)
+  const sync = useTalkingPhotos((s) => s.sync)
+  const syncing = useTalkingPhotos((s) => s.syncing)
+  const downloadOutput = useTalkingPhotos((s) => s.downloadOutput)
   useEffect(() => { if (enabled) void loadJobs() }, [enabled, loadJobs])
   if (!enabled || jobs.length === 0) return null
+
+  const jobsById = new Map(jobs.map((j) => [j.id, j]))
+  const items = rollupSegments(jobs.map(providerJobToItem)).sort((a, b) => b.createdAt - a.createdAt)
+
   return (
-    <div style={{ marginTop: 22 }}>
-      <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '.6px', color: '#5b616f', marginBottom: 10 }}>TALKINGPHOTOS</div>
-      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
-        {jobs.map((j) => (
-          <div key={j.id} style={{ display: 'flex', alignItems: 'center', gap: 10, border: '1px solid #1d2129', borderRadius: 10, padding: '9px 13px', background: '#12151b' }}>
-            <span style={{ fontSize: 9.5, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--accent-ink)', background: 'var(--accent)', borderRadius: 5, padding: '2px 6px', flex: 'none' }}>TP</span>
-            <span style={{ fontSize: 12, color: '#cdd2da', flex: 1, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{j.remoteProjectId ? `Project ${j.remoteProjectId}` : j.id}</span>
-            <span style={{ fontSize: 10.5, color: j.status === 'completed' ? '#4fd6a0' : j.status === 'failed' || j.status === 'attention' ? '#ff8a96' : '#8a909c' }}>{PROVIDER_JOB_LABEL[j.status] ?? j.status}</span>
-          </div>
-        ))}
+    <div style={{ marginTop: 26 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '.6px', color: '#5b616f', flex: 1 }}>TALKING VIDEO · CLOUD</div>
+        <button type="button" onClick={() => void sync()} disabled={syncing} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', color: '#c4cad3', borderRadius: 8, padding: '5px 11px', fontSize: 11, cursor: syncing ? 'default' : 'pointer', opacity: syncing ? 0.6 : 1 }}>{syncing ? 'Refreshing…' : 'Refresh'}</button>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {items.map((item) => {
+          const raw = jobsById.get(item.id)
+          const rawStatus = raw?.status ?? item.status
+          const prog = describeProgress(item)
+          const tone = TP_TONE[rawStatus] ?? 'idle'
+          const jobType = TP_JOB_TYPE[item.operation ?? 'video'] ?? 'AI video'
+          const making = item.status === 'queued' || item.status === 'running'
+          const attention = rawStatus === 'attention'
+          const failed = item.status === 'failed'
+          const completed = item.status === 'completed'
+          const localPath = raw?.localOutputPath ?? raw?.localCaptionedOutputPath ?? item.localOutputPath ?? null
+          return (
+            <div key={item.id} className="me-card" style={{ border: `1px solid ${completed ? '#1e2f28' : failed || attention ? '#3a2025' : '#1d2129'}`, borderRadius: 12, background: '#12151b', padding: '12px 14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                <span style={{ fontSize: 9.5, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--accent-ink)', background: 'var(--accent)', borderRadius: 5, padding: '2px 6px', flex: 'none' }}>TP</span>
+                <span style={{ fontSize: 9.5, fontFamily: 'var(--font-mono)', color: '#aab0bb', border: '1px solid #262b34', borderRadius: 999, padding: '2px 7px', flex: 'none' }}>{jobType}</span>
+                <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: '#dde0e5', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.title}>{item.title}</span>
+                <StatusPill label={PROVIDER_JOB_LABEL[rawStatus] ?? rawStatus} tone={tone} />
+              </div>
+              {making && (
+                <div style={{ marginTop: 9 }}>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <div style={{ flex: 1, height: 6, borderRadius: 4, background: '#1a1e26', overflow: 'hidden' }}>
+                      <div style={{ width: `${prog.barPct}%`, height: '100%', background: 'var(--accent)', transition: 'width .4s ease' }} />
+                    </div>
+                    <span style={{ fontSize: 10.5, color: 'var(--accent)', fontFamily: 'var(--font-mono)', width: 38, textAlign: 'right', flex: 'none' }}>{prog.barPct}%</span>
+                  </div>
+                  <div style={{ marginTop: 5, fontSize: 10.5, color: '#8a909c' }}>{prog.label}{prog.etaLabel ? ` · ${prog.etaLabel}` : ''}</div>
+                </div>
+              )}
+              {failed && (
+                <div title={item.errorMessage ?? ''} className="me-clamp-2" style={{ marginTop: 8, fontSize: 10.5, color: '#ff8a96', lineHeight: 1.35 }}>
+                  {attention ? 'Reconnect your Talking Video account to continue — open the Talking Video screen.' : (item.errorMessage?.trim() || 'Something went wrong.')}
+                </div>
+              )}
+              {completed && (
+                <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                  <button type="button" onClick={() => void downloadOutput(item.id)} className="me-btn" style={{ border: '1px solid #26352f', background: '#101b16', borderRadius: 7, padding: '5px 10px', fontSize: 10.5, color: '#4fd6a0', cursor: 'pointer' }}>Download</button>
+                  {localPath && <button type="button" onClick={() => void window.api?.publish?.reveal?.(localPath)} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 7, padding: '5px 10px', fontSize: 10.5, color: '#c4cad3', cursor: 'pointer' }}>Folder</button>}
+                </div>
+              )}
+            </div>
+          )
+        })}
       </div>
     </div>
   )
@@ -220,6 +316,8 @@ export function RenderQueue(): JSX.Element {
           const p = status === 'rendering' ? progress[r.job.id] : undefined
           const isBlocked = !r.isReady && status !== 'rendering' && status !== 'done'
           const barColor = status === 'done' ? '#36c98e' : status === 'error' ? '#ff5a6e' : 'var(--accent)'
+          const statusTone: Tone = isBlocked ? 'warn' : status === 'done' ? 'ok' : status === 'error' ? 'err' : status === 'rendering' ? 'active' : 'idle'
+          const statusLabel = isBlocked ? 'Needs assets' : status === 'done' ? 'Done' : status === 'error' ? 'Failed' : status === 'rendering' ? 'Rendering' : 'Queued'
           const encoderChip = p?.encoder ? (p.device === 'gpu' ? `${p.encoder} encode` : p.encoder) : ''
           const filterChip = p?.filterDetail || (p?.filterDevice === 'gpu' ? 'GPU filters' : p?.filterDevice === 'cpu' ? 'CPU filters' : '')
           const speedChip = typeof p?.speed === 'number' && Number.isFinite(p.speed) ? `${p.speed.toFixed(1)}x` : ''
@@ -258,7 +356,10 @@ export function RenderQueue(): JSX.Element {
 
                 {/* Main content */}
                 <div style={{ flex: 1, minWidth: 0 }}>
-                  <div style={{ fontSize: 13.5, color: '#dde0e5', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.job.title}</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                    <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, color: '#dde0e5', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.job.title}</span>
+                    <StatusPill label={statusLabel} tone={statusTone} />
+                  </div>
                   <div style={{ fontSize: 11, color: '#6a7180', fontFamily: 'var(--font-mono)', marginTop: 2 }}>{r.job.channel}</div>
                   <AssetChips r={r} />
 

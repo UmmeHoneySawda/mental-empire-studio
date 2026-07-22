@@ -47,6 +47,14 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 // rather than the generic "Electron" dir shared with other dev apps.
 app.setName('Mental Empire Studio')
 
+// Windows toast identity: without an explicit AppUserModelID, Windows attributes
+// desktop notifications to the derived "electron.app.<name>" id, so toasts read
+// "electron.app.Mental Empire Studio" with no app icon. Set it to the packaged
+// appId (electron-builder.yml) so toasts show the real app identity + icon — the
+// NSIS installer registers the Start Menu shortcut under this same id. No-op off
+// Windows.
+app.setAppUserModelId('com.mentalempire.studio')
+
 // Hard safety guard: a headless smoke/screenshot run must NEVER touch the real
 // production/dev userData directory (mental-empire.db, settings, logs). Several
 // smoke harnesses call repos.resetAll() + seedDemoForSmoke(), which wipes and

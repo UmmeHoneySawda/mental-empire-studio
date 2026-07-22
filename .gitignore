@@ -22,6 +22,14 @@ scratchpad-bodies/
 tmp/
 tmp-*/
 
+# Local user-data snapshot used by scripts/seed-restore.* — may contain the
+# user's real sources/channels/library, so the data files stay local-only.
+# The scripts and docs under scripts/ and seed/ ARE tracked.
+/seed/snapshot/*.db
+/seed/snapshot/*.db-wal
+/seed/snapshot/*.db-shm
+/seed/snapshot/*.json
+
 # Ad-hoc Playwright a11y snapshot dumps saved at repo root during exploration.
 # (electron-builder.yml is tracked packaging config — do not blanket-ignore *.yml)
 /login.yaml

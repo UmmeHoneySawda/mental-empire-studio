@@ -47,6 +47,30 @@ function transcribeErrorMessage(message: string): string {
   return msg
 }
 
+/** An in-flight "add source" rendered as an optimistic card until the YouTube
+ *  scrape resolves — immediate feedback (and a place to surface failure) instead of
+ *  a frozen-feeling wait where no card appears until the whole scrape finishes. */
+export interface PendingSource {
+  key: string
+  url: string
+  handle: string
+  status: 'adding' | 'error'
+  error?: string
+}
+
+/** Best-effort display handle from a channel URL, shown on the optimistic card
+ *  before the real scraped name/avatar is known. */
+export function handleFromSourceUrl(url: string): string {
+  const at = url.match(/@[\w.-]+/)
+  if (at) return at[0]
+  try {
+    const path = new URL(url.includes('://') ? url : `https://${url}`).pathname.replace(/\/+$/, '')
+    const seg = path.split('/').filter(Boolean).pop()
+    if (seg) return seg.startsWith('@') ? seg : `@${seg}`
+  } catch { /* not a parseable URL */ }
+  return url.replace(/^https?:\/\//, '').slice(0, 40) || 'New source'
+}
+
 interface DataState {
   channels: MyChannel[]
   activity: ActivityRow[]
@@ -83,6 +107,7 @@ interface DataState {
   niches: Niche[]
   nichePools: NichePoolHealth[]
   sourceChannels: SourceChannel[]
+  pendingSources: PendingSource[]
   ready: boolean
 
   init: () => Promise<void>
@@ -96,6 +121,8 @@ interface DataState {
   linkChannelSource: (channelId: string, linkedSourceId: string | null) => Promise<void>
   loadSources: () => Promise<void>
   addSource: (url: string) => Promise<SourceChannel | null>
+  retryPendingSource: (key: string) => Promise<void>
+  dismissPendingSource: (key: string) => void
   refreshSource: (id: string) => Promise<void>
   removeSource: (id: string) => Promise<void>
   openSource: (id: string) => Promise<void>
@@ -232,6 +259,7 @@ export const useData = create<DataState>((set, get) => ({
   niches: [],
   nichePools: [],
   sourceChannels: [],
+  pendingSources: [],
   ready: false,
 
   init: async () => {
@@ -341,17 +369,38 @@ export const useData = create<DataState>((set, get) => ({
   addSource: async (url) => {
     const a = api()
     if (!a || !url.trim()) return null
-    set({ fetching: true, sourceError: '' })
+    const trimmed = url.trim()
+    const key = `pending-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`
+    // Optimistic card appears the instant the user clicks Add — no more frozen wait.
+    set((s) => ({
+      pendingSources: [{ key, url: trimmed, handle: handleFromSourceUrl(trimmed), status: 'adding' as const }, ...s.pendingSources],
+      fetching: true,
+      sourceError: ''
+    }))
     try {
-      const source = await a.sources.add(url.trim())
+      const source = await a.sources.add(trimmed)
+      set((s) => ({ pendingSources: s.pendingSources.filter((p) => p.key !== key) }))
       await get().loadSources()
       return source
     } catch (e) {
-      set({ sourceError: (e as Error).message || 'Could not add this source.' })
+      const message = (e as Error).message || 'Could not add this source.'
+      set((s) => ({
+        pendingSources: s.pendingSources.map((p) => (p.key === key ? { ...p, status: 'error' as const, error: message } : p)),
+        sourceError: message
+      }))
       return null
     } finally {
-      set({ fetching: false })
+      set((s) => ({ fetching: s.pendingSources.some((p) => p.status === 'adding') }))
     }
+  },
+  retryPendingSource: async (key) => {
+    const pending = get().pendingSources.find((p) => p.key === key)
+    if (!pending) return
+    set((s) => ({ pendingSources: s.pendingSources.filter((p) => p.key !== key) }))
+    await get().addSource(pending.url)
+  },
+  dismissPendingSource: (key) => {
+    set((s) => ({ pendingSources: s.pendingSources.filter((p) => p.key !== key) }))
   },
   refreshSource: async (id) => {
     const a = api()

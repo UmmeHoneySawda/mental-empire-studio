@@ -8,7 +8,11 @@ export const app = {
   on: (): void => {},
   whenReady: (): Promise<void> => Promise.resolve()
 }
-export class BrowserWindow {}
+export class BrowserWindow {
+  // main->renderer broadcast helpers (electron/ipc/events.ts `emit`) iterate this;
+  // no windows exist under unit tests, so emit is a harmless no-op.
+  static getAllWindows(): unknown[] { return [] }
+}
 export const ipcMain = { handle: (): void => {}, on: (): void => {} }
 export const shell = { openPath: (): void => {}, showItemInFolder: (): void => {} }
 export const dialog = {}

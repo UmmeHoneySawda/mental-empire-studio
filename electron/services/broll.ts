@@ -219,6 +219,21 @@ export function planCoverage(
   opts: { density: BrollDensity; maxSegments?: number; tailReserve?: number }
 ): BrollSegment[] {
   if (clips.length === 0 || durationSec <= 0) return []
+  // Distribute the available footage evenly, and never show the same clip in two
+  // consecutive slots when another clip exists. The candidate pool can contain the
+  // same clip more than once (a file cached under several keyword themes, or dupes
+  // from different providers) and those duplicates sort adjacently — round-robining
+  // over the raw array would then play the same footage several segments in a row.
+  // Rotating over the DISTINCT clips (by source path, order-preserving) fixes that:
+  // consecutive slots always use different array indices, so they differ whenever
+  // there is more than one distinct clip; a single-clip pool unavoidably repeats.
+  const distinct: Array<{ path: string; durationSec: number }> = []
+  const seenPaths = new Set<string>()
+  for (const clip of clips) {
+    if (seenPaths.has(clip.path)) continue
+    seenPaths.add(clip.path)
+    distinct.push(clip)
+  }
   const maxSeg = Math.max(1, opts.maxSegments ?? DEFAULT_MAX_SEGMENTS)
   const slot = Math.max(durationSec / maxSeg, slotLenFor(opts.density))
   // When the bed will crossfade, reserve a little tail of each clip so there is
@@ -228,7 +243,7 @@ export function planCoverage(
   let t = 0
   let i = 0
   while (t < durationSec - 0.05) {
-    const clip = clips[i % clips.length]
+    const clip = distinct[i % distinct.length]
     const remaining = durationSec - t
     const want = Math.min(slot, remaining)
     // Keep the segment count bounded even when stock clips are short. Render inputs
@@ -617,7 +632,16 @@ function libraryCandidates(themes: string[], target: { w: number; h: number }, p
     }
   }
   const ranked = scored.length ? scored : fallback
-  const stable = ranked.sort((a, b) => b.score - a.score || a.candidate.id.localeCompare(b.candidate.id)).slice(0, poolSize).map((s) => s.candidate)
+  // Collapse duplicate candidates (the same cached clip indexed under several
+  // keywords produces one entry per group with an identical candidate id) down to a
+  // single best-scoring entry. Without this, poolSize counts duplicates and the
+  // slice below can starve the pool to one clip repeated for the whole video.
+  const bestById = new Map<string, { score: number; candidate: BrollCandidate }>()
+  for (const item of ranked) {
+    const prev = bestById.get(item.candidate.id)
+    if (!prev || item.score > prev.score) bestById.set(item.candidate.id, item)
+  }
+  const stable = [...bestById.values()].sort((a, b) => b.score - a.score || a.candidate.id.localeCompare(b.candidate.id)).slice(0, poolSize).map((s) => s.candidate)
   const out = seededBrollOrder(stable, seed ?? 1, shuffle)
   if (out.length) brollInfo(logPath, `library pool hit count=${out.length} requested=${poolSize} themes=${themes.join(',')}`)
   return out

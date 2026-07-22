@@ -583,7 +583,7 @@ button {
 .tv-preview-card { border: 1px solid var(--border); border-radius: 14px; padding: 16px; background: var(--bg-card); display: flex; flex-direction: column; gap: 12px; }
 .tv-preview-eyebrow { font-size: 10.5px; font-weight: 600; letter-spacing: .08em; text-transform: uppercase; color: var(--text-faint); }
 .tv-frame { width: 100%; border-radius: 12px; background: var(--bg-inset); border: 1px solid var(--border-2); overflow: hidden; transition: aspect-ratio .25s ease; display: grid; place-items: center; min-height: 120px; }
-.tv-frame-ph { color: var(--text-faint); font-size: 12px; text-align: center; padding: 16px; }
+.tv-frame-ph { color: var(--text-faint); font-size: 12px; text-align: center; padding: 16px; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; }
 .tv-summary { display: flex; flex-direction: column; gap: 6px; font-size: 12px; color: var(--text-muted); }
 .tv-summary b { color: var(--text-bright); font-weight: 500; }
 .tv-quota { font-size: 12px; color: var(--text-dim); }
@@ -643,9 +643,21 @@ button {
 .tv-modal p { margin: 0 0 16px; color: var(--text-muted); font-size: 13px; line-height: 1.5; }
 .tv-modal-actions { display: flex; justify-content: flex-end; gap: 10px; }
 .tv-toast { position: fixed; bottom: 24px; left: 50%; transform: translateX(-50%); background: var(--bg-card); border: 1px solid var(--border-2); color: var(--text-bright); padding: 10px 16px; border-radius: 10px; z-index: 110; font-size: 12.5px; box-shadow: 0 10px 30px rgba(0,0,0,.4); }
-.tv-inline-player { margin-top: 8px; border: 1px solid var(--border-2); border-radius: 10px; overflow: hidden; background: #000; }
-.tv-inline-player video { width: 100%; max-height: 240px; display: block; }
+.tv-retry-btn { display: inline-flex; align-items: center; gap: 6px; font-size: 11px; }
 .tv-card-extra { display: flex; gap: 6px; padding: 0 12px 10px; flex-wrap: wrap; }
+/* Playback modal */
+.tv-player-modal { position: fixed; inset: 0; z-index: 120; display: grid; place-items: center; padding: 24px; }
+.tv-player-backdrop { position: absolute; inset: 0; border: 0; padding: 0; margin: 0; background: rgba(0,0,0,.72); backdrop-filter: blur(2px); cursor: pointer; }
+.tv-player-shell { position: relative; width: min(1040px, 100%); max-height: calc(100vh - 48px); display: flex; flex-direction: column; background: var(--bg-card); border: 1px solid var(--border-2); border-radius: 16px; overflow: hidden; box-shadow: 0 24px 70px rgba(0,0,0,.55); }
+.tv-player-head { display: flex; align-items: center; gap: 12px; padding: 12px 14px; border-bottom: 1px solid var(--border); }
+.tv-player-title { flex: 1; min-width: 0; font-family: var(--font-display); font-weight: 600; font-size: 14px; color: var(--text-strong); white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+.tv-player-stage { position: relative; background: #000; display: grid; place-items: center; min-height: 240px; }
+.tv-player-stage video { width: 100%; max-height: calc(100vh - 140px); display: block; background: #000; }
+.tv-player-spinner { position: absolute; width: 34px; height: 34px; border-radius: 50%; border: 3px solid rgba(255,255,255,.25); border-top-color: #fff; animation: tvSpin .8s linear infinite; }
+@keyframes tvSpin { to { transform: rotate(360deg); } }
+.tv-player-error { display: flex; flex-direction: column; align-items: center; gap: 8px; padding: 48px 24px; color: var(--text-muted); text-align: center; }
+.tv-player-error p { margin: 0; font-size: 13px; }
+@media (prefers-reduced-motion: reduce) { .tv-player-spinner { animation: none !important; } }
 .tv-select-check { position: absolute; top: 10px; right: 10px; z-index: 2; background: rgba(0,0,0,.45); border-radius: 6px; padding: 4px; }
 @media (prefers-reduced-motion: reduce) {
   .tv-card, .tv-choice, .tv-progress-fill, .tv-make-thumb, .tv-dot.warn { animation: none !important; transition: none !important; }
