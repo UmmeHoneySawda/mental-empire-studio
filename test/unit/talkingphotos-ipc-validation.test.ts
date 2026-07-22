@@ -32,4 +32,27 @@ describe('TalkingPhotos IPC argument validation', () => {
     expect(() => reqCreateInput({ title: 'Video', audioPath: '/a.wav', characterImagePath: '/a.png', characterPrompt: 'Presenter', style: 'normal', aspectRatio: '4:3', motionId: 2 })).toThrow()
     expect(() => reqCreateInput({ title: 'Video', audioPath: '/a.wav', characterImagePath: '/a.png', characterPrompt: 'Presenter', style: 'normal', aspectRatio: '16:9', motionId: -1 })).toThrow()
   })
+
+  it('accepts close_up style and optional character image (prompt-only)', () => {
+    expect(reqCreateInput({
+      title: 'Video',
+      audioPath: '/a.wav',
+      characterPrompt: 'Presenter',
+      style: 'close_up',
+      aspectRatio: '9:16',
+      motionId: 0
+    })).toMatchObject({ style: 'close_up', characterImagePath: '', characterPrompt: 'Presenter' })
+  })
+})
+
+describe('TalkingPhotos merge IPC validation', () => {
+  it('requires at least two project ids', async () => {
+    const { reqMergeInput } = await import('../../electron/ipc/talkingphotos')
+    expect(() => reqMergeInput({ itemIds: ['1'], title: 'x' })).toThrow()
+    expect(reqMergeInput({ itemIds: ['1', '2'], title: 'Merged' })).toEqual({
+      projectIds: ['1', '2'],
+      title: 'Merged',
+      audioMediaId: undefined
+    })
+  })
 })

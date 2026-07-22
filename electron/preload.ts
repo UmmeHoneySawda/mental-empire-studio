@@ -223,7 +223,9 @@ const api: NativeApi = {
     createProviderSubtitles: (sourceJobId: string, language?: string) => ipcRenderer.invoke('talkingphotos:createProviderSubtitles', sourceJobId, language),
     applyLocalCaptions: (providerJobId: string, aspect?: TalkingPhotosAspectRatio) => ipcRenderer.invoke('talkingphotos:applyLocalCaptions', providerJobId, aspect),
     ttsRecoveryLibrary: () => ipcRenderer.invoke('talkingphotos:ttsRecoveryLibrary'),
-    confirmRecoveredTts: (jobId: string, mediaId: string, durationSec: number) => ipcRenderer.invoke('talkingphotos:confirmRecoveredTts', jobId, mediaId, durationSec)
+    confirmRecoveredTts: (jobId: string, mediaId: string, durationSec: number) => ipcRenderer.invoke('talkingphotos:confirmRecoveredTts', jobId, mediaId, durationSec),
+    deleteProject: (remoteProjectId: string) => ipcRenderer.invoke('talkingphotos:deleteProject', remoteProjectId),
+    mergeProjects: (input: { itemIds: string[]; title: string; audioMediaId?: number }) => ipcRenderer.invoke('talkingphotos:mergeProjects', input)
   },
 
   chooseFolder: () => ipcRenderer.invoke('fs:chooseFolder'),

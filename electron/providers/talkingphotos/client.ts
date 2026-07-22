@@ -324,11 +324,30 @@ export async function createHumanProject(payload: TalkingPhotosHumanProjectPaylo
   return project
 }
 
-export async function mergeProjects(input: { projectIds: string[]; title: string }): Promise<ProviderProjectSummary> {
-  const raw = await fetchProviderJson<unknown>('/project/merge_videos', { method: 'POST', body: { itemsIds: input.projectIds.map(Number), title: input.title, audioMediaId: 0 } })
+export async function mergeProjects(input: {
+  projectIds: string[]
+  title: string
+  /** Optional replacement audio media id; 0 keeps original audio (provider default). */
+  audioMediaId?: number
+}): Promise<ProviderProjectSummary> {
+  const raw = await fetchProviderJson<unknown>('/project/merge_videos', {
+    method: 'POST',
+    body: {
+      itemsIds: input.projectIds.map(Number),
+      title: input.title,
+      audioMediaId: typeof input.audioMediaId === 'number' && Number.isFinite(input.audioMediaId) ? input.audioMediaId : 0
+    }
+  })
   const project = normalizeProjectSummary(raw)
   if (!project || project.type !== 'video_merge') throw new ProviderRequestError(classifyProviderError({ invalidShape: true, message: 'TalkingPhotos did not return the merged project.' }))
   return project
+}
+
+/** DELETE /project/{id} — confirmed live (200) behind the Express confirm modal. */
+export async function deleteProject(remoteProjectId: string): Promise<void> {
+  const id = String(remoteProjectId || '').trim()
+  if (!id) throw new Error('Invalid remote project id.')
+  await fetchProviderJson<unknown>(`/project/${encodeURIComponent(id)}`, { method: 'DELETE' })
 }
 
 /** Harmless authenticated reads used by the connect flow and periodic health check.

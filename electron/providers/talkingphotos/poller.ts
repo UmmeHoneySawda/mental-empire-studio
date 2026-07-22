@@ -62,6 +62,7 @@ async function pollJobOnce(job: ProviderJob, state: PollState): Promise<void> {
       remoteStepsTotal: remote.taskStepsTotal,
       progress,
       remoteMediaUrl: remote.mediaUrl ?? job.remoteMediaUrl,
+      thumbnailUrl: remote.thumbnailUrl ?? job.thumbnailUrl,
       remoteTaskUuid: remote.taskUuid,
       remotePreviousTaskUuid: remote.taskPrevUuid,
       lastPolledAt: new Date().toISOString()

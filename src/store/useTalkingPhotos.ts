@@ -56,6 +56,12 @@ interface TalkingPhotosState {
   downloadOutput: (providerJobId: string) => Promise<void>
   createProviderSubtitles: (sourceJobId: string, language?: string) => Promise<void>
   applyLocalCaptions: (providerJobId: string, aspect?: TalkingPhotosAspectRatio) => Promise<void>
+  loadProjects: () => Promise<void>
+  deleteProject: (remoteProjectId: string) => Promise<void>
+  mergeProjects: (input: { itemIds: string[]; title: string; audioMediaId?: number }) => Promise<void>
+  loadSubtitleLanguages: () => Promise<ProviderLanguage[]>
+  loadTtsRecoveryLibrary: () => Promise<unknown>
+  confirmRecoveredTts: (jobId: string, mediaId: string, durationSec: number) => Promise<void>
 }
 
 /** Stable cache key for a motion query — order-independent field access, so callers
@@ -266,6 +272,67 @@ export const useTalkingPhotos = create<TalkingPhotosState>((set, get) => ({
   applyLocalCaptions: async (providerJobId, aspect) => {
     try {
       const job = await api()?.talkingPhotos?.applyLocalCaptions?.(providerJobId, aspect)
+      if (job) set((s) => ({ jobs: s.jobs.map((j) => (j.id === job.id ? job : j)) }))
+    } catch (e) {
+      set({ error: (e as Error).message })
+    }
+  },
+
+  loadProjects: async () => {
+    try {
+      const remoteProjects = await api()?.talkingPhotos?.projects?.()
+      if (remoteProjects) set({ remoteProjects })
+    } catch (e) {
+      set({ error: (e as Error).message })
+    }
+  },
+
+  deleteProject: async (remoteProjectId) => {
+    try {
+      await api()?.talkingPhotos?.deleteProject?.(remoteProjectId)
+      set((s) => ({
+        remoteProjects: s.remoteProjects.filter((p) => String(p.id) !== String(remoteProjectId)),
+        jobs: s.jobs.filter((j) => String(j.remoteProjectId ?? '') !== String(remoteProjectId))
+      }))
+    } catch (e) {
+      set({ error: (e as Error).message })
+      throw e
+    }
+  },
+
+  mergeProjects: async (input) => {
+    try {
+      await api()?.talkingPhotos?.mergeProjects?.(input)
+      await get().loadProjects()
+      await get().sync()
+    } catch (e) {
+      set({ error: (e as Error).message })
+      throw e
+    }
+  },
+
+  loadSubtitleLanguages: async () => {
+    try {
+      const langs = await api()?.talkingPhotos?.subtitleLanguages?.()
+      return langs ?? []
+    } catch (e) {
+      set({ error: (e as Error).message })
+      return []
+    }
+  },
+
+  loadTtsRecoveryLibrary: async () => {
+    try {
+      return await api()?.talkingPhotos?.ttsRecoveryLibrary?.()
+    } catch (e) {
+      set({ error: (e as Error).message })
+      return []
+    }
+  },
+
+  confirmRecoveredTts: async (jobId, mediaId, durationSec) => {
+    try {
+      const job = await api()?.talkingPhotos?.confirmRecoveredTts?.(jobId, mediaId, durationSec)
       if (job) set((s) => ({ jobs: s.jobs.map((j) => (j.id === job.id ? job : j)) }))
     } catch (e) {
       set({ error: (e as Error).message })

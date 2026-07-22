@@ -76,6 +76,12 @@ export interface ProviderJob {
   remoteStep?: number
   remoteStepsTotal?: number
   progress: number
+  /** Optional poster/thumb URL from remote preview media (P1). */
+  thumbnailUrl?: string
+  /** Optional ETA seconds from WS/poller (P1). */
+  etaSeconds?: number
+  /** Optional GPU host label from WS (P1). */
+  hostName?: string
   remoteMediaId?: string
   remoteMediaUrl?: string
   localOutputPath?: string
@@ -175,18 +181,22 @@ export interface ProviderMotionQuery {
 }
 
 // ---- Confirmed uploaded-audio Human creation contract ----
-export type TalkingPhotosProjectStyle = 'normal' | 'high_quality'
+export type TalkingPhotosProjectStyle = 'normal' | 'high_quality' | 'close_up'
 export type TalkingPhotosAspectRatio = '16:9' | '1:1' | '9:16'
 
 export interface TalkingPhotosCreateInput {
   title: string
   audioPath: string
-  characterImagePath: string
+  /**
+   * Local reference image. Optional when prompt-only generation is used
+   * (`imageDrivingMediaId: 0` on the provider). Empty/omitted is allowed.
+   */
+  characterImagePath?: string
   characterPrompt: string
   characterNegativePrompt?: string
   style: TalkingPhotosProjectStyle
   aspectRatio: TalkingPhotosAspectRatio
-  /** Confirmed values: high_quality uses 0; normal uses a selected motion id. */
+  /** Confirmed values: high_quality/close_up use 0; normal uses a selected motion id. */
   motionId: number
   characterGender?: 'male' | 'female'
   characterAge?: string
@@ -384,6 +394,8 @@ export interface ProviderProjectSummary {
   updatedDate: string
   mediaUrl?: string
   mediaDurationSec?: number
+  /** Poster/thumb when the remote listing includes preview media. */
+  thumbnailUrl?: string
 }
 
 // ---- Normalized provider errors ----
@@ -531,7 +543,12 @@ export function normalizeProjectSummary(raw: unknown): ProviderProjectSummary | 
     createdDate: str(r.createdDate),
     updatedDate: str(r.updatedDate),
     mediaUrl: typeof media.mediaPath === 'string' && media.mediaPath ? media.mediaPath : undefined,
-    mediaDurationSec: mediaData.duration == null ? undefined : finiteNumber(mediaData.duration)
+    mediaDurationSec: mediaData.duration == null ? undefined : finiteNumber(mediaData.duration),
+    thumbnailUrl:
+      (typeof mediaData.smallThumb === 'string' && mediaData.smallThumb)
+      || (typeof mediaData.preview === 'string' && mediaData.preview)
+      || (typeof record(r.previewMedia).smallThumb === 'string' && str(record(r.previewMedia).smallThumb))
+      || undefined
   }
 }
 
@@ -761,7 +778,8 @@ export interface TalkingPhotosScriptCreationState {
 export interface TalkingPhotosScriptCreateInput {
   title: string
   script: string
-  characterImagePath: string
+  /** Optional local image — omit/empty for prompt-only character generation. */
+  characterImagePath?: string
   characterPrompt: string
   characterNegativePrompt?: string
   style: TalkingPhotosProjectStyle

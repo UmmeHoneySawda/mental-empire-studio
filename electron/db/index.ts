@@ -408,6 +408,9 @@ function migrate(d: Database.Database): void {
   ensureColumn(d, 'provider_jobs', 'requestJson', 'TEXT')
   ensureColumn(d, 'provider_jobs', 'creationIntentId', "TEXT NOT NULL DEFAULT ''")
   ensureColumn(d, 'provider_jobs', 'localCaptionedOutputPath', 'TEXT')
+  ensureColumn(d, 'provider_jobs', 'thumbnailUrl', 'TEXT')
+  ensureColumn(d, 'provider_jobs', 'etaSeconds', 'INTEGER')
+  ensureColumn(d, 'provider_jobs', 'hostName', 'TEXT')
   d.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_assets_content_id ON assets(id) WHERE id IS NOT NULL')
 
   purgeLegacyDemoSeed(d)
@@ -902,6 +905,9 @@ function rowToProviderJob(r: Record<string, unknown>): ProviderJob {
     remoteStep: r.remoteStep == null ? undefined : coerceNum(r.remoteStep, 0),
     remoteStepsTotal: r.remoteStepsTotal == null ? undefined : coerceNum(r.remoteStepsTotal, 0),
     segmentOrdinal: r.segmentOrdinal == null ? undefined : coerceNum(r.segmentOrdinal, 0),
+    etaSeconds: r.etaSeconds == null ? undefined : coerceNum(r.etaSeconds, 0),
+    thumbnailUrl: r.thumbnailUrl == null || r.thumbnailUrl === '' ? undefined : String(r.thumbnailUrl),
+    hostName: r.hostName == null || r.hostName === '' ? undefined : String(r.hostName),
     internalSegment: !!r.internalSegment
   }
 }
@@ -927,6 +933,9 @@ function providerJobToRow(job: ProviderJob): Record<string, unknown> {
     remoteMediaUrl: job.remoteMediaUrl ?? null,
     localOutputPath: job.localOutputPath ?? null,
     localCaptionedOutputPath: job.localCaptionedOutputPath ?? null,
+    thumbnailUrl: job.thumbnailUrl ?? null,
+    etaSeconds: job.etaSeconds ?? null,
+    hostName: job.hostName ?? null,
     errorCode: job.errorCode ?? null,
     errorMessage: job.errorMessage ?? null,
     lastPolledAt: job.lastPolledAt ?? null,

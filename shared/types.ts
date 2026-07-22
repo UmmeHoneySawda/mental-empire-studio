@@ -1417,6 +1417,10 @@ export interface NativeApi {
     ttsRecoveryLibrary(): Promise<TalkingPhotosRemoteMedia[]>
     /** Persist a user-confirmed manual recovery choice for an unresolved TTS job. */
     confirmRecoveredTts(jobId: string, mediaId: string, durationSec: number): Promise<ProviderJob>
+    /** Delete a remote TalkingPhotos project (`DELETE /project/{id}`). */
+    deleteProject(remoteProjectId: string): Promise<void>
+    /** Merge selected remote projects (`POST /project/merge_videos`). */
+    mergeProjects(input: { itemIds: string[]; title: string; audioMediaId?: number }): Promise<ProviderProjectSummary>
   }
   /** pick an output folder via the OS dialog; returns the chosen path or '' */
   chooseFolder(): Promise<string>

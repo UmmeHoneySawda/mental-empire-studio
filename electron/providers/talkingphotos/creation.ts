@@ -49,6 +49,8 @@ const IMAGE_EXTENSIONS = new Set(['.png', '.jpg', '.jpeg', '.webp'])
 function now(): string { return new Date().toISOString() }
 
 async function sha256(path: string): Promise<string> {
+  // Prompt-only create has no local character image — stable empty digest.
+  if (!path || !path.trim()) return createHash('sha256').update('').digest('hex')
   return new Promise((resolve, reject) => {
     const hash = createHash('sha256')
     const stream = createReadStream(path)
@@ -102,9 +104,14 @@ function validateInput(input: TalkingPhotosCreateInput): void {
   if (!input.title.trim()) throw new Error('Enter a title for the TalkingPhotos video.')
   if (!input.characterPrompt.trim()) throw new Error('Enter a character prompt.')
   if (!existsSync(input.audioPath) || !AUDIO_EXTENSIONS.has(extname(input.audioPath).toLowerCase())) throw new Error('Choose a supported local audio file.')
-  if (!existsSync(input.characterImagePath) || !IMAGE_EXTENSIONS.has(extname(input.characterImagePath).toLowerCase())) throw new Error('Choose a PNG, JPEG, or WebP character reference image.')
+  const imagePath = (input.characterImagePath || '').trim()
+  if (imagePath && (!existsSync(imagePath) || !IMAGE_EXTENSIONS.has(extname(imagePath).toLowerCase()))) {
+    throw new Error('Choose a PNG, JPEG, or WebP character reference image.')
+  }
   if (input.style === 'normal' && (!Number.isInteger(input.motionId) || input.motionId <= 0)) throw new Error('Normal mode requires a selected motion.')
-  if (input.style === 'high_quality' && input.motionId !== 0) throw new Error('High Quality mode uses motion ID 0 in the confirmed contract.')
+  if ((input.style === 'high_quality' || input.style === 'close_up') && input.motionId !== 0) {
+    throw new Error('High Quality / Close-up mode uses motion ID 0 in the confirmed contract.')
+  }
 }
 
 async function reusableUpload(path: string, type: 'audio' | 'image', durationSec?: number): Promise<ProviderAsset> {
@@ -160,8 +167,14 @@ async function findUncertainSubmission(title: string, type: 'human' | 'video_mer
 async function prepareAssets(root: ProviderJob, state: TalkingPhotosCreationState): Promise<TalkingPhotosCreationState> {
   if (state.sourceAudioMediaId && state.characterDrivingMediaId && state.characterResultUuid) return state
   const audio = await reusableUpload(state.input.audioPath, 'audio', state.sourceDurationSec)
-  const image = await reusableUpload(state.input.characterImagePath, 'image')
-  if (!audio.remoteMediaId || !image.remoteMediaId) throw new Error('TalkingPhotos media upload did not return reusable media IDs.')
+  if (!audio.remoteMediaId) throw new Error('TalkingPhotos media upload did not return reusable media IDs.')
+  const imagePath = (state.input.characterImagePath || '').trim()
+  let drivingMediaId = '0'
+  if (imagePath) {
+    const image = await reusableUpload(imagePath, 'image')
+    if (!image.remoteMediaId) throw new Error('TalkingPhotos media upload did not return reusable media IDs.')
+    drivingMediaId = image.remoteMediaId
+  }
   const resultUuid = state.characterResultUuid || await createCharacterImage({
     prompt: state.input.characterPrompt,
     negativePrompt: state.input.characterNegativePrompt,
@@ -170,10 +183,10 @@ async function prepareAssets(root: ProviderJob, state: TalkingPhotosCreationStat
     characterStyle: state.input.characterStyle,
     characterBeard: state.input.characterBeard,
     characterAge: state.input.characterAge,
-    imageDrivingMediaId: image.remoteMediaId,
+    imageDrivingMediaId: drivingMediaId,
     projectStyle: state.input.style
   })
-  const next = { ...state, sourceAudioMediaId: audio.remoteMediaId, characterDrivingMediaId: image.remoteMediaId, characterResultUuid: resultUuid, stage: 'assets_ready' as const }
+  const next = { ...state, sourceAudioMediaId: audio.remoteMediaId, characterDrivingMediaId: drivingMediaId, characterResultUuid: resultUuid, stage: 'assets_ready' as const }
   saveState(root.id, next, { status: 'running', progress: 12, errorCode: '', errorMessage: '' })
   return next
 }
@@ -350,9 +363,14 @@ function validateScriptInput(input: TalkingPhotosScriptCreateInput): void {
   if (!input.title.trim()) throw new Error('Enter a title for the TalkingPhotos video.')
   if (!input.script.trim()) throw new Error('Enter a script.')
   if (!input.characterPrompt.trim()) throw new Error('Enter a character prompt.')
-  if (!existsSync(input.characterImagePath) || !IMAGE_EXTENSIONS.has(extname(input.characterImagePath).toLowerCase())) throw new Error('Choose a PNG, JPEG, or WebP character reference image.')
+  const imagePath = (input.characterImagePath || '').trim()
+  if (imagePath && (!existsSync(imagePath) || !IMAGE_EXTENSIONS.has(extname(imagePath).toLowerCase()))) {
+    throw new Error('Choose a PNG, JPEG, or WebP character reference image.')
+  }
   if (input.style === 'normal' && (!Number.isInteger(input.motionId) || input.motionId <= 0)) throw new Error('Normal mode requires a selected motion.')
-  if (input.style === 'high_quality' && input.motionId !== 0) throw new Error('High Quality mode uses motion ID 0 in the confirmed contract.')
+  if ((input.style === 'high_quality' || input.style === 'close_up') && input.motionId !== 0) {
+    throw new Error('High Quality / Close-up mode uses motion ID 0 in the confirmed contract.')
+  }
   if (!input.language.trim() || !input.voice.trim()) throw new Error('Choose a language and voice.')
 }
 
@@ -377,15 +395,20 @@ function scriptSegmentTitle(state: TalkingPhotosScriptCreationState, ordinal: nu
 
 async function prepareScriptCharacter(root: ProviderJob, state: TalkingPhotosScriptCreationState): Promise<TalkingPhotosScriptCreationState> {
   if (state.characterDrivingMediaId && state.characterResultUuid) return state
-  const image = await reusableUpload(state.input.characterImagePath, 'image')
-  if (!image.remoteMediaId) throw new Error('TalkingPhotos character image upload did not return a reusable media ID.')
+  const imagePath = (state.input.characterImagePath || '').trim()
+  let drivingMediaId = '0'
+  if (imagePath) {
+    const image = await reusableUpload(imagePath, 'image')
+    if (!image.remoteMediaId) throw new Error('TalkingPhotos character image upload did not return a reusable media ID.')
+    drivingMediaId = image.remoteMediaId
+  }
   const resultUuid = state.characterResultUuid || await createCharacterImage({
     prompt: state.input.characterPrompt, negativePrompt: state.input.characterNegativePrompt,
     aspectRatio: state.input.aspectRatio, gender: state.input.characterGender, characterStyle: state.input.characterStyle,
     characterBeard: state.input.characterBeard, characterAge: state.input.characterAge,
-    imageDrivingMediaId: image.remoteMediaId, projectStyle: state.input.style
+    imageDrivingMediaId: drivingMediaId, projectStyle: state.input.style
   })
-  const next: TalkingPhotosScriptCreationState = { ...state, characterDrivingMediaId: image.remoteMediaId, characterResultUuid: resultUuid, stage: 'assets_ready' }
+  const next: TalkingPhotosScriptCreationState = { ...state, characterDrivingMediaId: drivingMediaId, characterResultUuid: resultUuid, stage: 'assets_ready' }
   saveScriptState(root.id, next, { status: 'running', progress: 10, errorCode: '', errorMessage: '' })
   return next
 }
@@ -555,7 +578,7 @@ async function processScriptRoot(rootId: string, sharedBudget?: SubmissionBudget
 /** Manual custom-script (or automation transcript-driven) -> TTS -> Human video. */
 export async function createScriptVideo(input: TalkingPhotosScriptCreateInput): Promise<ProviderJob> {
   validateScriptInput(input)
-  const [limits, imageHash] = await Promise.all([getProjectLimits(input.style), sha256(input.characterImagePath)])
+  const [limits, imageHash] = await Promise.all([getProjectLimits(input.style), sha256(input.characterImagePath || '')])
   const chunks = planTalkingPhotosScriptChunks(input.script, limits.maxCharactersTts)
   const fingerprint = scriptRequestFingerprint(input, imageHash)
   const dedupeKey = `${fingerprint}::${input.creationIntentId || ''}`
@@ -624,7 +647,7 @@ async function processRoot(rootId: string, sharedBudget?: SubmissionBudget): Pro
 export async function createUploadedAudioVideo(input: TalkingPhotosCreateInput): Promise<ProviderJob> {
   validateInput(input)
   const [durationSec, maxSegmentSec, audioHash, imageHash] = await Promise.all([
-    probeDuration(input.audioPath), getDurationLimit(input.style), sha256(input.audioPath), sha256(input.characterImagePath)
+    probeDuration(input.audioPath), getDurationLimit(input.style), sha256(input.audioPath), sha256(input.characterImagePath || '')
   ])
   if (!Number.isFinite(durationSec) || durationSec <= 0) throw new Error('The selected audio has no usable duration.')
   const fingerprint = requestFingerprint(input, audioHash, imageHash)

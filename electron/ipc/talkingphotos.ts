@@ -1,7 +1,7 @@
 import { ipcMain } from 'electron'
 import { getRepos } from '../db'
 import { connectTalkingPhotos, disconnectTalkingPhotos, getConnectionStatus, reconnectTalkingPhotos } from '../providers/talkingphotos/session'
-import { getCapabilities, getProject, listLanguages, listMotions, listProjects, listVoices } from '../providers/talkingphotos/client'
+import { deleteProject, getCapabilities, getProject, listLanguages, listMotions, listProjects, listVoices, mergeProjects } from '../providers/talkingphotos/client'
 import { downloadProviderJobOutput } from '../providers/talkingphotos/downloader'
 import { createScriptVideo, createUploadedAudioVideo } from '../providers/talkingphotos/creation'
 import { reconcileNonTerminalProviderJobs, syncAllProviderJobsNow } from '../providers/talkingphotos/poller'
@@ -46,14 +46,14 @@ export function reqCreateInput(v: unknown): TalkingPhotosCreateInput {
     if (typeof value !== 'string') throw new Error(`Invalid ${name}`)
     return value
   }
-  if (q.style !== 'normal' && q.style !== 'high_quality') throw new Error('Invalid TalkingPhotos project style.')
+  if (q.style !== 'normal' && q.style !== 'high_quality' && q.style !== 'close_up') throw new Error('Invalid TalkingPhotos project style.')
   if (q.aspectRatio !== '16:9' && q.aspectRatio !== '1:1' && q.aspectRatio !== '9:16') throw new Error('Invalid TalkingPhotos aspect ratio.')
   if (!Number.isInteger(q.motionId) || (q.motionId as number) < 0) throw new Error('Invalid TalkingPhotos motion ID.')
   if (q.characterGender != null && q.characterGender !== 'male' && q.characterGender !== 'female') throw new Error('Invalid characterGender')
   return {
     title: requiredString('title'),
     audioPath: requiredString('audioPath'),
-    characterImagePath: requiredString('characterImagePath'),
+    characterImagePath: optionalString('characterImagePath') || '',
     characterPrompt: requiredString('characterPrompt'),
     characterNegativePrompt: optionalString('characterNegativePrompt'),
     style: q.style,
@@ -85,7 +85,7 @@ export function reqScriptCreateInput(v: unknown): TalkingPhotosScriptCreateInput
     if (typeof value !== 'string') throw new Error(`Invalid ${name}`)
     return value
   }
-  if (q.style !== 'normal' && q.style !== 'high_quality') throw new Error('Invalid TalkingPhotos project style.')
+  if (q.style !== 'normal' && q.style !== 'high_quality' && q.style !== 'close_up') throw new Error('Invalid TalkingPhotos project style.')
   if (q.aspectRatio !== '16:9' && q.aspectRatio !== '1:1' && q.aspectRatio !== '9:16') throw new Error('Invalid TalkingPhotos aspect ratio.')
   if (!Number.isInteger(q.motionId) || (q.motionId as number) < 0) throw new Error('Invalid TalkingPhotos motion ID.')
   if (q.characterGender != null && q.characterGender !== 'male' && q.characterGender !== 'female') throw new Error('Invalid characterGender')
@@ -93,7 +93,7 @@ export function reqScriptCreateInput(v: unknown): TalkingPhotosScriptCreateInput
   return {
     title: requiredString('title'),
     script: requiredString('script'),
-    characterImagePath: requiredString('characterImagePath'),
+    characterImagePath: optionalString('characterImagePath') || '',
     characterPrompt: requiredString('characterPrompt'),
     characterNegativePrompt: optionalString('characterNegativePrompt'),
     style: q.style,
@@ -114,6 +114,22 @@ export function reqScriptCreateInput(v: unknown): TalkingPhotosScriptCreateInput
     projectId: optionalString('projectId'),
     creationIntentId: optionalString('creationIntentId')
   }
+}
+
+export function reqMergeInput(v: unknown): { projectIds: string[]; title: string; audioMediaId?: number } {
+  if (!v || typeof v !== 'object') throw new Error('Invalid merge request.')
+  const q = v as Record<string, unknown>
+  const ids = Array.isArray(q.itemIds) ? q.itemIds : Array.isArray(q.projectIds) ? q.projectIds : null
+  if (!ids || ids.length < 2) throw new Error('Select at least two projects to merge.')
+  const projectIds = ids.map((id, i) => {
+    if (typeof id !== 'string' && typeof id !== 'number') throw new Error(`Invalid project id at index ${i}`)
+    const s = String(id).trim()
+    if (!s) throw new Error(`Invalid project id at index ${i}`)
+    return s
+  })
+  const title = typeof q.title === 'string' && q.title.trim() ? q.title.trim() : 'Merged video'
+  const audioMediaId = typeof q.audioMediaId === 'number' && Number.isFinite(q.audioMediaId) ? q.audioMediaId : undefined
+  return { projectIds, title, audioMediaId }
 }
 
 export function registerTalkingPhotosIpc(): void {
@@ -157,5 +173,17 @@ export function registerTalkingPhotosIpc(): void {
     const duration = typeof durationSec === 'number' && Number.isFinite(durationSec) && durationSec > 0 ? durationSec : 0
     if (duration <= 0) throw new Error('Invalid durationSec')
     return confirmRecoveredTts(id, media, duration)
+  })
+
+  // User-facing delete / merge (additive; does not touch POST /project builders).
+  ipcMain.handle('talkingphotos:deleteProject', (_e, remoteProjectId: unknown) =>
+    deleteProject(reqId(remoteProjectId, 'remoteProjectId')))
+  ipcMain.handle('talkingphotos:mergeProjects', (_e, input: unknown) => {
+    const parsed = reqMergeInput(input)
+    return mergeProjects({
+      projectIds: parsed.projectIds,
+      title: parsed.title,
+      audioMediaId: parsed.audioMediaId
+    })
   })
 }
