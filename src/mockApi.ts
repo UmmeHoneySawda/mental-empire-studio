@@ -452,11 +452,74 @@ function installMock(): void {
     { id: 103, title: 'Studio presenter', tag: 'professional', thumbUrl: '', videoUrl: '', durationSeconds: 10, isPremium: true, isBonus: false }
   ]
   let tpJobSeq = 0
+  const tpJobListeners: Array<(job: ProviderJob) => void> = []
   const tpJobs: ProviderJob[] = [
-    { id: 'tpjob-1', provider: TALKINGPHOTOS_PROVIDER, connectionId: 'default', operation: 'video', remoteProjectId: '9001', status: 'completed', progress: 100, localOutputPath: '/Browser/talkingphotos-output/9001.mp4', internalSegment: false, createdAt: new Date(Date.now() - 3_600_000).toISOString(), updatedAt: new Date().toISOString(), downloadedAt: new Date().toISOString() },
-    { id: 'tpjob-2', provider: TALKINGPHOTOS_PROVIDER, connectionId: 'default', operation: 'video', remoteProjectId: '9002', status: 'running', remoteStep: 2, remoteStepsTotal: 4, progress: 45, internalSegment: false, createdAt: new Date(Date.now() - 600_000).toISOString(), updatedAt: new Date().toISOString() },
-    { id: 'tpjob-3', provider: TALKINGPHOTOS_PROVIDER, connectionId: 'default', operation: 'tts', status: 'failed', progress: 0, errorMessage: 'TalkingPhotos returned an unexpected response.', internalSegment: false, createdAt: new Date(Date.now() - 7_200_000).toISOString(), updatedAt: new Date().toISOString() }
+    {
+      id: 'tpjob-1', provider: TALKINGPHOTOS_PROVIDER, connectionId: 'default', operation: 'video', remoteProjectId: '9001',
+      status: 'completed', progress: 100, localOutputPath: '/Browser/talkingphotos-output/9001.mp4', internalSegment: false,
+      requestJson: JSON.stringify({ version: 1, kind: 'script', input: { title: 'Seeded ready video' } }),
+      createdAt: new Date(Date.now() - 3_600_000).toISOString(), updatedAt: new Date().toISOString(), downloadedAt: new Date().toISOString()
+    },
+    {
+      id: 'tpjob-2', provider: TALKINGPHOTOS_PROVIDER, connectionId: 'default', operation: 'video', remoteProjectId: '9002',
+      status: 'running', remoteStep: 2, remoteStepsTotal: 4, progress: 45, internalSegment: false,
+      requestJson: JSON.stringify({ version: 1, kind: 'script', input: { title: 'Seeded rendering clip' } }),
+      createdAt: new Date(Date.now() - 600_000).toISOString(), updatedAt: new Date().toISOString()
+    },
+    {
+      id: 'tpjob-3', provider: TALKINGPHOTOS_PROVIDER, connectionId: 'default', operation: 'tts', status: 'failed', progress: 0,
+      errorMessage: 'TalkingPhotos returned an unexpected response.', internalSegment: false,
+      requestJson: JSON.stringify({ version: 1, kind: 'script', input: { title: 'Seeded failed job' } }),
+      createdAt: new Date(Date.now() - 7_200_000).toISOString(), updatedAt: new Date().toISOString()
+    }
   ]
+  const tpRemoteProjects = [
+    {
+      id: '9001', title: 'Seeded ready video', type: 'human', status: 'completed',
+      createdDate: new Date(Date.now() - 3_600_000).toISOString(), updatedDate: new Date().toISOString(),
+      mediaUrl: undefined as string | undefined, thumbnailUrl: undefined as string | undefined
+    }
+  ]
+  const emitTpJob = (job: ProviderJob): void => {
+    for (const cb of tpJobListeners) {
+      try { cb(job) } catch { /* ignore listener errors in mock */ }
+    }
+  }
+  const queueTpJob = (partial: Omit<ProviderJob, 'provider' | 'connectionId' | 'createdAt' | 'updatedAt' | 'internalSegment'> & Partial<ProviderJob>): ProviderJob => {
+    const now = new Date().toISOString()
+    const job: ProviderJob = {
+      provider: TALKINGPHOTOS_PROVIDER,
+      connectionId: 'default',
+      internalSegment: false,
+      createdAt: now,
+      updatedAt: now,
+      ...partial
+    }
+    tpJobs.unshift(job)
+    emitTpJob(job)
+    // Simulate progress so LiveJob cards animate in browser QA.
+    if (job.status === 'queued' || job.status === 'running') {
+      let pct = Math.max(0, job.progress || 0)
+      const tick = (): void => {
+        const current = tpJobs.find((j) => j.id === job.id)
+        if (!current || current.status === 'completed' || current.status === 'failed' || current.status === 'cancelled') return
+        pct = Math.min(100, pct + 25)
+        current.status = pct >= 100 ? 'completed' : 'running'
+        current.progress = pct
+        current.remoteStep = pct >= 100 ? 2 : pct >= 50 ? 2 : 1
+        current.remoteStepsTotal = 2
+        current.updatedAt = new Date().toISOString()
+        if (pct >= 100) {
+          current.localOutputPath = current.localOutputPath || `/Browser/talkingphotos-output/${current.id}.mp4`
+          current.downloadedAt = new Date().toISOString()
+        }
+        emitTpJob({ ...current })
+        if (pct < 100) setTimeout(tick, 400)
+      }
+      setTimeout(tick, 350)
+    }
+    return job
+  }
 
   const api = {
     platform: 'web',
@@ -489,51 +552,110 @@ function installMock(): void {
       languages: async () => tpLanguages,
       voices: async (languageCode: string) => tpVoicesFor(languageCode),
       motions: async () => tpMotions,
-      projects: async () => [],
-      project: async () => null,
+      projects: async () => tpRemoteProjects,
+      project: async (remoteProjectId: string) => tpRemoteProjects.find((p) => String(p.id) === String(remoteProjectId)) ?? null,
       sync: async () => tpJobs,
       jobs: async () => tpJobs,
       createUploadedAudio: async (input: TalkingPhotosCreateInput) => {
-        const job: ProviderJob = {
-          id: `tpjob-${100 + ++tpJobSeq}`, provider: TALKINGPHOTOS_PROVIDER, connectionId: 'default', operation: 'video',
-          status: 'queued', progress: 0, internalSegment: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
-        }
-        tpJobs.unshift(job)
+        const job = queueTpJob({
+          id: `tpjob-${100 + ++tpJobSeq}`,
+          operation: 'video',
+          status: 'queued',
+          progress: 0,
+          remoteProjectId: String(9100 + tpJobSeq),
+          requestJson: JSON.stringify({ version: 1, kind: 'audio', input: { title: input.title } })
+        })
         pushActivity(`Queued a talking video "${input.title}"`)
         return job
       },
       createScript: async (input: TalkingPhotosScriptCreateInput) => {
-        const job: ProviderJob = {
-          id: `tpjob-${100 + ++tpJobSeq}`, provider: TALKINGPHOTOS_PROVIDER, connectionId: 'default', operation: 'tts',
-          status: 'queued', progress: 0, internalSegment: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
-        }
-        tpJobs.unshift(job)
+        const job = queueTpJob({
+          id: `tpjob-${100 + ++tpJobSeq}`,
+          operation: 'tts',
+          status: 'queued',
+          progress: 0,
+          remoteProjectId: String(9100 + tpJobSeq),
+          requestJson: JSON.stringify({ version: 1, kind: 'script', input: { title: input.title, script: input.script } })
+        })
         pushActivity(`Queued a talking video "${input.title}"`)
         return job
       },
       downloadOutput: async (providerJobId: string) => {
         const job = tpJobs.find((j) => j.id === providerJobId)
-        if (job) job.status = 'completed'
+        if (job) {
+          job.status = 'completed'
+          job.progress = 100
+          job.localOutputPath = job.localOutputPath || `/Browser/talkingphotos-output/${job.id}.mp4`
+          job.downloadedAt = new Date().toISOString()
+          job.updatedAt = new Date().toISOString()
+          emitTpJob({ ...job })
+        }
         return job ?? tpJobs[0]
       },
       subtitleLanguages: async () => tpLanguages,
       createProviderSubtitles: async (sourceJobId: string) => {
-        const job: ProviderJob = {
-          id: `tpjob-${100 + ++tpJobSeq}`, provider: TALKINGPHOTOS_PROVIDER, connectionId: 'default', operation: 'subtitles',
-          parentProviderJobId: sourceJobId, status: 'queued', progress: 0, internalSegment: false, createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
-        }
-        tpJobs.unshift(job)
+        const job = queueTpJob({
+          id: `tpjob-${100 + ++tpJobSeq}`,
+          operation: 'subtitles',
+          parentProviderJobId: sourceJobId,
+          status: 'queued',
+          progress: 0,
+          requestJson: JSON.stringify({ version: 1, kind: 'subtitles', input: { title: 'Captions' } })
+        })
         return job
       },
       applyLocalCaptions: async (providerJobId: string) => {
         const job = tpJobs.find((j) => j.id === providerJobId)
-        if (job) job.localCaptionedOutputPath = job.localOutputPath ? job.localOutputPath.replace('.mp4', '-captioned.mp4') : undefined
+        if (job) {
+          job.localCaptionedOutputPath = job.localOutputPath ? job.localOutputPath.replace('.mp4', '-captioned.mp4') : undefined
+          job.updatedAt = new Date().toISOString()
+          emitTpJob({ ...job })
+        }
         return job ?? tpJobs[0]
       },
       ttsRecoveryLibrary: async () => [],
-      confirmRecoveredTts: async () => tpJobs[0]
+      confirmRecoveredTts: async () => tpJobs[0],
+      deleteProject: async (remoteProjectId: string) => {
+        const rid = String(remoteProjectId)
+        for (let i = tpJobs.length - 1; i >= 0; i--) {
+          if (String(tpJobs[i].remoteProjectId ?? '') === rid) tpJobs.splice(i, 1)
+        }
+        for (let i = tpRemoteProjects.length - 1; i >= 0; i--) {
+          if (String(tpRemoteProjects[i].id) === rid) tpRemoteProjects.splice(i, 1)
+        }
+        pushActivity(`Deleted TalkingPhotos project ${rid}`, '×', '#ff5a6e')
+      },
+      mergeProjects: async (input: { itemIds: string[]; title: string; audioMediaId?: number }) => {
+        const merged = {
+          id: String(9200 + ++tpJobSeq),
+          title: input.title || 'Merged video',
+          type: 'video_merge',
+          status: 'processing',
+          createdDate: new Date().toISOString(),
+          updatedDate: new Date().toISOString(),
+          mediaUrl: undefined as string | undefined,
+          thumbnailUrl: undefined as string | undefined
+        }
+        tpRemoteProjects.unshift(merged)
+        queueTpJob({
+          id: `tpjob-${100 + tpJobSeq}`,
+          operation: 'merge',
+          remoteProjectId: merged.id,
+          status: 'queued',
+          progress: 0,
+          requestJson: JSON.stringify({ version: 1, kind: 'merge', input: { title: merged.title } })
+        })
+        pushActivity(`Queued merge "${merged.title}"`)
+        return merged
+      }
     }),
-    onProviderJob: () => noop,
+    onProviderJob: (cb: (job: ProviderJob) => void) => {
+      tpJobListeners.push(cb)
+      return () => {
+        const i = tpJobListeners.indexOf(cb)
+        if (i >= 0) tpJobListeners.splice(i, 1)
+      }
+    },
     onConnectionStatusChanged: () => noop,
     pathForFile: (file: File) => `browser://${file.name}`,
     settings: ns({
