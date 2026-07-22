@@ -10,3 +10,23 @@ dist/
 resources/bin/
 browser-test-out/
 .idea/
+.claude/skills/playwright-cli/
+.playwright-cli/
+.playwright-mcp/
+.playwright/
+.junie/
+
+# Local scratch / diagnostic dumps (API body captures, temp probes)
+scratchpad/
+scratchpad-bodies/
+tmp/
+tmp-*/
+
+# Ad-hoc Playwright a11y snapshot dumps saved at repo root during exploration.
+# (electron-builder.yml is tracked packaging config — do not blanket-ignore *.yml)
+/login.yaml
+/after-login.yaml
+/create-page.yaml
+/pre-delete.yml
+/tv-*.yaml
+/tv-*.yml
