@@ -1,5 +1,6 @@
 import { useMemo, useState, type CSSProperties } from 'react'
-import { ScreenPad, Eyebrow, Title } from '../components/primitives'
+import { ScreenPad } from '../components/primitives'
+import { PageHeader, Switch, EmptyState } from '../components/ui/kit'
 import { useData, type PendingSource } from '../store/useData'
 import { useStore } from '../store/useStore'
 import { DEFAULT_BETA_OPTS } from '@shared/types'
@@ -325,7 +326,8 @@ export function Download(): JSX.Element {
 
   return (
     <ScreenPad style={{ position: 'relative' }}>
-      <div style={{ marginBottom: 18 }}><Eyebrow>SOURCES</Eyebrow><Title>Source channels</Title></div>
+      <PageHeader eyebrow="Sources" title="Source channels" subtitle="Add a YouTube channel once; Studio caches its videos here so you can turn them into content anytime." />
+
 
       {/* Row 1: URL + Add source */}
       <div style={{ display: 'flex', gap: 11, marginBottom: 10 }}>
@@ -353,7 +355,7 @@ export function Download(): JSX.Element {
       {!activeSource && (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(260px,1fr))', gap: 14, marginTop: 18 }}>
           {sourceChannels.length === 0 && pendingSources.length === 0 && (
-            <div style={{ gridColumn: '1 / -1', padding: '34px 0', textAlign: 'center', fontSize: 12.5, color: '#5b616f', border: '1.5px dashed #23272f', borderRadius: 12 }}>Add a source once; its videos stay cached here.</div>
+            <div style={{ gridColumn: '1 / -1' }}><EmptyState title="No sources yet" body="Paste a YouTube channel URL above and add it — its videos stay cached here for you to turn into content." /></div>
           )}
           {pendingSources.map((p) => (
             <PendingSourceCard key={p.key} pending={p} onRetry={() => void retryPendingSource(p.key)} onDismiss={() => dismissPendingSource(p.key)} />
@@ -379,15 +381,7 @@ export function Download(): JSX.Element {
                 <div style={{ border: `1px solid ${watching ? 'rgba(54,201,142,.38)' : '#23272f'}`, borderRadius: 10, padding: '9px 10px', background: watching ? 'rgba(54,201,142,.08)' : '#0e1116' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
                     <span style={{ color: watching ? '#dffbed' : '#8a909c', fontSize: 11.5, fontWeight: watching ? 700 : 500, flex: 1 }}>{watching ? 'Automation watching' : 'Automation off'}</span>
-                    <button
-                      type="button"
-                      onClick={(e) => { e.stopPropagation(); void toggleSourceAutomation(source) }}
-                      title={watching ? 'Pause hands-free watching for this source' : 'Create or enable hands-free watching for this source'}
-                      className="me-btn"
-                      style={{ width: 36, height: 20, border: 0, borderRadius: 999, background: watching ? '#36c98e' : '#2b303b', cursor: 'pointer', position: 'relative', padding: 0, flex: 'none' }}
-                    >
-                      <span style={{ position: 'absolute', top: 2, right: watching ? 2 : 18, width: 16, height: 16, borderRadius: '50%', background: '#fff', transition: 'right .15s ease' }} />
-                    </button>
+                    <Switch on={watching} onToggle={() => void toggleSourceAutomation(source)} label={watching ? 'Pause hands-free watching for this source' : 'Enable hands-free watching for this source'} />
                   </div>
                   <div className="me-clamp-2" style={{ color: watching ? '#8fcfb3' : '#6a7180', fontSize: 10.5, lineHeight: 1.35, marginTop: 6 }}>
                     {watching ? automationSummary(source, groqReady) : 'Turn on to watch this source with sensible defaults; details appear in Automations.'}
@@ -529,11 +523,11 @@ export function Download(): JSX.Element {
                   <div style={{ width: 140 }}><div style={{ height: 5, borderRadius: 4, background: '#1a1e26', overflow: 'hidden' }}><div style={{ width: pct, height: '100%', background: barColor }} /></div></div>
                   <div style={{ width: 130, display: 'flex', justifyContent: 'flex-end', gap: 5 }}>
                     {done && (
-                      <span onClick={() => void openForCompose(d.id)} className="me-btn" style={{ display: 'inline-block', border: '1px solid var(--accent)', background: 'var(--accent-soft)', borderRadius: 7, padding: '5px 10px', fontSize: 10.5, color: 'var(--accent)', cursor: 'pointer', fontWeight: 600 }}>→ Compose</span>
+                      <button type="button" onClick={() => void openForCompose(d.id)} className="me-btn ed-focus" style={{ border: '1px solid var(--accent)', background: 'var(--accent-soft)', borderRadius: 'var(--radius-sm)', padding: '5px 10px', fontSize: 10.5, color: 'var(--accent)', cursor: 'pointer', fontWeight: 600 }}>→ Compose</button>
                     )}
-                    {currentStage === 'Downloading' && <span onClick={() => void cancelDownload(d.id)} className="me-btn" style={{ display: 'inline-block', border: '1px solid #4a3540', background: '#1b1217', borderRadius: 7, padding: '5px 10px', fontSize: 10.5, color: '#ff8a96', cursor: 'pointer' }}>Cancel</span>}
-                    {currentStage !== 'Downloading' && currentStage !== 'Downloaded only' && <span onClick={() => void resumeDownload(d.id)} className="me-btn" style={{ display: 'inline-block', border: '1px solid #262b34', background: '#15181f', borderRadius: 7, padding: '5px 10px', fontSize: 10.5, color: '#dde0e5', cursor: 'pointer' }}>Resume</span>}
-                    <span onClick={() => void deleteDownload(d.id)} title="Remove" className="me-btn" style={{ display: 'inline-block', border: '1px solid #262b34', background: '#15181f', borderRadius: 7, padding: '5px 9px', fontSize: 10.5, color: '#6a7180', cursor: 'pointer' }}>×</span>
+                    {currentStage === 'Downloading' && <button type="button" onClick={() => void cancelDownload(d.id)} className="me-btn ed-focus" style={{ border: '1px solid #4a3540', background: '#1b1217', borderRadius: 'var(--radius-sm)', padding: '5px 10px', fontSize: 10.5, color: 'var(--err-2)', cursor: 'pointer' }}>Cancel</button>}
+                    {currentStage !== 'Downloading' && currentStage !== 'Downloaded only' && <button type="button" onClick={() => void resumeDownload(d.id)} className="me-btn ed-focus" style={{ border: '1px solid var(--border-3)', background: 'var(--bg-control)', borderRadius: 'var(--radius-sm)', padding: '5px 10px', fontSize: 10.5, color: 'var(--text-bright)', cursor: 'pointer' }}>Resume</button>}
+                    <button type="button" onClick={() => void deleteDownload(d.id)} title="Remove" aria-label="Remove download" className="me-btn ed-focus" style={{ border: '1px solid var(--border-3)', background: 'var(--bg-control)', borderRadius: 'var(--radius-sm)', padding: '5px 9px', fontSize: 10.5, color: 'var(--text-dim)', cursor: 'pointer' }}>×</button>
                   </div>
                 </div>
               )
