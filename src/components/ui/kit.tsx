@@ -31,6 +31,80 @@ export function Panel({ children, style, pad = 14 }: { children: ReactNode; styl
   )
 }
 
+/** The canonical surface used across every screen (border + elevation + radius token).
+ *  Pass `onClick` to make it an interactive card (adds the `.me-card` hover lift). */
+export function Card({
+  children,
+  style,
+  pad = 16,
+  onClick,
+  className
+}: {
+  children: ReactNode
+  style?: CSSProperties
+  pad?: number | string
+  onClick?: () => void
+  className?: string
+}): JSX.Element {
+  const cls = [onClick ? 'me-card' : '', className].filter(Boolean).join(' ') || undefined
+  return (
+    <div
+      className={cls}
+      onClick={onClick}
+      style={{
+        border: '1px solid var(--border)',
+        borderRadius: 'var(--radius-lg)',
+        background: 'var(--bg-card)',
+        boxShadow: 'var(--shadow-card)',
+        padding: pad,
+        minWidth: 0,
+        ...(onClick ? { cursor: 'pointer' } : {}),
+        ...style
+      }}
+    >
+      {children}
+    </div>
+  )
+}
+
+/** Standard screen header: an optional eyebrow, the page `<h1>` title, an optional
+ *  one-line subtitle, and right-aligned actions. Replaces the four different
+ *  hand-rolled heading treatments across screens with one consistent pattern. */
+export function PageHeader({
+  eyebrow,
+  title,
+  subtitle,
+  actions,
+  style
+}: {
+  eyebrow?: ReactNode
+  title: ReactNode
+  subtitle?: ReactNode
+  actions?: ReactNode
+  style?: CSSProperties
+}): JSX.Element {
+  return (
+    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-4)', marginBottom: 'var(--space-6)', ...style }}>
+      <div style={{ minWidth: 0, flex: 1 }}>
+        {eyebrow && (
+          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-mono)', letterSpacing: '1px', textTransform: 'uppercase', color: 'var(--accent)', marginBottom: 7 }}>
+            {eyebrow}
+          </div>
+        )}
+        <h1 style={{ margin: 0, fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 'var(--fs-display)', letterSpacing: '-.5px', color: 'var(--text-strong)', lineHeight: 'var(--lh-tight)' }}>
+          {title}
+        </h1>
+        {subtitle && (
+          <div style={{ marginTop: 6, fontSize: 'var(--fs-body)', color: 'var(--text-dim)', lineHeight: 'var(--lh-normal)', maxWidth: 640 }}>
+            {subtitle}
+          </div>
+        )}
+      </div>
+      {actions && <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flex: 'none' }}>{actions}</div>}
+    </div>
+  )
+}
+
 /** Collapsible inspector section with an optional header-right slot. */
 export function Section({
   label,

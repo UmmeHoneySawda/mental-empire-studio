@@ -27,7 +27,7 @@ export function Eyebrow({ children }: { children: ReactNode }): JSX.Element {
 }
 
 export function Title({ children, size = 25 }: { children: ReactNode; size?: number }): JSX.Element {
-  return <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: size, letterSpacing: '-.5px', color: '#f4f6f9', lineHeight: 1 }}>{children}</div>
+  return <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: size, letterSpacing: '-.5px', color: 'var(--text-strong)', lineHeight: 1 }}>{children}</div>
 }
 
 export function ScreenPad({ children, style }: { children: ReactNode; style?: CSSProperties }): JSX.Element {

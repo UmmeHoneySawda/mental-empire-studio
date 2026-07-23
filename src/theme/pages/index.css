@@ -1,0 +1,10 @@
+/* Per-page style blocks. Each screen owns its own file so page-level redesigns stay
+   conflict-free during parallel work. Loaded after tokens.css / global.css / editor.css.
+   Convention: prefix every class with the page slug (e.g. .home-*, .settings-*). */
+@import './home.css';
+@import './sources.css';
+@import './channels.css';
+@import './render-queue.css';
+@import './publish.css';
+@import './niches.css';
+@import './settings.css';
