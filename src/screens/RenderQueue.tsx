@@ -253,11 +253,11 @@ export function RenderQueue(): JSX.Element {
   return (
     <ScreenPad style={{ paddingTop: 0 }}>
       {/* Sticky header: title + output settings + render CTAs */}
-      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: '#0d0f14', borderBottom: '1px solid #1d2129', padding: '14px 0 12px', marginBottom: 18 }}>
+      <div style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-window)', borderBottom: '1px solid var(--border)', padding: '14px 0 12px', marginBottom: 18 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
           <div>
-            <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 22, letterSpacing: '-.5px', color: '#f4f6f9', lineHeight: 1 }}>Render queue</div>
-            <div style={{ fontSize: 11, color: '#6a7180', marginTop: 4 }}>
+            <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 22, letterSpacing: '-.5px', color: 'var(--text-strong)', lineHeight: 1 }}>Render queue</div>
+            <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 4 }}>
               {processing > 0 && <span style={{ color: 'var(--accent)', marginRight: 10 }}>● {processing} rendering</span>}
               {rows.length} jobs · {effectiveParallel} active{hardwareEncoder && settings.concurrency > 1 ? ` (hardware cap; setting ${settings.concurrency})` : ''}
             </div>
@@ -335,9 +335,9 @@ export function RenderQueue(): JSX.Element {
                     Missing: {r.missing.map((m, i) => (
                       <span key={m}>{i > 0 && ', '}
                         {m === 'thumbnail' ? (
-                          <span style={{ textDecoration: 'underline', cursor: 'pointer' }} onClick={() => setActive('thumb')}>{m}</span>
+                          <button type="button" className="ed-focus" onClick={() => setActive('thumb')} style={{ textDecoration: 'underline', cursor: 'pointer', background: 'none', border: 0, color: 'inherit', font: 'inherit', padding: 0 }}>{m}</button>
                         ) : (m === 'captions' || m === 'images') ? (
-                          <span style={{ textDecoration: 'underline', cursor: 'pointer' }} onClick={() => setActive('compose')}>{m}</span>
+                          <button type="button" className="ed-focus" onClick={() => setActive('compose')} style={{ textDecoration: 'underline', cursor: 'pointer', background: 'none', border: 0, color: 'inherit', font: 'inherit', padding: 0 }}>{m}</button>
                         ) : m}
                       </span>
                     ))}
