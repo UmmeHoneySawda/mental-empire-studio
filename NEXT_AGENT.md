@@ -5,10 +5,10 @@
 - MES root: `D:\Work\mental-empire-studio`
 - Branch: `feat/openmontage-integration`
 - Base commit: `4d78fab8709a2cd2811e50bc72d8fd16c785c418`
-- Latest completed milestone: Phase 6 — production UI
+- Latest completed milestone: Phase 7 — validation and handoff
 - OpenMontage root: `D:\Work\mental-empire-studio\OpenMontage`
 - OpenMontage revision: `0af32ce5e1e830c33992af1f9179dcdcd536549b`
-- Current phase: Phase 7 — validation and handoff
+- Current phase: Complete — ready for review
 
 ## Completed
 
@@ -42,6 +42,10 @@
 - Settings → OpenMontage with hidden credential statuses and full health checks.
 - Browser-only typed fixtures making every PRD state reachable for interaction/screenshot QA.
 - 1352×868 visual validation with no renderer console errors.
+- External Remotion dependencies installed from the committed lockfile; all 13 compositions enumerate.
+- Full suite, opt-in live health, TypeScript, build, Electron ABI, smokes `1`/`m3`–`m7`, and Windows unpacked packaging pass.
+- Ten final 1352×868 screenshots saved under `docs/openmontage-integration/screenshots/`.
+- Scope, secret, generated-production-media, and nested-repository audits complete.
 
 ## Changed files
 
@@ -101,28 +105,20 @@ npm test -- --run test/unit/openmontage-production.test.ts test/unit/openmontage
 npm test -- --run test/unit/openmontage-ui-model.test.ts
 ```
 
-All pass. Focused Phase 1–6 suite: 62 tests plus one live-only skip. The opt-in live probe also passes against the checked-out external repository. The renderer builds and all ten PRD states were visually exercised at 1352×868 through the browser fixture.
+All pass. The full suite reports 69 passing files and 574 passing tests with two documented skips. The opt-in live probe passes against the checked-out external repository and now requires Remotion. TypeScript, production build, Electron smokes, unpacked packaging, and all ten saved 1352×868 screenshots also pass.
 
 ## Current environment and blockers
 
 - Python 3.11.9 and Node 22.16.0.
-- FFmpeg and HyperFrames probe as available.
-- Remotion probes unavailable until its external workspace dependencies are installed.
+- FFmpeg, HyperFrames, and Remotion probe as available.
 - Managed mode needs a configured runner that proves `mes.openmontage.runner/v1`; the test fixture is not a production runner.
 - Backlot is read-only; do not invent approval/control HTTP endpoints.
-- `better-sqlite3` is currently built for Node so DB tests execute. Run `npx @electron/rebuild -f -w better-sqlite3` before launching Electron, smoke tests, or packaging.
+- Web Content and Open Archival Footage are deliberately recorded as blocked live acceptance scenarios until a supported production runner and its provider/approval flow are available.
+- `better-sqlite3` is currently built for Electron after smoke/package verification. Rebuild it for Node before rerunning SQLite-backed Vitest suites, then rebuild it for Electron again before app launch or packaging.
 
 ## Exact next task
 
-Execute Phase 7:
-
-1. Rebuild `better-sqlite3` for Electron.
-2. Run the full test suite, typecheck, production build, and supported smoke harnesses.
-3. Exercise Local Assets, Web Content, and Open Archival Footage acceptance truthfully.
-4. Attempt to install/validate the external Remotion composer dependencies without editing OpenMontage source.
-5. Save the final 1352×868 screenshot set.
-6. Audit tracked scope, secrets, generated media, and the nested OpenMontage repository.
-7. Finalize the test matrix, progress, and handoff; commit only MES integration files.
+Review the committed branch. If a production runner is configured later, execute the blocked Web Content and Open Archival Footage scenarios and update only their acceptance rows with real run evidence.
 
 ## Useful commands
 

@@ -147,6 +147,7 @@ describe('OpenMontage live installation probe', () => {
       expect.objectContaining({ name: 'installation', status: 'available' }),
       expect.objectContaining({ name: 'python', status: 'available' }),
       expect.objectContaining({ name: 'ffmpeg', status: 'available' }),
+      expect.objectContaining({ name: 'remotion', status: 'available' }),
       expect.objectContaining({ name: 'hyperframes', status: 'available' })
     ]))
     expect(JSON.stringify(report)).not.toMatch(/(?:api.?key|secret|password|token)"?\s*:\s*"(?!\[REDACTED\])/i)

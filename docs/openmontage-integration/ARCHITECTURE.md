@@ -164,5 +164,5 @@ The browser-only `src/mockApi.ts` implements the same surface with in-memory dur
 
 - OpenMontage repository: `OpenMontage/` (independent nested Git repository)
 - Baseline revision inspected: `0af32ce5e1e830c33992af1f9179dcdcd536549b`
-- Current local probe: Python 3.11.9, Node 22.16.0, FFmpeg available, HyperFrames available, Remotion unavailable until its workspace dependencies are installed
+- Current local probe: Python 3.11.9, Node 22.16.0, FFmpeg, HyperFrames, and Remotion available; the external composer enumerates all 13 committed compositions
 - OpenMontage source remains unmodified

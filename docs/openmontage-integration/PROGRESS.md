@@ -4,7 +4,7 @@ Last updated: 2026-07-24
 
 ## Current status
 
-Phases 1–6 are complete. Phase 7 (validation and handoff) is next.
+Phases 1–7 are complete. The MES integration is implemented, tested, packaged, visually validated, and ready for review.
 
 ## Completed
 
@@ -61,14 +61,23 @@ Phases 1–6 are complete. Phase 7 (validation and handoff) is next.
 - Added browser QA fixtures for live, approval, recovery, fallback, completion, and assisted jobs through the typed production API.
 - Completed a 1352×868 browser visual pass of all ten PRD states with no renderer console errors.
 - Added five renderer-model tests; the focused Phase 1–6 suite now passes 62 tests with one opt-in live test skipped by default.
+- Installed the external Remotion composer dependencies with `npm ci`; OpenMontage remained clean because `node_modules` is ignored and no lock/source file changed.
+- Enumerated all 13 bundled Remotion compositions successfully with the external CLI.
+- Tightened the opt-in live health test so a real Remotion installation is required, then passed that probe.
+- Ran the complete MES suite: 69 files and 574 tests passed; two documented opt-in/manual tests were skipped.
+- Rebuilt `better-sqlite3` for Electron and passed TypeScript, production build, all supported milestone smokes (`1`, `m3`–`m7`), and `dist:dir` packaging.
+- Exercised Local Assets through the real SQLite/process/protocol boundary with package, locked-media, checkpoint, output, retry, and restart-recovery evidence.
+- Attempted the Web Content and Open Archival Footage acceptance gates. Capability discovery and Remotion validation pass, but a truthful full production requires a configured supported agent runner plus provider/operator execution.
+- Saved all ten final PRD screenshots at exactly 1352×868 in `docs/openmontage-integration/screenshots/`.
+- Audited the branch scope, secret patterns, production-media extensions, and nested repository cleanliness.
 
 ## Verified facts
 
 - Backlot exposes read-only health, project state, event streams, thumbnail, and media routes.
 - OpenMontage orchestration is agent-driven; its Python modules are tools and persistence, not a production orchestrator.
-- Current machine probe: Python 3.11.9, Node 22.16.0, FFmpeg available, HyperFrames available.
-- Remotion is currently unavailable because the external composer workspace is not installed/configured.
-- Documentary Montage currently requires Remotion for compose; HyperFrames availability alone does not satisfy that acceptance scenario.
+- Current machine probe: Python 3.11.9, Node 22.16.0, FFmpeg, HyperFrames, and Remotion available.
+- The external Remotion CLI enumerates `Explainer`, `CinematicRenderer`, `SignalFromTomorrowWithMusic`, `TalkingHead`, `TitledVideo`, `HeroTitle`, `ProductReveal`, `ProductRevealVertical`, `CaptionOverlayOnly`, `CollageBurst`, `LyricOverlay`, `EndTag`, and `EndTagOverlay`.
+- Documentary Montage correctly requires Remotion; that runtime gate now passes on this machine.
 
 ## Verification
 
@@ -88,14 +97,23 @@ Phases 1–6 are complete. Phase 7 (validation and handoff) is next.
 | `npm run typecheck` after renderer integration | PASS |
 | `npm run build` after renderer integration | PASS |
 | Browser QA at 1352×868 | PASS — ten PRD states reachable; no console errors |
+| `npm test` | PASS — 69 files, 574 tests; 2 documented skips |
+| Opt-in live health probe after Remotion install | PASS — installation/revision/Python/FFmpeg/Remotion/HyperFrames |
+| `npx remotion compositions src/index.tsx` in external composer | PASS — 13 compositions enumerated |
+| `npx @electron/rebuild -f -w better-sqlite3` | PASS — Electron ABI rebuild complete |
+| Supported Electron smokes | PASS — `SMOKE_OK`, `SMOKE_M3_OK` through `SMOKE_M7_OK` |
+| `npm run dist:dir` | PASS — Windows unpacked application packaged |
+| Final screenshot dimensions | PASS — ten PNGs, each 1352×868 |
+| Nested OpenMontage status | PASS — clean at `0af32ce5e1e830c33992af1f9179dcdcd536549b` |
 
-## Blockers / limitations
+## External acceptance limitations
 
 - Managed mode requires a configured runner executable that proves `mes.openmontage.runner/v1`; assisted mode remains launch-ready without it.
-- Remotion must be installed and re-probed before claiming the archival-footage acceptance scenario.
-- Provider-dependent acceptance may require credentials/network. Any unavailable provider will be reported rather than mocked as a live pass.
-- `better-sqlite3` is currently rebuilt for Node to execute DB tests. Rebuild it for Electron before app/smoke/package validation.
+- Web Content was not reported as a live pass: provider capability discovery succeeds, but no supported production agent runner was configured for an acquired-through-completion run.
+- Open Archival Footage was not reported as a live pass: Archive and Remotion capabilities are available, but full agent-governed acquisition/composition was not run without a supported runner and its required approval flow.
+- `npm ci` reported one high-severity advisory in the external Remotion dependency tree. No automatic audit fix was applied because that could mutate OpenMontage's lock/source boundary.
+- Remotion composition enumeration emitted two non-fatal localhost `/public/` 404 warnings after successfully listing the compositions.
 
 ## Next task
 
-Execute Phase 7: rebuild the native SQLite dependency for Electron, run full tests/typecheck/build/smoke validation, exercise acceptance scenarios truthfully, attempt external Remotion workspace setup without modifying OpenMontage source, capture final screenshots, audit secrets/scope/nested-repository cleanliness, and finalize the continuity docs.
+Review the branch and, when a production runner is selected, execute the two explicitly blocked live scenarios without changing the MES/OpenMontage ownership boundary.

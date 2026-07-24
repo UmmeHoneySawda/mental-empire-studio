@@ -125,3 +125,15 @@
 **Decision:** Make all required UI states reachable in the browser-only mock through the exact `NativeApi.openMontage` methods and durable record types used by Electron.
 
 **Reason:** Static view switches would not validate integration behavior. Typed fixture jobs exercise polling, routing plans, controls, events, outputs, degraded/empty handling, and screenshot layouts without launching providers or a fake in-process orchestrator.
+
+## D-022 — External runtime setup may not mutate OpenMontage source
+
+**Decision:** Install the external Remotion workspace only through its committed lockfile with `npm ci`, and treat ignored dependencies and downloaded browser binaries as machine setup rather than MES content.
+
+**Reason:** This proves the real runtime while preserving the independent-repository boundary. Automatic audit fixes, source edits, lockfile churn, and copied OpenMontage code remain out of scope.
+
+## D-023 — Acceptance labels distinguish integration fixtures from live provider runs
+
+**Decision:** Report Local Assets as a deterministic integration-boundary pass, while keeping Web Content and Open Archival Footage blocked until a supported production agent runner completes their provider and approval stages.
+
+**Reason:** The MES adapter, persistence, subprocess, recovery, and output contracts can be validated deterministically. OpenMontage itself is intentionally agent-governed; a fixture or capability probe must never be presented as a live provider production.

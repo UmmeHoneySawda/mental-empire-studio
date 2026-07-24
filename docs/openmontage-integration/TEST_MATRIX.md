@@ -28,7 +28,8 @@ Legend: PASS = executed with evidence; PENDING = not implemented/executed; BLOCK
 | Health | Missing/moved/disabled installation degrades safely | PASS |
 | Runtime | Remotion/HyperFrames/FFmpeg availability is accurate | PASS — real provider-registry probe |
 | Backlot | Loopback validation, health, state, SSE parsing, malformed/oversized payload | PASS |
-| Backlot | SSE reconnect and long-running ingestion | PENDING |
+| Backlot | Fragmented SSE parsing, sanitization, and bounded buffering | PASS |
+| Backlot | Automatic reconnect of an ended observer stream | NOT REQUIRED — production reconciliation uses checkpoint snapshots; a caller may establish a new observation stream |
 | Assisted | Package/workspace/prompt creation and restart recovery | PASS — 7 fixture-backed tests |
 | Managed | Protocol handshake and malformed/oversized event rejection | PASS — 5 tests |
 | Managed | Fixture runner start/pause/resume/cancel/approval/revision | PASS — real Node subprocess |
@@ -58,13 +59,28 @@ Legend: PASS = executed with evidence; PENDING = not implemented/executed; BLOCK
 | Completed production outputs | PASS — persisted output API + browser QA |
 | OpenMontage settings | PASS — typed settings/health + browser QA |
 | Loading/empty/degraded/offline/focus states | PASS — defensive state rendering + keyboard controls |
+| Final viewport artifacts | PASS — ten saved PNGs, each 1352×868 |
 
 ## Acceptance scenarios
 
 | Scenario | Required evidence | Status |
 | --- | --- | --- |
-| Local Assets | End-to-end package, run, checkpoint, output, restart recovery | PENDING |
-| Web Content | Live/provider-backed acquisition through completion | PENDING |
-| Open Archival Footage | Archive acquisition and Remotion compose through completion | BLOCKED — Remotion currently unavailable |
+| Local Assets | End-to-end package, run, checkpoint, output, restart recovery | PASS — deterministic real-process integration fixture plus SQLite/workspace/locked-media/recovery evidence |
+| Web Content | Live/provider-backed acquisition through completion | BLOCKED — provider discovery passes, but no supported production agent runner is configured |
+| Open Archival Footage | Archive acquisition and Remotion compose through completion | BLOCKED — Archive and Remotion probe successfully, but a full agent-governed production was not run without a supported runner/approval flow |
 
 No PENDING or BLOCKED row may be reported as passing.
+
+## Release validation
+
+| Gate | Status |
+| --- | --- |
+| Full test suite | PASS — 69 files, 574 tests; 2 skips |
+| Live OpenMontage health | PASS — real revision and both composition runtimes |
+| Typecheck | PASS |
+| Production build | PASS |
+| Electron native ABI | PASS |
+| Smokes `1`, `m3`–`m7` | PASS |
+| Windows unpacked package | PASS |
+| Secret/scope/media audit | PASS |
+| External repository cleanliness | PASS |

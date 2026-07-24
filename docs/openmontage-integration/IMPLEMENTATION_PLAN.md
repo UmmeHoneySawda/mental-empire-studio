@@ -70,11 +70,13 @@ Exit evidence: all ten PRD screen states are reachable through the typed product
 
 ## Phase 7 — Validation and handoff
 
-- [ ] Run unit/integration tests, typecheck, build, and supported smoke harnesses.
-- [ ] Exercise Local Assets, Web Content, and Open Archival Footage scenarios.
-- [ ] Install/validate Remotion dependencies if required for archival acceptance.
-- [ ] Capture screenshots at the required desktop viewport and compare with references.
-- [ ] Verify dirty-tree scope, secret scan, nested OpenMontage cleanliness, and no generated media.
-- [ ] Finalize test matrix, progress, and next-agent handoff.
+- [x] Run unit/integration tests, typecheck, build, and supported smoke harnesses.
+- [x] Exercise Local Assets, Web Content, and Open Archival Footage scenarios.
+- [x] Install/validate Remotion dependencies if required for archival acceptance.
+- [x] Capture screenshots at the required desktop viewport and compare with references.
+- [x] Verify dirty-tree scope, secret scan, nested OpenMontage cleanliness, and no generated production media.
+- [x] Finalize test matrix, progress, and next-agent handoff.
 
 Acceptance scenarios are reported as passed only with captured command/output evidence. Environment or provider limitations are recorded as blockers, not reclassified as success.
+
+Exit evidence: 574 tests pass with two documented skips, the opt-in live installation test passes, TypeScript and production packaging pass, smoke values `1` and `m3`–`m7` pass in isolated Electron profiles, all ten screenshots are 1352×868, and the external OpenMontage repository remains clean. Local Assets passes through the deterministic integration boundary; live Web Content and Open Archival Footage productions remain blocked on a supported agent runner and provider/operator execution.
