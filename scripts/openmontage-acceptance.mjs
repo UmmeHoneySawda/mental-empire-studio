@@ -1,6 +1,7 @@
 #!/usr/bin/env node
 
 import { _electron as electron } from 'playwright'
+import { spawnSync } from 'node:child_process'
 import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
@@ -154,6 +155,50 @@ async function api(method, ...args) {
   }, { methodName: method, methodArgs: args })
 }
 
+/**
+ * Kill a real runner process tree from outside the application, the way an OS
+ * crash or a user's Task Manager would. Nothing about this is simulated: the
+ * managed service has to notice the loss and recover from its last checkpoint.
+ */
+function killProcessTree(pid) {
+  if (!pid) return { killed: false, reason: 'no pid recorded' }
+  if (process.platform === 'win32') {
+    const result = spawnSync('taskkill.exe', ['/PID', String(pid), '/T', '/F'], {
+      encoding: 'utf8',
+      windowsHide: true,
+      timeout: 20_000
+    })
+    return {
+      killed: result.status === 0,
+      status: result.status,
+      output: String(result.stdout || result.stderr || '').trim().slice(0, 300)
+    }
+  }
+  try {
+    process.kill(-pid, 'SIGKILL')
+    return { killed: true }
+  } catch (error) {
+    return { killed: false, reason: String(error).slice(0, 200) }
+  }
+}
+
+/**
+ * Count surviving processes that still claim the given parent, so evidence can
+ * assert that termination left no orphan behind.
+ */
+function descendantCount(pid) {
+  if (!pid || process.platform !== 'win32') return null
+  const result = spawnSync(
+    'powershell.exe',
+    ['-NoProfile', '-NonInteractive', '-Command',
+      `@(Get-CimInstance Win32_Process -Filter "ParentProcessId=${Number(pid)}").Count`],
+    { encoding: 'utf8', windowsHide: true, timeout: 30_000 }
+  )
+  if (result.status !== 0) return null
+  const parsed = Number(String(result.stdout).trim())
+  return Number.isFinite(parsed) ? parsed : null
+}
+
 async function pollJob(jobId) {
   return api('job', jobId)
 }
@@ -237,6 +282,8 @@ async function main() {
     let revised = priorActions.some((action) => action?.action === 'revision')
     let pauseResumed = priorActions.some((action) => action?.action === 'resume')
     let restarted = priorActions.some((action) => action?.action === 'normal_restart')
+    let interruptions = priorActions.filter((action) => action?.action === 'interrupt_runner').length
+    let cancelled = priorActions.some((action) => action?.action === 'cancel')
     let approvalScreenshot = false
     const timeoutMs = Math.max(60_000, Number(spec.timeoutSec ?? 3600) * 1_000)
     const pollStartedAt = Date.now()
@@ -258,6 +305,82 @@ async function main() {
         const resumed = await api('resumeManaged', jobId)
         evidence.actions.push({ action: 'resume', state: resumed.state, stage: resumed.currentStage })
         pauseResumed = true
+        continue
+      }
+
+      // Kill the real runner process tree to prove recovery from the last valid
+      // checkpoint. Repeating this past the configured retry limit is also how a
+      // genuine fatal failure is forced without adding fault-injection code to
+      // the production runner.
+      if (
+        spec.actions?.interruptRunner
+        && interruptions < Number(spec.actions.interruptRunner.times ?? 1)
+        && job.state === 'running'
+        && job.currentStage !== 'preparing'
+        && job.lastCheckpointAt
+        && job.runnerPid
+        && (!spec.actions.interruptRunner.notBeforeStage
+          || job.currentStage !== 'preparing')
+      ) {
+        const before = {
+          state: job.state,
+          stage: job.currentStage,
+          progress: job.progress,
+          checkpoint: job.lastCheckpointAt,
+          runnerSessionId: job.runnerSessionId,
+          runnerPid: job.runnerPid
+        }
+        const killed = killProcessTree(job.runnerPid)
+        const observed = await waitForJob(
+          jobId,
+          (candidate) => candidate.runnerPid !== before.runnerPid
+            || ['failed', 'completed', 'cancelled', 'paused'].includes(candidate.state),
+          180_000
+        ).catch((error) => ({ state: `wait_failed: ${error.message}` }))
+        interruptions += 1
+        evidence.actions.push({
+          action: 'interrupt_runner',
+          attempt: interruptions,
+          killResult: killed,
+          before,
+          after: {
+            state: observed.state,
+            stage: observed.currentStage,
+            progress: observed.progress,
+            checkpoint: observed.lastCheckpointAt,
+            runnerSessionId: observed.runnerSessionId,
+            runnerPid: observed.runnerPid
+          },
+          // Recovery must not rewind: the stage/progress may only move forward.
+          checkpointPreserved: observed.lastCheckpointAt === before.checkpoint
+            || String(observed.lastCheckpointAt ?? '') >= String(before.checkpoint ?? ''),
+          orphanProcesses: descendantCount(before.runnerPid)
+        })
+        continue
+      }
+
+      if (
+        spec.actions?.cancelAfterCheckpoint
+        && !cancelled
+        && job.state === 'running'
+        && job.currentStage !== 'preparing'
+        && job.lastCheckpointAt
+      ) {
+        const before = { state: job.state, stage: job.currentStage, runnerPid: job.runnerPid }
+        const result = await api('cancelManaged', jobId)
+        const settled = await waitForJob(
+          jobId,
+          (candidate) => ['cancelled', 'failed', 'completed'].includes(candidate.state),
+          120_000
+        ).catch((error) => ({ state: `wait_failed: ${error.message}` }))
+        cancelled = true
+        evidence.actions.push({
+          action: 'cancel',
+          before,
+          requested: result?.state,
+          after: { state: settled.state, stage: settled.currentStage, runnerPid: settled.runnerPid },
+          orphanProcesses: descendantCount(before.runnerPid)
+        })
         continue
       }
 
