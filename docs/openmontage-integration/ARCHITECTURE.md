@@ -147,6 +147,19 @@ Managed failures are supervised by category. Provider, runtime, and runner failu
 
 The supplied Figma Make direction and reference screenshots define the screen structure and information hierarchy. Existing MES design tokens, self-hosted fonts, shell, sidebar behavior, focus styles, and compact spacing remain authoritative where the references conflict with the current app. The implementation will use the existing amber action accent and green health signal rather than introducing a second cyan-only design system.
 
+`src/screens/OpenMontage.tsx` is the renderer workspace. It reads health, jobs, events, outputs, Backlot snapshots, and Compose source projects only through `NativeApi`. A seven-step local draft is converted by the pure `src/features/openmontage/model.ts` builder into the same credential-free v1 package accepted by IPC. The renderer never derives a trusted engine decision: it requests a plan, displays its reasons/warnings, and returns that plan to the main-process revalidation path.
+
+Durable job state selects the workspace:
+
+- `running` renders the live stage timeline, scene operation, telemetry, and activity;
+- `awaiting_approval` renders storyboard review and sends approve/revise through the managed runner API;
+- recovery evidence or a paused transition renders checkpoint/reconnect continuity;
+- fallback states render the original failure and independent MES Compose progress together;
+- `completed` renders only persisted output references and OS reveal actions;
+- `handoff_required` renders assisted prompts, project folder, and Backlot actions.
+
+The browser-only `src/mockApi.ts` implements the same surface with in-memory durable fixtures. It is dynamically loaded only when no Electron preload exists, so screenshots and interaction QA can reach each state without bypassing production contracts or changing the external OpenMontage checkout.
+
 ## External reference baseline
 
 - OpenMontage repository: `OpenMontage/` (independent nested Git repository)

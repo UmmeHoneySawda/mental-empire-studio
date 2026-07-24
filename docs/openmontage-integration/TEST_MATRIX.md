@@ -41,22 +41,23 @@ Legend: PASS = executed with evidence; PENDING = not implemented/executed; BLOCK
 | Fallback | Adapter failure is terminal and secret-redacted | PASS |
 | Sentry | Plan/start/retry/failure/fallback fields are structured and redacted | PASS — lifecycle/fault fixtures |
 | IPC | Health/read/control APIs aligned across NativeApi, preload, and IPC; IDs/text validated | PASS |
+| Renderer model | Compose inputs, dimensions, locked media, state views, and output formatting | PASS — 5 tests |
 
 ## UI coverage
 
 | PRD state | Status |
 | --- | --- |
-| Integration dashboard | PENDING |
-| New Production seven-step setup | PENDING |
-| Automatic workflow decision | BACKEND PASS; UI PENDING |
-| Live production progress | PENDING |
-| Storyboard approval gate | PENDING |
-| Remotion versus HyperFrames comparison | PENDING |
-| Recoverable interruption | PENDING |
-| Failure and MES fallback | BACKEND PASS; UI PENDING |
-| Completed production outputs | PENDING |
-| OpenMontage settings | PENDING |
-| Loading/empty/degraded/offline/focus states | PENDING |
+| Integration dashboard | PASS — typed health/jobs + 1352×868 browser QA |
+| New Production seven-step setup | PASS — typed Compose source + browser QA |
+| Automatic workflow decision | PASS — main-process plan + browser QA |
+| Live production progress | PASS — typed polling/controls + browser QA |
+| Storyboard approval gate | PASS — approve/revise API + browser QA |
+| Remotion versus HyperFrames comparison | PASS — browser QA |
+| Recoverable interruption | PASS — durable recovery event + browser QA |
+| Failure and MES fallback | PASS — backend fault test + browser QA |
+| Completed production outputs | PASS — persisted output API + browser QA |
+| OpenMontage settings | PASS — typed settings/health + browser QA |
+| Loading/empty/degraded/offline/focus states | PASS — defensive state rendering + keyboard controls |
 
 ## Acceptance scenarios
 

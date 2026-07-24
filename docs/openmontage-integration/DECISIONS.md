@@ -113,3 +113,15 @@
 **Decision:** Reuse the originating MES project when available; otherwise create an idempotent local Compose project from narration and local image inputs.
 
 **Reason:** Fallback must use the existing MES production model, storage, editor, and render queue rather than introducing a second hidden renderer.
+
+## D-020 — Renderer plans from existing Compose projects
+
+**Decision:** The New Production workflow selects an existing MES Compose project, reads its narration and media through typed APIs, and maps that source into the stable job package with a pure renderer model.
+
+**Reason:** This preserves the local-first source of truth, makes fallback idempotent, avoids another upload/import silo, and keeps the renderer package builder deterministic and unit-testable.
+
+## D-021 — Browser QA uses the production bridge shape
+
+**Decision:** Make all required UI states reachable in the browser-only mock through the exact `NativeApi.openMontage` methods and durable record types used by Electron.
+
+**Reason:** Static view switches would not validate integration behavior. Typed fixture jobs exercise polling, routing plans, controls, events, outputs, degraded/empty handling, and screenshot layouts without launching providers or a fake in-process orchestrator.

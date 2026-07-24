@@ -42,6 +42,7 @@ export type ScreenKey =
   | 'sources'
   | 'download'
   | 'compose'
+  | 'openmontage'
   | 'thumb'
   | 'render'
   | 'publish'

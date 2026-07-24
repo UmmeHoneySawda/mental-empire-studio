@@ -5,10 +5,10 @@
 - MES root: `D:\Work\mental-empire-studio`
 - Branch: `feat/openmontage-integration`
 - Base commit: `4d78fab8709a2cd2811e50bc72d8fd16c785c418`
-- Latest completed milestone: Phase 5 — routing, fallback, and telemetry
+- Latest completed milestone: Phase 6 — production UI
 - OpenMontage root: `D:\Work\mental-empire-studio\OpenMontage`
 - OpenMontage revision: `0af32ce5e1e830c33992af1f9179dcdcd536549b`
-- Current phase: Phase 6 — production UI
+- Current phase: Phase 7 — validation and handoff
 
 ## Completed
 
@@ -35,6 +35,13 @@
 - Classified checkpoint-preserving retry supervision.
 - Real MES Compose fallback with cancellation/fallback-disable protections.
 - Structured Sentry plan/retry/fallback lifecycle logging and fault coverage.
+- Native OpenMontage navigation, dashboard, capability matrix, and recent jobs.
+- Seven-step Compose-backed production setup with pure v1 package construction.
+- Transparent automatic plan review/start and Remotion/HyperFrames comparison.
+- Live, approval, recovery, failure/fallback, assisted, cancellation, and completion workspaces.
+- Settings → OpenMontage with hidden credential statuses and full health checks.
+- Browser-only typed fixtures making every PRD state reachable for interaction/screenshot QA.
+- 1352×868 visual validation with no renderer console errors.
 
 ## Changed files
 
@@ -65,6 +72,11 @@
 - `test/unit/openmontage-managed.test.ts`
 - `test/unit/openmontage-production.test.ts`
 - `test/unit/openmontage-mes-fallback.test.ts`
+- `src/features/openmontage/model.ts`
+- `src/features/openmontage/OpenMontageSettingsPanel.tsx`
+- `src/screens/OpenMontage.tsx`
+- `src/theme/pages/openmontage.css`
+- `test/unit/openmontage-ui-model.test.ts`
 - `docs/openmontage-integration/schemas/job-package.v1.schema.json`
 - `docs/openmontage-integration/ARCHITECTURE.md`
 - `docs/openmontage-integration/IMPLEMENTATION_PLAN.md`
@@ -86,9 +98,10 @@ npm run build
 npm test -- --run test/unit/openmontage-assisted.test.ts
 npm test -- --run test/unit/openmontage-runner-protocol.test.ts test/unit/openmontage-managed.test.ts
 npm test -- --run test/unit/openmontage-production.test.ts test/unit/openmontage-mes-fallback.test.ts
+npm test -- --run test/unit/openmontage-ui-model.test.ts
 ```
 
-All pass. Focused Phase 1–5 suite: 57 tests plus one live-only skip. The opt-in live probe also passes against the checked-out external repository.
+All pass. Focused Phase 1–6 suite: 62 tests plus one live-only skip. The opt-in live probe also passes against the checked-out external repository. The renderer builds and all ten PRD states were visually exercised at 1352×868 through the browser fixture.
 
 ## Current environment and blockers
 
@@ -101,16 +114,15 @@ All pass. Focused Phase 1–5 suite: 57 tests plus one live-only skip. The opt-i
 
 ## Exact next task
 
-Implement Phase 6:
+Execute Phase 7:
 
-1. Add an OpenMontage navigation destination and dashboard backed by live health/jobs.
-2. Add the seven-step New Production workflow and transparent plan review/start.
-3. Add live progress, controls, activity, telemetry, and approval/revision states.
-4. Add the neutral Remotion/HyperFrames comparison.
-5. Add restart recovery, failure/fallback, and completed-output views.
-6. Add OpenMontage settings with health checks and hidden credential-status display.
-7. Cover loading, empty, degraded, offline, focus, and keyboard behavior.
-8. Add fixture/screenshot entry points, verify, update docs, and commit.
+1. Rebuild `better-sqlite3` for Electron.
+2. Run the full test suite, typecheck, production build, and supported smoke harnesses.
+3. Exercise Local Assets, Web Content, and Open Archival Footage acceptance truthfully.
+4. Attempt to install/validate the external Remotion composer dependencies without editing OpenMontage source.
+5. Save the final 1352×868 screenshot set.
+6. Audit tracked scope, secrets, generated media, and the nested OpenMontage repository.
+7. Finalize the test matrix, progress, and handoff; commit only MES integration files.
 
 ## Useful commands
 

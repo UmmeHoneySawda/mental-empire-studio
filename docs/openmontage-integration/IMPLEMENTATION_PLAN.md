@@ -57,16 +57,16 @@ Exit evidence: forced modes, automatic decision reasons, retry policy, cancel be
 
 ## Phase 6 — Production UI
 
-- [ ] Add OpenMontage dashboard and navigation group.
-- [ ] Add seven-step New Production setup and plan review.
-- [ ] Add neutral Remotion/HyperFrames comparison.
-- [ ] Add live timeline, activity, telemetry, and stage controls.
-- [ ] Add storyboard approval/revision interface.
-- [ ] Add recovery, failure/fallback, completion/output, and settings states.
-- [ ] Add empty, loading, degraded, offline, and keyboard/focus states.
-- [ ] Keep renderer data live through typed APIs.
+- [x] Add OpenMontage dashboard and navigation group.
+- [x] Add seven-step New Production setup and plan review.
+- [x] Add neutral Remotion/HyperFrames comparison.
+- [x] Add live timeline, activity, telemetry, and stage controls.
+- [x] Add storyboard approval/revision interface.
+- [x] Add recovery, failure/fallback, completion/output, and settings states.
+- [x] Add empty, loading, degraded, offline, and keyboard/focus states.
+- [x] Keep renderer data live through typed APIs.
 
-Exit evidence: all ten PRD screen states are reachable from real or fixture-backed data.
+Exit evidence: all ten PRD screen states are reachable through the typed production bridge or the browser QA fixture. The 1352×868 visual pass covers dashboard, setup, plan, runtime comparison, live, approval, recovery, fallback, completion, and settings; renderer console errors are empty.
 
 ## Phase 7 — Validation and handoff
 

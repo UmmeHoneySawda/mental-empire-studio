@@ -4,7 +4,7 @@ Last updated: 2026-07-24
 
 ## Current status
 
-Phases 1–5 are complete. Phase 6 (production UI) is next.
+Phases 1–6 are complete. Phase 7 (validation and handoff) is next.
 
 ## Completed
 
@@ -48,6 +48,19 @@ Phases 1–5 are complete. Phase 6 (production UI) is next.
 - Added an idempotent adapter that reuses or creates ordinary MES Compose projects from local narration.
 - Added routing/retry/fallback Sentry lifecycle events with sanitized primitive fields.
 - Added eleven production/fallback integration tests, including real subprocess faults and the real MES project adapter.
+- Added the native OpenMontage navigation destination and live integration dashboard.
+- Added the seven-step source, media-control, style, composition, approval, output, and review workflow.
+- Added a pure Compose-project-to-v1-package renderer model with locked-media preservation and dimension mapping.
+- Added the health-backed automatic plan review and start flow without trusting renderer-selected engines.
+- Added the neutral Remotion/HyperFrames comparison modal and project-specific recommendation.
+- Added live stage progress, scene selection, telemetry, activity, pause, cancel, and logs controls.
+- Added storyboard approval and revision controls routed through the managed API.
+- Added restart recovery, checkpoint history, failure/fallback, assisted handoff, cancellation, and completed-output workspaces.
+- Added Settings → OpenMontage for installation, runners, capabilities, credential status, reliability, and full health checks.
+- Added loading, empty, degraded/offline, keyboard focus, and scroll-reset behavior.
+- Added browser QA fixtures for live, approval, recovery, fallback, completion, and assisted jobs through the typed production API.
+- Completed a 1352×868 browser visual pass of all ten PRD states with no renderer console errors.
+- Added five renderer-model tests; the focused Phase 1–6 suite now passes 62 tests with one opt-in live test skipped by default.
 
 ## Verified facts
 
@@ -71,6 +84,10 @@ Phases 1–5 are complete. Phase 6 (production UI) is next.
 | Focused Phase 4 infrastructure suite | PASS — 34 tests; live-only case skipped by default |
 | Focused Phase 1–5 suite (ten files) | PASS — 57 tests; live-only case skipped by default |
 | Production/fallback fault suite | PASS — 11 tests |
+| Focused Phase 1–6 suite (eleven files) | PASS — 62 tests; live-only case skipped by default |
+| `npm run typecheck` after renderer integration | PASS |
+| `npm run build` after renderer integration | PASS |
+| Browser QA at 1352×868 | PASS — ten PRD states reachable; no console errors |
 
 ## Blockers / limitations
 
@@ -81,4 +98,4 @@ Phases 1–5 are complete. Phase 6 (production UI) is next.
 
 ## Next task
 
-Implement Phase 6: OpenMontage navigation, dashboard, seven-step setup/plan, live progress, approvals, runtime comparison, recovery, failure/fallback, completion, settings, and degraded/empty/loading/focus states.
+Execute Phase 7: rebuild the native SQLite dependency for Electron, run full tests/typecheck/build/smoke validation, exercise acceptance scenarios truthfully, attempt external Remotion workspace setup without modifying OpenMontage source, capture final screenshots, audit secrets/scope/nested-repository cleanliness, and finalize the continuity docs.
