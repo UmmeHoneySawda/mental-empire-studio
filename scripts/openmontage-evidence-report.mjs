@@ -16,7 +16,8 @@
  *   node scripts/openmontage-evidence-report.mjs --all
  */
 
-import { existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { createHash } from 'node:crypto'
+import { existsSync, mkdirSync, readdirSync, readFileSync, statSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import { execFileSync } from 'node:child_process'
@@ -39,6 +40,16 @@ function gitRevision(repository) {
   }
 }
 
+/** SHA-256 of a file, or null when it is absent or a directory. */
+function fileDigest(filePath) {
+  try {
+    if (!filePath || !statSync(filePath).isFile()) return null
+    return createHash('sha256').update(readFileSync(filePath)).digest('hex')
+  } catch {
+    return null
+  }
+}
+
 function readJson(filePath) {
   try {
     return JSON.parse(readFileSync(filePath, 'utf8'))
@@ -53,7 +64,13 @@ function readJson(filePath) {
  * prove is never silently credited.
  */
 function scenarioClaims(spec, evidence) {
-  const actions = Array.isArray(evidence?.actions) ? evidence.actions : []
+  // A scenario can legitimately span a resumed run: the approvals may have
+  // happened in the attempt recorded under `priorRun`. Credit behaviour proven
+  // by any attempt of the same scenario, not just the final one.
+  const actions = []
+  for (let run = evidence; run; run = run.priorRun) {
+    if (Array.isArray(run.actions)) actions.push(...run.actions)
+  }
   const has = (name) => actions.some((action) => action?.action === name)
   const composition = spec?.request?.jobPackage?.production?.composition ?? {}
   const metadata = spec?.request?.jobPackage?.metadata ?? {}
@@ -153,6 +170,20 @@ function markdown(report) {
       ''
     )
   }
+  if (report.media?.fallbackRender?.ffprobe) {
+    const probe = report.media.fallbackRender.ffprobe
+    lines.push(
+      '## Mental Empire Studio fallback render (ffprobe)',
+      '',
+      `- Path: \`${report.media.fallbackRender.path}\``,
+      `- Size: ${report.media.fallbackRender.sizeBytes} bytes`,
+      `- SHA-256: \`${report.media.fallbackRender.sha256}\``,
+      `- Video: ${probe.videoCodec} ${probe.width}x${probe.height} @ ${probe.fps} fps`,
+      `- Audio: ${probe.audioCodec ?? 'none'}`,
+      `- Duration: ${probe.durationSeconds}s`,
+      ''
+    )
+  }
   lines.push('## Behaviours proven by this run', '')
   for (const [name, proven] of Object.entries(report.provenBehaviours)) {
     lines.push(`- ${proven ? 'yes' : 'no '} — ${name}`)
@@ -190,17 +221,123 @@ function checkpointsFrom(projectDirectory) {
     .sort((left, right) => String(left.savedAt ?? '').localeCompare(String(right.savedAt ?? '')))
 }
 
+/** Deep-merge `patch` over `base` without mutating either. */
+function merge(base, patch) {
+  if (!isPlainObject(base) || !isPlainObject(patch)) return patch === undefined ? base : patch
+  const result = { ...base }
+  for (const [key, value] of Object.entries(patch)) {
+    result[key] = isPlainObject(value) && isPlainObject(base[key]) ? merge(base[key], value) : value
+  }
+  return result
+}
+
+function isPlainObject(value) {
+  return Boolean(value) && typeof value === 'object' && !Array.isArray(value)
+}
+
 function buildReport(directory) {
-  const evidence = readJson(join(directory, 'acceptance.json'))
-  if (!evidence) return undefined
-  const spec = readJson(join(directory, 'acceptance-spec.json'))
   const overrides = readJson(join(directory, 'report-overrides.json')) ?? {}
+  // A single live run can prove several required scenarios. A scenario folder
+  // may therefore point at another folder's recorded run and narrow the output
+  // contract to the part *that* scenario is responsible for, so each required
+  // scenario carries its own verdict without duplicating a large evidence file.
+  const sourceDirectory = overrides.sourceEvidence
+    ? (isAbsolute(overrides.sourceEvidence) ? overrides.sourceEvidence : join(evidenceRoot, overrides.sourceEvidence))
+    : directory
+  const evidence = readJson(join(sourceDirectory, 'acceptance.json'))
+  if (!evidence) {
+    // A folder that carries only overrides is a scenario we have something to say
+    // about but no recorded run for — typically one blocked before it could write
+    // evidence. Emit an explicit NOT EXECUTED report so it is visible rather than
+    // silently skipped.
+    if (!overrides.scenario) return undefined
+    const blocked = {
+      schema: 'mes.openmontage.evidence-report/v1',
+      scenario: overrides.scenario,
+      evidenceDirectory: directory,
+      evaluatedAt: new Date().toISOString(),
+      mesCommit: gitRevision(root),
+      openMontageCommit: gitRevision(overrides.openMontagePath ?? 'D:\\Work\\OpenMontage'),
+      operatingSystem: overrides.operatingSystem ?? `${process.platform} ${process.arch}`,
+      runner: overrides.runner ?? 'codex-cli @openai/codex 0.145.0',
+      costUsd: overrides.costUsd ?? 0,
+      credentialPrerequisites: overrides.credentialPrerequisites ?? [],
+      commands: overrides.commands ?? [],
+      screenshots: [],
+      checkpoints: [],
+      outputs: [],
+      postconditions: [{
+        name: 'scenario_executed',
+        result: 'NOT EXECUTED',
+        detail: 'No acceptance run was recorded in this directory; see the notes for the blocker.'
+      }],
+      media: {},
+      declaredScenarios: [],
+      provenBehaviours: {},
+      notes: overrides.notes ?? [],
+      harnessReportedResult: null,
+      result: 'NOT EXECUTED'
+    }
+    mkdirSync(directory, { recursive: true })
+    writeFileSync(join(directory, 'report.json'), `${JSON.stringify(blocked, null, 2)}\n`)
+    writeFileSync(join(directory, 'REPORT.md'), `${markdown(blocked)}\n`)
+    return blocked
+  }
+  const recordedSpec = readJson(join(sourceDirectory, 'acceptance-spec.json'))
+  const spec = recordedSpec && overrides.specPatch ? merge(recordedSpec, overrides.specPatch) : recordedSpec
   const jobPackage = spec?.request?.jobPackage
   const outputs = Array.isArray(evidence.outputs) ? evidence.outputs : []
-  const evaluated = spec && evidence.job
-    ? evaluatePostconditions(spec, evidence.job, outputs)
-    : { checks: [], media: {}, result: evidence.result === 'PASS' ? 'PASS' : 'FAIL' }
+  // Never inherit the harness verdict. If the spec or the final job row is
+  // missing there is nothing to re-verify against, and silently echoing "PASS"
+  // is exactly the false-pass this tool exists to catch.
+  const fallbackRenderPath = (Array.isArray(evidence.actions) ? evidence.actions : [])
+    .filter((action) => action?.action === 'drive_mes_fallback_render')
+    .map((action) => action?.renderRow?.outputPath)
+    .filter(Boolean)
+    .at(-1)
+  // A health-only run (no production requested) is graded on the health status
+  // it was asserting, which is re-checkable from the recorded report.
+  const evaluated = spec && !spec.request
+    ? (() => {
+      // A health/regression run records its own checks; re-derive the verdict
+      // from them rather than trusting the recorded `result`.
+      const stored = Array.isArray(evidence.postconditions) ? evidence.postconditions : null
+      if (stored?.length) {
+        return {
+          checks: stored,
+          media: {},
+          result: stored.every((check) => check.result === 'PASS') ? 'PASS' : 'FAIL'
+        }
+      }
+      const observed = evidence.health?.status ?? null
+      const accepted = spec.expectedHealthStatusOneOf
+        ?? (spec.expectedHealthStatus ? [spec.expectedHealthStatus] : [])
+      const pass = accepted.length > 0 && accepted.includes(observed)
+      return {
+        checks: [{
+          name: 'health_status',
+          result: pass ? 'PASS' : 'FAIL',
+          detail: `expected one of ${accepted.join('/') || '(unspecified)'}, observed ${observed ?? '(none recorded)'}`
+        }],
+        media: {},
+        result: pass ? 'PASS' : 'FAIL'
+      }
+    })()
+    : spec && evidence.job
+    ? evaluatePostconditions(spec, evidence.job, outputs, { fallbackRenderPath })
+    : {
+      checks: [{
+        name: 'evidence_reverifiable',
+        result: 'FAIL',
+        detail: !spec
+          ? 'acceptance-spec.json is missing from the evidence directory, so the output contract cannot be re-derived.'
+          : 'acceptance.json records no final job row, so nothing can be re-verified.'
+      }],
+      media: {},
+      result: 'INDETERMINATE'
+    }
 
+  const claims = scenarioClaims(spec, evidence)
   const projectDirectory = evidence.job?.workspacePath
     ?? (jobPackage ? join('D:\\Work\\OpenMontage', 'projects', jobPackage.projectId) : undefined)
 
@@ -233,15 +370,35 @@ function buildReport(directory) {
       kind: output.kind,
       path: output.path,
       sizeBytes: output.sizeBytes ?? null,
-      sha256: output.metadata?.sha256 ?? null,
+      // Hash the artefact ourselves when it is still on disk, so the evidence
+      // carries a verifiable digest rather than only what the runner claimed.
+      sha256: output.metadata?.sha256 ?? fileDigest(output.path),
       metadata: output.metadata ?? {}
     })),
     postconditions: evaluated.checks,
     media: evaluated.media ?? {},
-    ...scenarioClaims(spec, evidence),
+    ...claims,
     notes: overrides.notes ?? [],
     harnessReportedResult: evidence.result ?? null,
     result: evaluated.result
+  }
+
+  // Some scenarios are about *behaviour* rather than artefacts (an approval was
+  // surfaced and answered, an app restart resumed the same session). Grade those
+  // explicitly so the scenario cannot pass on a terminal state alone.
+  for (const behaviour of overrides.requiredBehaviours ?? []) {
+    const proven = claims.provenBehaviours[behaviour] === true
+    report.postconditions.push({
+      name: `behaviour:${behaviour}`,
+      result: proven ? 'PASS' : 'FAIL',
+      detail: proven
+        ? 'recorded by the live run'
+        : 'the recorded run does not evidence this behaviour'
+    })
+    if (!proven) report.result = 'FAIL'
+  }
+  if (overrides.sourceEvidence) {
+    report.sourceEvidence = overrides.sourceEvidence
   }
 
   mkdirSync(directory, { recursive: true })
@@ -256,7 +413,11 @@ function main() {
     for (const name of readdirSync(evidenceRoot, { withFileTypes: true })) {
       if (!name.isDirectory()) continue
       const directory = join(evidenceRoot, name.name)
-      if (existsSync(join(directory, 'acceptance.json'))) targets.push(directory)
+      // A scenario folder either holds its own recorded run, or points at one.
+      if (
+        existsSync(join(directory, 'acceptance.json'))
+        || existsSync(join(directory, 'report-overrides.json'))
+      ) targets.push(directory)
     }
   } else {
     const requested = argument('--evidence')

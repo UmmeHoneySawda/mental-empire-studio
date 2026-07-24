@@ -76,7 +76,7 @@ export function sha256(filePath) {
  * editable project, or that renders a frame rate other than the locked one, is
  * a FAIL here even though its state looks terminal and healthy.
  */
-export function evaluatePostconditions(spec, job, outputs) {
+export function evaluatePostconditions(spec, job, outputs, extras = {}) {
   const checks = []
   const add = (name, pass, detail) => checks.push({ name, result: pass ? 'PASS' : 'FAIL', detail })
   const requested = spec.request?.jobPackage ?? {}
@@ -96,6 +96,47 @@ export function evaluatePostconditions(spec, job, outputs) {
   for (const output of outputs ?? []) {
     if (!byKind.has(output.kind)) byKind.set(output.kind, [])
     byKind.get(output.kind).push(output)
+  }
+
+  // A production that completed through the MES fallback owes a *fallback*
+  // video and linked, preserved attempts — not an OpenMontage render, which by
+  // definition never succeeded. Grading it against the OpenMontage output
+  // contract would fail it for the wrong reason.
+  if (job?.fallbackProjectId) {
+    const media = {}
+    add('fallback_attempts_linked', Boolean(job.fallbackProjectId), `MES fallback project ${job.fallbackProjectId}`)
+    add(
+      'openmontage_project_preserved',
+      job.preserveOpenMontageProject === true && Boolean(job.workspacePath) && existsSync(job.workspacePath),
+      `workspace ${job.workspacePath ?? '(none)'}`
+    )
+    add(
+      'openmontage_failure_classified',
+      Boolean(job.errorCategory) && Boolean(job.errorCode),
+      `category ${job.errorCategory ?? '(none)'}, code ${job.errorCode ?? '(none)'}`
+    )
+    const fallbackPath = extras.fallbackRenderPath
+    const exists = Boolean(fallbackPath) && existsSync(fallbackPath)
+    add('fallback_render_exists', exists, fallbackPath ?? 'the harness observed no MES render output path')
+    if (exists) {
+      const probed = probe(fallbackPath)
+      media.fallbackRender = {
+        path: fallbackPath,
+        sizeBytes: statSync(fallbackPath).size,
+        sha256: sha256(fallbackPath),
+        ffprobe: probed
+      }
+      add('fallback_render_ffprobe', probed.ok === true, probed.ok ? 'ffprobe parsed the container' : probed.error)
+      if (probed.ok) {
+        add('fallback_render_has_video', Boolean(probed.videoCodec), `video codec ${probed.videoCodec}`)
+        const minimum = Number(spec.postconditions?.minDurationSeconds)
+        if (Number.isFinite(minimum)) {
+          add('fallback_render_min_duration', Number(probed.durationSeconds) >= minimum, `>= ${minimum}s, observed ${probed.durationSeconds}s`)
+        }
+      }
+    }
+    const failedFallback = checks.filter((check) => check.result === 'FAIL')
+    return { checks, media, result: failedFallback.length === 0 ? 'PASS' : 'FAIL' }
   }
 
   const requiredKinds = ['final_mp4']

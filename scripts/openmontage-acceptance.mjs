@@ -43,6 +43,9 @@ if (!existsSync(electronExecutable)) throw new Error(`Electron executable is mis
 if (!existsSync(mainEntry)) throw new Error(`Built Electron main process is missing: ${mainEntry}`)
 mkdirSync(evidenceDir, { recursive: true })
 mkdirSync(userDataDir, { recursive: true })
+// Keep the spec beside the evidence so the offline evaluator can re-derive the
+// output contract later. Without it a report cannot re-verify anything.
+writeFileSync(join(evidenceDir, 'acceptance-spec.json'), JSON.stringify(spec, null, 2))
 
 let app
 let page
@@ -199,6 +202,22 @@ function descendantCount(pid) {
   return Number.isFinite(parsed) ? parsed : null
 }
 
+/**
+ * Call any other namespace on the real preload bridge. Scenario I needs this to
+ * drive MES's own renderer for the fallback project through the same boundary a
+ * user would, rather than reaching into the main process.
+ */
+async function callApi(namespace, method, ...args) {
+  if (!page) throw new Error('Electron page is not available.')
+  return page.evaluate(async ({ namespaceName, methodName, methodArgs }) => {
+    const scope = window.api[namespaceName]
+    if (!scope) throw new Error(`Unknown API namespace: ${namespaceName}`)
+    const target = scope[methodName]
+    if (typeof target !== 'function') throw new Error(`Unknown API method: ${namespaceName}.${methodName}`)
+    return target(...methodArgs)
+  }, { namespaceName: namespace, methodName: method, methodArgs: args })
+}
+
 async function pollJob(jobId) {
   return api('job', jobId)
 }
@@ -246,10 +265,78 @@ async function main() {
     await recordCapture(evidence, '01-dashboard.png')
 
     if (!spec.request) {
-      evidence.result = health.status === spec.expectedHealthStatus ? 'PASS' : 'FAIL'
+      const checks = []
+      const accepted = spec.expectedHealthStatusOneOf
+        ?? (spec.expectedHealthStatus ? [spec.expectedHealthStatus] : [])
+      checks.push({
+        name: 'health_status',
+        result: accepted.includes(health.status) ? 'PASS' : 'FAIL',
+        detail: `expected one of ${accepted.join('/') || '(unspecified)'}, observed ${health.status}`
+      })
+
+      // The point of the unavailable regression is that ordinary MES keeps
+      // working and that Automatic routing degrades to MES instead of trying to
+      // drive an engine that is not there.
+      if (spec.regression) {
+        const observed = {}
+        try {
+          observed.settingsReadable = Boolean(await callApi('settings', 'get'))
+          observed.projectCount = (await callApi('compose', 'list')).length
+          observed.renderQueueReadable = Array.isArray(await callApi('render', 'jobs'))
+          observed.assetLibraryReadable = Array.isArray(await callApi('assets', 'list'))
+        } catch (error) {
+          observed.ordinaryWorkflowError = String(error).slice(0, 500)
+        }
+        checks.push({
+          name: 'ordinary_mes_workflows_operate',
+          result: observed.settingsReadable && observed.renderQueueReadable && observed.assetLibraryReadable
+            ? 'PASS'
+            : 'FAIL',
+          detail: JSON.stringify(observed)
+        })
+        if (spec.regression.automaticRequest) {
+          let routed
+          try {
+            routed = await api('planProduction', spec.regression.automaticRequest, true)
+          } catch (error) {
+            routed = { error: String(error).slice(0, 500) }
+          }
+          const decision = routed?.decision
+          observed.automaticPlan = decision
+            ? {
+              engine: decision.engine,
+              runtime: decision.runtime ?? null,
+              startable: decision.startable,
+              reasons: decision.reasons ?? [],
+              warnings: decision.warnings ?? []
+            }
+            : routed
+          checks.push({
+            name: 'automatic_routing_selects_mes',
+            result: decision?.engine === 'mental-empire-studio' ? 'PASS' : 'FAIL',
+            detail: `engine ${decision?.engine ?? '(none)'}${routed?.error ? ` — ${routed.error}` : ''}`
+              + (decision?.reasons?.length ? ` — ${decision.reasons[0]}` : '')
+          })
+        }
+        if (spec.regression.expectNoOpenMontageJob) {
+          const jobs = await api('jobs')
+          checks.push({
+            name: 'no_openmontage_job_created',
+            result: (jobs ?? []).length === 0 ? 'PASS' : 'FAIL',
+            detail: `${(jobs ?? []).length} OpenMontage job(s) present in this isolated profile`
+          })
+        }
+        evidence.regression = observed
+      }
+
+      evidence.postconditions = checks
+      evidence.result = checks.every((check) => check.result === 'PASS') ? 'PASS' : 'FAIL'
       evidence.completedAt = new Date().toISOString()
       writeFileSync(join(evidenceDir, 'acceptance.json'), json(evidence))
-      if (evidence.result !== 'PASS') throw new Error(`Expected health ${spec.expectedHealthStatus}, got ${health.status}.`)
+      if (evidence.result !== 'PASS') {
+        const failed = checks.filter((check) => check.result === 'FAIL').map((check) => `${check.name} (${check.detail})`)
+        throw new Error(`Regression checks failed: ${failed.join('; ')}`)
+      }
       return
     }
 
@@ -284,6 +371,7 @@ async function main() {
     let restarted = priorActions.some((action) => action?.action === 'normal_restart')
     let interruptions = priorActions.filter((action) => action?.action === 'interrupt_runner').length
     let cancelled = priorActions.some((action) => action?.action === 'cancel')
+    let fallbackRenderDriven = priorActions.some((action) => action?.action === 'drive_mes_fallback_render')
     let approvalScreenshot = false
     const timeoutMs = Math.max(60_000, Number(spec.timeoutSec ?? 3600) * 1_000)
     const pollStartedAt = Date.now()
@@ -418,6 +506,34 @@ async function main() {
         continue
       }
 
+      // A fallback hands off to MES's own pipeline, which renders afterwards.
+      // Drive that render through the real API so "a real fallback video was
+      // produced" is something this run actually proves.
+      if (
+        spec.actions?.driveMesFallbackRender
+        && !fallbackRenderDriven
+        && job.state === 'fallback_running'
+        && job.fallbackProjectId
+      ) {
+        fallbackRenderDriven = true
+        const record = { action: 'drive_mes_fallback_render', mesProjectId: job.fallbackProjectId }
+        try {
+          await callApi('compose', 'sendToRender', job.fallbackProjectId)
+          record.queued = true
+          await callApi('render', 'all')
+          record.rendered = true
+          const rows = await callApi('render', 'jobs')
+          const row = (Array.isArray(rows) ? rows : []).find((candidate) => candidate?.projectId === job.fallbackProjectId)
+          record.renderRow = row
+            ? { status: row.status, outputPath: row.outputPath ?? null, error: row.error ?? null }
+            : null
+        } catch (error) {
+          record.error = String(error).slice(0, 800)
+        }
+        evidence.actions.push(record)
+        continue
+      }
+
       if (job.state === 'awaiting_approval') {
         if (!approvalScreenshot) {
           approvalScreenshot = await recordCapture(evidence, '02-approval.png')
@@ -457,7 +573,12 @@ async function main() {
 
     // PASS is decided by the output contract, independently re-probed from disk,
     // not by the MES job state on its own.
-    const postconditions = evaluatePostconditions(spec, finalJob, evidence.outputs)
+    const fallbackRenderPath = evidence.actions
+      .filter((action) => action?.action === 'drive_mes_fallback_render')
+      .map((action) => action?.renderRow?.outputPath)
+      .filter(Boolean)
+      .at(-1)
+    const postconditions = evaluatePostconditions(spec, finalJob, evidence.outputs, { fallbackRenderPath })
     evidence.postconditions = postconditions.checks
     evidence.media = postconditions.media
     evidence.result = postconditions.result
