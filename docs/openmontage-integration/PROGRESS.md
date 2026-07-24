@@ -4,7 +4,7 @@ Last updated: 2026-07-24
 
 ## Current status
 
-Phases 1–7 are complete. The MES integration is implemented, tested, packaged, visually validated, and ready for review.
+The original Phase 1–7 implementation is complete, but the strict production-readiness audit is active. Environment propagation and deterministic timeline composition are now implemented and verified; production-runner and blocked live-provider acceptance remain the next audit focus.
 
 ## Completed
 
@@ -16,6 +16,9 @@ Phases 1–7 are complete. The MES integration is implemented, tested, packaged,
 - Inspected the Figma Make context and all supplied reference screenshots.
 - Defined the code-first integration contract in `shared/openmontage.ts`.
 - Published `schemas/job-package.v1.schema.json`.
+- Extended new packages with validated 24 fps editorial timelines, locked timing/assets, motion settings, crossfade, narration duration, and explicit fillable gaps while retaining recovery compatibility for older v1 packages.
+- Added one non-mutating environment resolver for health, assisted initialization, Backlot launch, and managed runners; OS values win, launch overrides are fixed, unsafe process-control keys are blocked, and values never cross MES persistence/telemetry boundaries.
+- Added settings and health UI for an optional environment-file path and value-free load/block status.
 - Added guarded job states, deterministic routing, failure classification, validation, and recursive diagnostic redaction.
 - Added nine focused unit tests.
 - Documented architecture, implementation plan, decisions, and initial test matrix.
@@ -105,6 +108,8 @@ Phases 1–7 are complete. The MES integration is implemented, tested, packaged,
 | `npm run dist:dir` | PASS — Windows unpacked application packaged |
 | Final screenshot dimensions | PASS — ten PNGs, each 1352×868 |
 | Nested OpenMontage status | PASS — clean at `0af32ce5e1e830c33992af1f9179dcdcd536549b` |
+| Environment/timeline focused suite | PASS — 58 tests across contract, environment, health, model, assisted, managed, DB, and production suites |
+| `npm run typecheck` after environment/timeline hardening | PASS |
 
 ## External acceptance limitations
 
@@ -116,4 +121,4 @@ Phases 1–7 are complete. The MES integration is implemented, tested, packaged,
 
 ## Next task
 
-Review the branch and, when a production runner is selected, execute the two explicitly blocked live scenarios without changing the MES/OpenMontage ownership boundary.
+Complete the production-runner audit/implementation, then execute every feasible real local/archive/web output and recovery path without changing the MES/OpenMontage ownership boundary.

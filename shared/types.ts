@@ -1129,6 +1129,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
     openMontage: {
       enabled: true,
       repositoryPath: '',
+      environmentFile: '',
       pythonExecutable: 'python',
       backlotUrl: 'http://127.0.0.1:5150',
       mode: 'assisted',

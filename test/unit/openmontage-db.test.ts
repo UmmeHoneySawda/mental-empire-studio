@@ -101,6 +101,8 @@ describeSqlite('OpenMontage persistence', () => {
       revision: 0
     })
     expect(repos.openMontageJob('om-job-1')?.jobPackage).toEqual(jobPackage())
+    repos.updateOpenMontageJob('om-job-1', { runnerSessionId: '019f-runner-session' })
+    expect(repos.openMontageJob('om-job-1')?.runnerSessionId).toBe('019f-runner-session')
   })
 
   it('guards transitions, increments revisions, and prevents stale state expectations', () => {

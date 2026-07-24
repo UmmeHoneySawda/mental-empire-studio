@@ -94,6 +94,57 @@ describe('OpenMontage job package contract', () => {
     expect(result.valid).toBe(false)
     expect(result.issues).toContainEqual(expect.objectContaining({ code: 'secret_forbidden' }))
   })
+
+  it('validates deterministic scene timing and asset references', () => {
+    const timed = job({
+      timeline: {
+        version: '1.0',
+        fps: 24,
+        durationSeconds: 12,
+        crossfadeSeconds: 0.5,
+        scenes: [
+          {
+            id: 'scene-1',
+            order: 0,
+            type: 'video',
+            assetId: 'asset-1',
+            startSeconds: 0,
+            endSeconds: 8,
+            durationSeconds: 8,
+            locked: true
+          },
+          {
+            id: 'gap-1',
+            order: 1,
+            type: 'gap',
+            startSeconds: 8,
+            endSeconds: 12,
+            durationSeconds: 4,
+            locked: true
+          }
+        ]
+      }
+    })
+    expect(validateOpenMontageJobPackage(timed)).toEqual({ valid: true, issues: [] })
+
+    const invalid = structuredClone(timed)
+    invalid.timeline!.scenes[1] = {
+      id: 'scene-2',
+      order: 1,
+      type: 'image',
+      assetId: 'missing-asset',
+      startSeconds: 7,
+      endSeconds: 12,
+      durationSeconds: 5,
+      locked: false
+    }
+    const result = validateOpenMontageJobPackage(invalid)
+    expect(result.valid).toBe(false)
+    expect(result.issues).toEqual(expect.arrayContaining([
+      expect.objectContaining({ path: '$.timeline.scenes[1].assetId', code: 'invalid_value' }),
+      expect.objectContaining({ path: '$.timeline.scenes[1].startSeconds', code: 'invalid_value' })
+    ]))
+  })
 })
 
 describe('OpenMontage lifecycle', () => {

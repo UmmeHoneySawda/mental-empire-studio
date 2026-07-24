@@ -15,6 +15,10 @@ import {
   type OpenMontageSettings
 } from '../../../shared/openmontage'
 import { captureException, sentryLog } from '../sentry'
+import {
+  assertOpenMontageEnvironmentReady,
+  resolveOpenMontageEnvironment
+} from './environment'
 
 type AssistedRepositories = Pick<
   Repositories,
@@ -32,6 +36,7 @@ export interface OpenMontageAssistedDependencies {
   getSettings: () => OpenMontageSettings
   health: (force?: boolean) => Promise<OpenMontageHealthReport>
   now?: () => Date
+  processEnvironment?: NodeJS.ProcessEnv
   runCommand?: (
     executable: string,
     args: string[],
@@ -128,12 +133,13 @@ Continue production job \`${jobPackage.jobId}\` for project \`${jobPackage.proje
 
 1. Work from the OpenMontage repository and read \`AGENT_GUIDE.md\`, the selected pipeline manifest, and only the relevant stage skills before acting.
 2. Treat the MES job package as the production request. Preserve every source asset marked \`locked: true\`.
-3. Use OpenMontage's canonical project layout and checkpoint protocol. Do not create a parallel state format or overwrite completed checkpoints.
-4. Present provider choices and any required approvals honestly. Backlot is an observer, not an approval mutation API.
-5. Honor an explicit Remotion or HyperFrames choice. If the requested runtime is unavailable, stop with a blocker; do not silently substitute it.
-6. Keep credentials in the OpenMontage/runner environment. Never write keys, tokens, cookies, or authorization values into project artifacts, checkpoints, logs, or MES files.
-7. Preserve the workspace on failure. Report the stage, checkpoint, retryability, and recovery action in plain language.
-8. On completion, place the final video under \`renders/\` and preserve editable output, captions, decision log, assets, and render report when the pipeline produces them.
+3. When \`timeline\` is present, translate its scenes into OpenMontage's canonical scene plan, asset manifest, and edit decisions. Preserve the exact asset and start/end timing of locked scenes and the narration duration. Treat unlocked gap scenes as explicit acquisition/fill opportunities; preserve locked gaps. Request approval before changing locked editorial timing.
+4. Use OpenMontage's canonical project layout and checkpoint protocol. Do not create a parallel state format or overwrite completed checkpoints.
+5. Present provider choices and any required approvals honestly. Backlot is an observer, not an approval mutation API.
+6. Honor an explicit Remotion or HyperFrames choice. If the requested runtime is unavailable, stop with a blocker; do not silently substitute it.
+7. Keep credentials in the OpenMontage/runner environment. Never write keys, tokens, cookies, or authorization values into project artifacts, checkpoints, logs, or MES files.
+8. Preserve the workspace on failure. Report the stage, checkpoint, retryability, and recovery action in plain language.
+9. On completion, place the final video under \`renders/\` and preserve editable output, captions, decision log, assets, and render report when the pipeline produces them.
 
 Begin by loading the job package and reporting the selected provider/runtime plan before starting the first incomplete stage.
 `)
@@ -147,7 +153,7 @@ Resume MES job \`${job.id}\`, OpenMontage project \`${job.projectId}\`, from its
 
 Read \`${job.packagePath ?? 'mes-job-package.v1.json'}\`, \`project.json\`, the selected pipeline manifest, and the newest valid checkpoint. Current MES observer state is \`${job.state}\`${job.currentStage ? ` at stage \`${job.currentStage}\`` : ''}.
 
-Do not regenerate completed stages or delete existing assets/renders. Verify checkpoint/artifact integrity, state the exact stage being resumed, and continue through OpenMontage's checkpoint protocol. If recovery is unsafe, stop with a blocker and a precise recovery action. Keep all credentials out of artifacts and logs.
+Do not regenerate completed stages or delete existing assets/renders. Reconcile the newest checkpoint against the MES package timeline before continuing, preserving locked scene timing and gap scenes. Verify checkpoint/artifact integrity, state the exact stage being resumed, and continue through OpenMontage's checkpoint protocol. If recovery is unsafe, stop with a blocker and a precise recovery action. Keep all credentials out of artifacts and logs.
 `)
 }
 
@@ -195,13 +201,20 @@ export class OpenMontageAssistedService {
       'result = init_project(sys.argv[1], title=sys.argv[2], pipeline_type=sys.argv[3], pipeline_dir=Path(sys.argv[4]))',
       "print('MES_OPENMONTAGE_PROJECT=' + str(result.resolve()))"
     ].join(';')
+    const childEnvironment = await resolveOpenMontageEnvironment(
+      settings,
+      root,
+      this.deps.processEnvironment,
+      { PYTHONIOENCODING: 'utf-8' }
+    )
+    assertOpenMontageEnvironmentReady(childEnvironment.report)
     await this.runCommand(
       settings.pythonExecutable || 'python',
       ['-c', script, projectId, jobPackage.project.title, jobPackage.production.pipeline, projectsRoot],
       {
         cwd: root,
         timeoutMs: 20_000,
-        env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
+        env: childEnvironment.env
       }
     )
     if (!await fileExists(path.join(workspacePath, 'project.json'))) {

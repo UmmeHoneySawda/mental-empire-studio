@@ -6,6 +6,7 @@ import {
   OPENMONTAGE_CONTRACT_VERSION,
   sanitizeOpenMontageDiagnostic,
   type OpenMontageComponentHealth,
+  type OpenMontageEnvironmentReport,
   type OpenMontageHealthReport,
   type OpenMontageProviderCapability,
   type OpenMontageSettings
@@ -13,6 +14,8 @@ import {
 import { OPENMONTAGE_RUNNER_PROTOCOL } from '../../../shared/openmontage-runner'
 import { captureException, sentryLog } from '../sentry'
 import { OpenMontageBacklotClient } from './backlot'
+import { resolveOpenMontageEnvironment } from './environment'
+import { resolveOpenMontageRunnerLaunch } from './runner-launch'
 
 interface ProviderCapabilityProbe {
   capability?: unknown
@@ -32,6 +35,7 @@ export interface OpenMontageHealthProbeOptions {
   candidateRoots?: string[]
   fetchImpl?: typeof fetch
   now?: () => Date
+  processEnvironment?: NodeJS.ProcessEnv
   runCommand?: (
     executable: string,
     args: string[],
@@ -135,6 +139,7 @@ export async function resolveOpenMontageRoot(
   const roots = settings.repositoryPath.trim()
     ? [path.resolve(settings.repositoryPath)]
     : candidates ?? [
+        path.resolve(process.cwd(), '..', 'OpenMontage'),
         path.resolve(process.cwd(), 'OpenMontage'),
         path.resolve(process.cwd())
       ]
@@ -159,6 +164,7 @@ export async function probeOpenMontageHealth(
   let providers: OpenMontageProviderCapability[] = []
   let installedRevision: string | undefined
   let compatibility: OpenMontageHealthReport['compatibility'] = 'unknown'
+  let environment: OpenMontageEnvironmentReport | undefined
   let root: string | undefined
 
   try {
@@ -211,9 +217,28 @@ export async function probeOpenMontageHealth(
       installedRevision?.slice(0, 12)
     ))
 
+    const childEnvironment = await resolveOpenMontageEnvironment(
+      settings,
+      root,
+      options.processEnvironment,
+      { PYTHONIOENCODING: 'utf-8' }
+    )
+    environment = childEnvironment.report
+    if (environment.blockedVariableNames.length) {
+      warnings.push(
+        `Ignored unsafe environment-file variables: ${environment.blockedVariableNames.join(', ')}.`
+      )
+    }
+    if (environment.status === 'invalid' || (environment.explicit && environment.status === 'not-found')) {
+      warnings.push(environment.detail ?? 'The configured OpenMontage environment file is not usable.')
+    }
+
     let pythonAvailable = false
     try {
-      const version = await runCommand(settings.pythonExecutable || 'python', ['--version'], { timeoutMs: 5_000 })
+      const version = await runCommand(settings.pythonExecutable || 'python', ['--version'], {
+        timeoutMs: 5_000,
+        env: childEnvironment.env
+      })
       const versionText = `${version.stdout} ${version.stderr}`.trim()
       pythonAvailable = true
       components.push(component('python', 'available', checkedAt, 'Python environment is callable.', versionText))
@@ -233,7 +258,7 @@ export async function probeOpenMontageHealth(
         const result = await runCommand(settings.pythonExecutable || 'python', ['-c', script], {
           cwd: root,
           timeoutMs: 60_000,
-          env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
+          env: childEnvironment.env
         })
         providerProbe = parseProviderProbe(result.stdout)
         providers = probeToProviders(providerProbe)
@@ -262,12 +287,16 @@ export async function probeOpenMontageHealth(
 
     if (settings.mode === 'assisted') {
       components.push(component('agent_runner', 'limited', checkedAt, 'Assisted handoff does not require a managed runner.'))
-    } else if (settings.runner !== 'none' && settings.runnerExecutable.trim()) {
+    } else if (settings.runner !== 'none') {
       try {
+        const runner = resolveOpenMontageRunnerLaunch(settings)
         const result = await runCommand(
-          settings.runnerExecutable,
-          [...settings.runnerArguments, '--openmontage-protocol-info'],
-          { timeoutMs: 5_000 }
+          runner.executable,
+          [...runner.args, '--openmontage-protocol-info'],
+          {
+            timeoutMs: 10_000,
+            env: { ...childEnvironment.env, ...runner.fixedEnvironment }
+          }
         )
         const marker = 'MES_OPENMONTAGE_RUNNER='
         const line = result.stdout.split(/\r?\n/).findLast((entry) => entry.startsWith(marker))
@@ -292,7 +321,7 @@ export async function probeOpenMontageHealth(
         warnings.push('The configured runner does not support the MES OpenMontage managed protocol.')
       }
     } else {
-      components.push(component('agent_runner', 'unavailable', checkedAt, 'Managed mode requires a configured runner.'))
+      components.push(component('agent_runner', 'unavailable', checkedAt, 'Managed mode requires a selected runner.'))
     }
 
     const pythonOk = components.some((entry) => entry.name === 'python' && entry.status === 'available')
@@ -306,6 +335,9 @@ export async function probeOpenMontageHealth(
     let status: OpenMontageHealthReport['status'] = 'ready'
     if (!pythonOk || compatibility === 'incompatible') status = 'misconfigured'
     else if (!runtimeOk || !managedRunnerOk) status = 'misconfigured'
+    else if (environment.status === 'invalid' || (environment.explicit && environment.status === 'not-found')) {
+      status = 'misconfigured'
+    }
     else if (!backlotOk || compatibility === 'limited') status = 'degraded'
 
     const credentialMap = new Map<string, boolean>()
@@ -321,6 +353,7 @@ export async function probeOpenMontageHealth(
       mode: settings.mode,
       components,
       providers,
+      environment,
       credentials: [...credentialMap.entries()].map(([provider, configured]) => ({
         provider,
         configured,
@@ -356,6 +389,7 @@ export async function probeOpenMontageHealth(
       components,
       providers: [],
       credentials: [],
+      environment,
       checkedAt,
       warnings: [`Health check failed: ${String(sanitizeOpenMontageDiagnostic(error))}`]
     }

@@ -479,6 +479,7 @@ function migrate(d: Database.Database): void {
   ensureColumn(d, 'provider_jobs', 'hostName', 'TEXT')
   ensureColumn(d, 'openmontage_jobs', 'routingDecisionJson', 'TEXT')
   ensureColumn(d, 'openmontage_jobs', 'fallbackProjectId', 'TEXT')
+  ensureColumn(d, 'openmontage_jobs', 'runnerSessionId', 'TEXT')
   d.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_assets_content_id ON assets(id) WHERE id IS NOT NULL')
 
   purgeLegacyDemoSeed(d)
@@ -1075,6 +1076,7 @@ function rowToOpenMontageJob(r: Record<string, unknown>): OpenMontageJobRecord {
     fallbackProjectId: r.fallbackProjectId ? String(r.fallbackProjectId) : undefined,
     lastCheckpointAt: r.lastCheckpointAt ? String(r.lastCheckpointAt) : undefined,
     runnerPid: r.runnerPid == null ? undefined : coerceNum(r.runnerPid, 0),
+    runnerSessionId: r.runnerSessionId ? String(r.runnerSessionId) : undefined,
     errorCategory: r.errorCategory ? r.errorCategory as OpenMontageJobRecord['errorCategory'] : undefined,
     errorCode: r.errorCode ? String(r.errorCode) : undefined,
     errorMessage: r.errorMessage ? String(r.errorMessage) : undefined,
@@ -1676,7 +1678,7 @@ function buildRepositories(d: Database.Database): Repositories {
       const allowed = new Set([
         'routingDecisionJson', 'packagePath', 'workspacePath', 'backlotProjectId', 'currentStage', 'progress', 'attempts',
         'fallbackProjectId',
-        'lastCheckpointAt', 'runnerPid', 'errorCategory', 'errorCode', 'errorMessage', 'startedAt', 'completedAt'
+        'lastCheckpointAt', 'runnerPid', 'runnerSessionId', 'errorCategory', 'errorCode', 'errorMessage', 'startedAt', 'completedAt'
       ])
       const row = Object.fromEntries(Object.entries(patch).filter(([key, value]) => allowed.has(key) && value !== undefined))
       if ('routingDecision' in patch && patch.routingDecision !== undefined) {
@@ -1723,7 +1725,7 @@ function buildRepositories(d: Database.Database): Repositories {
         const allowed = [
           'state', 'routingDecisionJson', 'packagePath', 'workspacePath', 'backlotProjectId',
           'fallbackProjectId', 'currentStage', 'progress',
-          'attempts', 'lastCheckpointAt', 'runnerPid', 'errorCategory', 'errorCode', 'errorMessage',
+          'attempts', 'lastCheckpointAt', 'runnerPid', 'runnerSessionId', 'errorCategory', 'errorCode', 'errorMessage',
           'startedAt', 'completedAt', 'updatedAt'
         ]
         const entries = Object.entries(next).filter(([key, value]) => allowed.includes(key) && value !== undefined)

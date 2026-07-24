@@ -19,6 +19,7 @@ export type OpenMontageMediaControl = 'preserve' | 'improve' | 'fill' | 'automat
 export type OpenMontageAuthoringMode = 'templated' | 'atelier'
 export type OpenMontageEngine = 'mental-empire-studio' | 'openmontage'
 export type OpenMontageAspectRatio = '16:9' | '1:1' | '9:16'
+export const OPENMONTAGE_TIMELINE_FPS = 24 as const
 
 export type OpenMontageStage =
   | 'preparing'
@@ -48,6 +49,30 @@ export interface OpenMontageSourceAsset {
   attribution?: string
 }
 
+export interface OpenMontageTimelineScene {
+  id: string
+  order: number
+  type: 'image' | 'video' | 'text_card' | 'gap'
+  assetId?: string
+  startSeconds: number
+  endSeconds: number
+  durationSeconds: number
+  locked: boolean
+  motion?: {
+    preset: 'off' | 'subtle' | 'cinematic'
+    direction: 'auto' | 'push' | 'pull' | 'left' | 'right' | 'up' | 'down'
+    amount: number
+  }
+}
+
+export interface OpenMontageTimeline {
+  version: '1.0'
+  fps: number
+  durationSeconds: number
+  crossfadeSeconds: number
+  scenes: OpenMontageTimelineScene[]
+}
+
 export interface OpenMontageJobPackage {
   schema: typeof OPENMONTAGE_JOB_SCHEMA
   contractVersion: typeof OPENMONTAGE_CONTRACT_VERSION
@@ -66,6 +91,11 @@ export interface OpenMontageJobPackage {
     language: string
     assets: OpenMontageSourceAsset[]
   }
+  /**
+   * Canonical MES editorial timing. Optional so persisted v1 packages created
+   * before timeline handoff remain readable; all new MES packages include it.
+   */
+  timeline?: OpenMontageTimeline
   production: {
     workflowMode: OpenMontageWorkflowMode
     pipeline: OpenMontagePipeline
@@ -197,6 +227,15 @@ export interface OpenMontageCredentialStatus {
   source: 'openmontage-environment' | 'runner-environment' | 'not-detected'
 }
 
+export interface OpenMontageEnvironmentReport {
+  filePath: string
+  status: 'loaded' | 'not-found' | 'invalid'
+  explicit: boolean
+  loadedVariableCount: number
+  blockedVariableNames: string[]
+  detail?: string
+}
+
 export interface OpenMontageHealthReport {
   contractVersion: typeof OPENMONTAGE_CONTRACT_VERSION
   status: OpenMontageHealthState
@@ -207,6 +246,7 @@ export interface OpenMontageHealthReport {
   components: OpenMontageComponentHealth[]
   providers: OpenMontageProviderCapability[]
   credentials: OpenMontageCredentialStatus[]
+  environment?: OpenMontageEnvironmentReport
   checkedAt: string
   warnings: string[]
 }
@@ -214,6 +254,8 @@ export interface OpenMontageHealthReport {
 export interface OpenMontageSettings {
   enabled: boolean
   repositoryPath: string
+  /** Empty uses <repository>/.env. MES stores this path, never its values. */
+  environmentFile: string
   pythonExecutable: string
   backlotUrl: string
   mode: OpenMontageIntegrationMode
@@ -231,6 +273,7 @@ export interface OpenMontageSettings {
 export const DEFAULT_OPENMONTAGE_SETTINGS: OpenMontageSettings = {
   enabled: true,
   repositoryPath: '',
+  environmentFile: '',
   pythonExecutable: 'python',
   backlotUrl: 'http://127.0.0.1:5150',
   mode: 'assisted',
@@ -269,6 +312,7 @@ export interface OpenMontageJobRecord {
   fallbackProjectId?: string
   lastCheckpointAt?: string
   runnerPid?: number
+  runnerSessionId?: string
   errorCategory?: OpenMontageFailureCategory
   errorCode?: string
   errorMessage?: string
@@ -290,6 +334,7 @@ type OpenMontageJobPatchBase = Partial<Pick<
   | 'progress'
   | 'attempts'
   | 'lastCheckpointAt'
+  | 'runnerSessionId'
   | 'startedAt'
   | 'completedAt'
 >>
@@ -597,6 +642,119 @@ export function validateOpenMontageJobPackage(value: unknown): OpenMontageValida
     }
     if (!Array.isArray(production.approvals)) {
       issue('$.production.approvals', 'invalid_type', 'Approval stages must be an array.')
+    }
+  }
+
+  const timeline = value.timeline
+  if (timeline !== undefined) {
+    if (!isRecord(timeline)) {
+      issue('$.timeline', 'invalid_type', 'Timeline must be an object.')
+    } else {
+      if (timeline.version !== '1.0') {
+        issue('$.timeline.version', 'invalid_value', 'Timeline version must be 1.0.')
+      }
+      if (!Number.isInteger(timeline.fps) || Number(timeline.fps) <= 0) {
+        issue('$.timeline.fps', 'invalid_value', 'Timeline fps must be a positive integer.')
+      }
+      if (typeof timeline.durationSeconds !== 'number'
+        || !Number.isFinite(timeline.durationSeconds)
+        || timeline.durationSeconds < 0) {
+        issue('$.timeline.durationSeconds', 'invalid_value', 'Timeline duration must be a finite non-negative number.')
+      }
+      if (typeof timeline.crossfadeSeconds !== 'number'
+        || !Number.isFinite(timeline.crossfadeSeconds)
+        || timeline.crossfadeSeconds < 0) {
+        issue('$.timeline.crossfadeSeconds', 'invalid_value', 'Timeline crossfade must be a finite non-negative number.')
+      }
+      if (!Array.isArray(timeline.scenes)) {
+        issue('$.timeline.scenes', 'invalid_type', 'Timeline scenes must be an array.')
+      } else {
+        const assetIds = new Set(
+          isRecord(source) && Array.isArray(source.assets)
+            ? source.assets
+              .filter(isRecord)
+              .map((asset) => asset.id)
+              .filter(isNonEmptyString)
+            : []
+        )
+        const sceneIds = new Set<string>()
+        let previousEnd = 0
+        timeline.scenes.forEach((scene, index) => {
+          const scenePath = `$.timeline.scenes[${index}]`
+          if (!isRecord(scene)) {
+            issue(scenePath, 'invalid_type', 'Timeline scene must be an object.')
+            return
+          }
+          if (!isNonEmptyString(scene.id)) {
+            issue(`${scenePath}.id`, 'required', 'Timeline scene id is required.')
+          } else if (sceneIds.has(scene.id)) {
+            issue(`${scenePath}.id`, 'duplicate', `Duplicate timeline scene id: ${scene.id}.`)
+          } else {
+            sceneIds.add(scene.id)
+          }
+          if (scene.order !== index) {
+            issue(`${scenePath}.order`, 'invalid_value', 'Timeline scene order must be contiguous and match array order.')
+          }
+          if (!['image', 'video', 'text_card', 'gap'].includes(String(scene.type))) {
+            issue(`${scenePath}.type`, 'invalid_value', 'Unsupported timeline scene type.')
+          }
+          const requiresAsset = scene.type === 'image' || scene.type === 'video'
+          if (requiresAsset && !isNonEmptyString(scene.assetId)) {
+            issue(`${scenePath}.assetId`, 'required', 'Image and video timeline scenes require an asset id.')
+          } else if (isNonEmptyString(scene.assetId) && !assetIds.has(scene.assetId)) {
+            issue(`${scenePath}.assetId`, 'invalid_value', `Timeline scene references unknown asset: ${scene.assetId}.`)
+          }
+          if (typeof scene.locked !== 'boolean') {
+            issue(`${scenePath}.locked`, 'invalid_type', 'Timeline scene locked must be a boolean.')
+          }
+          const start = scene.startSeconds
+          const end = scene.endSeconds
+          const duration = scene.durationSeconds
+          if (typeof start !== 'number' || !Number.isFinite(start) || start < 0) {
+            issue(`${scenePath}.startSeconds`, 'invalid_value', 'Scene start must be a finite non-negative number.')
+          }
+          if (typeof end !== 'number' || !Number.isFinite(end) || end <= Number(start)) {
+            issue(`${scenePath}.endSeconds`, 'invalid_value', 'Scene end must be finite and greater than its start.')
+          }
+          if (typeof duration !== 'number'
+            || !Number.isFinite(duration)
+            || duration <= 0
+            || (typeof start === 'number'
+              && Number.isFinite(start)
+              && typeof end === 'number'
+              && Number.isFinite(end)
+              && Math.abs(duration - (end - start)) > 0.001)) {
+            issue(`${scenePath}.durationSeconds`, 'invalid_value', 'Scene duration must equal endSeconds minus startSeconds.')
+          }
+          if (typeof start === 'number' && Number.isFinite(start) && start + 0.001 < previousEnd) {
+            issue(`${scenePath}.startSeconds`, 'invalid_value', 'Timeline scenes must not overlap.')
+          }
+          if (typeof end === 'number' && Number.isFinite(end)) {
+            previousEnd = Math.max(previousEnd, end)
+            if (typeof timeline.durationSeconds === 'number' && end - timeline.durationSeconds > 0.001) {
+              issue(`${scenePath}.endSeconds`, 'invalid_value', 'Timeline scene exceeds the declared duration.')
+            }
+          }
+          if (scene.motion !== undefined) {
+            if (!isRecord(scene.motion)) {
+              issue(`${scenePath}.motion`, 'invalid_type', 'Scene motion must be an object.')
+            } else {
+              if (!['off', 'subtle', 'cinematic'].includes(String(scene.motion.preset))) {
+                issue(`${scenePath}.motion.preset`, 'invalid_value', 'Unsupported motion preset.')
+              }
+              if (!['auto', 'push', 'pull', 'left', 'right', 'up', 'down'].includes(String(scene.motion.direction))) {
+                issue(`${scenePath}.motion.direction`, 'invalid_value', 'Unsupported motion direction.')
+              }
+              if (typeof scene.motion.amount !== 'number'
+                || !Number.isFinite(scene.motion.amount)
+                || scene.motion.amount < 0
+                || scene.motion.amount > 100) {
+                issue(`${scenePath}.motion.amount`, 'invalid_value', 'Motion amount must be between 0 and 100.')
+              }
+            }
+          }
+        })
+      }
     }
   }
 

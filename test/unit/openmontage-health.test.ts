@@ -72,14 +72,23 @@ function options(root: string): OpenMontageHealthProbeOptions {
 describe('OpenMontage health probing', () => {
   it('resolves a compatible repository and reports capabilities without credential values', async () => {
     const root = fixtureRoot()
+    fs.writeFileSync(path.join(root, '.env'), 'PEXELS_API_KEY=file-secret-value\n')
     expect(await resolveOpenMontageRoot(settings(), [root])).toBe(root)
-    const report = await probeOpenMontageHealth(settings(), options(root))
+    const probeOptions = options(root)
+    probeOptions.processEnvironment = { PEXELS_API_KEY: 'os-secret-value' }
+    const report = await probeOpenMontageHealth(settings(), probeOptions)
     expect(report).toMatchObject({
       status: 'ready',
       compatibility: 'compatible',
       installationPath: root,
       installedRevision: 'abcdef0123456789',
-      mode: 'assisted'
+      mode: 'assisted',
+      environment: {
+        status: 'loaded',
+        explicit: false,
+        loadedVariableCount: 1,
+        blockedVariableNames: []
+      }
     })
     expect(report.components).toEqual(expect.arrayContaining([
       expect.objectContaining({ name: 'hyperframes', status: 'available' }),
@@ -91,6 +100,12 @@ describe('OpenMontage health probing', () => {
       { provider: 'pexels', configured: false, source: 'not-detected' }
     ]))
     expect(JSON.stringify(report)).not.toMatch(/api.?key.*[=:].*[A-Za-z0-9]{8}/i)
+    expect(JSON.stringify(report)).not.toContain('file-secret-value')
+    expect(JSON.stringify(report)).not.toContain('os-secret-value')
+    const command = vi.mocked(probeOptions.runCommand!)
+    const providerCall = command.mock.calls.find((call) => call[1].includes('-c'))
+    expect(providerCall?.[2].env?.PEXELS_API_KEY).toBe('os-secret-value')
+    expect(providerCall?.[2].env?.PYTHONIOENCODING).toBe('utf-8')
   })
 
   it('reports a missing or disabled installation without launching commands', async () => {
@@ -130,6 +145,17 @@ describe('OpenMontage health probing', () => {
     const report = await probeOpenMontageHealth(settings(), probeOptions)
     expect(report.status).toBe('degraded')
     expect(report.warnings.join(' ')).toMatch(/Backlot disconnected/)
+  })
+
+  it('marks an explicitly configured missing environment file as misconfigured', async () => {
+    const root = fixtureRoot()
+    const report = await probeOpenMontageHealth(
+      settings({ environmentFile: 'credentials/providers.env' }),
+      options(root)
+    )
+    expect(report.status).toBe('misconfigured')
+    expect(report.environment).toMatchObject({ status: 'not-found', explicit: true })
+    expect(report.warnings.join(' ')).toMatch(/environment file was not found/i)
   })
 })
 

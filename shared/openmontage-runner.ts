@@ -120,7 +120,13 @@ export type OpenMontageRunnerEvent =
   | OpenMontageRunnerHeartbeatEvent
   | OpenMontageRunnerCommandAck
 
-export type OpenMontageRunnerCommandName = 'pause' | 'resume' | 'cancel' | 'approve' | 'revise'
+export type OpenMontageRunnerCommandName =
+  | 'pause'
+  | 'resume'
+  | 'cancel'
+  | 'approve'
+  | 'revise'
+  | 'shutdown'
 
 export interface OpenMontageRunnerCommand {
   v: typeof OPENMONTAGE_RUNNER_PROTOCOL_VERSION

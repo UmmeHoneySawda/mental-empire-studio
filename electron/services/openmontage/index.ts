@@ -13,7 +13,8 @@ import {
   type OpenMontageJobRecord,
   type OpenMontageProductionPlan,
   type OpenMontageProductionRequest,
-  type OpenMontageProductionStart
+  type OpenMontageProductionStart,
+  type OpenMontageSettings
 } from '../../../shared/openmontage'
 import { captureException, sentryLog } from '../sentry'
 import { OpenMontageBacklotClient } from './backlot'
@@ -21,6 +22,10 @@ import { normalizeBacklotBaseUrl } from './backlot'
 import { OpenMontageAssistedService } from './assisted'
 import { OpenMontageHealthService } from './health'
 import { OpenMontageManagedService } from './managed'
+import {
+  assertOpenMontageEnvironmentReady,
+  resolveOpenMontageEnvironment
+} from './environment'
 import { startMesFallbackProduction } from './mes-fallback'
 import { OpenMontageProductionService } from './production'
 
@@ -70,21 +75,27 @@ function production(): OpenMontageProductionService {
   return productionService
 }
 
-function runBacklotOpen(
+async function runBacklotOpen(
   root: string,
-  pythonExecutable: string,
+  openMontageSettings: OpenMontageSettings,
   projectId: string,
-  backlotUrl: string
 ): Promise<void> {
-  const base = new URL(normalizeBacklotBaseUrl(backlotUrl))
+  const base = new URL(normalizeBacklotBaseUrl(openMontageSettings.backlotUrl))
   const port = base.port || (base.protocol === 'https:' ? '443' : '80')
+  const childEnvironment = await resolveOpenMontageEnvironment(
+    openMontageSettings,
+    root,
+    process.env,
+    { BACKLOT_PORT: port, PYTHONIOENCODING: 'utf-8' }
+  )
+  assertOpenMontageEnvironmentReady(childEnvironment.report)
   return new Promise((resolve, reject) => {
-    execFile(pythonExecutable || 'python', ['-m', 'backlot', 'open', projectId], {
+    execFile(openMontageSettings.pythonExecutable || 'python', ['-m', 'backlot', 'open', projectId], {
       cwd: root,
       timeout: 20_000,
       windowsHide: true,
       encoding: 'utf8',
-      env: { ...process.env, BACKLOT_PORT: port, PYTHONIOENCODING: 'utf-8' }
+      env: childEnvironment.env
     }, (error, _stdout, stderr) => {
       if (error) {
         reject(new Error(`Backlot could not be opened: ${String(sanitizeOpenMontageDiagnostic(stderr || error.message))}`))
@@ -178,9 +189,8 @@ export const openMontageService = {
     const currentSettings = settings()
     await runBacklotOpen(
       handoff.installationPath,
-      currentSettings.pythonExecutable,
-      handoff.job.projectId,
-      currentSettings.backlotUrl
+      currentSettings,
+      handoff.job.projectId
     )
     return handoff.backlotUrl
   },
@@ -235,4 +245,8 @@ export async function recoverOpenMontageJobs(): Promise<{
     openMontageService.recoverManaged()
   ])
   return { assisted: assistedJobs, managed: managedJobs }
+}
+
+export async function shutdownOpenMontageJobs(): Promise<void> {
+  await managed().shutdown()
 }

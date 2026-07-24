@@ -5,7 +5,10 @@ import Database from 'better-sqlite3'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import { closeDatabase, initDatabase, type Repositories } from '../../electron/db'
 import { OpenMontageAssistedService } from '../../electron/services/openmontage/assisted'
-import { OpenMontageManagedService } from '../../electron/services/openmontage/managed'
+import {
+  OpenMontageManagedService,
+  terminateOpenMontageProcessTree
+} from '../../electron/services/openmontage/managed'
 import {
   DEFAULT_OPENMONTAGE_SETTINGS,
   OPENMONTAGE_CONTRACT_VERSION,
@@ -144,13 +147,36 @@ afterEach(() => closeDatabase())
 const describeSqlite = sqliteBindingReady() ? describe : describe.skip
 
 describeSqlite('OpenMontage managed runner', () => {
+  it('passes repository environment values to the managed runner without persisting them', async () => {
+    const root = tempDir('me-openmontage-managed-root-')
+    fs.writeFileSync(path.join(root, '.env'), 'OPENMONTAGE_TEST_PROVIDER=fixture-secret-value\n')
+    const repos = initDatabase(path.join(tempDir('me-openmontage-managed-db-'), 'app.sqlite'))
+    const { managed } = harness(repos, root, { environmentFile: '.env' })
+    const jobPackage = packageFixture('managed-environment', 'complete')
+    jobPackage.metadata = {
+      fixtureMode: 'complete',
+      requiredEnvironmentVariable: 'OPENMONTAGE_TEST_PROVIDER'
+    }
+    await managed.start(jobPackage)
+    const completed = await managed.waitForState('managed-environment', ['completed'])
+    expect(completed.state).toBe('completed')
+    expect(JSON.stringify(repos.openMontageEvents(completed.id))).not.toContain('fixture-secret-value')
+    expect(JSON.stringify(completed)).not.toContain('fixture-secret-value')
+  })
+
   it('completes through the JSON-lines fixture and persists checkpoint/output evidence', async () => {
     const root = tempDir('me-openmontage-managed-root-')
     const repos = initDatabase(path.join(tempDir('me-openmontage-managed-db-'), 'app.sqlite'))
     const { managed, observeProject } = harness(repos, root)
     await managed.start(packageFixture('managed-complete', 'complete'))
     const completed = await managed.waitForState('managed-complete', ['completed'])
-    expect(completed).toMatchObject({ state: 'completed', progress: 100, attempts: 1, runnerPid: undefined })
+    expect(completed).toMatchObject({
+      state: 'completed',
+      progress: 100,
+      attempts: 1,
+      runnerPid: undefined,
+      runnerSessionId: 'fixture-session-managed-complete'
+    })
     expect(completed.lastCheckpointAt).toBeTruthy()
     expect(repos.openMontageOutputs(completed.id)).toEqual([
       expect.objectContaining({ kind: 'final_mp4', jobId: completed.id })
@@ -226,5 +252,25 @@ describeSqlite('OpenMontage managed runner', () => {
     const completed = await managed.waitForState(pkg.jobId, ['completed'])
     expect(completed.state).toBe('completed')
     expect(completed.attempts).toBe(0)
+  })
+
+  it('uses taskkill with descendant cleanup semantics on Windows', () => {
+    const kill = vi.fn()
+    const taskkill = vi.fn(() => ({
+      pid: 1,
+      output: [],
+      stdout: null,
+      stderr: null,
+      status: 0,
+      signal: null,
+      error: undefined
+    }))
+    terminateOpenMontageProcessTree({ pid: 4812, kill } as never, 'win32', taskkill as never)
+    expect(taskkill).toHaveBeenCalledWith(
+      'taskkill.exe',
+      ['/PID', '4812', '/T', '/F'],
+      expect.objectContaining({ windowsHide: true, stdio: 'ignore' })
+    )
+    expect(kill).not.toHaveBeenCalled()
   })
 })

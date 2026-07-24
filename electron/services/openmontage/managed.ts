@@ -1,6 +1,6 @@
 import { randomUUID } from 'node:crypto'
 import path from 'node:path'
-import { spawn, type ChildProcessWithoutNullStreams } from 'node:child_process'
+import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import type { Repositories } from '../../db'
 import {
   canTransitionOpenMontageJob,
@@ -26,6 +26,11 @@ import {
 } from '../../../shared/openmontage-runner'
 import { captureException, sentryLog } from '../sentry'
 import type { OpenMontageAssistedService } from './assisted'
+import {
+  assertOpenMontageEnvironmentReady,
+  resolveOpenMontageEnvironment
+} from './environment'
+import { resolveOpenMontageRunnerLaunch } from './runner-launch'
 
 type ManagedRepositories = Pick<
   Repositories,
@@ -44,9 +49,11 @@ export interface OpenMontageManagedDependencies {
   getSettings: () => OpenMontageSettings
   observeProject?: (projectId: string) => Promise<unknown>
   spawnRunner?: typeof spawn
+  terminateProcessTree?: (child: ChildProcessWithoutNullStreams) => void
   protocolTimeoutMs?: number
   commandTimeoutMs?: number
   now?: () => Date
+  processEnvironment?: NodeJS.ProcessEnv
 }
 
 interface PendingCommand {
@@ -57,6 +64,51 @@ interface PendingCommand {
 function pathWithin(root: string, candidate: string): boolean {
   const relative = path.relative(path.resolve(root), path.resolve(candidate))
   return !relative || (!relative.startsWith('..') && !path.isAbsolute(relative))
+}
+
+const OPENMONTAGE_STAGE_RANK = {
+  preparing: 0,
+  research: 1,
+  script: 2,
+  scene_plan: 3,
+  assets: 4,
+  edit: 5,
+  compose: 6,
+  export: 7
+} as const
+
+function monotonicStage(
+  current: OpenMontageJobRecord['currentStage'],
+  incoming: NonNullable<OpenMontageJobRecord['currentStage']>
+): NonNullable<OpenMontageJobRecord['currentStage']> {
+  if (!current) return incoming
+  return OPENMONTAGE_STAGE_RANK[incoming] >= OPENMONTAGE_STAGE_RANK[current] ? incoming : current
+}
+
+function latestIsoTimestamp(current: string | undefined, incoming: string): string {
+  if (!current) return incoming
+  return Date.parse(incoming) >= Date.parse(current) ? incoming : current
+}
+
+export function terminateOpenMontageProcessTree(
+  child: Pick<ChildProcessWithoutNullStreams, 'pid' | 'kill'>,
+  platform: NodeJS.Platform = process.platform,
+  runTaskkill: typeof spawnSync = spawnSync
+): void {
+  if (!child.pid) return
+  if (platform === 'win32') {
+    const result = runTaskkill('taskkill.exe', ['/PID', String(child.pid), '/T', '/F'], {
+      windowsHide: true,
+      stdio: 'ignore',
+      timeout: 15_000
+    })
+    if (!result.error && result.status === 0) return
+  }
+  try {
+    child.kill('SIGTERM')
+  } catch {
+    // The process may already have exited between the state check and termination.
+  }
 }
 
 class ManagedRunnerSession {
@@ -71,6 +123,7 @@ class ManagedRunnerSession {
   private eventQueue: Promise<void> = Promise.resolve()
   private pendingCommands = new Map<string, PendingCommand>()
   private settled = false
+  private closing = false
 
   constructor(
     private readonly service: OpenMontageManagedService,
@@ -81,9 +134,9 @@ class ManagedRunnerSession {
   ) {}
 
   async start(): Promise<void> {
-    if (!this.settings.runnerExecutable.trim()) throw new Error('Managed runner executable is not configured.')
+    const runner = resolveOpenMontageRunnerLaunch(this.settings)
     const args = [
-      ...this.settings.runnerArguments,
+      ...runner.args,
       '--openmontage-runner',
       '--protocol', OPENMONTAGE_RUNNER_PROTOCOL,
       '--job-package', this.handoff.packagePath,
@@ -93,12 +146,19 @@ class ManagedRunnerSession {
       ...(this.recover ? ['--resume', '--resume-state', this.handoff.job.state] : [])
     ]
     const spawnRunner = this.service.dependencies.spawnRunner ?? spawn
-    const child = spawnRunner(this.settings.runnerExecutable, args, {
+    const childEnvironment = await resolveOpenMontageEnvironment(
+      this.settings,
+      this.handoff.installationPath,
+      this.service.dependencies.processEnvironment,
+      { PYTHONIOENCODING: 'utf-8' }
+    )
+    assertOpenMontageEnvironmentReady(childEnvironment.report)
+    const child = spawnRunner(runner.executable, args, {
       cwd: this.handoff.installationPath,
       windowsHide: true,
       shell: false,
       stdio: ['pipe', 'pipe', 'pipe'],
-      env: { ...process.env, PYTHONIOENCODING: 'utf-8' }
+      env: { ...childEnvironment.env, ...runner.fixedEnvironment }
     }) as ChildProcessWithoutNullStreams
     this.process = child
     this.service.dependencies.repos.updateOpenMontageJob(this.handoff.job.id, {
@@ -214,9 +274,11 @@ class ManagedRunnerSession {
         break
       }
       case 'stage': {
-        const progress = event.progress == null ? current.progress : Math.round(event.progress)
+        const progress = event.progress == null
+          ? current.progress
+          : Math.max(current.progress, Math.round(event.progress))
         this.service.dependencies.repos.updateOpenMontageJob(current.id, {
-          currentStage: event.stage,
+          currentStage: monotonicStage(current.currentStage, event.stage),
           progress
         })
         if (event.status === 'awaiting_approval' && current.state === 'running') {
@@ -234,8 +296,8 @@ class ManagedRunnerSession {
       }
       case 'checkpoint': {
         this.service.dependencies.repos.updateOpenMontageJob(current.id, {
-          currentStage: event.stage,
-          lastCheckpointAt: event.savedAt
+          currentStage: monotonicStage(current.currentStage, event.stage),
+          lastCheckpointAt: latestIsoTimestamp(current.lastCheckpointAt, event.savedAt)
         })
         this.service.addRunnerEvent(current.id, event, 'checkpoint', 'info', event.message ?? `Checkpoint saved for ${event.stage}.`, eventData)
         if (this.service.dependencies.observeProject) {
@@ -276,6 +338,16 @@ class ManagedRunnerSession {
         break
       }
       case 'activity':
+        if (event.data?.runner_session_id != null) {
+          const runnerSessionId = event.data.runner_session_id
+          if (
+            typeof runnerSessionId !== 'string'
+            || !/^[A-Za-z0-9_-]{8,128}$/.test(runnerSessionId)
+          ) {
+            throw new Error('Runner emitted an invalid session identifier.')
+          }
+          this.service.dependencies.repos.updateOpenMontageJob(current.id, { runnerSessionId })
+        }
         this.service.addRunnerEvent(current.id, event, 'activity', event.level, event.message, {
           ...eventData,
           ...(event.data ?? {})
@@ -323,6 +395,42 @@ class ManagedRunnerSession {
     return accepted
   }
 
+  async shutdown(): Promise<void> {
+    if (this.settled || this.closing) return
+    this.closing = true
+    const current = this.service.dependencies.repos.openMontageJob(this.handoff.job.id)
+    if (!current || isOpenMontageTerminalState(current.state)) return
+    if (current.state === 'running') this.service.transition(current, 'pausing')
+    const accepted = await this.command('shutdown')
+    if (!accepted) {
+      if (this.process) this.service.terminateProcessTree(this.process)
+      this.service.dependencies.repos.updateOpenMontageJob(this.handoff.job.id, { runnerPid: null })
+      return
+    }
+    await new Promise<void>((resolve) => {
+      const child = this.process
+      if (!child || child.exitCode != null) {
+        resolve()
+        return
+      }
+      const timer = setTimeout(() => {
+        this.service.terminateProcessTree(child)
+        resolve()
+      }, 10_000)
+      timer.unref?.()
+      child.once('close', () => {
+        clearTimeout(timer)
+        resolve()
+      })
+    })
+    const latest = this.service.dependencies.repos.openMontageJob(this.handoff.job.id)
+    if (latest && latest.state === 'pausing') {
+      this.service.transition(latest, 'paused', { runnerPid: null })
+    } else if (latest && !isOpenMontageTerminalState(latest.state)) {
+      this.service.dependencies.repos.updateOpenMontageJob(latest.id, { runnerPid: null })
+    }
+  }
+
   private async fail(
     code: string,
     message: string,
@@ -361,14 +469,15 @@ class ManagedRunnerSession {
       })
     }
     this.handshakeReject?.(new Error(failure.message))
-    this.process?.kill()
-    captureException(new Error(failure.message))
+    if (this.process) this.service.terminateProcessTree(this.process)
+    const telemetryMessage = `${failure.code}: managed runner failed during ${stage ?? 'unknown'} stage.`
+    captureException(new Error(telemetryMessage))
     sentryLog.error('openmontage.managed_runner_failed', {
       job_id: this.handoff.job.id,
       project_id: this.handoff.job.projectId,
       failure_category: failure.category,
       error_code: failure.code,
-      error_message: failure.message.slice(0, 500),
+      error_message: telemetryMessage,
       checkpoint_preserved: failure.preservesCheckpoint
     })
   }
@@ -381,7 +490,7 @@ class ManagedRunnerSession {
       pending.resolve(false)
     }
     this.pendingCommands.clear()
-    if (!this.settled) {
+    if (!this.settled && !this.closing) {
       const current = this.service.dependencies.repos.openMontageJob(this.handoff.job.id)
       if (current && !isOpenMontageTerminalState(current.state)) {
         await this.fail(
@@ -406,6 +515,11 @@ export class OpenMontageManagedService {
 
   now(): Date {
     return this.dependencies.now?.() ?? new Date()
+  }
+
+  terminateProcessTree(child: ChildProcessWithoutNullStreams): void {
+    const terminate = this.dependencies.terminateProcessTree ?? terminateOpenMontageProcessTree
+    terminate(child)
   }
 
   requireJob(jobId: string): OpenMontageJobRecord {
@@ -586,6 +700,10 @@ export class OpenMontageManagedService {
       recovered.push(await this.launch({ ...handoff, job: current }, true, false))
     }
     return recovered
+  }
+
+  async shutdown(): Promise<void> {
+    await Promise.allSettled([...this.sessions.values()].map((session) => session.shutdown()))
   }
 
   async waitForState(

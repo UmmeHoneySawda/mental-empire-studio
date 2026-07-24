@@ -43,7 +43,11 @@ flowchart LR
 
 `shared/openmontage.ts` is the code-first contract. The corresponding public schema is `schemas/job-package.v1.schema.json`.
 
-The package contains project inputs, media locks, requested pipeline/runtime, approval gates, output requirements, and fallback policy. It deliberately contains no provider credentials, tokens, passwords, or runner secrets. Runtime validation rejects secret-shaped keys anywhere in the package.
+The package contains project inputs, media locks, requested pipeline/runtime, approval gates, output requirements, fallback policy, and an optional v1 timeline. Every newly created Compose-backed package includes a 24 fps timeline with total narration duration, crossfade, ordered scene placement, effective per-scene motion, locked editorial decisions, and explicit fillable gaps. The field remains optional so jobs persisted before timeline handoff can still recover. Runtime validation rejects duplicate/overlapping scenes, invalid durations/order, unknown asset references, unsupported motion, and scenes outside the declared duration.
+
+Assisted and managed runners translate this neutral MES timeline into OpenMontage's canonical scene plan, asset manifest, and edit decisions. Locked scene assets and timing are immutable without approval. Unlocked gaps identify acquisition opportunities while preserving total narration duration.
+
+The package deliberately contains no provider credentials, tokens, passwords, or runner secrets. Runtime validation rejects secret-shaped keys anywhere in the package.
 
 The contract uses its own version (`mes.openmontage/v1`) instead of pretending OpenMontage exposes a stable library ABI. Adapters translate this stable MES contract into the installed OpenMontage version.
 
@@ -137,6 +141,10 @@ Managed failures are supervised by category. Provider, runtime, and runner failu
 ## Security and credentials
 
 - Provider credentials stay in the OpenMontage environment or external runner environment.
+- An empty environment-file setting resolves to `<OpenMontage repository>/.env`; an explicit path may be absolute or repository-relative. Only the path is persisted.
+- MES parses the file without mutating its own `process.env`, gives OS-provided variables precedence, and applies MES-owned launch overrides last.
+- Environment-file process controls such as `NODE_OPTIONS`, `PYTHONPATH`, `LD_PRELOAD`, `DYLD_*`, and `PATH` are ignored. All OpenMontage Python, Backlot, health, and managed-runner launches use the same resolver.
+- Health reports expose only file status, variable count, and blocked variable names. Values exist only in child-process memory and never enter health IPC, SQLite, prompts, logs, or Sentry.
 - MES stores only provider/configured/source status, never the value.
 - Job packages, SQLite records, IPC payloads, logs, copied recovery prompts, and Sentry events must be credential-free.
 - `sanitizeOpenMontageDiagnostic` applies recursively before a diagnostic crosses a boundary.
@@ -162,7 +170,7 @@ The browser-only `src/mockApi.ts` implements the same surface with in-memory dur
 
 ## External reference baseline
 
-- OpenMontage repository: `OpenMontage/` (independent nested Git repository)
+- OpenMontage repository: `D:\Work\OpenMontage` (independent sibling Git repository)
 - Baseline revision inspected: `0af32ce5e1e830c33992af1f9179dcdcd536549b`
 - Current local probe: Python 3.11.9, Node 22.16.0, FFmpeg, HyperFrames, and Remotion available; the external composer enumerates all 13 committed compositions
 - OpenMontage source remains unmodified

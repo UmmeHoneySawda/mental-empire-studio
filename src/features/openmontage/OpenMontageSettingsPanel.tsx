@@ -135,6 +135,12 @@ export function OpenMontageSettingsPanel(): JSX.Element {
           onChange={(repositoryPath) => save({ repositoryPath })}
         />
         <TextSetting
+          label="Environment file"
+          value={settings.environmentFile}
+          placeholder=".env (relative to the OpenMontage repository)"
+          onChange={(environmentFile) => save({ environmentFile })}
+        />
+        <TextSetting
           label="Python executable"
           value={settings.pythonExecutable}
           placeholder="python"
@@ -220,8 +226,22 @@ export function OpenMontageSettingsPanel(): JSX.Element {
 
       <SettingsSection
         title="Credentials"
-        description="Credential values stay in the OpenMontage or runner environment. MES only receives configured/not-configured status."
+        description="Credential values stay in child-process memory. MES stores only the environment-file path and receives configured/not-configured status."
       >
+        <div className="om-inline-results" style={{ marginBottom: 12 }}>
+          <StatusPill tone={health?.environment?.status === 'loaded' ? 'ok' : health?.environment?.status === 'invalid' ? 'error' : 'neutral'}>
+            {health?.environment?.status === 'loaded'
+              ? `${health.environment.loadedVariableCount} environment variables loaded`
+              : health?.environment?.status === 'invalid'
+                ? 'Environment file invalid'
+                : 'Using inherited environment'}
+          </StatusPill>
+          {health?.environment?.blockedVariableNames.length ? (
+            <StatusPill tone="warn">
+              {health.environment.blockedVariableNames.length} unsafe variable names ignored
+            </StatusPill>
+          ) : null}
+        </div>
         <div className="om-credential-grid">
           {credentials.map((credential) => (
             <div className="om-credential-row" key={credential.label}>

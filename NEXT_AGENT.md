@@ -5,16 +5,18 @@
 - MES root: `D:\Work\mental-empire-studio`
 - Branch: `feat/openmontage-integration`
 - Base commit: `4d78fab8709a2cd2811e50bc72d8fd16c785c418`
-- Latest completed milestone: Phase 7 — validation and handoff
-- OpenMontage root: `D:\Work\mental-empire-studio\OpenMontage`
+- Latest completed milestone: Environment isolation and deterministic timeline composition (uncommitted at this handoff update)
+- OpenMontage root: `D:\Work\OpenMontage`
 - OpenMontage revision: `0af32ce5e1e830c33992af1f9179dcdcd536549b`
-- Current phase: Complete — ready for review
+- Current phase: Strict production-readiness audit — production runner and live acceptance
 
 ## Completed
 
 - Architecture and runtime investigation.
 - Figma/reference review.
 - MES-owned job package v1 and JSON Schema.
+- Backward-compatible v1 timeline with 24 fps scene timing, crossfade, motion, locks, and explicit gaps.
+- Central environment-file resolver shared by health, assisted, Backlot, and managed launches, with precedence/process-control hardening and value-free reporting.
 - Lifecycle, routing, failure taxonomy, validation, and redaction.
 - Focused unit tests and continuity docs.
 - Idempotent SQLite integration job/event/output persistence with guarded transitions.
@@ -57,11 +59,13 @@
 - `electron/preload.ts`
 - `electron/services/openmontage/backlot.ts`
 - `electron/services/openmontage/health.ts`
+- `electron/services/openmontage/environment.ts`
 - `electron/services/openmontage/index.ts`
 - `shared/types.ts`
 - `test/unit/openmontage-backlot.test.ts`
 - `test/unit/openmontage-db.test.ts`
 - `test/unit/openmontage-health.test.ts`
+- `test/unit/openmontage-environment.test.ts`
 - `test/unit/openmontage-ipc-validation.test.ts`
 - `electron/main.ts`
 - `electron/services/openmontage/assisted.ts`
@@ -89,7 +93,7 @@
 - `docs/openmontage-integration/TEST_MATRIX.md`
 - `NEXT_AGENT.md`
 
-The pre-existing untracked `OpenMontage/` and `docs/openmontage-integration/PRD.md` are user-provided. Do not stage the nested OpenMontage repository as MES content.
+The OpenMontage checkout was moved safely to the sibling `D:\Work\OpenMontage`. The user-provided `docs/openmontage-integration/PRD.md` remains untracked until the hygiene milestone commit.
 
 ## Tests run
 
@@ -105,7 +109,7 @@ npm test -- --run test/unit/openmontage-production.test.ts test/unit/openmontage
 npm test -- --run test/unit/openmontage-ui-model.test.ts
 ```
 
-All pass. The full suite reports 69 passing files and 574 passing tests with two documented skips. The opt-in live probe passes against the checked-out external repository and now requires Remotion. TypeScript, production build, Electron smokes, unpacked packaging, and all ten saved 1352×868 screenshots also pass.
+The new environment/timeline focused suites pass 58 tests across contract, environment, health, model, assisted, managed, database, and production paths. TypeScript is clean. The previous full suite reports 69 passing files and 574 passing tests with two documented skips; full-suite/build/package verification for the new milestone is still pending.
 
 ## Current environment and blockers
 
@@ -114,17 +118,18 @@ All pass. The full suite reports 69 passing files and 574 passing tests with two
 - Managed mode needs a configured runner that proves `mes.openmontage.runner/v1`; the test fixture is not a production runner.
 - Backlot is read-only; do not invent approval/control HTTP endpoints.
 - Web Content and Open Archival Footage are deliberately recorded as blocked live acceptance scenarios until a supported production runner and its provider/approval flow are available.
-- `better-sqlite3` is currently built for Electron after smoke/package verification. Rebuild it for Node before rerunning SQLite-backed Vitest suites, then rebuild it for Electron again before app launch or packaging.
+- `better-sqlite3` is currently built for Node after the environment/timeline SQLite and subprocess suites. Rebuild it for Electron before app launch, smoke, or packaging.
 
 ## Exact next task
 
-Review the committed branch. If a production runner is configured later, execute the blocked Web Content and Open Archival Footage scenarios and update only their acceptance rows with real run evidence.
+Finish the production-runner audit/implementation, verify the environment/timeline milestone with the full suite and Electron packaging gates, then execute every feasible real local/archive/web output and recovery scenario. Keep unavailable credential/provider cases explicitly blocked.
 
 ## Useful commands
 
 ```powershell
 git status --short --branch
 npm test -- --run test/unit/openmontage-contracts.test.ts
+npx vitest run test/unit/openmontage-environment.test.ts test/unit/openmontage-health.test.ts test/unit/openmontage-ui-model.test.ts
 npm run typecheck
 npm run build
 git -C OpenMontage status --short --branch

@@ -137,3 +137,15 @@
 **Decision:** Report Local Assets as a deterministic integration-boundary pass, while keeping Web Content and Open Archival Footage blocked until a supported production agent runner completes their provider and approval stages.
 
 **Reason:** The MES adapter, persistence, subprocess, recovery, and output contracts can be validated deterministically. OpenMontage itself is intentionally agent-governed; a fixture or capability probe must never be presented as a live provider production.
+
+## D-024 — One sanitized child environment for every OpenMontage process
+
+**Decision:** Resolve an optional repository-relative or absolute environment file centrally, prefer OS values over file values, apply MES launch overrides last, and reject execution-control keys from the file. Persist and report only its path, status, counts, and blocked names.
+
+**Reason:** A packaged GUI does not reliably inherit the provider variables available in an operator's shell, while copying credential values into MES settings would violate the security boundary. Central resolution makes health, workspace initialization, Backlot, and managed execution consistent without mutating MES's own environment.
+
+## D-025 — MES editorial timing is a backward-compatible v1 handoff
+
+**Decision:** New Compose-backed v1 packages include a validated 24 fps timeline with narration duration, crossfade, ordered scene ranges, asset references, motion, locks, and explicit gaps. The field is optional only for recovery of older persisted v1 packages.
+
+**Reason:** Asset order alone cannot reproduce an existing MES edit. A neutral MES timeline gives assisted and managed adapters enough deterministic information to produce OpenMontage scene plans, asset manifests, and edit decisions while preserving locked editorial work and exposing unlocked gaps as acquisition opportunities.

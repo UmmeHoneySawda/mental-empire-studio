@@ -61,6 +61,53 @@
         }
       }
     },
+    "timeline": {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["version", "fps", "durationSeconds", "crossfadeSeconds", "scenes"],
+      "properties": {
+        "version": { "const": "1.0" },
+        "fps": { "type": "integer", "minimum": 1 },
+        "durationSeconds": { "type": "number", "minimum": 0 },
+        "crossfadeSeconds": { "type": "number", "minimum": 0 },
+        "scenes": {
+          "type": "array",
+          "items": {
+            "type": "object",
+            "additionalProperties": false,
+            "required": [
+              "id",
+              "order",
+              "type",
+              "startSeconds",
+              "endSeconds",
+              "durationSeconds",
+              "locked"
+            ],
+            "properties": {
+              "id": { "type": "string", "minLength": 1 },
+              "order": { "type": "integer", "minimum": 0 },
+              "type": { "enum": ["image", "video", "text_card", "gap"] },
+              "assetId": { "type": "string", "minLength": 1 },
+              "startSeconds": { "type": "number", "minimum": 0 },
+              "endSeconds": { "type": "number", "exclusiveMinimum": 0 },
+              "durationSeconds": { "type": "number", "exclusiveMinimum": 0 },
+              "locked": { "type": "boolean" },
+              "motion": {
+                "type": "object",
+                "additionalProperties": false,
+                "required": ["preset", "direction", "amount"],
+                "properties": {
+                  "preset": { "enum": ["off", "subtle", "cinematic"] },
+                  "direction": { "enum": ["auto", "push", "pull", "left", "right", "up", "down"] },
+                  "amount": { "type": "number", "minimum": 0, "maximum": 100 }
+                }
+              }
+            }
+          }
+        }
+      }
+    },
     "production": {
       "type": "object",
       "additionalProperties": false,

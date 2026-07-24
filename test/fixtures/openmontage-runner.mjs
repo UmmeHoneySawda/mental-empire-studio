@@ -27,6 +27,7 @@ if (!args.includes('--openmontage-runner') || arg('--protocol') !== PROTOCOL || 
 
 const jobPackage = JSON.parse(fs.readFileSync(packagePath, 'utf8'))
 const mode = jobPackage.metadata?.fixtureMode || 'complete'
+const requiredEnvironmentVariable = jobPackage.metadata?.requiredEnvironmentVariable
 let sequence = 0
 let eventCounter = 0
 let finished = false
@@ -72,8 +73,21 @@ emit('hello', {
   runnerVersion: 'fixture-1',
   capabilities: ['pause', 'resume', 'cancel', 'approval', 'revision', 'recovery']
 })
+emit('activity', {
+  level: 'info',
+  message: 'Fixture runner session established.',
+  data: { runner_session_id: `fixture-session-${jobId}` }
+})
 
-if (mode === 'crash') {
+if (typeof requiredEnvironmentVariable === 'string' && !process.env[requiredEnvironmentVariable]) {
+  emit('state', { state: 'running' })
+  emit('failed', {
+    code: 'ENVIRONMENT_MISSING',
+    message: 'A required fixture environment variable was not provided.',
+    stage: 'preparing',
+    checkpointPreserved: true
+  })
+} else if (mode === 'crash') {
   emit('state', { state: 'running' })
   process.stderr.write('Authorization: Bearer fixture.secret.value\n')
   setTimeout(() => process.exit(2), 30)

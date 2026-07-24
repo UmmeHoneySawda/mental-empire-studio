@@ -48,6 +48,22 @@ function packageFixture(patch: Partial<OpenMontageJobPackage> = {}): OpenMontage
         locked: true
       }]
     },
+    timeline: {
+      version: '1.0',
+      fps: 24,
+      durationSeconds: 12,
+      crossfadeSeconds: 0.5,
+      scenes: [{
+        id: 'scene-1',
+        order: 0,
+        type: 'video',
+        assetId: 'locked-1',
+        startSeconds: 0,
+        endSeconds: 12,
+        durationSeconds: 12,
+        locked: true
+      }]
+    },
     production: {
       workflowMode: 'openmontage',
       pipeline: 'hybrid',
@@ -103,7 +119,11 @@ function dependencies(
   root: string,
   options: { remotion?: boolean; fail?: string } = {}
 ): OpenMontageAssistedDependencies & { runCommand: ReturnType<typeof vi.fn> } {
-  const runCommand = vi.fn(async (_executable: string, args: string[]) => {
+  const runCommand = vi.fn(async (
+    _executable: string,
+    args: string[],
+    _commandOptions: { cwd: string; timeoutMs: number; env: NodeJS.ProcessEnv }
+  ) => {
     if (options.fail) throw new Error(options.fail)
     const projectId = args[2]
     const title = args[3]
@@ -126,6 +146,7 @@ function dependencies(
     }),
     health: async () => health(root, options.remotion ?? true),
     now: () => new Date('2026-07-24T12:00:00.000Z'),
+    processEnvironment: { PEXELS_API_KEY: 'child-only-value' },
     runCommand
   }
 }
@@ -151,10 +172,13 @@ describeSqlite('OpenMontage assisted handoff', () => {
       .toMatchObject({ source: { assets: [expect.objectContaining({ id: 'locked-1', locked: true })] } })
     expect(fs.readFileSync(path.join(handoff.workspacePath, 'project.json'), 'utf8')).toContain('hybrid')
     expect(handoff.instruction).toContain('Backlot is an observer')
+    expect(handoff.instruction).toContain('canonical scene plan, asset manifest, and edit decisions')
     expect(handoff.recoveryPrompt).toContain('Do not regenerate completed stages')
     expect(repos.openMontageEvents(handoff.job.id).map((event) => event.type))
       .toEqual(['state', 'state', 'state', 'state'])
     expect(deps.runCommand).toHaveBeenCalledTimes(1)
+    expect(deps.runCommand.mock.calls[0][2].env.PEXELS_API_KEY).toBe('child-only-value')
+    expect(JSON.stringify(handoff)).not.toContain('child-only-value')
   })
 
   it('is idempotent when the same prepared package is submitted again', async () => {

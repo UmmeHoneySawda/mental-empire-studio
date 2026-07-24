@@ -9,6 +9,9 @@ Legend: PASS = executed with evidence; PENDING = not implemented/executed; BLOCK
 | Job package | Valid v1 package accepted | PASS | `openmontage-contracts.test.ts` |
 | Job package | Duplicate media IDs rejected | PASS | `openmontage-contracts.test.ts` |
 | Security | Secret-shaped keys rejected | PASS | `openmontage-contracts.test.ts` |
+| Timeline | Ordered ranges, duration math, overlap, and asset references | PASS | `openmontage-contracts.test.ts`, `openmontage-ui-model.test.ts` |
+| Environment | Quote parsing, precedence, fixed overrides, blocked process controls | PASS | `openmontage-environment.test.ts` |
+| Environment | Missing default allowed; missing explicit/invalid file fails closed without values | PASS | `openmontage-environment.test.ts`, `openmontage-health.test.ts` |
 | Lifecycle | Valid transitions and terminal protection | PASS | `openmontage-contracts.test.ts` |
 | Routing | Healthy automatic request selects OpenMontage/Remotion | PASS | `openmontage-contracts.test.ts` |
 | Routing | Unavailable automatic request selects MES | PASS | `openmontage-contracts.test.ts` |
@@ -33,6 +36,7 @@ Legend: PASS = executed with evidence; PENDING = not implemented/executed; BLOCK
 | Assisted | Package/workspace/prompt creation and restart recovery | PASS — 7 fixture-backed tests |
 | Managed | Protocol handshake and malformed/oversized event rejection | PASS — 5 tests |
 | Managed | Fixture runner start/pause/resume/cancel/approval/revision | PASS — real Node subprocess |
+| Managed | Repository environment reaches runner without persistence/event leakage | PASS — real Node subprocess |
 | Managed | Crash, stall, invalid output, and restart recovery | PASS — real Node subprocess |
 | Routing | Forced MES, forced OpenMontage, Automatic, and tampered/stale plans | PASS |
 | Routing | Documentary Montage rejects missing/non-Remotion runtime | PASS |
@@ -42,7 +46,7 @@ Legend: PASS = executed with evidence; PENDING = not implemented/executed; BLOCK
 | Fallback | Adapter failure is terminal and secret-redacted | PASS |
 | Sentry | Plan/start/retry/failure/fallback fields are structured and redacted | PASS — lifecycle/fault fixtures |
 | IPC | Health/read/control APIs aligned across NativeApi, preload, and IPC; IDs/text validated | PASS |
-| Renderer model | Compose inputs, dimensions, locked media, state views, and output formatting | PASS — 5 tests |
+| Renderer model | Compose inputs, dimensions, locked media/timing, motion, fillable gaps, state views, and output formatting | PASS — 6 tests |
 
 ## UI coverage
 

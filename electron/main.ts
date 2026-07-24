@@ -40,7 +40,7 @@ import { reconcileNonTerminalProviderJobs, startTalkingPhotosPoller, stopTalking
 import { reconcileInterruptedConnectionOnStartup } from './providers/talkingphotos/session'
 import { assertDisposableSmokeProfile, prepareSmokeUserDataDir } from './services/smokeSafety'
 import { createServer } from 'node:http'
-import { recoverOpenMontageJobs } from './services/openmontage'
+import { recoverOpenMontageJobs, shutdownOpenMontageJobs } from './services/openmontage'
 
 const __dirname = dirname(fileURLToPath(import.meta.url))
 
@@ -74,7 +74,7 @@ app.setAppUserModelId('com.mentalempire.studio')
 // harnesses, so the code that actually runs the destructive work is permanently
 // required to re-verify disposability, not just something checked once here at
 // startup — a future refactor of this block can't silently reopen the hole.
-if (process.env['ME_SMOKE'] || process.env['ME_SHOOT']) {
+if (process.env['ME_SMOKE'] || process.env['ME_SHOOT'] || process.env['ME_OPENMONTAGE_ACCEPTANCE']) {
   const resolvedOverride = prepareSmokeUserDataDir(process.env['ME_SMOKE_USERDATA_DIR'], app.getPath('userData'))
   if (!resolvedOverride) process.exit(1) // prepareSmokeUserDataDir's default `fail` already exits; this is belt-and-suspenders.
   app.setPath('userData', resolvedOverride)
@@ -92,7 +92,7 @@ setSentryEnabled(!telemetryForcedOff() && initSettings().telemetryEnabled)
 
 // Single-instance: a second launch focuses the existing window instead of starting
 // a duplicate (important once the app lives in the tray). Skipped in headless smokes.
-if (!process.env['ME_SMOKE'] && !process.env['ME_SHOOT'] && !app.requestSingleInstanceLock()) {
+if (!process.env['ME_SMOKE'] && !process.env['ME_SHOOT'] && !process.env['ME_OPENMONTAGE_ACCEPTANCE'] && !app.requestSingleInstanceLock()) {
   app.quit()
 }
 app.on('second-instance', () => showWindow())
@@ -1957,13 +1957,25 @@ app.whenReady().then(() => {
   })
 })
 
-app.on('before-quit', () => {
+let openMontageShutdownComplete = false
+app.on('before-quit', (event) => {
   isQuitting = true
   scheduler.stop()
   stopAutomationSupervisor()
   stopTalkingPhotosPoller()
   // Tear down the hidden GPU render-worker window if it was created.
   destroyGpuWorker()
+  if (!openMontageShutdownComplete) {
+    event.preventDefault()
+    void shutdownOpenMontageJobs()
+      .catch((error) => L.warn(`openmontage shutdown failed: ${(error as Error).message}`))
+      .finally(() => {
+        openMontageShutdownComplete = true
+        closeDatabase()
+        app.quit()
+      })
+    return
+  }
   // Close the DB here too: with the tray enabled, the real quit comes through here
   // (not window-all-closed), so this is the only path that checkpoints the WAL cleanly.
   closeDatabase()
@@ -1974,7 +1986,6 @@ app.on('window-all-closed', () => {
   // (except macOS, which conventionally keeps apps alive).
   if (getSettings().background.tray) return
   if (process.platform !== 'darwin') {
-    closeDatabase()
     app.quit()
   }
 })

@@ -139,13 +139,30 @@ function StageTimeline({ job }: { job: OpenMontageJobRecord }): JSX.Element {
 
 function RuntimeModal({
   value,
+  health,
   onChange,
   onClose
 }: {
   value: OpenMontageRuntime
+  health: OpenMontageHealthReport | null
   onChange: (value: OpenMontageRuntime) => void
   onClose: () => void
 }): JSX.Element {
+  useEffect(() => {
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') onClose()
+    }
+    window.addEventListener('keydown', onKeyDown)
+    return () => window.removeEventListener('keydown', onKeyDown)
+  }, [onClose])
+  const runtimeStatus = (runtime: 'remotion' | 'hyperframes'): string => (
+    health?.components.find((component) => component.name === runtime)?.status ?? 'unknown'
+  )
+  const remotionStatus = runtimeStatus('remotion')
+  const hyperFramesStatus = runtimeStatus('hyperframes')
+  const runtimeDisabled = (status: string): boolean => (
+    ['unavailable', 'misconfigured', 'incompatible'].includes(status)
+  )
   return (
     <div className="om-modal-backdrop" role="presentation" onMouseDown={onClose}>
       <div className="om-modal" role="dialog" aria-modal="true" aria-labelledby="runtime-title" onMouseDown={(event) => event.stopPropagation()}>
@@ -157,8 +174,8 @@ function RuntimeModal({
           <Btn variant="ghost" onClick={onClose}>Close</Btn>
         </div>
         <div className="om-runtime-grid">
-          <button type="button" className={`om-runtime-card ed-focus ${value === 'remotion' ? 'is-selected' : ''}`} onClick={() => onChange('remotion')}>
-            <div className="om-runtime-title"><strong>Remotion</strong><StatusPill tone="accent">Recommended</StatusPill></div>
+          <button type="button" aria-pressed={value === 'remotion'} disabled={runtimeDisabled(remotionStatus)} className={`om-runtime-card ed-focus ${value === 'remotion' ? 'is-selected' : ''}`} onClick={() => onChange('remotion')}>
+            <div className="om-runtime-title"><strong>Remotion</strong><StatusPill tone={healthTone(remotionStatus)}>{remotionStatus}</StatusPill></div>
             <ul>
               <li>React-based composition</li>
               <li>Best for scene-driven storytelling</li>
@@ -167,8 +184,8 @@ function RuntimeModal({
             </ul>
             <p>Best fit for narration, stock footage, captions, and auditable scene-based editing.</p>
           </button>
-          <button type="button" className={`om-runtime-card ed-focus ${value === 'hyperframes' ? 'is-selected' : ''}`} onClick={() => onChange('hyperframes')}>
-            <div className="om-runtime-title"><strong>HyperFrames</strong><StatusPill tone="ok">Available</StatusPill></div>
+          <button type="button" aria-pressed={value === 'hyperframes'} disabled={runtimeDisabled(hyperFramesStatus)} className={`om-runtime-card ed-focus ${value === 'hyperframes' ? 'is-selected' : ''}`} onClick={() => onChange('hyperframes')}>
+            <div className="om-runtime-title"><strong>HyperFrames</strong><StatusPill tone={healthTone(hyperFramesStatus)}>{hyperFramesStatus}</StatusPill></div>
             <ul>
               <li>HTML, CSS, and GSAP</li>
               <li>Best for kinetic typography</li>
@@ -562,13 +579,15 @@ function ProductionPlan({
   onBack: () => void
   onStart: () => void
 }): JSX.Element {
-  const providerLabels = ['Archive.org', 'Wikimedia Commons', 'Pexels', 'Unsplash', 'Groq', 'FFmpeg', 'Remotion']
-  const statusFor = (label: string): string => {
-    if (label === 'FFmpeg' || label === 'Remotion') {
-      return plan.health.components.find((component) => component.name === label.toLowerCase())?.status || 'unknown'
-    }
-    return plan.health.providers.find((provider) => provider.label.toLowerCase().includes(label.toLowerCase().split(' ')[0]))?.status || 'unknown'
-  }
+  const capabilityRows = [
+    ...plan.health.providers.map((provider) => ({ label: provider.label, status: provider.status })),
+    ...plan.health.components
+      .filter((component) => ['ffmpeg', 'remotion', 'hyperframes', 'backlot', 'agent_runner'].includes(component.name))
+      .map((component) => ({ label: humanizeOpenMontageLabel(component.name), status: component.status }))
+  ]
+  const hyperFramesAvailable = plan.health.components.some((component) => (
+    component.name === 'hyperframes' && component.status === 'available'
+  ))
   return (
     <>
       <PageHeader eyebrow="Automatic workflow decision" title="Production plan ready" subtitle="MES evaluated the creative brief against current local capabilities. Review the evidence before starting." />
@@ -592,15 +611,15 @@ function ProductionPlan({
             <ul>{plan.decision.reasons.map((reason) => <li key={reason}><Icon name="check" size={14} /><span>{reason}</span></li>)}</ul>
           </Card>
           <Card className="om-provider-strip" pad={16}>
-            {providerLabels.map((label) => <div key={label}><span>{label}</span><StatusPill tone={healthTone(statusFor(label))}>{statusFor(label)}</StatusPill></div>)}
+            {capabilityRows.map(({ label, status }) => <div key={label}><span>{label}</span><StatusPill tone={healthTone(status)}>{status}</StatusPill></div>)}
           </Card>
           {plan.decision.warnings.length > 0 && <Banner kind="info">{plan.decision.warnings.join(' ')}</Banner>}
-          {!plan.decision.warnings.length && plan.decision.runtime === 'remotion' && <Banner kind="info">HyperFrames is available, but Remotion is recommended for this scene-driven production.</Banner>}
+          {!plan.decision.warnings.length && plan.decision.runtime === 'remotion' && hyperFramesAvailable && <Banner kind="info">HyperFrames is available, but the routing decision selected Remotion for this scene-driven production.</Banner>}
           {error && <Banner kind="error" style={{ marginTop: 12 }}>{error}</Banner>}
         </div>
         <Card className="om-plan-aside" pad={20}>
-          <div className="om-section-kicker">Confidence</div>
-          <div className="om-confidence-ring"><strong>{plan.decision.startable ? 'High' : 'Low'}</strong><span>route confidence</span></div>
+          <div className="om-section-kicker">Launch decision</div>
+          <div className="om-confidence-ring"><strong>{plan.decision.startable ? 'Ready' : 'Blocked'}</strong><span>validated route</span></div>
           <p>Health was checked {new Date(plan.health.checkedAt).toLocaleTimeString()}. The plan is rejected if its package or installation state becomes stale before launch.</p>
           <div className="om-plan-actions"><Btn variant="ghost" onClick={onBack}>Edit Plan</Btn><Btn variant="primary" disabled={starting || !plan.decision.startable} onClick={onStart}>{starting ? 'Starting…' : 'Start Production'}</Btn></div>
         </Card>
@@ -637,12 +656,16 @@ function LiveProduction({
   onCancel: () => void
   onLogs: () => void
 }): JSX.Element {
-  const scene = Math.max(1, Math.round((job.progress / 100) * 65))
+  const latestEvent = events.reduce<OpenMontageJobEvent | undefined>(
+    (latest, event) => !latest || event.sequence > latest.sequence ? event : latest,
+    undefined
+  )
+  const currentStage = job.currentStage ?? 'preparing'
   return (
     <>
       <div className="om-job-topbar">
         <div><div className="om-section-kicker">Live OpenMontage production</div><h1>{job.title}</h1></div>
-        <StatusPill tone="accent">Running</StatusPill>
+        <StatusPill tone="accent">{humanizeOpenMontageLabel(job.state)}</StatusPill>
         <span className="om-elapsed">Elapsed {formatOpenMontageElapsed(job.startedAt)}</span>
         <Btn variant="ghost" onClick={onPause}><Icon name="pause" size={14} /> Pause</Btn>
         <Btn variant="ghost" onClick={onCancel}><Icon name="stop" size={14} /> Cancel</Btn>
@@ -651,28 +674,34 @@ function LiveProduction({
       <Card className="om-progress-shell" pad={22}>
         <StageTimeline job={job} />
         <div className="om-active-operation">
-          <div><div className="om-section-kicker">Active operation</div><h2>Selecting footage for Scene {scene} of 65</h2><p>{job.errorMessage || `The agent is scoring relevance, rights, quality, and visual continuity for the ${STAGE_COPY[job.currentStage ?? 'assets']} checkpoint.`}</p></div>
+          <div>
+            <div className="om-section-kicker">Active operation</div>
+            <h2>{STAGE_COPY[currentStage]}</h2>
+            <p>{job.errorMessage || latestEvent?.message || 'Waiting for the managed runner to report its next durable event.'}</p>
+          </div>
           <strong>{job.progress}%</strong>
         </div>
         <div className="om-progress-track"><span style={{ width: `${job.progress}%` }} /></div>
       </Card>
       <div className="om-live-layout">
-        <Card className="om-scene-review" pad={0}>
-          <div className="om-scene-art"><span>SCENE {scene}</span><Icon name="film" size={38} /><strong>Candidate footage preview</strong></div>
-          <div className="om-scene-details">
-            <div><div className="om-section-kicker">Search queries</div><p>quiet city at dawn · disciplined morning routine · cinematic natural light</p></div>
-            <div className="om-scene-metrics"><Metric label="Provider" value="Archive.org" /><Metric label="Relevance" value="94 / 100" tone="ok" /><Metric label="License" value="Cleared" tone="ok" /></div>
-            <div className="om-scene-actions"><Btn variant="soft"><Icon name="lock" size={14} /> Lock</Btn><Btn variant="ghost">Replace</Btn><Btn variant="ghost"><Icon name="play" size={14} /> Preview</Btn></div>
+        <Card className="om-scene-review" pad={22}>
+          <div className="om-section-kicker">Managed runner</div>
+          <h2>Real process state</h2>
+          <p>The values below come from the persisted MES job and runner event stream.</p>
+          <div className="om-scene-metrics">
+            <Metric label="Process ID" value={job.runnerPid ? String(job.runnerPid) : 'Checkpoint-stopped'} />
+            <Metric label="Session" value={job.runnerSessionId || 'Pending'} />
+            <Metric label="Project" value={job.projectId} />
           </div>
+          <p style={{ overflowWrap: 'anywhere' }}><strong>Workspace</strong><br />{job.workspacePath || 'Not materialized yet'}</p>
         </Card>
         <Card className="om-live-aside" pad={18}>
           <div className="om-section-kicker">Production telemetry</div>
-          <Metric label="Current stage" value={STAGE_COPY[job.currentStage ?? 'preparing']} />
-          <Metric label="Completed scenes" value={`${Math.max(0, scene - 1)} / 65`} />
-          <Metric label="API cost" value="$1.84" />
+          <Metric label="Current stage" value={STAGE_COPY[currentStage]} />
+          <Metric label="Pipeline" value={job.pipeline ? humanizeOpenMontageLabel(job.pipeline) : 'Pending'} />
+          <Metric label="Runtime" value={job.runtime ? humanizeOpenMontageLabel(job.runtime) : 'Pending'} />
           <Metric label="Last checkpoint" value={job.lastCheckpointAt ? new Date(job.lastCheckpointAt).toLocaleTimeString() : 'Pending'} />
-          <Metric label="Active provider" value="Archive.org" />
-          <Metric label="Retry count" value={`${job.attempts} / 3`} tone={job.attempts ? 'warn' : 'ok'} />
+          <Metric label="Attempts" value={String(job.attempts)} tone={job.attempts > 1 ? 'warn' : 'ok'} />
           <Metric label="Fallback status" value={job.fallbackEnabled ? 'Armed' : 'Off'} tone={job.fallbackEnabled ? 'ok' : 'neutral'} />
         </Card>
       </div>
@@ -695,34 +724,56 @@ function ApprovalProduction({
   onCancel: () => void
 }): JSX.Element {
   const [instructions, setInstructions] = useState('')
-  const scenes = Array.from({ length: 8 }, (_, index) => index + 1)
+  const stage = job.currentStage ?? 'preparing'
+  const approvalEvent = events.reduce<OpenMontageJobEvent | undefined>(
+    (latest, event) => {
+      if (event.type !== 'approval' || (event.stage && event.stage !== stage)) return latest
+      return !latest || event.sequence > latest.sequence ? event : latest
+    },
+    undefined
+  )
+  const approvalData = approvalEvent?.data ?? {}
+  const checkpointPath = job.workspacePath
+    ? `${job.workspacePath}\\checkpoint_${stage}.json`
+    : 'Workspace not materialized'
   return (
     <>
-      <PageHeader eyebrow="Editorial gate" title="Assets stage complete — approval required" subtitle="Review the agent’s footage decisions before edit assembly continues." actions={<StatusPill tone="warn">Awaiting approval</StatusPill>} />
+      <PageHeader
+        eyebrow="Editorial gate"
+        title={`${STAGE_COPY[stage]} — approval required`}
+        subtitle="Review the canonical OpenMontage checkpoint before the managed runner continues."
+        actions={<StatusPill tone="warn">Awaiting approval</StatusPill>}
+      />
       <Card className="om-approval-metrics" pad={0}>
-        <Metric label="Scenes" value="65" /><Metric label="Ready" value="61" tone="ok" /><Metric label="Alternatives" value="3" /><Metric label="Warnings" value="1" tone="warn" /><Metric label="Cost so far" value="$2.18" /><Metric label="Projected render" value="$0.84" />
+        <Metric label="Stage" value={STAGE_COPY[stage]} />
+        <Metric label="Artifacts" value={String(approvalData.artifact_count ?? 'Not reported')} />
+        <Metric label="Checkpoint status" value={String(approvalData.checkpoint_status ?? 'Awaiting review')} tone="warn" />
+        <Metric label="Attempts" value={String(job.attempts)} />
+        <Metric label="Runtime" value={job.runtime ? humanizeOpenMontageLabel(job.runtime) : 'Pending'} />
+        <Metric label="Progress" value={`${job.progress}%`} />
       </Card>
       <div className="om-approval-layout">
-        <div className="om-storyboard-grid">
-          {scenes.map((scene) => (
-            <Card className={`om-storyboard-card ${scene === 8 ? 'has-warning' : ''}`} pad={0} key={scene}>
-              <div className={`om-storyboard-art art-${scene}`}><span>0{scene}</span>{scene <= 6 && <i><Icon name="check" size={11} /></i>}{scene === 8 && <i className="is-warning"><Icon name="warning" size={11} /></i>}</div>
-              <div className="om-storyboard-copy">
-                <strong>Scene {scene}</strong>
-                <p>{scene === 8 ? 'The final habit becomes the identity you protect.' : 'Discipline begins in the quiet decisions nobody sees.'}</p>
-                <div><span>{scene % 2 ? 'Pexels' : 'Archive.org'}</span><span>${scene % 3 ? '0.08' : '0.00'}</span><span>{scene === 8 ? '61' : 88 + scene}/100</span></div>
-                {scene === 7 && <small>2 alternate takes available</small>}
-              </div>
-            </Card>
-          ))}
-        </div>
+        <Card className="om-scene-review" pad={22}>
+          <div className="om-section-kicker">Real approval artifact</div>
+          <h2>{approvalEvent?.message || `Canonical ${STAGE_COPY[stage]} checkpoint is ready.`}</h2>
+          <p>Open the checkpoint in the preserved editable workspace to inspect the complete artifact and review history.</p>
+          <p style={{ overflowWrap: 'anywhere' }}><strong>Checkpoint</strong><br />{checkpointPath}</p>
+          <p style={{ overflowWrap: 'anywhere' }}><strong>Runner session</strong><br />{job.runnerSessionId || 'Not reported'}</p>
+          {Object.keys(approvalData).length > 0 && (
+            <div className="om-scene-metrics">
+              {Object.entries(approvalData).map(([key, value]) => (
+                <Metric key={key} label={humanizeOpenMontageLabel(key)} value={String(value ?? 'Not reported')} />
+              ))}
+            </div>
+          )}
+        </Card>
         <Card className="om-review-aside" pad={18}>
-          <div className="om-section-kicker">Agent recommendation</div>
-          <h3>Approve with one revision</h3>
-          <p>Scenes 1–7 form a coherent progression. Replace Scene 8 with a more literal identity-change visual before edit assembly.</p>
-          <label className="om-field"><span>Revision instructions</span><textarea className="ed-input ed-focus" rows={6} value={instructions} onChange={(event) => setInstructions(event.target.value)} placeholder="Replace Scene 8 with a stronger literal visual…" /></label>
+          <div className="om-section-kicker">Decision</div>
+          <h3>Approve or request a revision</h3>
+          <p>Approval resumes this exact session once. A revision preserves the prior artifact in OpenMontage history before the agent writes the replacement.</p>
+          <label className="om-field"><span>Revision instructions</span><textarea className="ed-input ed-focus" rows={6} value={instructions} onChange={(event) => setInstructions(event.target.value)} placeholder="Describe the exact change required at this checkpoint…" /></label>
           <div className="om-review-actions">
-            <Btn variant="primary" onClick={onApprove}>Approve Assets</Btn>
+            <Btn variant="primary" onClick={onApprove}>Approve {STAGE_COPY[stage]}</Btn>
             <Btn variant="soft" disabled={!instructions.trim()} onClick={() => onRevise(instructions)}>Request Changes</Btn>
             <Btn variant="danger" onClick={onCancel}>Stop Production</Btn>
           </div>
@@ -748,22 +799,50 @@ function RecoveryProduction({
   onOpenFolder: () => void
   onOpenBacklot: () => void
 }): JSX.Element {
-  const recoverySteps = ['Last successful checkpoint', 'Application closed', 'OpenMontage process detected', 'Backlot reconnected', 'Production resumed']
+  const recoveryEvents = [...events]
+    .filter((event) => ['checkpoint', 'recovery', 'state'].includes(event.type))
+    .sort((left, right) => left.sequence - right.sequence)
+    .slice(-5)
+  const latestRecoveryEvent = recoveryEvents.at(-1)
+  const currentStage = job.currentStage ?? 'preparing'
   return (
     <>
-      <Banner kind="success" style={{ marginBottom: 18 }}>Existing production found — resumed from {STAGE_COPY[job.currentStage ?? 'assets']} stage</Banner>
-      <PageHeader eyebrow="Recoverable interruption" title={job.title} subtitle="Completed scenes were preserved. Monitoring resumed from the last durable checkpoint." actions={<StatusPill tone="ok">Recovered</StatusPill>} />
-      <Card className="om-recovery-timeline" pad={18}>{recoverySteps.map((label, index) => <div className={index === recoverySteps.length - 1 ? 'is-current' : ''} key={label}><span><Icon name="check" size={12} /></span><strong>{label}</strong><small>{index === 0 ? (job.lastCheckpointAt ? new Date(job.lastCheckpointAt).toLocaleTimeString() : 'Saved') : `${index * 7}s later`}</small></div>)}</Card>
+      <Banner kind="success" style={{ marginBottom: 18 }}>Existing production found at the {STAGE_COPY[currentStage]} checkpoint</Banner>
+      <PageHeader eyebrow="Recoverable interruption" title={job.title} subtitle="MES rediscovered the persisted job and its durable runner state." actions={<StatusPill tone={jobTone(job.state)}>{humanizeOpenMontageLabel(job.state)}</StatusPill>} />
+      {recoveryEvents.length > 0 ? (
+        <Card className="om-recovery-timeline" pad={18}>
+          {recoveryEvents.map((event, index) => (
+            <div className={index === recoveryEvents.length - 1 ? 'is-current' : ''} key={event.id}>
+              <span><Icon name="check" size={12} /></span>
+              <strong>{event.message}</strong>
+              <small>{new Date(event.createdAt).toLocaleTimeString()}</small>
+            </div>
+          ))}
+        </Card>
+      ) : (
+        <EmptyState title="No recovery events yet" body="MES has the persisted job, but the runner has not emitted a recovery event." />
+      )}
       <div className="om-recovery-layout">
         <Card pad={22}>
           <StageTimeline job={job} />
-          <div className="om-recovery-progress"><div><div className="om-section-kicker">Resumed operation</div><h2>Scene 44 of 65</h2><p>Previously completed scenes were verified against checkpoint metadata and were not regenerated.</p></div><strong>{job.progress}%</strong></div>
+          <div className="om-recovery-progress">
+            <div>
+              <div className="om-section-kicker">Persisted operation</div>
+              <h2>{STAGE_COPY[currentStage]}</h2>
+              <p>{latestRecoveryEvent?.message || 'Waiting for the runner to reconnect from the last durable checkpoint.'}</p>
+            </div>
+            <strong>{job.progress}%</strong>
+          </div>
           <div className="om-progress-track"><span style={{ width: `${job.progress}%` }} /></div>
           <div className="om-recovery-actions"><Btn variant="primary" onClick={onResume}>Continue Monitoring</Btn><Btn variant="ghost" onClick={onPause}>Pause</Btn><Btn variant="ghost" onClick={onOpenFolder}><Icon name="folder" size={14} /> Open Project Folder</Btn><Btn variant="soft" onClick={onOpenBacklot}>View Recovery Details</Btn></div>
         </Card>
         <Card className="om-checkpoint-card" pad={18}>
-          <div className="om-section-kicker">Checkpoint history</div>
-          <Metric label="Script" value="Completed" tone="ok" /><Metric label="Scene Plan" value="Completed" tone="ok" /><Metric label="Assets" value="In progress" tone="accent" /><Metric label="Last saved" value={job.lastCheckpointAt ? new Date(job.lastCheckpointAt).toLocaleTimeString() : 'Unknown'} />
+          <div className="om-section-kicker">Recovery record</div>
+          <Metric label="Current stage" value={STAGE_COPY[currentStage]} tone="accent" />
+          <Metric label="Session" value={job.runnerSessionId || 'Not reported'} />
+          <Metric label="Process" value={job.runnerPid ? String(job.runnerPid) : 'Checkpoint-stopped'} />
+          <Metric label="Last saved" value={job.lastCheckpointAt ? new Date(job.lastCheckpointAt).toLocaleTimeString() : 'Unknown'} />
+          <Metric label="Backlot project" value={job.backlotProjectId || 'Not reported'} />
         </Card>
       </div>
       <ActivityLog events={events} />
@@ -797,20 +876,20 @@ function FailureFallback({
           <div className="om-section-kicker">OpenMontage attempt failed</div><h2>{job.errorMessage || 'Renderer process exited before composition completed'}</h2>
           <div className="om-failure-grid">
             <Metric label="Failed stage" value={STAGE_COPY[job.currentStage ?? 'compose']} />
-            <Metric label="Runtime" value={job.runtime ? humanizeOpenMontageLabel(job.runtime) : 'Remotion'} />
-            <Metric label="Error category" value={job.errorCategory ? humanizeOpenMontageLabel(job.errorCategory) : 'Runtime'} tone="error" />
+            <Metric label="Runtime" value={job.runtime ? humanizeOpenMontageLabel(job.runtime) : 'Not reported'} />
+            <Metric label="Error category" value={job.errorCategory ? humanizeOpenMontageLabel(job.errorCategory) : 'Not reported'} tone="error" />
             <Metric label="Retry attempts" value={job.attempts} />
-            <Metric label="Checkpoints" value="Preserved" tone="ok" />
-            <Metric label="Sentry report" value={job.errorCode || 'Reference available'} />
+            <Metric label="Project preservation" value={job.preserveOpenMontageProject ? 'Enabled' : 'Disabled'} tone={job.preserveOpenMontageProject ? 'ok' : 'warn'} />
+            <Metric label="Error reference" value={job.errorCode || 'Not reported'} />
           </div>
           <div className="om-failure-actions"><Btn variant="ghost" onClick={onLogs}>View Full Trace</Btn><Btn variant="ghost" onClick={onOpenFolder}>Open OpenMontage Project</Btn><Btn variant="soft" onClick={onCopyPrompt}><Icon name="copy" size={14} /> Copy Recovery Prompt</Btn>{!isFallback && <Btn variant="primary" onClick={onRetry}>Retry Production</Btn>}</div>
         </div>
       </Card>
       {isFallback && (
         <Card className="om-fallback-card" pad={22}>
-          <div className="om-fallback-heading"><div><div className="om-section-kicker">Local continuity</div><h2>MES fallback is now running</h2><p>The original Compose pipeline is restarting from preparation. OpenMontage files remain untouched.</p></div><strong>18%</strong></div>
-          <div className="om-progress-track"><span style={{ width: '18%' }} /></div>
-          <Banner kind="success" style={{ marginTop: 16 }}>OpenMontage files were preserved and no project data was deleted.</Banner>
+          <div className="om-fallback-heading"><div><div className="om-section-kicker">Local continuity</div><h2>MES fallback is now running</h2><p>The persisted fallback attempt is linked to OpenMontage job {job.id}.</p></div><strong>{job.progress}%</strong></div>
+          <div className="om-progress-track"><span style={{ width: `${job.progress}%` }} /></div>
+          <Banner kind="success" style={{ marginTop: 16 }}>{job.preserveOpenMontageProject ? 'OpenMontage files are configured to remain preserved.' : 'Project preservation was not requested for this job.'}</Banner>
         </Card>
       )}
       <ActivityLog events={events} />
@@ -836,19 +915,32 @@ function CompletedProduction({
   const rows = outputOrder.map((kind) => outputs.find((output) => output.kind === kind)).filter((output): output is OpenMontageJobOutput => Boolean(output))
   const final = outputs.find((output) => output.kind === 'final_mp4')
   const editable = outputs.find((output) => output.kind === 'editable_project')
+  const durationSeconds = typeof final?.metadata?.duration_seconds === 'number'
+    ? final.metadata.duration_seconds
+    : undefined
+  const validated = final?.metadata?.ffprobe_validated === true
+  const durationLabel = durationSeconds === undefined ? 'Not reported' : `${durationSeconds.toFixed(3)}s`
+  const resolutionLabel = `${job.jobPackage.output.width} × ${job.jobPackage.output.height}`
   return (
     <>
-      <PageHeader eyebrow="Delivery" title="Production complete" subtitle="Quality validation passed. Final media and editable production artifacts are ready." actions={<StatusPill tone="ok">Complete</StatusPill>} />
+      <PageHeader eyebrow="Delivery" title="Production complete" subtitle={validated ? 'The final MP4 passed ffprobe validation and collected artifacts are ready.' : 'The production is complete; inspect the collected artifact metadata below.'} actions={<StatusPill tone="ok">Complete</StatusPill>} />
       <div className="om-complete-layout">
         <Card className="om-video-preview" pad={0}>
-          <div className="om-video-frame"><button type="button" className="ed-focus" onClick={() => final && onReveal(final.path)}><Icon name="play" size={26} /></button><span>{job.title}</span></div>
-          <div className="om-video-controls"><Icon name="play" size={14} /><span>00:00</span><i><b /></i><span>08:42</span><strong>1080p</strong></div>
+          <div className="om-video-frame"><button type="button" className="ed-focus" disabled={!final} aria-label="Reveal final video" onClick={() => final && onReveal(final.path)}><Icon name="play" size={26} /></button><span>{job.title}</span></div>
+          <div className="om-video-controls"><Icon name="play" size={14} /><span>00:00</span><i><b /></i><span>{durationLabel}</span><strong>{resolutionLabel}</strong></div>
         </Card>
         <Card className="om-completion-details" pad={18}>
           <div className="om-section-kicker">Completion details</div>
-          <Metric label="Engine" value="OpenMontage" /><Metric label="Pipeline" value={job.pipeline ? humanizeOpenMontageLabel(job.pipeline) : 'Hybrid'} /><Metric label="Runtime" value={job.runtime ? humanizeOpenMontageLabel(job.runtime) : 'Remotion'} /><Metric label="Duration" value="8m 42s" /><Metric label="Resolution" value={`${job.jobPackage.output.width} × ${job.jobPackage.output.height}`} /><Metric label="Production time" value={formatOpenMontageElapsed(job.startedAt, job.completedAt)} /><Metric label="Final cost" value="$3.02" /><Metric label="Validation" value="Passed" tone="ok" />
+          <Metric label="Engine" value={humanizeOpenMontageLabel(job.engine)} />
+          <Metric label="Pipeline" value={job.pipeline ? humanizeOpenMontageLabel(job.pipeline) : 'Not reported'} />
+          <Metric label="Runtime" value={job.runtime ? humanizeOpenMontageLabel(job.runtime) : 'Not reported'} />
+          <Metric label="Duration" value={durationLabel} />
+          <Metric label="Resolution" value={resolutionLabel} />
+          <Metric label="Production time" value={formatOpenMontageElapsed(job.startedAt, job.completedAt)} />
+          <Metric label="Validation" value={validated ? 'ffprobe passed' : 'Not reported'} tone={validated ? 'ok' : 'warn'} />
         </Card>
       </div>
+      {rows.length === 0 && <EmptyState title="No outputs collected" body="MES has no persisted output records for this completed job." />}
       <div className="om-output-grid">
         {rows.map((output) => (
           <Card className="om-output-card" pad={16} key={output.id}>
@@ -1119,7 +1211,7 @@ export function OpenMontage(): JSX.Element {
         {view === 'plan' && plan && <ProductionPlan plan={plan} starting={starting} error={error} onBack={() => { setSetupStep(6); setView('setup') }} onStart={() => void startProduction()} />}
         {view === 'job' && selectedJob && <JobWorkspace job={selectedJob} events={events} outputs={outputs} backlot={backlot} onBack={() => { setView('dashboard'); void loadDashboard(false) }} onRefresh={() => void loadJob(selectedJob.id)} onJobMutation={(action, argument) => void mutateJob(action, argument)} />}
       </div>
-      {runtimeModal && <RuntimeModal value={draft.runtime} onChange={(runtime) => setDraft((current) => ({ ...current, runtime }))} onClose={() => setRuntimeModal(false)} />}
+      {runtimeModal && <RuntimeModal value={draft.runtime} health={health} onChange={(runtime) => setDraft((current) => ({ ...current, runtime }))} onClose={() => setRuntimeModal(false)} />}
     </ScreenPad>
   )
 }

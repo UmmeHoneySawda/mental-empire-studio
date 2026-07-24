@@ -1,6 +1,7 @@
 import {
   OPENMONTAGE_CONTRACT_VERSION,
   OPENMONTAGE_JOB_SCHEMA,
+  OPENMONTAGE_TIMELINE_FPS,
   type OpenMontageAspectRatio,
   type OpenMontageAuthoringMode,
   type OpenMontageJobPackage,
@@ -10,6 +11,7 @@ import {
   type OpenMontageRoutingRequest,
   type OpenMontageRuntime,
   type OpenMontageStage,
+  type OpenMontageTimelineScene,
   type OpenMontageWorkflowMode
 } from '@shared/openmontage'
 import type { Project, ProjectImage } from '@shared/types'
@@ -105,6 +107,107 @@ export function dimensionsFor(
   return { width: longEdge, height: Math.round(longEdge * 9 / 16) }
 }
 
+function timelineNumber(value: number): number {
+  return Math.round(value * 1_000_000) / 1_000_000
+}
+
+function buildTimeline(project: Project, images: ProjectImage[]): {
+  assets: OpenMontageJobPackage['source']['assets']
+  timeline: NonNullable<OpenMontageJobPackage['timeline']>
+} {
+  const durationSeconds = timelineNumber(
+    Number.isFinite(project.durationSec) ? Math.max(0, project.durationSec) : 0
+  )
+  const crossfadeSeconds = timelineNumber(
+    Number.isFinite(project.crossfade) ? Math.max(0, project.crossfade) : 0
+  )
+  const orderedImages = [...images].sort((left, right) => (
+    left.rangeStart - right.rangeStart || left.ord - right.ord || left.id.localeCompare(right.id)
+  ))
+  const normalized = orderedImages.map((image, imageIndex) => {
+    const locked = image.manual
+    const preset = image.motionPreset
+      ?? project.motionPreset
+      ?? (project.kenBurns ? 'subtle' : 'off')
+    const amount = typeof image.motionAmount === 'number' && Number.isFinite(image.motionAmount)
+      ? Math.max(0, Math.min(100, image.motionAmount))
+      : 50
+    return {
+      image,
+      sceneId: `scene-${imageIndex + 1}`,
+      locked,
+      startSeconds: timelineNumber(image.rangeStart),
+      endSeconds: timelineNumber(image.rangeEnd),
+      motion: {
+        preset,
+        direction: image.motionDirection ?? 'auto',
+        amount: timelineNumber(amount)
+      }
+    }
+  })
+  const assets = normalized.map(({ image, sceneId, locked }) => ({
+    id: image.id,
+    path: image.path,
+    kind: 'image' as const,
+    locked,
+    sceneId
+  }))
+  const scenes: OpenMontageTimelineScene[] = []
+  let cursor = 0
+  let gapIndex = 0
+  for (const entry of normalized) {
+    if (entry.startSeconds > cursor + 0.001) {
+      const startSeconds = timelineNumber(cursor)
+      const endSeconds = entry.startSeconds
+      gapIndex += 1
+      scenes.push({
+        id: `gap-${gapIndex}`,
+        order: scenes.length,
+        type: 'gap',
+        startSeconds,
+        endSeconds,
+        durationSeconds: timelineNumber(endSeconds - startSeconds),
+        locked: false
+      })
+    }
+    scenes.push({
+      id: entry.sceneId,
+      order: scenes.length,
+      type: 'image',
+      assetId: entry.image.id,
+      startSeconds: entry.startSeconds,
+      endSeconds: entry.endSeconds,
+      durationSeconds: timelineNumber(entry.endSeconds - entry.startSeconds),
+      locked: entry.locked,
+      motion: entry.motion
+    })
+    cursor = Math.max(cursor, entry.endSeconds)
+  }
+  if (durationSeconds > cursor + 0.001) {
+    const startSeconds = timelineNumber(cursor)
+    gapIndex += 1
+    scenes.push({
+      id: `gap-${gapIndex}`,
+      order: scenes.length,
+      type: 'gap',
+      startSeconds,
+      endSeconds: durationSeconds,
+      durationSeconds: timelineNumber(durationSeconds - startSeconds),
+      locked: false
+    })
+  }
+  return {
+    assets,
+    timeline: {
+      version: '1.0',
+      fps: OPENMONTAGE_TIMELINE_FPS,
+      durationSeconds,
+      crossfadeSeconds,
+      scenes
+    }
+  }
+}
+
 export function buildOpenMontageProductionInput(input: {
   draft: OpenMontageProductionDraft
   project: Project
@@ -114,6 +217,12 @@ export function buildOpenMontageProductionInput(input: {
 }): { routing: OpenMontageRoutingRequest; jobPackage: OpenMontageJobPackage } {
   const { draft, project, images, jobId } = input
   const dimensions = dimensionsFor(draft.aspectRatio, draft.resolution)
+  const timeline = buildTimeline(project, images)
+  const preserveAssets = draft.mediaControl === 'preserve'
+  if (preserveAssets) {
+    for (const asset of timeline.assets) asset.locked = true
+    for (const scene of timeline.timeline.scenes) scene.locked = true
+  }
   const jobPackage: OpenMontageJobPackage = {
     schema: OPENMONTAGE_JOB_SCHEMA,
     contractVersion: OPENMONTAGE_CONTRACT_VERSION,
@@ -129,14 +238,9 @@ export function buildOpenMontageProductionInput(input: {
     source: {
       narrationPath: project.mp3Path,
       language: draft.language,
-      assets: images.map((image) => ({
-        id: image.id,
-        path: image.path,
-        kind: 'image' as const,
-        locked: image.manual || draft.mediaControl === 'preserve',
-        sceneId: `scene-${image.ord + 1}`
-      }))
+      assets: timeline.assets
     },
+    timeline: timeline.timeline,
     production: {
       workflowMode: draft.workflowMode,
       pipeline: draft.pipeline,

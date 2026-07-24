@@ -51,7 +51,10 @@ const images: ProjectImage[] = [
     thumb: '',
     rangeStart: 90,
     rangeEnd: 180,
-    manual: false
+    manual: false,
+    motionPreset: 'cinematic',
+    motionDirection: 'pull',
+    motionAmount: 75
   }
 ]
 
@@ -115,6 +118,34 @@ describe('OpenMontage renderer model', () => {
       expect.objectContaining({ id: 'image-1', locked: true, sceneId: 'scene-1' }),
       expect.objectContaining({ id: 'image-2', locked: false, sceneId: 'scene-2' })
     ])
+    expect(result.jobPackage.timeline).toEqual({
+      version: '1.0',
+      fps: 24,
+      durationSeconds: 180,
+      crossfadeSeconds: 0.7,
+      scenes: [
+        expect.objectContaining({
+          id: 'scene-1',
+          order: 0,
+          assetId: 'image-1',
+          startSeconds: 0,
+          endSeconds: 90,
+          durationSeconds: 90,
+          locked: true,
+          motion: { preset: 'subtle', direction: 'auto', amount: 50 }
+        }),
+        expect.objectContaining({
+          id: 'scene-2',
+          order: 1,
+          assetId: 'image-2',
+          startSeconds: 90,
+          endSeconds: 180,
+          durationSeconds: 90,
+          locked: false,
+          motion: { preset: 'cinematic', direction: 'pull', amount: 75 }
+        })
+      ]
+    })
     expect(result.jobPackage.output).toEqual(expect.objectContaining({
       directory: 'D:\\exports',
       width: 1920,
@@ -136,6 +167,25 @@ describe('OpenMontage renderer model', () => {
       jobId: 'job-2'
     })
     expect(result.jobPackage.source.assets.every((asset) => asset.locked)).toBe(true)
+    expect(result.jobPackage.timeline?.scenes.every((scene) => scene.locked)).toBe(true)
+  })
+
+  it('makes uncovered editorial time explicit as fillable gap scenes', () => {
+    const result = buildOpenMontageProductionInput({
+      draft: {
+        ...DEFAULT_OPENMONTAGE_DRAFT,
+        projectId: project.id,
+        outputDirectory: 'D:\\exports'
+      },
+      project,
+      images: [{ ...images[0], rangeStart: 10, rangeEnd: 90 }],
+      jobId: 'job-with-gaps'
+    })
+    expect(result.jobPackage.timeline?.scenes).toEqual([
+      expect.objectContaining({ type: 'gap', startSeconds: 0, endSeconds: 10, locked: false }),
+      expect.objectContaining({ type: 'image', startSeconds: 10, endSeconds: 90 }),
+      expect.objectContaining({ type: 'gap', startSeconds: 90, endSeconds: 180, locked: false })
+    ])
   })
 
   it('derives every durable job workspace without hiding recovery or fallback state', () => {
