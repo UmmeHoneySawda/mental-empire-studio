@@ -5,6 +5,7 @@ import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import process from 'node:process'
+import { evaluatePostconditions } from './lib/openmontage-postconditions.mjs'
 
 function fail(message) {
   console.error(`OPENMONTAGE_ACCEPTANCE_FAIL ${message}`)
@@ -330,11 +331,21 @@ async function main() {
     evidence.events = await api('events', jobId, 1_000)
     evidence.outputs = await api('outputs', jobId)
     await recordCapture(evidence, '03-final.png')
-    evidence.result = finalJob.state === (spec.expectedFinalState ?? 'completed') ? 'PASS' : 'FAIL'
+
+    // PASS is decided by the output contract, independently re-probed from disk,
+    // not by the MES job state on its own.
+    const postconditions = evaluatePostconditions(spec, finalJob, evidence.outputs)
+    evidence.postconditions = postconditions.checks
+    evidence.media = postconditions.media
+    evidence.result = postconditions.result
     evidence.completedAt = new Date().toISOString()
-      writeFileSync(evidencePath, json(evidence))
+    writeFileSync(evidencePath, json(evidence))
     if (evidence.result !== 'PASS') {
-      throw new Error(`Expected ${spec.expectedFinalState ?? 'completed'}, got ${finalJob.state}.`)
+      const failures = postconditions.checks
+        .filter((check) => check.result === 'FAIL')
+        .map((check) => `${check.name} (${check.detail})`)
+        .join('; ')
+      throw new Error(`Acceptance postconditions failed: ${failures}`)
     }
   } catch (error) {
     evidence.result = 'FAIL'

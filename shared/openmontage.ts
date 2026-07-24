@@ -390,6 +390,37 @@ export interface OpenMontageJobOutput {
   createdAt: string
 }
 
+/**
+ * Output kinds a job is contractually required to produce before it may be
+ * reported as completed.
+ *
+ * A production that reaches its terminal manifest stage is not automatically a
+ * successful production: if the caller asked for an editable composition or
+ * captions and they were never written, the job silently under-delivered. The
+ * runner enforces this before emitting `completed`, and the acceptance harness
+ * re-checks it from the outside, so a terminal MES state alone can never be read
+ * as a passing production.
+ */
+export function requiredOpenMontageOutputKinds(
+  jobPackage: Pick<OpenMontageJobPackage, 'production' | 'output'>
+): OpenMontageOutputKind[] {
+  const required: OpenMontageOutputKind[] = ['final_mp4']
+  if (jobPackage.production?.composition?.editableOutput === true) required.push('editable_project')
+  if (jobPackage.output?.captions === true) required.push('captions')
+  return required
+}
+
+/**
+ * Failure codes the runner uses when a production finished its stages but broke
+ * its output contract (missing MP4, missing editable project, or a rendered
+ * frame rate/resolution that does not match a locked request).
+ */
+export const OPENMONTAGE_OUTPUT_CONTRACT_CODES = [
+  'OUTPUT_VALIDATION_FAILED',
+  'OUTPUT_CONTRACT_VIOLATION',
+  'EDITABLE_PROJECT_MISSING'
+] as const
+
 export interface OpenMontageBacklotSnapshot {
   projectId: string
   connected: boolean
@@ -967,6 +998,14 @@ export function classifyOpenMontageFailure(input: OpenMontageFailureInput): Open
   if (input.cancelled || /\bcancel(?:led|ed|ation)?\b/.test(haystack)) {
     category = 'cancelled'
     fallbackEligible = false
+  } else if ((OPENMONTAGE_OUTPUT_CONTRACT_CODES as readonly string[]).includes(rawCode)) {
+    // The production ran but broke its output contract. Classify this
+    // deterministically instead of letting the keyword heuristics below decide:
+    // it is a composition/runtime problem, the agent gets a bounded retry to
+    // produce what was actually requested, and MES fallback stays eligible once
+    // retries are exhausted.
+    category = 'runtime'
+    retryable = true
   } else if (/api[_ -]?key|credential|unauthori[sz]ed|forbidden|authentication/.test(haystack)) {
     category = 'credentials'
   } else if (/config|installation|not found|missing executable|incompatible|unsupported version/.test(haystack)) {

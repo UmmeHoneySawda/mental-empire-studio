@@ -216,5 +216,119 @@ describeSqlite('Codex OpenMontage production runner', () => {
       'decision_log',
       'render_report'
     ]))
+    const editable = repos.openMontageOutputs(job.id).find((output) => output.kind === 'editable_project')!
+    expect(editable.metadata).toMatchObject({ self_contained: true })
+    expect(fs.existsSync(path.join(editable.path, 'package.json'))).toBe(true)
   }, 30_000)
+
+  /**
+   * A production that requested an editable composition must not be reported as
+   * a success when the agent only left composition sources behind. This is the
+   * regression guard for the combined acceptance run that reported PASS while
+   * `editable/remotion` had no manifest and could not be rendered by anyone.
+   */
+  it.each([
+    ['sources-only', /not self-contained|no package\.json/i],
+    ['missing', /no editable project was written/i]
+  ])('fails a requested editable composition that is %s instead of reporting success', async (mode, expectedMessage) => {
+    const previous = process.env.MES_FIXTURE_EDITABLE
+    process.env.MES_FIXTURE_EDITABLE = mode
+    try {
+      const root = tempDir('me-openmontage-codex-root-')
+      const fixtureCodex = path.resolve(process.cwd(), 'test', 'fixtures', 'codex-cli-openmontage.mjs')
+      const sourceVideo = path.join(tempDir('me-openmontage-codex-video-'), 'source.mp4')
+      makeVideo(sourceVideo)
+      fs.mkdirSync(path.join(root, 'pipeline_defs'), { recursive: true })
+      fs.writeFileSync(
+        path.join(root, 'pipeline_defs', 'hybrid.yaml'),
+        'name: hybrid\nstages:\n  - name: assets\n  - name: publish\n',
+        'utf8'
+      )
+      const settings: OpenMontageSettings = {
+        ...DEFAULT_OPENMONTAGE_SETTINGS,
+        repositoryPath: root,
+        mode: 'managed',
+        runner: 'codex-cli',
+        runnerExecutable: process.execPath,
+        runnerArguments: [fixtureCodex],
+        stallTimeoutSec: 30,
+        retryLimit: 0,
+        automaticMesFallback: false
+      }
+      const repos = initDatabase(path.join(tempDir('me-openmontage-codex-db-'), 'app.sqlite'))
+      const workspaceService = new OpenMontageAssistedService({
+        repos,
+        getSettings: () => settings,
+        health: async () => readyHealth(root),
+        runCommand: async (_executable, args) => {
+          const workspace = path.join(args[5], args[2])
+          fs.mkdirSync(workspace, { recursive: true })
+          fs.writeFileSync(path.join(workspace, 'project.json'), JSON.stringify({
+            project_id: args[2],
+            title: args[3],
+            pipeline_type: args[4]
+          }))
+          return { stdout: `MES_OPENMONTAGE_PROJECT=${workspace}`, stderr: '' }
+        }
+      })
+      const managed = new OpenMontageManagedService({
+        repos,
+        workspace: workspaceService,
+        getSettings: () => settings,
+        protocolTimeoutMs: 5_000,
+        commandTimeoutMs: 5_000
+      })
+      const jobPackage: OpenMontageJobPackage = {
+        schema: OPENMONTAGE_JOB_SCHEMA,
+        contractVersion: OPENMONTAGE_CONTRACT_VERSION,
+        jobId: `codex-editable-${mode}`,
+        projectId: `codex-editable-${mode}`,
+        createdAt: new Date().toISOString(),
+        requestedBy: 'mental-empire-studio',
+        project: { title: 'Editable output contract' },
+        source: { language: 'en', assets: [] },
+        production: {
+          workflowMode: 'openmontage',
+          pipeline: 'hybrid',
+          mediaControl: 'automatic',
+          style: 'documentary',
+          composition: { runtime: 'remotion', authoringMode: 'atelier', editableOutput: true },
+          approvals: ['assets']
+        },
+        output: {
+          directory: path.join(tempDir('me-openmontage-codex-output-'), 'exports'),
+          aspectRatio: '16:9',
+          width: 320,
+          height: 180,
+          format: 'mp4',
+          captions: true
+        },
+        fallback: { enabled: false, engine: 'mental-empire-studio', preserveOpenMontageProject: true },
+        metadata: { fixtureFinalVideo: sourceVideo, fixtureGateDelayMs: 0 }
+      }
+
+      await managed.start(jobPackage)
+      const gated = await managed.waitForState(jobPackage.jobId, ['awaiting_approval'], 15_000)
+      await managed.approve(gated.id, 'assets')
+      const job = await managed.waitForState(jobPackage.jobId, ['failed', 'completed'], 20_000)
+
+      // The MP4 exists and is valid, so only the editable-output contract can fail this.
+      expect(job).toMatchObject({
+        state: 'failed',
+        errorCode: 'EDITABLE_PROJECT_MISSING',
+        errorCategory: 'runtime'
+      })
+      expect(job.errorMessage).toMatch(expectedMessage)
+      const errorEvent = repos.openMontageEvents(job.id, 200).find((event) => event.level === 'error')
+      expect(errorEvent?.message).toMatch(expectedMessage)
+      expect(errorEvent?.data).toMatchObject({ failure_category: 'runtime', checkpoint_preserved: true })
+      // Checkpoints must survive so the production can be resumed or inspected.
+      expect(fs.existsSync(path.join(job.workspacePath!, 'checkpoint_publish.json'))).toBe(true)
+      // The final MP4 itself was fine — this failure is specifically the missing export.
+      expect(repos.openMontageOutputs(job.id).some((output) => output.kind === 'final_mp4')).toBe(true)
+    } finally {
+      if (previous === undefined) delete process.env.MES_FIXTURE_EDITABLE
+      else process.env.MES_FIXTURE_EDITABLE = previous
+    }
+  }, 40_000)
 })

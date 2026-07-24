@@ -1,0 +1,50 @@
+{
+  "schema": "mes.openmontage.evidence-report/v1",
+  "scenario": "preflight-real-electron-health",
+  "evidenceDirectory": "D:\\Work\\mental-empire-studio\\docs\\openmontage-integration\\evidence\\preflight",
+  "evaluatedAt": "2026-07-24T19:05:28.142Z",
+  "runStartedAt": "2026-07-24T17:18:41.230Z",
+  "runCompletedAt": "2026-07-24T17:19:40.360Z",
+  "mesCommit": "0b93d1f8b3a9100971a7cf215800bb0da54c1d89",
+  "openMontageCommit": "0af32ce5e1e830c33992af1f9179dcdcd536549b",
+  "operatingSystem": "win32 x64",
+  "runner": "codex-cli @openai/codex 0.145.0",
+  "pipeline": null,
+  "runtime": null,
+  "jobId": null,
+  "projectId": null,
+  "projectDirectory": null,
+  "jobState": null,
+  "jobProgress": null,
+  "jobStage": null,
+  "runnerSessionId": null,
+  "costUsd": 0,
+  "credentialPrerequisites": [],
+  "commands": [
+    "npm run build",
+    "node scripts/openmontage-acceptance.mjs --spec \"D:\\Work\\mental-empire-studio\\docs\\openmontage-integration\\evidence\\preflight\\acceptance-spec.json\""
+  ],
+  "screenshots": [
+    "evidence/preflight\\01-dashboard.png"
+  ],
+  "checkpoints": [],
+  "outputs": [],
+  "postconditions": [],
+  "media": {},
+  "declaredScenarios": [],
+  "provenBehaviours": {
+    "managed_production": false,
+    "approval_gate": false,
+    "revision_request": false,
+    "duplicate_start_rejected": false,
+    "normal_application_restart": false,
+    "resume_existing": false,
+    "runner_interruption_recovery": false,
+    "pause_resume": false,
+    "cancellation": false,
+    "editable_output_requested": false
+  },
+  "notes": [],
+  "harnessReportedResult": "PASS",
+  "result": "PASS"
+}

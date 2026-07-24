@@ -396,10 +396,22 @@ function emitOutput(kind, outputPath, metadata = {}) {
   }, `output-${id}`)
 }
 
+function parseFrameRate(value) {
+  // ffprobe reports rates as a rational string, e.g. "30000/1001" or "24/1".
+  if (typeof value !== 'string') return undefined
+  const [numerator, denominator] = value.split('/')
+  const top = Number(numerator)
+  const bottom = denominator === undefined ? 1 : Number(denominator)
+  if (!Number.isFinite(top) || !Number.isFinite(bottom) || bottom === 0) return undefined
+  const rate = top / bottom
+  if (!Number.isFinite(rate) || rate <= 0) return undefined
+  return Math.round(rate * 1_000) / 1_000
+}
+
 function verifyMp4(filePath) {
   const result = spawnSync(ffprobeExecutable, [
     '-v', 'error',
-    '-show_entries', 'format=duration,format_name',
+    '-show_entries', 'format=duration,format_name:stream=codec_type,codec_name,width,height,avg_frame_rate,r_frame_rate',
     '-of', 'json',
     filePath
   ], {
@@ -413,10 +425,21 @@ function verifyMp4(filePath) {
     const parsed = JSON.parse(result.stdout)
     const durationSeconds = Number(parsed?.format?.duration)
     if (!Number.isFinite(durationSeconds) || durationSeconds <= 0) return undefined
+    const streams = Array.isArray(parsed?.streams) ? parsed.streams : []
+    const video = streams.find((stream) => stream?.codec_type === 'video')
+    const audio = streams.find((stream) => stream?.codec_type === 'audio')
+    const fps = parseFrameRate(video?.avg_frame_rate) ?? parseFrameRate(video?.r_frame_rate)
     return {
       duration_seconds: Math.round(durationSeconds * 1_000) / 1_000,
       ffprobe_validated: true,
-      format_name: String(parsed?.format?.format_name || 'unknown').slice(0, 100)
+      format_name: String(parsed?.format?.format_name || 'unknown').slice(0, 100),
+      ...(video ? {
+        video_codec: String(video.codec_name || 'unknown').slice(0, 50),
+        width: Number.isFinite(Number(video.width)) ? Number(video.width) : null,
+        height: Number.isFinite(Number(video.height)) ? Number(video.height) : null
+      } : {}),
+      ...(audio ? { audio_codec: String(audio.codec_name || 'unknown').slice(0, 50) } : {}),
+      ...(fps === undefined ? {} : { fps })
     }
   } catch {
     return undefined
@@ -434,11 +457,41 @@ function collectOutputs() {
   const validation = finalMp4 ? verifyMp4(finalMp4) : undefined
   if (finalMp4 && validation) emitOutput('final_mp4', finalMp4, validation)
 
-  const packageDirectories = inventory.files
-    .filter((filePath) => path.basename(filePath).toLowerCase() === 'package.json')
-    .map((filePath) => path.dirname(filePath))
-    .filter((directory) => /remotion|hyperframes/i.test(directory))
-  for (const directory of packageDirectories) emitOutput('editable_project', directory)
+  // An "editable project" is only real if it can be opened and rendered on its
+  // own, which means it needs its own manifest. Directories that merely contain
+  // composition sources are reported so the failure is diagnosable, but they do
+  // not satisfy the editable-output contract.
+  const editableRoots = new Set()
+  for (const filePath of inventory.files) {
+    if (!/remotion|hyperframes/i.test(filePath)) continue
+    if (/\.(?:tsx?|jsx?|html|css)$/i.test(filePath) || path.basename(filePath).toLowerCase() === 'package.json') {
+      editableRoots.add(path.dirname(filePath))
+    }
+  }
+  const editableProjects = []
+  for (const directory of editableRoots) {
+    const manifest = path.join(directory, 'package.json')
+    let selfContained = false
+    let renderScript = null
+    try {
+      const parsed = JSON.parse(readFileSync(manifest, 'utf8'))
+      const scripts = parsed && typeof parsed.scripts === 'object' ? parsed.scripts : {}
+      const dependencies = {
+        ...(parsed?.dependencies || {}),
+        ...(parsed?.devDependencies || {})
+      }
+      selfContained = Object.keys(dependencies).length > 0
+      renderScript = typeof scripts.render === 'string' ? scripts.render.slice(0, 300) : null
+    } catch {
+      selfContained = false
+    }
+    editableProjects.push({ directory, selfContained, renderScript })
+    emitOutput('editable_project', directory, {
+      self_contained: selfContained,
+      has_package_manifest: selfContained || existsSync(manifest),
+      ...(renderScript ? { render_script: renderScript } : {})
+    })
+  }
 
   const caption = inventory.files.find((filePath) => /\.(?:srt|vtt|ass)$/i.test(filePath))
   if (caption) emitOutput('captions', caption)
@@ -450,7 +503,68 @@ function collectOutputs() {
     path.dirname(directory) === workspace && path.basename(directory).toLowerCase() === 'assets'
   ))
   if (assetsDirectory) emitOutput('production_assets', assetsDirectory)
-  return { finalMp4, validation }
+  return { finalMp4, validation, editableProjects, captions: caption, renderReport }
+}
+
+/**
+ * Re-check the caller's output contract before this production may be reported
+ * as completed. Reaching the terminal manifest stage only proves the stages ran;
+ * it does not prove the requested artefacts exist or that the render honoured a
+ * locked frame rate/resolution. Never silently accept a substituted runtime.
+ */
+function outputContractViolation(outputs) {
+  const composition = jobPackage.production?.composition || {}
+  const requestedOutput = jobPackage.output || {}
+  const timeline = jobPackage.timeline || {}
+
+  if (!outputs.finalMp4 || !outputs.validation) {
+    return {
+      code: 'OUTPUT_VALIDATION_FAILED',
+      message: 'OpenMontage completed without a final MP4 that passes ffprobe.'
+    }
+  }
+
+  if (composition.editableOutput === true) {
+    const usable = outputs.editableProjects.filter((project) => project.selfContained)
+    if (usable.length === 0) {
+      const seen = outputs.editableProjects.length
+      return {
+        code: 'EDITABLE_PROJECT_MISSING',
+        message: seen === 0
+          ? 'The job requested an editable composition but no editable project was written.'
+          : `The job requested an editable composition but none of the ${seen} editable director`
+            + `${seen === 1 ? 'y is' : 'ies are'} self-contained (no package.json with dependencies), `
+            + 'so it cannot be rendered independently.'
+      }
+    }
+  }
+
+  const { fps, width, height } = outputs.validation
+  const lockedFps = Number(timeline.fps)
+  if (Number.isFinite(lockedFps) && lockedFps > 0 && Number.isFinite(fps)) {
+    // Allow NTSC pulldown (23.976 for 24, 29.97 for 30) but nothing else.
+    if (Math.abs(Number(fps) - lockedFps) > lockedFps * 0.005) {
+      return {
+        code: 'OUTPUT_CONTRACT_VIOLATION',
+        message: `The locked timeline requested ${lockedFps} fps but the rendered video reports ${fps} fps.`
+      }
+    }
+  }
+  const lockedWidth = Number(requestedOutput.width)
+  const lockedHeight = Number(requestedOutput.height)
+  if (Number.isFinite(lockedWidth) && Number.isFinite(width) && Number(width) !== lockedWidth) {
+    return {
+      code: 'OUTPUT_CONTRACT_VIOLATION',
+      message: `The job requested ${lockedWidth}x${lockedHeight} but the rendered video is ${width}x${height}.`
+    }
+  }
+  if (Number.isFinite(lockedHeight) && Number.isFinite(height) && Number(height) !== lockedHeight) {
+    return {
+      code: 'OUTPUT_CONTRACT_VIOLATION',
+      message: `The job requested ${lockedWidth}x${lockedHeight} but the rendered video is ${width}x${height}.`
+    }
+  }
+  return undefined
 }
 
 function latestCheckpoint() {
@@ -467,6 +581,38 @@ function approvalData(checkpoint) {
     checkpoint_status: String(checkpoint?.status || 'unknown').slice(0, 100),
     human_approved: checkpoint?.human_approved === true
   }
+}
+
+/**
+ * Spell out the output contract the runner will mechanically enforce before it
+ * reports completion, so the agent is told the requirement up front rather than
+ * discovering it as a late failure.
+ */
+function outputContractInstruction() {
+  const composition = jobPackage.production?.composition || {}
+  const output = jobPackage.output || {}
+  const timeline = jobPackage.timeline || {}
+  const lines = ['', '## Output contract (mechanically verified before completion)', '']
+  lines.push(`- \`renders/final.mp4\` must exist and pass ffprobe at ${output.width}x${output.height}.`)
+  if (Number.isFinite(Number(timeline.fps)) && Number(timeline.fps) > 0) {
+    lines.push(`- The render MUST be exactly ${timeline.fps} fps, matching the locked MES timeline. Do not change the frame rate; if you believe it is wrong, fail the stage and report it instead of silently rendering another rate.`)
+  } else {
+    lines.push('- The MES package locks no frame rate, so choose one appropriate to the pipeline and record it in the render report.')
+  }
+  if (output.captions === true) {
+    lines.push('- A caption/subtitle file (`.srt`, `.vtt`, or `.ass`) must be written under the project.')
+  }
+  if (composition.editableOutput === true) {
+    lines.push(
+      `- An editable ${composition.runtime} project must be written under \`editable/${composition.runtime}/\`, and it MUST be self-contained and independently renderable by a third party:`,
+      '  - its own `package.json` with pinned dependencies and a `render` script,',
+      '  - all composition sources plus every asset it references (relative paths only — never absolute paths into the MES or OpenMontage checkouts),',
+      '  - a short `README.md` giving the exact install and render commands.',
+      '  A directory holding only composition sources does NOT satisfy this; completion will be rejected with `EDITABLE_PROJECT_MISSING`.'
+    )
+  }
+  lines.push('')
+  return lines.join('\n')
 }
 
 function initialPrompt() {
@@ -487,7 +633,7 @@ You are running as the real OpenMontage production agent for MES. Before acting:
 8. Never silently substitute a provider, runtime, media type, locked asset/timing, or approved decision.
 9. Produce a schema-valid render report, run real quality validation, and ensure the final MP4 passes ffprobe.
 10. At every manifest or MES approval gate, write the canonical checkpoint as \`awaiting_human\`, preserve the review artifact, and END THIS TURN. Do not mark it completed until a later MES approval turn explicitly authorizes it.
-
+${outputContractInstruction()}
 The selected composition runtime is \`${jobPackage.production.composition.runtime}\` and it is locked when not \`automatic\`. Keep credentials in process memory only. Never print, persist, or quote environment values.
 
 Continue autonomously until the next genuine approval gate or full publish completion. Your final response must match the supplied response schema.
@@ -592,11 +738,12 @@ async function afterSuccessfulTurn() {
   ))
   if (terminalComplete) {
     const outputs = collectOutputs()
-    if (!outputs.finalMp4 || !outputs.validation) {
+    const violation = outputContractViolation(outputs)
+    if (violation) {
       settled = true
       emit('failed', {
-        code: 'OUTPUT_VALIDATION_FAILED',
-        message: 'OpenMontage completed without a final MP4 that passes ffprobe.',
+        code: violation.code,
+        message: violation.message,
         stage: 'export',
         checkpointPreserved: true
       })

@@ -36,6 +36,44 @@ function existingCheckpoint() {
   return JSON.parse(readFileSync(checkpointPath, 'utf8'))
 }
 
+/**
+ * The runner only accepts an editable project that a third party could actually
+ * render: its own manifest with pinned dependencies and a render script.
+ *
+ * `MES_FIXTURE_EDITABLE` selects what this fake agent produces so both sides of
+ * that rule stay covered:
+ *   - `self-contained` (default) — a genuinely renderable project.
+ *   - `sources-only`             — composition sources plus a manifest with no
+ *                                  dependencies, i.e. the shape that used to be
+ *                                  silently accepted.
+ *   - `missing`                  — no editable project at all.
+ */
+function writeEditableProject() {
+  const mode = process.env.MES_FIXTURE_EDITABLE || 'self-contained'
+  if (mode === 'missing') return
+  const projectRoot = path.join(workspace, 'editable', 'remotion')
+  mkdirSync(projectRoot, { recursive: true })
+  writeFileSync(path.join(projectRoot, 'Root.tsx'), 'export const Root = () => null\n', 'utf8')
+  if (mode === 'sources-only') {
+    writeJsonAtomic(path.join(projectRoot, 'package.json'), {
+      name: 'fake-editable-project',
+      private: true
+    })
+    return
+  }
+  writeJsonAtomic(path.join(projectRoot, 'package.json'), {
+    name: 'fake-editable-project',
+    private: true,
+    scripts: { render: 'remotion render Root out/final.mp4' },
+    dependencies: { remotion: '4.0.0', react: '18.3.1' }
+  })
+  writeFileSync(
+    path.join(projectRoot, 'README.md'),
+    '# Editable project\n\n```\nnpm install\nnpm run render\n```\n',
+    'utf8'
+  )
+}
+
 function writeAssetsCheckpoint(status, artifactName, humanApproved = false) {
   const previous = existingCheckpoint()
   const artifactPath = path.join(workspace, 'artifacts', artifactName)
@@ -83,10 +121,7 @@ function completeProduction() {
     provenance: 'test-only'
   })
   writeFileSync(path.join(workspace, 'captions.srt'), '1\n00:00:00,000 --> 00:00:01,000\nTest\n', 'utf8')
-  writeJsonAtomic(path.join(workspace, 'remotion-project', 'package.json'), {
-    name: 'fake-editable-project',
-    private: true
-  })
+  writeEditableProject()
   writeJsonAtomic(path.join(workspace, 'checkpoint_publish.json'), {
     stage: 'publish',
     status: 'completed',
