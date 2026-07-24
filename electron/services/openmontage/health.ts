@@ -10,6 +10,7 @@ import {
   type OpenMontageProviderCapability,
   type OpenMontageSettings
 } from '../../../shared/openmontage'
+import { OPENMONTAGE_RUNNER_PROTOCOL } from '../../../shared/openmontage-runner'
 import { captureException, sentryLog } from '../sentry'
 import { OpenMontageBacklotClient } from './backlot'
 
@@ -262,7 +263,34 @@ export async function probeOpenMontageHealth(
     if (settings.mode === 'assisted') {
       components.push(component('agent_runner', 'limited', checkedAt, 'Assisted handoff does not require a managed runner.'))
     } else if (settings.runner !== 'none' && settings.runnerExecutable.trim()) {
-      components.push(component('agent_runner', 'limited', checkedAt, 'Runner is configured; managed protocol validation is pending.'))
+      try {
+        const result = await runCommand(
+          settings.runnerExecutable,
+          [...settings.runnerArguments, '--openmontage-protocol-info'],
+          { timeoutMs: 5_000 }
+        )
+        const marker = 'MES_OPENMONTAGE_RUNNER='
+        const line = result.stdout.split(/\r?\n/).findLast((entry) => entry.startsWith(marker))
+        const info = line ? JSON.parse(line.slice(marker.length)) as { protocol?: unknown; version?: unknown } : {}
+        if (info.protocol !== OPENMONTAGE_RUNNER_PROTOCOL) {
+          throw new Error('Runner did not advertise the required protocol.')
+        }
+        components.push(component(
+          'agent_runner',
+          'available',
+          checkedAt,
+          'Managed JSON-lines protocol is available.',
+          typeof info.version === 'string' ? info.version : undefined
+        ))
+      } catch (error) {
+        components.push(component(
+          'agent_runner',
+          'unavailable',
+          checkedAt,
+          String(sanitizeOpenMontageDiagnostic(error))
+        ))
+        warnings.push('The configured runner does not support the MES OpenMontage managed protocol.')
+      }
     } else {
       components.push(component('agent_runner', 'unavailable', checkedAt, 'Managed mode requires a configured runner.'))
     }

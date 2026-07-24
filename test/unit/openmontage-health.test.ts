@@ -43,6 +43,12 @@ function options(root: string): OpenMontageHealthProbeOptions {
     runCommand: vi.fn(async (executable, args) => {
       if (executable === 'git') return { stdout: 'abcdef0123456789\n', stderr: '' }
       if (args[0] === '--version') return { stdout: 'Python 3.11.9\n', stderr: '' }
+      if (args.includes('--openmontage-protocol-info')) {
+        return {
+          stdout: 'MES_OPENMONTAGE_RUNNER={"protocol":"mes.openmontage.runner/v1","version":"fixture-1"}\n',
+          stderr: ''
+        }
+      }
       return {
         stdout: `MES_OPENMONTAGE_PROBE=${JSON.stringify({
           composition_runtimes: { ffmpeg: true, remotion: false, hyperframes: true },
@@ -104,16 +110,16 @@ describe('OpenMontage health probing', () => {
     expect(disabled.warnings.join(' ')).toMatch(/disabled/)
   })
 
-  it('marks managed mode misconfigured until an actual runner protocol is available', async () => {
+  it('marks managed mode ready only after the configured runner proves protocol support', async () => {
     const root = fixtureRoot()
     const report = await probeOpenMontageHealth(
       settings({ mode: 'managed', runner: 'custom', runnerExecutable: 'runner.exe' }),
       options(root)
     )
-    expect(report.status).toBe('misconfigured')
+    expect(report.status).toBe('ready')
     expect(report.components).toContainEqual(expect.objectContaining({
       name: 'agent_runner',
-      status: 'limited'
+      status: 'available'
     }))
   })
 

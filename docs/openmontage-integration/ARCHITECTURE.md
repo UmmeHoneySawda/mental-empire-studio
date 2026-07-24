@@ -66,6 +66,12 @@ OpenMontage project workspaces and checkpoint files are canonical. MES persists 
 
 Backlot is a read-only observer. MES uses its health, project-state, media, and SSE routes to monitor work. MES never invents mutation endpoints or writes approval results directly into checkpoint JSON. In managed mode, approvals and revision instructions go to the agent runner. In assisted mode, MES creates a copyable continuation instruction for the operator.
 
+### Managed runner protocol
+
+`shared/openmontage-runner.ts` defines `mes.openmontage.runner/v1`, a bounded JSON-lines protocol. The configured runner must prove compatibility during health checks and begin every job with a versioned `hello`. It emits stage, checkpoint, approval, output, activity, completion, failure, and heartbeat events; MES sends acknowledged pause, resume, cancel, approve, and revise commands over stdin.
+
+MES launches the runner without a shell, bounds and redacts stdout/stderr, rejects output paths outside the canonical OpenMontage workspace or configured export root, and persists runner event IDs for deduplication. The runner owns orchestration and provider credentials. On restart, MES reopens the canonical handoff and requests runner recovery without modifying OpenMontage checkpoints.
+
 ### Composition runtime selection
 
 Explicit Remotion or HyperFrames choices are honored only when that runtime is available. An unavailable explicit runtime blocks launch and explains why; it is never silently replaced.

@@ -5,10 +5,10 @@
 - MES root: `D:\Work\mental-empire-studio`
 - Branch: `feat/openmontage-integration`
 - Base commit: `4d78fab8709a2cd2811e50bc72d8fd16c785c418`
-- Last committed milestone: `5637b31` (`feat(openmontage): add persistence and health probes`)
+- Latest completed milestone: Phase 4 — managed runner execution
 - OpenMontage root: `D:\Work\mental-empire-studio\OpenMontage`
 - OpenMontage revision: `0af32ce5e1e830c33992af1f9179dcdcd536549b`
-- Current phase: Phase 4 — managed execution
+- Current phase: Phase 5 — routing, fallback, and telemetry
 
 ## Completed
 
@@ -24,6 +24,12 @@
 - Assisted workspace initialization through OpenMontage's checkpoint library.
 - Atomic job package/instruction/recovery files with typed local actions.
 - Startup rediscovery and resume of interrupted preparation.
+- Versioned JSON-lines runner protocol with compatibility proof and strict parsing.
+- Shell-free managed subprocess execution with bounded/redacted streams.
+- Durable checkpoint/output/activity ingestion and Backlot observation.
+- Pause/resume/cancel/approval/revision/retry controls.
+- Managed restart recovery, fault classification, and output-path containment.
+- Deterministic real-subprocess fixture coverage.
 
 ## Changed files
 
@@ -43,8 +49,13 @@
 - `test/unit/openmontage-ipc-validation.test.ts`
 - `electron/main.ts`
 - `electron/services/openmontage/assisted.ts`
+- `electron/services/openmontage/managed.ts`
 - `test/stubs/electron.ts`
 - `test/unit/openmontage-assisted.test.ts`
+- `shared/openmontage-runner.ts`
+- `test/fixtures/openmontage-runner.mjs`
+- `test/unit/openmontage-runner-protocol.test.ts`
+- `test/unit/openmontage-managed.test.ts`
 - `docs/openmontage-integration/schemas/job-package.v1.schema.json`
 - `docs/openmontage-integration/ARCHITECTURE.md`
 - `docs/openmontage-integration/IMPLEMENTATION_PLAN.md`
@@ -64,29 +75,30 @@ npm test -- --run test/unit/openmontage-contracts.test.ts test/unit/openmontage-
 $env:ME_OPENMONTAGE_LIVE='1'; npm test -- --run test/unit/openmontage-health.test.ts
 npm run build
 npm test -- --run test/unit/openmontage-assisted.test.ts
+npm test -- --run test/unit/openmontage-runner-protocol.test.ts test/unit/openmontage-managed.test.ts
 ```
 
-All pass. Focused Phase 1–3 suite: 33 tests. The opt-in live probe also passes against the checked-out external repository.
+All pass. Managed protocol/subprocess suite: 12 tests. The opt-in live probe also passes against the checked-out external repository.
 
 ## Current environment and blockers
 
 - Python 3.11.9 and Node 22.16.0.
 - FFmpeg and HyperFrames probe as available.
 - Remotion probes unavailable until its external workspace dependencies are installed.
-- No managed agent runner is configured.
+- Managed mode needs a configured runner that proves `mes.openmontage.runner/v1`; the test fixture is not a production runner.
 - Backlot is read-only; do not invent approval/control HTTP endpoints.
 - `better-sqlite3` is currently built for Node so DB tests execute. Run `npx @electron/rebuild -f -w better-sqlite3` before launching Electron, smoke tests, or packaging.
 
 ## Exact next task
 
-Implement Phase 4:
+Implement Phase 5:
 
-1. Define a replaceable JSON-lines agent-runner protocol and version handshake.
-2. Implement configured process launch with bounded stdout/stderr and structured events.
-3. Add pause/resume/cancel/retry and approval/revision commands.
-4. Reconcile runner events with Backlot/checkpoint observation without writing checkpoints directly.
-5. Recover managed jobs after MES restart using runner identity plus canonical workspace evidence.
-6. Add a deterministic fixture runner covering completion, controls, approval, timeout, crash, and recovery.
+1. Add a production-routing service that combines user selection, health, pipeline/runtime requirements, and execution mode.
+2. Persist and expose the selected engine/runtime and user-visible decision reasons.
+3. Apply retry limits only to eligible classified failures.
+4. Start the existing MES production path after eligible retry exhaustion when policy allows.
+5. Preserve the failed OpenMontage workspace/checkpoints and never fallback on cancellation.
+6. Add structured Sentry lifecycle/fallback events and fault-injection tests.
 7. Update continuity docs and commit the verified milestone.
 
 ## Useful commands

@@ -83,3 +83,15 @@
 **Decision:** Write the job package, agent instruction, and recovery prompt through same-directory temporary files and atomic rename; persist paths before the final `handoff_required` transition.
 
 **Reason:** A crash can be retried safely from `validating`/`ready`, and MES never advertises a ready handoff until all files exist. Existing completed checkpoints remain untouched.
+
+## D-015 — Managed execution is a versioned process protocol
+
+**Decision:** A managed runner must advertise and speak `mes.openmontage.runner/v1` over bounded JSON lines. MES invokes it without a shell and requires explicit command acknowledgements.
+
+**Reason:** OpenMontage is agent-first and exposes no supported monolithic orchestration API. A replaceable protocol automates the handoff without copying OpenMontage internals or binding MES to one agent vendor.
+
+## D-016 — Runner output paths fail closed
+
+**Decision:** Accept output records only when their absolute paths are contained by the canonical OpenMontage workspace or the package's configured export root.
+
+**Reason:** Runner output is an external trust boundary. Path containment prevents a compromised or faulty adapter from publishing arbitrary local files through MES.

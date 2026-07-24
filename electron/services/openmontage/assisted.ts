@@ -9,6 +9,7 @@ import {
   validateOpenMontageJobPackage,
   type OpenMontageAssistedHandoff,
   type OpenMontageHealthReport,
+  type OpenMontageIntegrationMode,
   type OpenMontageJobPackage,
   type OpenMontageJobRecord,
   type OpenMontageSettings
@@ -283,7 +284,10 @@ export class OpenMontageAssistedService {
     }
   }
 
-  async prepare(jobPackage: OpenMontageJobPackage): Promise<OpenMontageAssistedHandoff> {
+  async prepare(
+    jobPackage: OpenMontageJobPackage,
+    executionMode: OpenMontageIntegrationMode = 'assisted'
+  ): Promise<OpenMontageAssistedHandoff> {
     const startedAt = Date.now()
     const validation = validateOpenMontageJobPackage(jobPackage)
     if (!validation.valid) {
@@ -297,6 +301,9 @@ export class OpenMontageAssistedService {
     if (record && JSON.stringify(record.jobPackage) !== JSON.stringify(jobPackage)) {
       throw new Error(`OpenMontage job ${jobPackage.jobId} already exists with a different package.`)
     }
+    if (record && record.mode !== executionMode) {
+      throw new Error(`OpenMontage job ${jobPackage.jobId} already exists in ${record.mode} mode.`)
+    }
     if (record?.state === 'handoff_required') return this.readHandoff(record)
     if (record && !['created', 'validating', 'ready'].includes(record.state)) {
       throw new Error(`OpenMontage job ${record.id} cannot be prepared from state ${record.state}.`)
@@ -309,7 +316,7 @@ export class OpenMontageAssistedService {
         projectId: jobPackage.projectId,
         title: jobPackage.project.title,
         state: 'created',
-        mode: 'assisted',
+        mode: executionMode,
         workflowMode: jobPackage.production.workflowMode,
         engine: 'openmontage',
         pipeline: jobPackage.production.pipeline,
@@ -327,7 +334,7 @@ export class OpenMontageAssistedService {
         revision: 0
       }
       this.deps.repos.createOpenMontageJob(record)
-      this.addEvent(record.id, 'state', 'info', 'Assisted OpenMontage job created.')
+      this.addEvent(record.id, 'state', 'info', `${executionMode === 'managed' ? 'Managed' : 'Assisted'} OpenMontage job created.`)
     }
 
     if (record.state === 'created') {

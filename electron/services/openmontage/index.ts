@@ -17,9 +17,11 @@ import { OpenMontageBacklotClient } from './backlot'
 import { normalizeBacklotBaseUrl } from './backlot'
 import { OpenMontageAssistedService } from './assisted'
 import { OpenMontageHealthService } from './health'
+import { OpenMontageManagedService } from './managed'
 
 const healthService = new OpenMontageHealthService()
 let assistedService: OpenMontageAssistedService | undefined
+let managedService: OpenMontageManagedService | undefined
 
 function settings() {
   return getSettings().integrations.openMontage
@@ -34,6 +36,18 @@ function assisted(): OpenMontageAssistedService {
     })
   }
   return assistedService
+}
+
+function managed(): OpenMontageManagedService {
+  if (!managedService) {
+    managedService = new OpenMontageManagedService({
+      repos: getRepos(),
+      workspace: assisted(),
+      getSettings: settings,
+      observeProject: (projectId) => openMontageService.backlotProject(projectId)
+    })
+  }
+  return managedService
 }
 
 function runBacklotOpen(
@@ -76,6 +90,42 @@ export const openMontageService = {
 
   recoverAssisted(): Promise<OpenMontageAssistedHandoff[]> {
     return assisted().recover()
+  },
+
+  startManaged(jobPackage: OpenMontageJobPackage): Promise<OpenMontageJobRecord> {
+    return managed().start(jobPackage)
+  },
+
+  pauseManaged(jobId: string): Promise<OpenMontageJobRecord> {
+    return managed().pause(jobId)
+  },
+
+  resumeManaged(jobId: string): Promise<OpenMontageJobRecord> {
+    return managed().resume(jobId)
+  },
+
+  cancelManaged(jobId: string): Promise<OpenMontageJobRecord> {
+    return managed().cancel(jobId)
+  },
+
+  approveManaged(jobId: string, stage?: OpenMontageJobRecord['currentStage']): Promise<OpenMontageJobRecord> {
+    return managed().approve(jobId, stage)
+  },
+
+  reviseManaged(
+    jobId: string,
+    instructions: string,
+    stage?: OpenMontageJobRecord['currentStage']
+  ): Promise<OpenMontageJobRecord> {
+    return managed().revise(jobId, instructions, stage)
+  },
+
+  retryManaged(jobId: string): Promise<OpenMontageJobRecord> {
+    return managed().retry(jobId)
+  },
+
+  recoverManaged(): Promise<OpenMontageJobRecord[]> {
+    return settings().mode === 'managed' ? managed().recover() : Promise.resolve([])
   },
 
   async copyAssistedPrompt(jobId: string, kind: 'handoff' | 'recovery'): Promise<void> {
@@ -140,4 +190,15 @@ export const openMontageService = {
 
 export async function recoverAssistedOpenMontageJobs(): Promise<OpenMontageAssistedHandoff[]> {
   return openMontageService.recoverAssisted()
+}
+
+export async function recoverOpenMontageJobs(): Promise<{
+  assisted: OpenMontageAssistedHandoff[]
+  managed: OpenMontageJobRecord[]
+}> {
+  const [assistedJobs, managedJobs] = await Promise.all([
+    openMontageService.recoverAssisted(),
+    openMontageService.recoverManaged()
+  ])
+  return { assisted: assistedJobs, managed: managedJobs }
 }

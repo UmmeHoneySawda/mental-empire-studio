@@ -138,7 +138,7 @@ const OPENMONTAGE_TRANSITIONS: Readonly<Record<OpenMontageJobState, readonly Ope
   awaiting_approval: ['running', 'pausing', 'cancelling', 'failed', 'falling_back'],
   pausing: ['paused', 'running', 'cancelling', 'failed'],
   paused: ['queued', 'running', 'cancelling', 'cancelled', 'failed'],
-  cancelling: ['cancelled', 'failed'],
+  cancelling: ['cancelled', 'failed', 'running', 'paused'],
   cancelled: [],
   failed: ['queued', 'falling_back'],
   falling_back: ['fallback_running', 'failed', 'cancelled'],
@@ -219,6 +219,7 @@ export interface OpenMontageSettings {
   mode: OpenMontageIntegrationMode
   runner: 'none' | 'codex-cli' | 'claude-code' | 'custom'
   runnerExecutable: string
+  runnerArguments: string[]
   assistedFallback: boolean
   retryLimit: number
   stallTimeoutSec: number
@@ -235,6 +236,7 @@ export const DEFAULT_OPENMONTAGE_SETTINGS: OpenMontageSettings = {
   mode: 'assisted',
   runner: 'none',
   runnerExecutable: '',
+  runnerArguments: [],
   assistedFallback: true,
   retryLimit: 3,
   stallTimeoutSec: 300,
@@ -275,7 +277,7 @@ export interface OpenMontageJobRecord {
   revision: number
 }
 
-export type OpenMontageJobPatch = Partial<Pick<
+type OpenMontageJobPatchBase = Partial<Pick<
   OpenMontageJobRecord,
   | 'packagePath'
   | 'workspacePath'
@@ -284,13 +286,16 @@ export type OpenMontageJobPatch = Partial<Pick<
   | 'progress'
   | 'attempts'
   | 'lastCheckpointAt'
-  | 'runnerPid'
-  | 'errorCategory'
-  | 'errorCode'
-  | 'errorMessage'
   | 'startedAt'
   | 'completedAt'
 >>
+
+export type OpenMontageJobPatch = OpenMontageJobPatchBase & {
+  runnerPid?: number | null
+  errorCategory?: OpenMontageFailureCategory | null
+  errorCode?: string | null
+  errorMessage?: string | null
+}
 
 export type OpenMontageEventType =
   | 'state'

@@ -1130,6 +1130,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
       mode: 'assisted',
       runner: 'none',
       runnerExecutable: '',
+      runnerArguments: [],
       assistedFallback: true,
       retryLimit: 3,
       stallTimeoutSec: 300,
@@ -1455,6 +1456,18 @@ export interface NativeApi {
     prepareAssisted(jobPackage: OpenMontageJobPackage): Promise<OpenMontageAssistedHandoff>
     assistedHandoff(jobId: string): Promise<OpenMontageAssistedHandoff>
     recoverAssisted(): Promise<OpenMontageAssistedHandoff[]>
+    startManaged(jobPackage: OpenMontageJobPackage): Promise<OpenMontageJobRecord>
+    pauseManaged(jobId: string): Promise<OpenMontageJobRecord>
+    resumeManaged(jobId: string): Promise<OpenMontageJobRecord>
+    cancelManaged(jobId: string): Promise<OpenMontageJobRecord>
+    approveManaged(jobId: string, stage?: OpenMontageJobRecord['currentStage']): Promise<OpenMontageJobRecord>
+    reviseManaged(
+      jobId: string,
+      instructions: string,
+      stage?: OpenMontageJobRecord['currentStage']
+    ): Promise<OpenMontageJobRecord>
+    retryManaged(jobId: string): Promise<OpenMontageJobRecord>
+    recoverManaged(): Promise<OpenMontageJobRecord[]>
     copyPrompt(jobId: string, kind?: 'handoff' | 'recovery'): Promise<void>
     openProjectFolder(jobId: string): Promise<void>
     openBacklot(jobId: string): Promise<string>

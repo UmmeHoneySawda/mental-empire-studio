@@ -30,10 +30,12 @@ Legend: PASS = executed with evidence; PENDING = not implemented/executed; BLOCK
 | Backlot | Loopback validation, health, state, SSE parsing, malformed/oversized payload | PASS |
 | Backlot | SSE reconnect and long-running ingestion | PENDING |
 | Assisted | Package/workspace/prompt creation and restart recovery | PASS — 7 fixture-backed tests |
-| Managed | Fixture runner start/pause/resume/cancel/approval | PENDING |
+| Managed | Protocol handshake and malformed/oversized event rejection | PASS — 5 tests |
+| Managed | Fixture runner start/pause/resume/cancel/approval/revision | PASS — real Node subprocess |
+| Managed | Crash, stall, invalid output, and restart recovery | PASS — real Node subprocess |
 | Fallback | Retry exhaustion starts MES and preserves files | PENDING |
-| Sentry | Structured lifecycle fields present; secrets absent | PENDING |
-| IPC | Health/read APIs aligned across NativeApi, preload, and IPC; IDs validated | PASS |
+| Sentry | Managed runner lifecycle/failure fields are structured and redacted | PASS — failure/redaction fixture |
+| IPC | Health/read/control APIs aligned across NativeApi, preload, and IPC; IDs/text validated | PASS |
 
 ## UI coverage
 

@@ -35,12 +35,12 @@ Exit evidence: new project can be handed off and rediscovered after MES restart.
 
 ## Phase 4 — Managed execution
 
-- [ ] Define replaceable runner adapter protocol.
-- [ ] Implement configured process runner with structured JSON events.
-- [ ] Add pause/resume/cancel, retries, timeouts, and process recovery.
-- [ ] Reconcile runner events with Backlot/checkpoint observation.
-- [ ] Route approval/revision commands through the runner.
-- [ ] Add fixture runner for deterministic integration tests.
+- [x] Define replaceable runner adapter protocol.
+- [x] Implement configured process runner with structured JSON events.
+- [x] Add pause/resume/cancel, retries, timeouts, and process recovery.
+- [x] Reconcile runner events with Backlot/checkpoint observation.
+- [x] Route approval/revision commands through the runner.
+- [x] Add fixture runner for deterministic integration tests.
 
 Exit evidence: managed fixture completes, pauses/resumes, awaits approval, and recovers after service restart.
 

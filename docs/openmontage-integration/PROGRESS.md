@@ -4,7 +4,7 @@ Last updated: 2026-07-24
 
 ## Current status
 
-Phases 1–3 are complete. Phase 4 (managed execution) is next.
+Phases 1–4 are complete. Phase 5 (routing, fallback, and telemetry) is next.
 
 ## Completed
 
@@ -32,6 +32,13 @@ Phases 1–3 are complete. Phase 4 (managed execution) is next.
 - Added copy prompt, open project folder, and start/open Backlot actions through typed IPC.
 - Added startup recovery for prepared or interrupted assisted jobs.
 - Added seven fixture-backed assisted lifecycle/recovery/security tests.
+- Added the replaceable `mes.openmontage.runner/v1` JSON-lines protocol and compatibility proof.
+- Added shell-free external runner launch with bounded/redacted streams and explicit handshake, command, and stall timeouts.
+- Added durable stage/checkpoint/output/activity ingestion with runner-event deduplication and output-path containment.
+- Added pause, resume, cancel, approval, revision, retry, and restart-recovery controls across service, IPC, preload, and `NativeApi`.
+- Added Backlot observation at runner checkpoints without mutating OpenMontage state.
+- Added a real Node subprocess fixture covering completion, controls, approvals, redaction, crashes, stalls, invalid output, and recovery.
+- Added startup recovery for managed jobs when managed mode is configured.
 
 ## Verified facts
 
@@ -51,14 +58,16 @@ Phases 1–3 are complete. Phase 4 (managed execution) is next.
 | `ME_OPENMONTAGE_LIVE=1` health test | PASS — real external repository and provider registry |
 | `npm run build` | PASS |
 | Focused Phase 1–3 suite (six files) | PASS — 33 tests; live-only case skipped by default |
+| Managed protocol/subprocess suite | PASS — 12 tests |
+| Focused Phase 4 infrastructure suite | PASS — 34 tests; live-only case skipped by default |
 
 ## Blockers / limitations
 
-- Managed mode intentionally reports misconfigured/limited until the Phase 4 runner protocol is implemented. Assisted mode is launch-ready.
+- Managed mode requires a configured runner executable that proves `mes.openmontage.runner/v1`; assisted mode remains launch-ready without it.
 - Remotion must be installed and re-probed before claiming the archival-footage acceptance scenario.
 - Provider-dependent acceptance may require credentials/network. Any unavailable provider will be reported rather than mocked as a live pass.
 - `better-sqlite3` is currently rebuilt for Node to execute DB tests. Rebuild it for Electron before app/smoke/package validation.
 
 ## Next task
 
-Implement Phase 4: replaceable managed-runner protocol, structured events/commands, pause/resume/cancel/approval, retries/timeouts, Backlot reconciliation, and restart recovery with a deterministic fixture runner.
+Implement Phase 5: connect routing to production creation, enforce fallback eligibility/retry limits, preserve OpenMontage evidence, and add Sentry/fault-injection coverage.
