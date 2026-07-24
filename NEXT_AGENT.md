@@ -4,142 +4,191 @@
 
 - MES root: `D:\Work\mental-empire-studio`
 - Branch: `feat/openmontage-integration`
-- Base commit: `4d78fab8709a2cd2811e50bc72d8fd16c785c418`
-- Latest completed milestone: Environment isolation and deterministic timeline composition (uncommitted at this handoff update)
-- OpenMontage root: `D:\Work\OpenMontage`
-- OpenMontage revision: `0af32ce5e1e830c33992af1f9179dcdcd536549b`
-- Current phase: Strict production-readiness audit — production runner and live acceptance
+- Base: `origin/build/mental-empire-studio` (merge-base `4d78fab8709a2cd2811e50bc72d8fd16c785c418`)
+- OpenMontage root: `D:\Work\OpenMontage` at `0af32ce5e1e830c33992af1f9179dcdcd536549b` — **pinned,
+  clean, and must not be modified**
+- Current phase: closing the remaining live acceptance scenarios
 
-## Completed
+Commits above the base (oldest first):
 
-- Architecture and runtime investigation.
-- Figma/reference review.
-- MES-owned job package v1 and JSON Schema.
-- Backward-compatible v1 timeline with 24 fps scene timing, crossfade, motion, locks, and explicit gaps.
-- Central environment-file resolver shared by health, assisted, Backlot, and managed launches, with precedence/process-control hardening and value-free reporting.
-- Lifecycle, routing, failure taxonomy, validation, and redaction.
-- Focused unit tests and continuity docs.
-- Idempotent SQLite integration job/event/output persistence with guarded transitions.
-- Credential-free settings, real compatibility/provider/runtime probing, and cached health reports.
-- Loopback-only Backlot health/state/SSE observation.
-- Typed service, IPC, preload, and renderer contracts.
-- Assisted workspace initialization through OpenMontage's checkpoint library.
-- Atomic job package/instruction/recovery files with typed local actions.
-- Startup rediscovery and resume of interrupted preparation.
-- Versioned JSON-lines runner protocol with compatibility proof and strict parsing.
-- Shell-free managed subprocess execution with bounded/redacted streams.
-- Durable checkpoint/output/activity ingestion and Backlot observation.
-- Pause/resume/cancel/approval/revision/retry controls.
-- Managed restart recovery, fault classification, and output-path containment.
-- Deterministic real-subprocess fixture coverage.
-- Tamper-checked, persisted production routing plans.
-- Documentary Montage runtime enforcement and managed-to-assisted degradation.
-- Classified checkpoint-preserving retry supervision.
-- Real MES Compose fallback with cancellation/fallback-disable protections.
-- Structured Sentry plan/retry/fallback lifecycle logging and fault coverage.
-- Native OpenMontage navigation, dashboard, capability matrix, and recent jobs.
-- Seven-step Compose-backed production setup with pure v1 package construction.
-- Transparent automatic plan review/start and Remotion/HyperFrames comparison.
-- Live, approval, recovery, failure/fallback, assisted, cancellation, and completion workspaces.
-- Settings → OpenMontage with hidden credential statuses and full health checks.
-- Browser-only typed fixtures making every PRD state reachable for interaction/screenshot QA.
-- 1352×868 visual validation with no renderer console errors.
-- External Remotion dependencies installed from the committed lockfile; all 13 compositions enumerate.
-- Full suite, opt-in live health, TypeScript, build, Electron ABI, smokes `1`/`m3`–`m7`, and Windows unpacked packaging pass.
-- Ten final 1352×868 screenshots saved under `docs/openmontage-integration/screenshots/`.
-- Scope, secret, generated-production-media, and nested-repository audits complete.
-
-## Changed files
-
-- `shared/openmontage.ts`
-- `test/unit/openmontage-contracts.test.ts`
-- `electron/db/index.ts`
-- `electron/ipc/openmontage.ts`
-- `electron/ipc/register.ts`
-- `electron/preload.ts`
-- `electron/services/openmontage/backlot.ts`
-- `electron/services/openmontage/health.ts`
-- `electron/services/openmontage/environment.ts`
-- `electron/services/openmontage/index.ts`
-- `shared/types.ts`
-- `test/unit/openmontage-backlot.test.ts`
-- `test/unit/openmontage-db.test.ts`
-- `test/unit/openmontage-health.test.ts`
-- `test/unit/openmontage-environment.test.ts`
-- `test/unit/openmontage-ipc-validation.test.ts`
-- `electron/main.ts`
-- `electron/services/openmontage/assisted.ts`
-- `electron/services/openmontage/managed.ts`
-- `electron/services/openmontage/production.ts`
-- `electron/services/openmontage/mes-fallback.ts`
-- `test/stubs/electron.ts`
-- `test/unit/openmontage-assisted.test.ts`
-- `shared/openmontage-runner.ts`
-- `test/fixtures/openmontage-runner.mjs`
-- `test/unit/openmontage-runner-protocol.test.ts`
-- `test/unit/openmontage-managed.test.ts`
-- `test/unit/openmontage-production.test.ts`
-- `test/unit/openmontage-mes-fallback.test.ts`
-- `src/features/openmontage/model.ts`
-- `src/features/openmontage/OpenMontageSettingsPanel.tsx`
-- `src/screens/OpenMontage.tsx`
-- `src/theme/pages/openmontage.css`
-- `test/unit/openmontage-ui-model.test.ts`
-- `docs/openmontage-integration/schemas/job-package.v1.schema.json`
-- `docs/openmontage-integration/ARCHITECTURE.md`
-- `docs/openmontage-integration/IMPLEMENTATION_PLAN.md`
-- `docs/openmontage-integration/DECISIONS.md`
-- `docs/openmontage-integration/PROGRESS.md`
-- `docs/openmontage-integration/TEST_MATRIX.md`
-- `NEXT_AGENT.md`
-
-The OpenMontage checkout was moved safely to the sibling `D:\Work\OpenMontage`. The user-provided `docs/openmontage-integration/PRD.md` remains untracked until the hygiene milestone commit.
-
-## Tests run
-
-```powershell
-npm test -- --run test/unit/openmontage-contracts.test.ts
-npm run typecheck
-npm test -- --run test/unit/openmontage-contracts.test.ts test/unit/openmontage-db.test.ts test/unit/openmontage-backlot.test.ts test/unit/openmontage-health.test.ts test/unit/openmontage-ipc-validation.test.ts
-$env:ME_OPENMONTAGE_LIVE='1'; npm test -- --run test/unit/openmontage-health.test.ts
-npm run build
-npm test -- --run test/unit/openmontage-assisted.test.ts
-npm test -- --run test/unit/openmontage-runner-protocol.test.ts test/unit/openmontage-managed.test.ts
-npm test -- --run test/unit/openmontage-production.test.ts test/unit/openmontage-mes-fallback.test.ts
-npm test -- --run test/unit/openmontage-ui-model.test.ts
+```
+29fac2f feat(openmontage): define integration contracts
+5637b31 feat(openmontage): add persistence and health probes
+9e894a2 feat(openmontage): add assisted handoff recovery
+417c4c8 feat(openmontage): add managed runner execution
+84b7d60 feat(openmontage): add routing and MES fallback
+a67c298 feat(openmontage): add production workspace UI
+f8b25b2 test(openmontage): complete release validation
+1d2d602 feat(openmontage): harden managed production runner
+0b93d1f fix(openmontage): repair live health path and make SQLite ABI skips loud
+e378957 fix(openmontage): make completion prove the requested output contract
+d7c1269 test(openmontage): add real runner-interruption and cancellation coverage
 ```
 
-The new environment/timeline focused suites pass 58 tests across contract, environment, health, model, assisted, managed, database, and production paths. TypeScript is clean. The previous full suite reports 69 passing files and 574 passing tests with two documented skips; full-suite/build/package verification for the new milestone is still pending.
+The branch has **no upstream yet** — it has never been pushed.
 
-## Current environment and blockers
+## What this session changed, and why it matters
 
-- Python 3.11.9 and Node 22.16.0.
-- FFmpeg, HyperFrames, and Remotion probe as available.
-- Managed mode needs a configured runner that proves `mes.openmontage.runner/v1`; the test fixture is not a production runner.
-- Backlot is read-only; do not invent approval/control HTTP endpoints.
-- Web Content and Open Archival Footage are deliberately recorded as blocked live acceptance scenarios until a supported production runner and its provider/approval flow are available.
-- `better-sqlite3` is currently built for Node after the environment/timeline SQLite and subprocess suites. Rebuild it for Electron before app launch, smoke, or packaging.
+### 1. A false PASS was found and fixed
 
-## Exact next task
+The combined `evidence/A-B-D-F-G/` run was recorded as PASS. It requested
+`composition.editableOutput: true`, wrote `editable/remotion/` with **no `package.json`**, persisted
+**no** `editable_project` output, and still passed — because the harness decided PASS from
+`job.state === 'completed'` alone.
 
-Finish the production-runner audit/implementation, verify the environment/timeline milestone with the full suite and Electron packaging gates, then execute every feasible real local/archive/web output and recovery scenario. Keep unavailable credential/provider cases explicitly blocked.
+Fixed on both sides:
 
-## Useful commands
+- The **runner** (`resources/openmontage-runner/codex-runner.mjs`) now re-checks the caller's output
+  contract before emitting `completed`: required MP4, requested editable project (which must be
+  genuinely self-contained — its own `package.json` with dependencies), and, when the MES timeline
+  locks them, the frame rate and resolution. Breaches emit `OUTPUT_VALIDATION_FAILED`,
+  `EDITABLE_PROJECT_MISSING` or `OUTPUT_CONTRACT_VIOLATION` with checkpoints preserved.
+- The **harness** decides PASS from `scripts/lib/openmontage-postconditions.mjs`, which re-probes
+  artefacts on disk with ffprobe rather than trusting the runner or the job row.
 
-```powershell
-git status --short --branch
-npm test -- --run test/unit/openmontage-contracts.test.ts
-npx vitest run test/unit/openmontage-environment.test.ts test/unit/openmontage-health.test.ts test/unit/openmontage-ui-model.test.ts
-npm run typecheck
-npm run build
-git -C OpenMontage status --short --branch
+Re-evaluating the stored evidence now returns the honest verdict:
+
+```
+node scripts/openmontage-evidence-report.mjs --all
+FAIL A-B-D-F-G-...  (harness recorded PASS)
+       FAIL output_present:editable_project
+       FAIL editable_project_self_contained
 ```
 
-## Setup notes
+### 2. The 24 fps vs 30 fps question is resolved
 
-- Follow `docs/SENTRY_LOGGING.md` for every integration service/job log.
-- Use `sentryLog` and `captureException` from `electron/services/sentry.ts`.
-- Keep `NativeApi`, IPC registration, and `electron/preload.ts` aligned.
-- Add new DB columns with `ensureColumn`; use idempotent `CREATE TABLE IF NOT EXISTS` only for genuinely new tables.
-- Credentials remain in OpenMontage/runner environments; store and expose status only.
-- Preserve the existing MES design tokens and self-hosted fonts.
+That job package contained **no `fps` field at all**, so its 30 fps render violated no locked
+decision — there was nothing to violate. The evaluator now reports an unlocked frame rate as
+`NOT_APPLICABLE` instead of inventing a verdict. Scenario D's package locks 24 fps explicitly, with
+four locked scene boundaries, so the enforcement path is exercised for real.
+
+### 3. ~60 tests were silently skipping
+
+`npm test` reported "526 passed | 62 skipped" and looked green. `better-sqlite3` was built for the
+**Electron** ABI, so nine SQLite-backed suites hit an inlined silent `describe.skip`. Note that
+`require('better-sqlite3')` succeeds even with a broken ABI — the native binding only loads on
+`new Database()`, which is why the mismatch is easy to miss.
+
+`test/helpers/sqlite.ts` now prints a banner naming the dropped coverage and both rebuild commands,
+and fails hard under `ME_REQUIRE_SQLITE=1`. **True totals with the Node ABI: 73 files / 599 tests
+pass, 2 opt-in skips.**
+
+### 4. Stale nested `OpenMontage/` removed
+
+`D:\Work\mental-empire-studio\OpenMontage\` held exactly one entry — an **empty** `.git` directory,
+zero files, not a junction (`git -C` there resolved to the parent MES repo, which is what proved it
+empty). It was moved to the session scratchpad rather than deleted. The live health test had been
+resolving that dead path; it now honours `ME_OPENMONTAGE_PATH` and otherwise the documented sibling.
+
+## Test/ABI discipline — read before running anything
+
+`better-sqlite3` must match whoever loads it:
+
+```powershell
+npm rebuild better-sqlite3                    # before Node/Vitest runs
+npx @electron/rebuild -f -w better-sqlite3     # before Electron launch, dist, or live acceptance
+```
+
+**`better-sqlite3` is currently built for ELECTRON** (the live scenario-D run needed it). Rebuild for
+Node before trusting `npm test`.
+
+## Verified this session
+
+```powershell
+npm run typecheck                                    # PASS
+npm test                                             # PASS - 73 files / 599 tests, 2 opt-in skips
+npm run build                                        # PASS
+$env:ME_OPENMONTAGE_LIVE='1'; npx vitest run test/unit/openmontage-health.test.ts   # PASS (6/6)
+npx vitest run test/unit/openmontage-postconditions.test.ts                          # PASS (11/11, real ffmpeg+ffprobe)
+npx vitest run test/unit/openmontage-codex-runner.test.ts                            # PASS (4/4)
+node scripts/openmontage-evidence-report.mjs --all                                   # honest re-verdicts
+```
+
+## Exact next tasks, in order
+
+1. **Finish scenario D.** A live production was in flight at handoff:
+   - job/project `mes-accept-d-remotion-editable-20260725`
+   - spec `D:\Work\openmontage-acceptance\specs\D-remotion-editable.json`
+   - workspace `D:\Work\OpenMontage\projects\mes-accept-d-remotion-editable-20260725`
+   - profile `D:\Work\openmontage-acceptance\profiles\D-remotion-editable`
+   - evidence `docs/openmontage-integration/evidence/D-remotion-editable/`
+   - At handoff: `idea` and `scene_plan` completed + human-approved, `assets` in progress.
+   Check its state, then either let it finish or re-run:
+   ```powershell
+   npx @electron/rebuild -f -w better-sqlite3
+   npm run build
+   cd D:\Work\OpenMontage; python -m backlot serve --port 4750   # separate shell
+   node scripts/openmontage-acceptance.mjs --spec "D:\Work\openmontage-acceptance\specs\D-remotion-editable.json"
+   ```
+   The spec sets `resumeExisting`, so re-running continues rather than restarting.
+2. **Independently render D's exported project** and record it, which is what actually closes D:
+   ```powershell
+   cd D:\Work\OpenMontage\projects\mes-accept-d-remotion-editable-20260725\editable\remotion
+   npm install
+   npm run render
+   ```
+   Then put the produced file in the spec's `postconditions.independentRender.outputPath` (with the
+   exact command) and re-run `scripts/openmontage-evidence-report.mjs --evidence D-remotion-editable`
+   so `independent_render_exists` / `independent_render_ffprobe` are graded.
+3. **Scenario E — HyperFrames.** New spec with `composition.runtime: 'hyperframes'` and
+   `editableOutput: true`. Must show lint, validation, render, ffprobe, exported workspace, and an
+   independent render of that workspace. An installed binary or health probe is not acceptance.
+4. **Scenario G — real interruption.** Use the new harness action:
+   `actions.interruptRunner: { times: 1 }`. It kills the recorded runner PID with `taskkill /T /F`,
+   waits for a new runner, and records stage/progress/checkpoint/session before and after plus a
+   surviving-descendant count. Assert no stage rewind and eventual completion.
+5. **Scenario H — process control.** `actions.pauseResume`, `actions.duplicateStart`, and the new
+   `actions.cancelAfterCheckpoint`, asserting exactly one session and `orphanProcesses: 0`.
+6. **Scenario I — fatal failure + MES fallback.** Set `actions.interruptRunner.times` **greater than**
+   `retryLimit`. Repeated interruption exhausts retries and forces a genuine fatal failure with no
+   fault-injection code in the production runner. Then assert classification, the sanitized Sentry
+   payload, preserved checkpoints, a real MES fallback video, and linked attempts.
+7. **Scenario J — unavailable regression.** Point `repositoryPath` at a non-existent directory; assert
+   MES launches, ordinary workflows work, health reports it accurately, routing falls back to MES,
+   and the smokes stay green.
+8. **Fresh UI screenshots** for all 11 PRD screens from the final built app against real persisted
+   jobs (the completed profiles make the live/approval/completed/recovery states reachable).
+9. **Apply the one pending dependency fix.** Add to `package.json`:
+   ```json
+   "overrides": { "fast-uri": "3.1.4" }
+   ```
+   `fast-uri@3.1.2` reaches the **shipped** runtime via
+   `electron-store → conf → ajv → fast-uri`; `ajv` declares `^3.0.1`, so `3.1.4` is in range and
+   non-breaking. **It was deliberately not applied yet** because `npm install` would swap
+   `node_modules` under the running scenario-D Electron app. Apply it, then re-run typecheck, the full
+   suite, build and `dist:dir`. Everything else in the audit is dev-only or needs a breaking major —
+   see `SECURITY_REVIEW.md`.
+10. **Final matrix, then push.** `npm test`, `typecheck`, `build`, `dist:dir`, smokes `1` and
+    `m3`–`m7`; update `TEST_MATRIX.md`; then
+    `git push -u origin feat/openmontage-integration` and open a **draft** PR against
+    `build/mental-empire-studio`. Do not merge.
+
+## Blockers
+
+**`PEXELS_API_KEY` is missing** — scenario C cannot run truthfully. It is absent from the User,
+Machine and Process environments, and neither `D:\Work\OpenMontage\.env` nor `.env.local` exists.
+Get a free key at <https://www.pexels.com/api/>, set it as a Windows **user** environment variable,
+and restart the shell. Never print, persist, or copy it into evidence — status only. Full blocker
+write-up in `TEST_MATRIX.md`.
+
+**macOS is untested.** No macOS machine was available. Recorded as NOT EXECUTED, not N/A.
+
+## Environment notes
+
+- Node 22.16.0 (`NODE_MODULE_VERSION` 127); Electron 32 (ABI 128); Python 3.11.9.
+- Codex CLI `@openai/codex@0.145.0`, pinned, ChatGPT-token auth in `~/.codex/auth.json`.
+- Backlot: `cd D:\Work\OpenMontage; python -m backlot serve --port 4750` — loopback only. **Stop it
+  when validation finishes**; do not leave it or acceptance processes running.
+- FFmpeg/ffprobe resolve from `resources/bin`; Remotion and HyperFrames probe available.
+
+## Conventions to keep
+
+- Follow `docs/SENTRY_LOGGING.md`; use `sentryLog`/`captureException` from
+  `electron/services/sentry.ts`. Never log secrets, script/media content, or private absolute paths.
+- Keep `NativeApi` (`shared/types.ts`), `electron/ipc/*`, and `electron/preload.ts` aligned.
+- Add DB columns with `ensureColumn`; `CREATE TABLE IF NOT EXISTS` only for genuinely new tables.
+- Credentials live in the OpenMontage/runner environment. MES stores and exposes **status only**.
+- Never commit OpenMontage source, generated production media, `.env` files, or temp profiles.
+- **When building acceptance specs, construct Windows paths with `path.win32.join` from plain
+  segments.** Writing `'D:\\Work\\...'` inside a shell heredoc silently collapses to `\W`, `\o`, `\s`
+  escapes and produces a relative path — this already wasted one launch attempt.
