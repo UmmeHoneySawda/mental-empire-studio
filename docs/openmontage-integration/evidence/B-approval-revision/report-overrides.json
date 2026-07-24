@@ -1,0 +1,32 @@
+{
+  "scenario": "B-approval-and-revision-flow",
+  "sourceEvidence": "A-B-D-F-G",
+  "requiredBehaviours": [
+    "approval_gate",
+    "revision_request",
+    "duplicate_start_rejected"
+  ],
+  "specPatch": {
+    "request": {
+      "jobPackage": {
+        "production": {
+          "composition": {
+            "editableOutput": false
+          }
+        },
+        "metadata": {
+          "acceptance_scenarios": "B"
+        }
+      }
+    }
+  },
+  "costUsd": 0,
+  "credentialPrerequisites": [],
+  "notes": [
+    "Scenario B is the approval and revision flow: MES must surface a genuine agent-raised approval gate, be able to answer it with either an approval or a revision instruction, and have the same runner session continue afterwards.",
+    "Graded on behaviour, not just a terminal state: behaviour:approval_gate, behaviour:revision_request and behaviour:duplicate_start_rejected must all be evidenced by the recorded run.",
+    "The live run answered four approval gates (research, scene_plan, assets, edit) and issued one revision at the assets gate. The same runnerSessionId resumed after each, with no duplicate launch.",
+    "This report deliberately excludes the editable-project requirement, which is scenario D (evidence/D-remotion-editable/).",
+    "The approval-synchronisation race is what this scenario regression-guards: MES previously observed awaiting_approval before the runner had finished switching state, so the approval command was rejected. The watcher now defers the authoritative gate until the Codex agent turn exits."
+  ]
+}

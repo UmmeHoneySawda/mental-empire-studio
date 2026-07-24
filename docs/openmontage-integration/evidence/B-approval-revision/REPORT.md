@@ -1,7 +1,7 @@
-# Acceptance evidence report — A-B-D-F-G-real-managed-archive-remotion-approval-restart
+# Acceptance evidence report — B-approval-and-revision-flow
 
-- Verdict: **FAIL**
-- Evaluated at: 2026-07-24T20:54:47.654Z
+- Verdict: **PASS**
+- Evaluated at: 2026-07-24T20:54:47.832Z
 - MES commit: `97b122b2cc3219aa8a9222de78e59b5ff08c4a0b`
 - OpenMontage commit: `0af32ce5e1e830c33992af1f9179dcdcd536549b`
 - Operating system: win32 x64
@@ -20,7 +20,6 @@
 | --- | --- | --- |
 | `terminal_state` | PASS | expected completed, observed completed |
 | `output_present:final_mp4` | PASS | 1 recorded |
-| `output_present:editable_project` | FAIL | no output of this kind was persisted by MES |
 | `output_present:captions` | PASS | 1 recorded |
 | `final_mp4_exists_on_disk` | PASS | D:\Work\OpenMontage\projects\mes-accept-archive-remotion-20260724\renders\final.mp4 |
 | `final_mp4_ffprobe` | PASS | ffprobe parsed the container |
@@ -28,7 +27,9 @@
 | `final_mp4_width` | PASS | requested 1280, observed 1280 |
 | `final_mp4_height` | PASS | requested 720, observed 720 |
 | `final_mp4_locked_fps` | NOT_APPLICABLE | the MES package locked no timeline fps; the render reports 30 fps |
-| `editable_project_self_contained` | FAIL | no editable_project output was recorded |
+| `behaviour:approval_gate` | PASS | recorded by the live run |
+| `behaviour:revision_request` | PASS | recorded by the live run |
+| `behaviour:duplicate_start_rejected` | PASS | recorded by the live run |
 
 ## Checkpoints
 
@@ -68,7 +69,7 @@
 - no  — runner_interruption_recovery
 - no  — pause_resume
 - no  — cancellation
-- yes — editable_output_requested
+- no  — editable_output_requested
 
 ## Commands executed
 
@@ -81,4 +82,12 @@ node scripts/openmontage-acceptance.mjs --spec "D:\Work\mental-empire-studio\doc
 
 - `evidence/A-B-D-F-G\01-dashboard.png`
 - `evidence/A-B-D-F-G\02-approval.png`
+
+## Notes
+
+- Scenario B is the approval and revision flow: MES must surface a genuine agent-raised approval gate, be able to answer it with either an approval or a revision instruction, and have the same runner session continue afterwards.
+- Graded on behaviour, not just a terminal state: behaviour:approval_gate, behaviour:revision_request and behaviour:duplicate_start_rejected must all be evidenced by the recorded run.
+- The live run answered four approval gates (research, scene_plan, assets, edit) and issued one revision at the assets gate. The same runnerSessionId resumed after each, with no duplicate launch.
+- This report deliberately excludes the editable-project requirement, which is scenario D (evidence/D-remotion-editable/).
+- The approval-synchronisation race is what this scenario regression-guards: MES previously observed awaiting_approval before the runner had finished switching state, so the approval command was rejected. The watcher now defers the authoritative gate until the Codex agent turn exits.
 

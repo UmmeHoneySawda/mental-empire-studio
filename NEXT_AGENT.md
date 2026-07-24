@@ -7,78 +7,126 @@
 - Base: `origin/build/mental-empire-studio` (merge-base `4d78fab8709a2cd2811e50bc72d8fd16c785c418`)
 - OpenMontage root: `D:\Work\OpenMontage` at `0af32ce5e1e830c33992af1f9179dcdcd536549b` — **pinned,
   clean, and must not be modified**
-- Current phase: closing the remaining live acceptance scenarios
+- Current phase: five acceptance scenarios blocked on an external quota; everything else closed
 
-Commits above the base (oldest first):
+## The one blocker
 
-```
-29fac2f feat(openmontage): define integration contracts
-5637b31 feat(openmontage): add persistence and health probes
-9e894a2 feat(openmontage): add assisted handoff recovery
-417c4c8 feat(openmontage): add managed runner execution
-84b7d60 feat(openmontage): add routing and MES fallback
-a67c298 feat(openmontage): add production workspace UI
-f8b25b2 test(openmontage): complete release validation
-1d2d602 feat(openmontage): harden managed production runner
-0b93d1f fix(openmontage): repair live health path and make SQLite ABI skips loud
-e378957 fix(openmontage): make completion prove the requested output contract
-d7c1269 test(openmontage): add real runner-interruption and cancellation coverage
-```
+**The Codex agent-runner account is out of usage capacity until Jul 31st, 2026 3:56 PM.**
 
-The branch has **no upstream yet** — it has never been pushed.
+This blocks acceptance scenarios **C, E, G, H and I**, each of which requires a real
+agent-governed OpenMontage production. Full write-up, the confirming CLI transcript, the preserved
+partial workspaces and the exact unblock steps:
+`docs/openmontage-integration/evidence/BLOCKED-codex-usage-limit/REPORT.md`.
 
-## What this session changed, and why it matters
+To unblock: wait for the reset, or add credits at <https://chatgpt.com/codex/settings/usage>. The
+existing `~/.codex/auth.json` is already valid — no new secret is needed.
 
-### 1. A false PASS was found and fixed
+To resume once capacity returns (specs are written and committed; C and G **resume** from their
+existing checkpoints rather than restarting):
 
-The combined `evidence/A-B-D-F-G/` run was recorded as PASS. It requested
-`composition.editableOutput: true`, wrote `editable/remotion/` with **no `package.json`**, persisted
-**no** `editable_project` output, and still passed — because the harness decided PASS from
-`job.state === 'completed'` alone.
-
-Fixed on both sides:
-
-- The **runner** (`resources/openmontage-runner/codex-runner.mjs`) now re-checks the caller's output
-  contract before emitting `completed`: required MP4, requested editable project (which must be
-  genuinely self-contained — its own `package.json` with dependencies), and, when the MES timeline
-  locks them, the frame rate and resolution. Breaches emit `OUTPUT_VALIDATION_FAILED`,
-  `EDITABLE_PROJECT_MISSING` or `OUTPUT_CONTRACT_VIOLATION` with checkpoints preserved.
-- The **harness** decides PASS from `scripts/lib/openmontage-postconditions.mjs`, which re-probes
-  artefacts on disk with ffprobe rather than trusting the runner or the job row.
-
-Re-evaluating the stored evidence now returns the honest verdict:
-
-```
+```powershell
+npx @electron/rebuild -f -w better-sqlite3
+npm run build
+cd D:\Work\OpenMontage; python -m backlot serve --port 4750   # separate shell, loopback only
+node scripts/openmontage-acceptance.mjs --spec "D:\Work\openmontage-acceptance\specs\C-pexels-stock.json"
+node scripts/openmontage-acceptance.mjs --spec "D:\Work\openmontage-acceptance\specs\E-hyperframes.json"
+node scripts/openmontage-acceptance.mjs --spec "D:\Work\openmontage-acceptance\specs\G-runner-interruption.json"
+node scripts/openmontage-acceptance.mjs --spec "D:\Work\openmontage-acceptance\specs\H-process-control.json"
+node scripts/openmontage-acceptance.mjs --spec "D:\Work\openmontage-acceptance\specs\I-fatal-fallback.json"
 node scripts/openmontage-evidence-report.mjs --all
-FAIL A-B-D-F-G-...  (harness recorded PASS)
-       FAIL output_present:editable_project
-       FAIL editable_project_self_contained
 ```
 
-### 2. The 24 fps vs 30 fps question is resolved
+`PEXELS_API_KEY` **is configured** (56-character Windows user variable, value never read or logged)
+and is not a blocker. Scenario C was stopped before it reached the Pexels call it was about to make.
 
-That job package contained **no `fps` field at all**, so its 30 fps render violated no locked
-decision — there was nothing to violate. The evaluator now reports an unlocked frame rate as
-`NOT_APPLICABLE` instead of inventing a verdict. Scenario D's package locks 24 fps explicitly, with
-four locked scene boundaries, so the enforcement path is exercised for real.
+## Acceptance status
 
-### 3. ~60 tests were silently skipping
+| ID | Scenario | Live E2E |
+| --- | --- | --- |
+| A | Open archival footage | **PASS** — `evidence/A-archive-footage/` |
+| B | Approval and revision | **PASS** — `evidence/B-approval-revision/` |
+| C | Additional stock footage (Pexels) | BLOCKED — quota |
+| D | Remotion render + self-contained editable project | **PASS** — `evidence/D-remotion-editable/` |
+| E | HyperFrames render + editable workspace | BLOCKED — quota |
+| F | Restart recovery (normal app restart) | **PASS** — `evidence/F-normal-restart/` |
+| G | Runner/agent interruption recovery | BLOCKED — quota |
+| H | Pause / resume / cancel / duplicate | BLOCKED — quota |
+| I | Fatal failure + MES fallback | BLOCKED — quota |
+| J | OpenMontage-unavailable regression | **PASS** — `evidence/J-unavailable/` |
 
-`npm test` reported "526 passed | 62 skipped" and looked green. `better-sqlite3` was built for the
-**Electron** ABI, so nine SQLite-backed suites hit an inlined silent `describe.skip`. Note that
-`require('better-sqlite3')` succeeds even with a broken ABI — the native binding only loads on
-`new Database()`, which is why the mismatch is easy to miss.
+## What this session changed
 
-`test/helpers/sqlite.ts` now prints a banner naming the dropped coverage and both rebuild commands,
-and fails hard under `ME_REQUIRE_SQLITE=1`. **True totals with the Node ABI: 73 files / 599 tests
-pass, 2 opt-in skips.**
+### 1. Scenario D is genuinely closed
 
-### 4. Stale nested `OpenMontage/` removed
+The live production completed at **exactly the locked 24 fps** (1280×720, h264+aac, 15.6s) and
+exported a self-contained `editable/remotion/` project. That project was then copied to
+`D:\Work\openmontage-acceptance\independent\D-remotion` — outside both checkouts, without
+`node_modules` — installed from its own pinned `package.json`, and rendered with the README's
+documented `npm run render`. It produced **375 frames = 15.6s × 24fps**, byte-size identical to the
+in-workspace master. No absolute path leaks into the exported sources.
 
-`D:\Work\mental-empire-studio\OpenMontage\` held exactly one entry — an **empty** `.git` directory,
-zero files, not a junction (`git -C` there resolved to the parent MES repo, which is what proved it
-empty). It was moved to the session scratchpad rather than deleted. The live health test had been
-resolving that dead path; it now honours `ME_OPENMONTAGE_PATH` and otherwise the documented sibling.
+### 2. Scenario J is closed
+
+Pointed at a non-existent checkout, MES launched normally, settings/compose/render-queue/asset-library
+all stayed readable, health reported `unavailable` accurately, and an Automatic request routed to
+`mental-empire-studio` with no OpenMontage job created.
+
+### 3. Per-scenario evidence, and the evidence tool no longer inherits verdicts
+
+`scripts/openmontage-evidence-report.mjs` previously echoed the harness's own `result` whenever it
+could not re-verify — the exact false-pass it exists to catch. It now:
+
+- refuses to inherit a verdict (`INDETERMINATE` + a failing `evidence_reverifiable` check),
+- supports `sourceEvidence` + `specPatch` so one live run yields **independent** per-scenario reports
+  (A, B and F each grade only their own contract against the combined run),
+- supports `requiredBehaviours` so behaviour-shaped scenarios (approval, revision, restart) cannot
+  pass on a terminal state alone,
+- hashes artefacts itself instead of trusting runner-reported digests,
+- credits behaviour proven in a resumed run's `priorRun`.
+
+The harness now writes `acceptance-spec.json` beside the evidence so offline re-grading always works.
+
+The combined `evidence/A-B-D-F-G/` keeps its honest **FAIL** (it requested an editable project and
+did not deliver one). That is not hidden — A, B and F simply do not depend on it.
+
+### 4. Three real product bugs found and fixed
+
+- **Approval race (recurrence).** The checkpoint watcher deferred the gate only *while a Codex child
+  was alive*, but in the window **between** turns it could publish `awaiting_approval` from a stale
+  `awaiting_human` file; MES approved, the runner had already auto-continued, and the command was
+  rejected. This killed live scenario C after three successful approvals. The watcher now **never**
+  publishes a gate — only `afterSuccessfulTurn`, which alone knows the runner will actually wait.
+  Regression: `openmontage-codex-runner.test.ts` "never surfaces an approval gate from a checkpoint
+  the runner has already moved past".
+- **Fatal failures were undiagnosable.** Codex reports errors as a **stdout JSON event**, not stderr,
+  so the runner logged `diagnostic: "unknown"`. It now captures and sanitizes that message.
+- **Quota exhaustion was classified as retryable.** The generic failure text contains the word
+  "runner", so `classifyOpenMontageFailure` returned `retryable: true` and MES burned its retry
+  budget on turns that could never succeed. Quota is now classified deterministically as
+  `credentials` / non-retryable / still fallback-eligible. Two new contract tests.
+
+### 5. `fallback_running` was a dead end
+
+`monitor()` returned on `fallback_running` and `recoverPolicyMonitors` excluded it, so a job that
+fell back could **never** reach "completed with fallback" even after MES finished rendering. Added
+`reconcileFallback` + a `mesProductionStatus` dependency; the monitor keeps watching and completes
+the job when the linked MES project reaches `rendered`. Regression test included. The acceptance
+harness can now drive that render for real via `actions.driveMesFallbackRender`, and the
+postcondition evaluator grades a fallback completion on its own contract (linked attempts, preserved
+OpenMontage workspace, classified failure, real fallback video) instead of demanding an OpenMontage
+render that by definition never happened.
+
+### 6. Dependency fixes (both on shipped paths)
+
+```json
+"overrides": { "fast-uri": "3.1.4", "js-yaml": "4.3.0" }
+```
+
+`js-yaml` was previously documented as build-tooling only — **that was wrong**: `electron-updater`
+(a production dependency) pulls it, so the high-severity advisory reached the shipped auto-update
+path. `npm audit --omit=dev` went from 1 high + 2 moderate to **2 moderate**, both of which are
+`react-router` advisories that are **unreachable** — `react-router-dom` is declared but imported
+nowhere in the repo. Details and follow-ups: `docs/openmontage-integration/SECURITY_REVIEW.md`.
 
 ## Test/ABI discipline — read before running anything
 
@@ -89,97 +137,29 @@ npm rebuild better-sqlite3                    # before Node/Vitest runs
 npx @electron/rebuild -f -w better-sqlite3     # before Electron launch, dist, or live acceptance
 ```
 
-**`better-sqlite3` is currently built for ELECTRON** (the live scenario-D run needed it). Rebuild for
-Node before trusting `npm test`.
+**Never rebuild while a live acceptance run is in flight** — it swaps the native module under the
+running Electron app. It is currently built for **ELECTRON**.
 
 ## Verified this session
 
 ```powershell
-npm run typecheck                                    # PASS
-npm test                                             # PASS - 73 files / 599 tests, 2 opt-in skips
-npm run build                                        # PASS
-$env:ME_OPENMONTAGE_LIVE='1'; npx vitest run test/unit/openmontage-health.test.ts   # PASS (6/6)
-npx vitest run test/unit/openmontage-postconditions.test.ts                          # PASS (11/11, real ffmpeg+ffprobe)
-npx vitest run test/unit/openmontage-codex-runner.test.ts                            # PASS (4/4)
-node scripts/openmontage-evidence-report.mjs --all                                   # honest re-verdicts
+npm run typecheck                       # PASS
+npm test                                # PASS - 73 files / 603 tests, 2 opt-in skips (ME_REQUIRE_SQLITE=1)
+npm run build                           # PASS
+npm run dist:dir                        # see VALIDATION.md
+node scripts/openmontage-evidence-report.mjs --all   # A/B/D/F/J PASS; A-B-D-F-G honest FAIL
+node scripts/openmontage-screenshots.mjs --profile ...\profiles\D-remotion-editable --out ...\screenshots\live-D
 ```
 
-## Exact next tasks, in order
+## Known gaps, stated as gaps
 
-1. **Finish scenario D.** A live production was in flight at handoff:
-   - job/project `mes-accept-d-remotion-editable-20260725`
-   - spec `D:\Work\openmontage-acceptance\specs\D-remotion-editable.json`
-   - workspace `D:\Work\OpenMontage\projects\mes-accept-d-remotion-editable-20260725`
-   - profile `D:\Work\openmontage-acceptance\profiles\D-remotion-editable`
-   - evidence `docs/openmontage-integration/evidence/D-remotion-editable/`
-   - At handoff: `idea` and `scene_plan` completed + human-approved, `assets` in progress.
-   Check its state, then either let it finish or re-run:
-   ```powershell
-   npx @electron/rebuild -f -w better-sqlite3
-   npm run build
-   cd D:\Work\OpenMontage; python -m backlot serve --port 4750   # separate shell
-   node scripts/openmontage-acceptance.mjs --spec "D:\Work\openmontage-acceptance\specs\D-remotion-editable.json"
-   ```
-   The spec sets `resumeExisting`, so re-running continues rather than restarting.
-2. **Independently render D's exported project** and record it, which is what actually closes D:
-   ```powershell
-   cd D:\Work\OpenMontage\projects\mes-accept-d-remotion-editable-20260725\editable\remotion
-   npm install
-   npm run render
-   ```
-   Then put the produced file in the spec's `postconditions.independentRender.outputPath` (with the
-   exact command) and re-run `scripts/openmontage-evidence-report.mjs --evidence D-remotion-editable`
-   so `independent_render_exists` / `independent_render_ffprobe` are graded.
-3. **Scenario E — HyperFrames.** New spec with `composition.runtime: 'hyperframes'` and
-   `editableOutput: true`. Must show lint, validation, render, ffprobe, exported workspace, and an
-   independent render of that workspace. An installed binary or health probe is not acceptance.
-4. **Scenario G — real interruption.** Use the new harness action:
-   `actions.interruptRunner: { times: 1 }`. It kills the recorded runner PID with `taskkill /T /F`,
-   waits for a new runner, and records stage/progress/checkpoint/session before and after plus a
-   surviving-descendant count. Assert no stage rewind and eventual completion.
-5. **Scenario H — process control.** `actions.pauseResume`, `actions.duplicateStart`, and the new
-   `actions.cancelAfterCheckpoint`, asserting exactly one session and `orphanProcesses: 0`.
-6. **Scenario I — fatal failure + MES fallback.** Set `actions.interruptRunner.times` **greater than**
-   `retryLimit`. Repeated interruption exhausts retries and forces a genuine fatal failure with no
-   fault-injection code in the production runner. Then assert classification, the sanitized Sentry
-   payload, preserved checkpoints, a real MES fallback video, and linked attempts.
-7. **Scenario J — unavailable regression.** Point `repositoryPath` at a non-existent directory; assert
-   MES launches, ordinary workflows work, health reports it accurately, routing falls back to MES,
-   and the smokes stay green.
-8. **Fresh UI screenshots** for all 11 PRD screens from the final built app against real persisted
-   jobs (the completed profiles make the live/approval/completed/recovery states reachable).
-9. **Apply the one pending dependency fix.** Add to `package.json`:
-   ```json
-   "overrides": { "fast-uri": "3.1.4" }
-   ```
-   `fast-uri@3.1.2` reaches the **shipped** runtime via
-   `electron-store → conf → ajv → fast-uri`; `ajv` declares `^3.0.1`, so `3.1.4` is in range and
-   non-breaking. **It was deliberately not applied yet** because `npm install` would swap
-   `node_modules` under the running scenario-D Electron app. Apply it, then re-run typecheck, the full
-   suite, build and `dist:dir`. Everything else in the audit is dev-only or needs a breaking major —
-   see `SECURITY_REVIEW.md`.
-10. **Final matrix, then push.** `npm test`, `typecheck`, `build`, `dist:dir`, smokes `1` and
-    `m3`–`m7`; update `TEST_MATRIX.md`; then
-    `git push -u origin feat/openmontage-integration` and open a **draft** PR against
-    `build/mental-empire-studio`. Do not merge.
-
-## Blockers
-
-**`PEXELS_API_KEY` is missing** — scenario C cannot run truthfully. It is absent from the User,
-Machine and Process environments, and neither `D:\Work\OpenMontage\.env` nor `.env.local` exists.
-Get a free key at <https://www.pexels.com/api/>, set it as a Windows **user** environment variable,
-and restart the shell. Never print, persist, or copy it into evidence — status only. Full blocker
-write-up in `TEST_MATRIX.md`.
-
-**macOS is untested.** No macOS machine was available. Recorded as NOT EXECUTED, not N/A.
-
-## Environment notes
-
-- Node 22.16.0 (`NODE_MODULE_VERSION` 127); Electron 32 (ABI 128); Python 3.11.9.
-- Codex CLI `@openai/codex@0.145.0`, pinned, ChatGPT-token auth in `~/.codex/auth.json`.
-- Backlot: `cd D:\Work\OpenMontage; python -m backlot serve --port 4750` — loopback only. **Stop it
-  when validation finishes**; do not leave it or acceptance processes running.
-- FFmpeg/ffprobe resolve from `resources/bin`; Remotion and HyperFrames probe available.
+- **macOS is NOT EXECUTED.** No macOS machine was available.
+- **Three UI screens were not captured from real data** (new production, production plan, runtime
+  comparison) — the capture script cannot resolve those controls through the Electron automation
+  channel. Recorded as NOT EXECUTED in `TEST_MATRIX.md`, not as passes. The completed-outputs and
+  recovery screens need the job-row click fixed, or the G/I profiles once quota returns.
+- The real `codex-security` `security-diff-scan` skill does not exist in this environment; the
+  security work is a manual audit against the cached threat model and says so.
 
 ## Conventions to keep
 
@@ -189,6 +169,7 @@ write-up in `TEST_MATRIX.md`.
 - Add DB columns with `ensureColumn`; `CREATE TABLE IF NOT EXISTS` only for genuinely new tables.
 - Credentials live in the OpenMontage/runner environment. MES stores and exposes **status only**.
 - Never commit OpenMontage source, generated production media, `.env` files, or temp profiles.
-- **When building acceptance specs, construct Windows paths with `path.win32.join` from plain
-  segments.** Writing `'D:\\Work\\...'` inside a shell heredoc silently collapses to `\W`, `\o`, `\s`
-  escapes and produces a relative path — this already wasted one launch attempt.
+- **Build acceptance-spec Windows paths with `path.win32.join` from plain segments.** Writing
+  `'D:\\Work\\...'` inside a shell heredoc collapses to `\W`, `\o`, `\s` escapes.
+- Metadata keys in a job package must not look secret-shaped — `credential_prerequisite` is rejected
+  by the validator (correctly). Use e.g. `provider_env_var`.

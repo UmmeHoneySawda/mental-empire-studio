@@ -35,16 +35,32 @@ is not evidence.
 
 | ID | Scenario | Implemented | Unit | Fixture | Real-process | Live E2E | Windows | macOS | Evidence |
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
-| A | Open archival footage workflow | PASS | PASS | PASS | PASS | PASS | PASS | NOT EXECUTED | `evidence/A-B-D-F-G/` |
-| B | Approval and revision flow | PASS | PASS | PASS | PASS | PASS | PASS | NOT EXECUTED | `evidence/A-B-D-F-G/` |
-| C | Additional stock footage (Pexels) | PASS | PASS | PASS | NOT EXECUTED | **BLOCKED** | NOT EXECUTED | NOT EXECUTED | none — see blocker below |
-| D | Remotion render + self-contained editable project | PASS | PASS | PASS | PASS | **NOT EXECUTED** | NOT EXECUTED | NOT EXECUTED | `evidence/D-remotion-editable/` |
-| E | HyperFrames render + editable workspace | PASS | PASS | NOT EXECUTED | NOT EXECUTED | **NOT EXECUTED** | NOT EXECUTED | NOT EXECUTED | none |
-| F | Restart recovery — normal application restart | PASS | PASS | PASS | PASS | PASS | PASS | NOT EXECUTED | `evidence/A-B-D-F-G/` |
-| G | Recovery from real runner/agent interruption | PASS | PASS | PASS | PASS | **NOT EXECUTED** | NOT EXECUTED | NOT EXECUTED | none |
-| H | Pause / resume / cancel / duplicate prevention | PASS | PASS | PASS | PASS | **NOT EXECUTED** | NOT EXECUTED | NOT EXECUTED | none |
-| I | Forced fatal failure + MES fallback | PASS | PASS | PASS | PASS | **NOT EXECUTED** | NOT EXECUTED | NOT EXECUTED | none |
-| J | OpenMontage-unavailable MES regression | PASS | PASS | PASS | N/R — no external process involved | **NOT EXECUTED** | NOT EXECUTED | NOT EXECUTED | none |
+| A | Open archival footage workflow | PASS | PASS | PASS | PASS | PASS | PASS | NOT EXECUTED | `evidence/A-archive-footage/` |
+| B | Approval and revision flow | PASS | PASS | PASS | PASS | PASS | PASS | NOT EXECUTED | `evidence/B-approval-revision/` |
+| C | Additional stock footage (Pexels) | PASS | PASS | PASS | PASS — real runner reached a genuine approval gate before quota loss | **BLOCKED** — Codex quota | NOT EXECUTED | NOT EXECUTED | `evidence/BLOCKED-codex-usage-limit/` |
+| D | Remotion render + self-contained editable project | PASS | PASS | PASS | PASS | **PASS** | PASS | NOT EXECUTED | `evidence/D-remotion-editable/` |
+| E | HyperFrames render + editable workspace | PASS | PASS | NOT EXECUTED | NOT EXECUTED | **BLOCKED** — Codex quota | NOT EXECUTED | NOT EXECUTED | `evidence/BLOCKED-codex-usage-limit/` |
+| F | Restart recovery — normal application restart | PASS | PASS | PASS | PASS | PASS | PASS | NOT EXECUTED | `evidence/F-normal-restart/` |
+| G | Recovery from real runner/agent interruption | PASS | PASS | PASS | PASS | **BLOCKED** — Codex quota | NOT EXECUTED | NOT EXECUTED | `evidence/BLOCKED-codex-usage-limit/` |
+| H | Pause / resume / cancel / duplicate prevention | PASS | PASS | PASS | PASS | **BLOCKED** — Codex quota | NOT EXECUTED | NOT EXECUTED | `evidence/BLOCKED-codex-usage-limit/` |
+| I | Forced fatal failure + MES fallback | PASS | PASS | PASS | PASS | **BLOCKED** — Codex quota | NOT EXECUTED | NOT EXECUTED | `evidence/BLOCKED-codex-usage-limit/` |
+| J | OpenMontage-unavailable MES regression | PASS | PASS | PASS | N/R — no external process involved | **PASS** | PASS | NOT EXECUTED | `evidence/J-unavailable/` |
+
+**Five rows are BLOCKED on one external prerequisite: the Codex agent-runner account is out of usage
+capacity until Jul 31st, 2026.** C and G were launched as real live productions and reached the real
+engine — C completed `idea`, `script` and `scene_plan` and was waiting at a genuine approval gate
+whose own summary said the next step was "begin real Pexels acquisition" — before every subsequent
+Codex turn began failing. The full write-up, the confirming CLI transcript, the preserved partial
+workspaces and the exact unblock steps are in `evidence/BLOCKED-codex-usage-limit/REPORT.md`.
+
+These are recorded as BLOCKED, not as passes and not as N/A. Specs for all five
+(`C-pexels-stock`, `E-hyperframes`, `G-runner-interruption`, `H-process-control`,
+`I-fatal-fallback`) are written and committed under `D:\Work\openmontage-acceptance\specs\`; C and G
+resume from their existing checkpoints rather than restarting.
+
+`PEXELS_API_KEY` is **configured and not a blocker** — verified present as a 56-character Windows
+user environment variable (value never read, printed or persisted). Scenario C was stopped before it
+reached the Pexels call it was about to make.
 
 ### Correction to the previously recorded A/B/D/F/G result
 
@@ -73,6 +89,35 @@ its 30 fps render violated no locked decision. The evaluator now reports an unlo
 explicitly so the enforcement path is exercised for real.
 
 ---
+
+## UI validation from the real application
+
+Captured by `scripts/openmontage-screenshots.mjs`, which launches the **built** Electron app against
+a **real acceptance profile** (`profiles/D-remotion-editable`) — not the seeded UI fixture — so every
+pixel comes from job, event, health and output rows a live production actually wrote.
+
+| Screen | Status | Artefact |
+| --- | --- | --- |
+| Integration dashboard | PASS — real health probe + persisted jobs | `screenshots/live-D/01-integration-dashboard.png` |
+| Health and capabilities | PASS — real capability/provider matrix | `screenshots/live-D/02-health-and-capabilities.png` |
+| Settings → OpenMontage | PASS — credential **status** only, no values | `screenshots/live-D/11-settings.png` |
+| New production, production plan, runtime comparison | NOT EXECUTED — the capture script could not resolve those controls in the automation channel; recorded as a gap, not a pass | — |
+| Live production, storyboard approval | PASS — captured **in-run** by the acceptance harness during real productions | `evidence/D-remotion-editable/01-dashboard.png`, `02-approval.png`, `03-final.png`; `evidence/A-B-D-F-G/*.png` |
+| Completed outputs | NOT EXECUTED in this pass — the job row click did not resolve; the completed job's data is captured in `evidence/D-remotion-editable/report.json` | — |
+| Recovery | NOT EXECUTED — the D job recorded no recovery events; this state belongs to scenarios G/I, which are quota-blocked | — |
+| Failure and fallback | NOT EXECUTED — belongs to scenario I, which is quota-blocked | — |
+
+Measured on the same real render (`screenshots/live-D/ui-validation.json`):
+
+- Windows viewport 1352×868, `documentScrollWidth == documentClientWidth` → **no horizontal overflow**.
+- **0 renderer console errors.**
+- 26 focusable controls; 4 flagged unlabelled, of which 3 are `<link rel=...>` elements matched by the
+  audit's `[href]` selector (false positives) and 1 is an input carrying a `placeholder`. No
+  genuinely unlabelled interactive control was found.
+
+The ten screenshots under `screenshots/` from the earlier pass were taken from the real app but with
+**fixture-seeded** UI state (`ME_SHOOT_SEED=1`). They are retained for layout reference and are
+explicitly **not** counted as real-data evidence.
 
 ## Contract and unit coverage
 

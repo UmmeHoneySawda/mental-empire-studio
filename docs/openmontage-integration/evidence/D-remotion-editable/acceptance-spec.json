@@ -1,0 +1,155 @@
+{
+  "scenario": "D-real-remotion-editable-export-and-independent-render",
+  "evidenceDir": "D:\\Work\\mental-empire-studio\\docs\\openmontage-integration\\evidence\\D-remotion-editable",
+  "userDataDir": "D:\\Work\\openmontage-acceptance\\profiles\\D-remotion-editable",
+  "openMontagePath": "D:\\Work\\OpenMontage",
+  "backlotUrl": "http://127.0.0.1:4750",
+  "stallTimeoutSec": 1500,
+  "timeoutSec": 5400,
+  "retryLimit": 1,
+  "expectedFinalState": "completed",
+  "postconditions": {
+    "minDurationSeconds": 12,
+    "independentRender": {
+      "outputPath": "D:\\Work\\openmontage-acceptance\\independent\\D-remotion\\out\\final.mp4",
+      "command": "cd D:\\Work\\openmontage-acceptance\\independent\\D-remotion && npm install && npm run render",
+      "note": "The exported editable/remotion project was copied (without node_modules or out/) to a directory outside both the MES and OpenMontage checkouts, installed from its own pinned package.json, and rendered with the README's documented command."
+    }
+  },
+  "actions": {
+    "resumeExisting": true,
+    "duplicateStart": true,
+    "reviseFirstApproval": true,
+    "revisionInstructions": "Keep the locked 24 fps timeline and the locked scene boundaries exactly as supplied. Confirm in the artifact that the editable Remotion export will be fully self-contained with its own package.json, pinned dependencies, a render script, relative asset paths, and a README.",
+    "autoApprove": true
+  },
+  "request": {
+    "routing": {
+      "workflowMode": "openmontage",
+      "requestedRuntime": "remotion",
+      "requiresRealFootage": true,
+      "advancedStockSelection": false,
+      "editableComposition": true,
+      "kineticTypography": false,
+      "preferredPipeline": "documentary-montage"
+    },
+    "jobPackage": {
+      "schema": "mes.openmontage.job/v1",
+      "contractVersion": "mes.openmontage/v1",
+      "jobId": "mes-accept-d-remotion-editable-20260725",
+      "projectId": "mes-accept-d-remotion-editable-20260725",
+      "createdAt": "2026-07-25T00:00:00.000Z",
+      "requestedBy": "mental-empire-studio",
+      "project": {
+        "title": "MES Acceptance D - Editable Remotion Export",
+        "description": "Create a 15.6 second narrated documentary montage at EXACTLY 24 fps using only real open motion footage from NASA and/or Wikimedia Commons. Use the supplied narration exactly. Music is explicitly opted out, so the mix is narration only. Honour the supplied locked timeline: 24 fps, the four locked scene boundaries, and the 0.5s crossfade. Fill each locked gap scene with real motion footage. In addition to the final MP4 you MUST export a SELF-CONTAINED editable Remotion project under editable/remotion that an unrelated third party can install and render on its own machine: its own package.json with pinned dependencies and a \"render\" script, all composition sources, every referenced asset copied inside the project (for example public/) and referenced by RELATIVE path only (never an absolute path into the MES or OpenMontage checkouts), and a README.md stating the exact install and render commands. Do not use still-image substitutes, fixtures, generated video, Pexels, or Pixabay."
+      },
+      "source": {
+        "narrationPath": "D:\\Work\\openmontage-acceptance\\inputs\\archive-remotion-narration.wav",
+        "scriptPath": "D:\\Work\\mental-empire-studio\\test\\acceptance\\openmontage\\archive-remotion-script.txt",
+        "language": "en",
+        "assets": []
+      },
+      "production": {
+        "workflowMode": "openmontage",
+        "pipeline": "documentary-montage",
+        "mediaControl": "fill",
+        "style": "restrained archival science documentary; real motion footage only",
+        "composition": {
+          "runtime": "remotion",
+          "authoringMode": "atelier",
+          "editableOutput": true
+        },
+        "approvals": [
+          "scene_plan",
+          "assets"
+        ]
+      },
+      "timeline": {
+        "version": "1.0",
+        "fps": 24,
+        "durationSeconds": 15.6,
+        "crossfadeSeconds": 0.5,
+        "scenes": [
+          {
+            "id": "scene_01",
+            "order": 0,
+            "type": "gap",
+            "startSeconds": 0,
+            "endSeconds": 4,
+            "durationSeconds": 4,
+            "locked": true,
+            "motion": {
+              "preset": "cinematic",
+              "direction": "auto",
+              "amount": 0.12
+            }
+          },
+          {
+            "id": "scene_02",
+            "order": 1,
+            "type": "gap",
+            "startSeconds": 4,
+            "endSeconds": 8,
+            "durationSeconds": 4,
+            "locked": true,
+            "motion": {
+              "preset": "cinematic",
+              "direction": "auto",
+              "amount": 0.12
+            }
+          },
+          {
+            "id": "scene_03",
+            "order": 2,
+            "type": "gap",
+            "startSeconds": 8,
+            "endSeconds": 11.8,
+            "durationSeconds": 3.8,
+            "locked": true,
+            "motion": {
+              "preset": "cinematic",
+              "direction": "auto",
+              "amount": 0.12
+            }
+          },
+          {
+            "id": "scene_04",
+            "order": 3,
+            "type": "gap",
+            "startSeconds": 11.8,
+            "endSeconds": 15.6,
+            "durationSeconds": 3.8,
+            "locked": true,
+            "motion": {
+              "preset": "cinematic",
+              "direction": "auto",
+              "amount": 0.12
+            }
+          }
+        ]
+      },
+      "output": {
+        "directory": "D:\\Work\\openmontage-acceptance\\outputs\\D-remotion-editable",
+        "aspectRatio": "16:9",
+        "width": 1280,
+        "height": 720,
+        "format": "mp4",
+        "captions": true
+      },
+      "fallback": {
+        "enabled": true,
+        "engine": "mental-empire-studio",
+        "preserveOpenMontageProject": true
+      },
+      "metadata": {
+        "acceptance_scenarios": "D",
+        "duration_target_seconds": 15.6,
+        "locked_fps": 24,
+        "music_opt_out": true,
+        "required_open_sources": "NASA,Wikimedia Commons",
+        "cost_limit_usd": 0
+      }
+    }
+  }
+}

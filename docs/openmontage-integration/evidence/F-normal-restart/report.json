@@ -1,8 +1,8 @@
 {
   "schema": "mes.openmontage.evidence-report/v1",
-  "scenario": "A-B-D-F-G-real-managed-archive-remotion-approval-restart",
-  "evidenceDirectory": "D:\\Work\\mental-empire-studio\\docs\\openmontage-integration\\evidence\\A-B-D-F-G",
-  "evaluatedAt": "2026-07-24T20:54:47.654Z",
+  "scenario": "F-restart-recovery-normal-application-restart",
+  "evidenceDirectory": "D:\\Work\\mental-empire-studio\\docs\\openmontage-integration\\evidence\\F-normal-restart",
+  "evaluatedAt": "2026-07-24T20:54:48.284Z",
   "runStartedAt": "2026-07-24T18:09:43.903Z",
   "runCompletedAt": "2026-07-24T18:27:42.905Z",
   "mesCommit": "97b122b2cc3219aa8a9222de78e59b5ff08c4a0b",
@@ -106,11 +106,6 @@
       "detail": "1 recorded"
     },
     {
-      "name": "output_present:editable_project",
-      "result": "FAIL",
-      "detail": "no output of this kind was persisted by MES"
-    },
-    {
       "name": "output_present:captions",
       "result": "PASS",
       "detail": "1 recorded"
@@ -146,9 +141,14 @@
       "detail": "the MES package locked no timeline fps; the render reports 30 fps"
     },
     {
-      "name": "editable_project_self_contained",
-      "result": "FAIL",
-      "detail": "no editable_project output was recorded"
+      "name": "behaviour:normal_application_restart",
+      "result": "PASS",
+      "detail": "recorded by the live run"
+    },
+    {
+      "name": "behaviour:resume_existing",
+      "result": "PASS",
+      "detail": "recorded by the live run"
     }
   ],
   "media": {
@@ -166,15 +166,10 @@
         "height": 720,
         "fps": 30
       }
-    },
-    "editableProjects": []
+    }
   },
   "declaredScenarios": [
-    "A",
-    "B",
-    "D",
-    "F",
-    "G"
+    "F"
   ],
   "provenBehaviours": {
     "managed_production": true,
@@ -186,9 +181,16 @@
     "runner_interruption_recovery": false,
     "pause_resume": false,
     "cancellation": false,
-    "editable_output_requested": true
+    "editable_output_requested": false
   },
-  "notes": [],
+  "notes": [
+    "Scenario F is restart recovery across a normal MES application restart: the Electron app is closed and relaunched mid-production, and the job must resume the same OpenMontage project and runner session from its last valid checkpoint without repeating completed stages.",
+    "Graded on behaviour: behaviour:normal_application_restart and behaviour:resume_existing must both be evidenced.",
+    "The recorded run closed and relaunched the real Electron app while the production was running and reports identical lastCheckpointAt and runnerSessionId before and after the restart, which is what proves no work was rewound or duplicated.",
+    "Scenario G (recovery from a real runner/agent process interruption, i.e. killing the runner process tree rather than restarting MES) is a separate requirement with its own evidence directory.",
+    "This report deliberately excludes the editable-project requirement, which is scenario D (evidence/D-remotion-editable/)."
+  ],
   "harnessReportedResult": "PASS",
-  "result": "FAIL"
+  "result": "PASS",
+  "sourceEvidence": "A-B-D-F-G"
 }

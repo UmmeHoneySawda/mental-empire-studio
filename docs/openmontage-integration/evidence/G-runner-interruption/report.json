@@ -1,0 +1,38 @@
+{
+  "schema": "mes.openmontage.evidence-report/v1",
+  "scenario": "G-recovery-from-real-runner-process-interruption",
+  "evidenceDirectory": "D:\\Work\\mental-empire-studio\\docs\\openmontage-integration\\evidence\\G-runner-interruption",
+  "evaluatedAt": "2026-07-24T20:54:48.374Z",
+  "mesCommit": "97b122b2cc3219aa8a9222de78e59b5ff08c4a0b",
+  "openMontageCommit": "0af32ce5e1e830c33992af1f9179dcdcd536549b",
+  "operatingSystem": "win32 x64",
+  "runner": "codex-cli @openai/codex 0.145.0",
+  "costUsd": 0,
+  "credentialPrerequisites": [
+    "Codex agent-runner usage capacity (EXHAUSTED — this is the blocker)"
+  ],
+  "commands": [],
+  "screenshots": [],
+  "checkpoints": [],
+  "outputs": [],
+  "postconditions": [
+    {
+      "name": "scenario_executed",
+      "result": "NOT EXECUTED",
+      "detail": "No acceptance run was recorded in this directory; see the notes for the blocker."
+    }
+  ],
+  "media": {},
+  "declaredScenarios": [],
+  "provenBehaviours": {},
+  "notes": [
+    "INCOMPLETE RUN — BLOCKED, not a product failure. See ../BLOCKED-codex-usage-limit/REPORT.md.",
+    "The production was launched against the real OpenMontage engine and its workspace was initialised, but every one of its four Codex turns failed immediately: the agent-runner account had no usage capacity left (resets Jul 31st, 2026 3:56 PM). No checkpoint was ever reached, so the planned interruption could not be exercised.",
+    "The interruption mechanism itself is implemented and covered below the live tier: the harness action `actions.interruptRunner` kills the recorded runner PID with `taskkill /T /F`, waits for a new runner, and records stage/progress/checkpoint/session before and after plus a surviving-descendant count. Windows process-tree termination is separately proven against a real parent+descendant process in `openmontage-process-tree.test.ts`.",
+    "This run is also what exposed two real defects, both fixed on this branch: the runner discarded the Codex error message (so the failure logged only `diagnostic: \"unknown\"`), and quota exhaustion was classified as a retryable `runner` fault, which burned the retry budget on turns that could never succeed.",
+    "Resume with: node scripts/openmontage-acceptance.mjs --spec \"D:\\Work\\openmontage-acceptance\\specs\\G-runner-interruption.json\"",
+    "Preserved workspace: D:\\Work\\OpenMontage\\projects\\mes-accept-g-interrupt-20260725"
+  ],
+  "harnessReportedResult": null,
+  "result": "NOT EXECUTED"
+}

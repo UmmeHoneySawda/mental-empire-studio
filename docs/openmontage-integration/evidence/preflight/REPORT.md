@@ -1,8 +1,8 @@
 # Acceptance evidence report — preflight-real-electron-health
 
 - Verdict: **PASS**
-- Evaluated at: 2026-07-24T19:05:28.142Z
-- MES commit: `0b93d1f8b3a9100971a7cf215800bb0da54c1d89`
+- Evaluated at: 2026-07-24T20:54:48.503Z
+- MES commit: `97b122b2cc3219aa8a9222de78e59b5ff08c4a0b`
 - OpenMontage commit: `0af32ce5e1e830c33992af1f9179dcdcd536549b`
 - Operating system: win32 x64
 - Runner: codex-cli @openai/codex 0.145.0
@@ -18,6 +18,7 @@
 
 | Check | Result | Detail |
 | --- | --- | --- |
+| `health_status` | PASS | expected one of ready, observed ready |
 
 ## Behaviours proven by this run
 

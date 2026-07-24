@@ -2,10 +2,10 @@
   "schema": "mes.openmontage.evidence-report/v1",
   "scenario": "preflight-real-electron-health",
   "evidenceDirectory": "D:\\Work\\mental-empire-studio\\docs\\openmontage-integration\\evidence\\preflight",
-  "evaluatedAt": "2026-07-24T19:05:28.142Z",
+  "evaluatedAt": "2026-07-24T20:54:48.503Z",
   "runStartedAt": "2026-07-24T17:18:41.230Z",
   "runCompletedAt": "2026-07-24T17:19:40.360Z",
-  "mesCommit": "0b93d1f8b3a9100971a7cf215800bb0da54c1d89",
+  "mesCommit": "97b122b2cc3219aa8a9222de78e59b5ff08c4a0b",
   "openMontageCommit": "0af32ce5e1e830c33992af1f9179dcdcd536549b",
   "operatingSystem": "win32 x64",
   "runner": "codex-cli @openai/codex 0.145.0",
@@ -29,7 +29,13 @@
   ],
   "checkpoints": [],
   "outputs": [],
-  "postconditions": [],
+  "postconditions": [
+    {
+      "name": "health_status",
+      "result": "PASS",
+      "detail": "expected one of ready, observed ready"
+    }
+  ],
   "media": {},
   "declaredScenarios": [],
   "provenBehaviours": {

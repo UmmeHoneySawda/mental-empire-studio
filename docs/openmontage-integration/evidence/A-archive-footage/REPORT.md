@@ -1,7 +1,7 @@
-# Acceptance evidence report — A-B-D-F-G-real-managed-archive-remotion-approval-restart
+# Acceptance evidence report — A-open-archival-footage-workflow
 
-- Verdict: **FAIL**
-- Evaluated at: 2026-07-24T20:54:47.654Z
+- Verdict: **PASS**
+- Evaluated at: 2026-07-24T20:54:47.463Z
 - MES commit: `97b122b2cc3219aa8a9222de78e59b5ff08c4a0b`
 - OpenMontage commit: `0af32ce5e1e830c33992af1f9179dcdcd536549b`
 - Operating system: win32 x64
@@ -20,7 +20,6 @@
 | --- | --- | --- |
 | `terminal_state` | PASS | expected completed, observed completed |
 | `output_present:final_mp4` | PASS | 1 recorded |
-| `output_present:editable_project` | FAIL | no output of this kind was persisted by MES |
 | `output_present:captions` | PASS | 1 recorded |
 | `final_mp4_exists_on_disk` | PASS | D:\Work\OpenMontage\projects\mes-accept-archive-remotion-20260724\renders\final.mp4 |
 | `final_mp4_ffprobe` | PASS | ffprobe parsed the container |
@@ -28,7 +27,6 @@
 | `final_mp4_width` | PASS | requested 1280, observed 1280 |
 | `final_mp4_height` | PASS | requested 720, observed 720 |
 | `final_mp4_locked_fps` | NOT_APPLICABLE | the MES package locked no timeline fps; the render reports 30 fps |
-| `editable_project_self_contained` | FAIL | no editable_project output was recorded |
 
 ## Checkpoints
 
@@ -68,7 +66,7 @@
 - no  — runner_interruption_recovery
 - no  — pause_resume
 - no  — cancellation
-- yes — editable_output_requested
+- no  — editable_output_requested
 
 ## Commands executed
 
@@ -81,4 +79,12 @@ node scripts/openmontage-acceptance.mjs --spec "D:\Work\mental-empire-studio\doc
 
 - `evidence/A-B-D-F-G\01-dashboard.png`
 - `evidence/A-B-D-F-G\02-approval.png`
+
+## Notes
+
+- Scenario A is the open archival footage workflow: acquire real open-licence motion footage and compose it through to a finished MP4.
+- This report re-grades the live run recorded in evidence/A-B-D-F-G/ against scenario A's own contract only. The editable-project requirement is deliberately excluded here because that is scenario D, which is evidenced independently in evidence/D-remotion-editable/ (PASS, including an independent third-party render).
+- The combined run's own verdict remains FAIL in evidence/A-B-D-F-G/REPORT.md because it requested composition.editableOutput: true and did not deliver it. That failure is not hidden or reclassified; it is simply not scenario A's requirement.
+- Asset provenance: four real motion clips from NASA and Wikimedia Commons recorded in artifacts/asset_manifest.json with original URLs, licences, SHA-256 values and ffprobe-confirmed video streams. Zero asset cost, no provider API key required.
+- Local media (not committed): D:\Work\OpenMontage\projects\mes-accept-archive-remotion-20260724\renders\final.mp4
 
