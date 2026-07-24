@@ -5,9 +5,10 @@
 - MES root: `D:\Work\mental-empire-studio`
 - Branch: `feat/openmontage-integration`
 - Base commit: `4d78fab8709a2cd2811e50bc72d8fd16c785c418`
+- Last committed milestone: `29fac2f` (`feat(openmontage): define integration contracts`)
 - OpenMontage root: `D:\Work\mental-empire-studio\OpenMontage`
 - OpenMontage revision: `0af32ce5e1e830c33992af1f9179dcdcd536549b`
-- Current phase: Phase 2 — persistence and health infrastructure
+- Current phase: Phase 3 — assisted handoff
 
 ## Completed
 
@@ -16,11 +17,27 @@
 - MES-owned job package v1 and JSON Schema.
 - Lifecycle, routing, failure taxonomy, validation, and redaction.
 - Focused unit tests and continuity docs.
+- Idempotent SQLite integration job/event/output persistence with guarded transitions.
+- Credential-free settings, real compatibility/provider/runtime probing, and cached health reports.
+- Loopback-only Backlot health/state/SSE observation.
+- Typed service, IPC, preload, and renderer contracts.
 
 ## Changed files
 
 - `shared/openmontage.ts`
 - `test/unit/openmontage-contracts.test.ts`
+- `electron/db/index.ts`
+- `electron/ipc/openmontage.ts`
+- `electron/ipc/register.ts`
+- `electron/preload.ts`
+- `electron/services/openmontage/backlot.ts`
+- `electron/services/openmontage/health.ts`
+- `electron/services/openmontage/index.ts`
+- `shared/types.ts`
+- `test/unit/openmontage-backlot.test.ts`
+- `test/unit/openmontage-db.test.ts`
+- `test/unit/openmontage-health.test.ts`
+- `test/unit/openmontage-ipc-validation.test.ts`
 - `docs/openmontage-integration/schemas/job-package.v1.schema.json`
 - `docs/openmontage-integration/ARCHITECTURE.md`
 - `docs/openmontage-integration/IMPLEMENTATION_PLAN.md`
@@ -36,9 +53,12 @@ The pre-existing untracked `OpenMontage/` and `docs/openmontage-integration/PRD.
 ```powershell
 npm test -- --run test/unit/openmontage-contracts.test.ts
 npm run typecheck
+npm test -- --run test/unit/openmontage-contracts.test.ts test/unit/openmontage-db.test.ts test/unit/openmontage-backlot.test.ts test/unit/openmontage-health.test.ts test/unit/openmontage-ipc-validation.test.ts
+$env:ME_OPENMONTAGE_LIVE='1'; npm test -- --run test/unit/openmontage-health.test.ts
+npm run build
 ```
 
-Both pass. Focused suite: 9 tests.
+All pass. Focused Phase 1–2 suite: 26 tests. The opt-in live probe also passes against the checked-out external repository.
 
 ## Current environment and blockers
 
@@ -47,17 +67,18 @@ Both pass. Focused suite: 9 tests.
 - Remotion probes unavailable until its external workspace dependencies are installed.
 - No managed agent runner is configured.
 - Backlot is read-only; do not invent approval/control HTTP endpoints.
+- `better-sqlite3` is currently built for Node so DB tests execute. Run `npx @electron/rebuild -f -w better-sqlite3` before launching Electron, smoke tests, or packaging.
 
 ## Exact next task
 
-Implement Phase 2:
+Implement Phase 3:
 
-1. Add idempotent SQLite integration-job/event/output tables and repository methods.
-2. Add OpenMontage settings defaults without credential values.
-3. Implement repository discovery, Git revision/compatibility, Python/provider/runtime, and Backlot health probes.
-4. Implement a sanitized Backlot client.
-5. Add service + IPC registration + preload + `NativeApi` methods in lockstep.
-6. Add migration, health, Backlot, and IPC boundary tests.
+1. Materialize the validated v1 job package with atomic write/rename.
+2. Initialize or reuse the external OpenMontage project workspace through `lib.checkpoint.init_project`.
+3. Generate deterministic agent and recovery instructions containing paths/IDs but no secrets.
+4. Add open-project-folder, start/open Backlot, and copy-prompt APIs.
+5. Persist package/workspace/handoff state and rediscover it after MES restart.
+6. Add fixture-backed assisted lifecycle tests.
 7. Update continuity docs and commit the verified milestone.
 
 ## Useful commands

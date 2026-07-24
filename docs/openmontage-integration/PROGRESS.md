@@ -4,7 +4,7 @@ Last updated: 2026-07-24
 
 ## Current status
 
-Phase 1 is complete. Phase 2 (persistence and health infrastructure) is next.
+Phases 1 and 2 are complete. Phase 3 (assisted handoff) is next.
 
 ## Completed
 
@@ -19,6 +19,13 @@ Phase 1 is complete. Phase 2 (persistence and health infrastructure) is next.
 - Added guarded job states, deterministic routing, failure classification, validation, and recursive diagnostic redaction.
 - Added nine focused unit tests.
 - Documented architecture, implementation plan, decisions, and initial test matrix.
+- Added idempotent SQLite tables for integration jobs, deduplicated events, and outputs.
+- Added compare-and-set job transitions, restart recovery queries, reset behavior, and boundary redaction.
+- Added credential-free OpenMontage settings and defaults.
+- Added repository revision/compatibility, Python, provider, composition runtime, Backlot, and runner-mode health probes.
+- Added a loopback-only Backlot JSON/SSE client with response limits and recursive sanitization.
+- Added typed health/job/event/output/Backlot APIs across `NativeApi`, preload, IPC, and service layers.
+- Added Sentry-wide health and Backlot observation events using sanitized primitive attributes.
 
 ## Verified facts
 
@@ -34,13 +41,17 @@ Phase 1 is complete. Phase 2 (persistence and health infrastructure) is next.
 | --- | --- |
 | `npm test -- --run test/unit/openmontage-contracts.test.ts` | PASS — 9 tests |
 | `npm run typecheck` | PASS |
+| Focused Phase 1–2 suite (five files) | PASS — 26 tests; live-only case skipped by default |
+| `ME_OPENMONTAGE_LIVE=1` health test | PASS — real external repository and provider registry |
+| `npm run build` | PASS |
 
 ## Blockers / limitations
 
-- No managed agent runner has been configured yet. Assisted mode is the implementation baseline.
+- Managed mode intentionally reports misconfigured/limited until the Phase 4 runner protocol is implemented. Assisted mode is launch-ready.
 - Remotion must be installed and re-probed before claiming the archival-footage acceptance scenario.
 - Provider-dependent acceptance may require credentials/network. Any unavailable provider will be reported rather than mocked as a live pass.
+- `better-sqlite3` is currently rebuilt for Node to execute DB tests. Rebuild it for Electron before app/smoke/package validation.
 
 ## Next task
 
-Implement Phase 2: SQLite persistence, safe settings, compatibility/health probes, Backlot client, typed service/IPC/preload APIs, and fixture-backed tests.
+Implement Phase 3: atomic job-package/workspace creation, OpenMontage initialization, deterministic assisted instructions, open folder/Backlot/copy actions, and restart recovery.

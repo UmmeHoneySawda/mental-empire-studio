@@ -211,6 +211,136 @@ export interface OpenMontageHealthReport {
   warnings: string[]
 }
 
+export interface OpenMontageSettings {
+  enabled: boolean
+  repositoryPath: string
+  pythonExecutable: string
+  backlotUrl: string
+  mode: OpenMontageIntegrationMode
+  runner: 'none' | 'codex-cli' | 'claude-code' | 'custom'
+  runnerExecutable: string
+  assistedFallback: boolean
+  retryLimit: number
+  stallTimeoutSec: number
+  automaticMesFallback: boolean
+  preserveFailedProjects: boolean
+  sendSanitizedErrorsToSentry: boolean
+}
+
+export const DEFAULT_OPENMONTAGE_SETTINGS: OpenMontageSettings = {
+  enabled: true,
+  repositoryPath: '',
+  pythonExecutable: 'python',
+  backlotUrl: 'http://127.0.0.1:5150',
+  mode: 'assisted',
+  runner: 'none',
+  runnerExecutable: '',
+  assistedFallback: true,
+  retryLimit: 3,
+  stallTimeoutSec: 300,
+  automaticMesFallback: true,
+  preserveFailedProjects: true,
+  sendSanitizedErrorsToSentry: true
+}
+
+export interface OpenMontageJobRecord {
+  id: string
+  projectId: string
+  title: string
+  state: OpenMontageJobState
+  mode: OpenMontageIntegrationMode
+  workflowMode: OpenMontageWorkflowMode
+  engine: OpenMontageEngine
+  pipeline?: OpenMontagePipeline
+  runtime?: OpenMontageResolvedRuntime
+  authoringMode?: OpenMontageAuthoringMode
+  jobPackage: OpenMontageJobPackage
+  packagePath?: string
+  workspacePath?: string
+  backlotProjectId?: string
+  currentStage?: OpenMontageStage
+  progress: number
+  attempts: number
+  fallbackEnabled: boolean
+  preserveOpenMontageProject: boolean
+  lastCheckpointAt?: string
+  runnerPid?: number
+  errorCategory?: OpenMontageFailureCategory
+  errorCode?: string
+  errorMessage?: string
+  createdAt: string
+  updatedAt: string
+  startedAt?: string
+  completedAt?: string
+  revision: number
+}
+
+export type OpenMontageJobPatch = Partial<Pick<
+  OpenMontageJobRecord,
+  | 'packagePath'
+  | 'workspacePath'
+  | 'backlotProjectId'
+  | 'currentStage'
+  | 'progress'
+  | 'attempts'
+  | 'lastCheckpointAt'
+  | 'runnerPid'
+  | 'errorCategory'
+  | 'errorCode'
+  | 'errorMessage'
+  | 'startedAt'
+  | 'completedAt'
+>>
+
+export type OpenMontageEventType =
+  | 'state'
+  | 'stage'
+  | 'checkpoint'
+  | 'activity'
+  | 'approval'
+  | 'warning'
+  | 'error'
+  | 'recovery'
+  | 'output'
+
+export interface OpenMontageJobEvent {
+  id: string
+  jobId: string
+  sequence: number
+  type: OpenMontageEventType
+  level: 'debug' | 'info' | 'warning' | 'error'
+  message: string
+  stage?: OpenMontageStage
+  data?: Record<string, string | number | boolean | null>
+  createdAt: string
+}
+
+export type OpenMontageOutputKind =
+  | 'final_mp4'
+  | 'editable_project'
+  | 'captions'
+  | 'production_assets'
+  | 'decision_log'
+  | 'render_report'
+  | 'other'
+
+export interface OpenMontageJobOutput {
+  id: string
+  jobId: string
+  kind: OpenMontageOutputKind
+  path: string
+  sizeBytes?: number
+  metadata?: Record<string, string | number | boolean | null>
+  createdAt: string
+}
+
+export interface OpenMontageBacklotSnapshot {
+  projectId: string
+  connected: boolean
+  observedAt: string
+  data: unknown
+}
+
 export interface OpenMontageRoutingRequest {
   workflowMode: OpenMontageWorkflowMode
   requestedRuntime: OpenMontageRuntime
@@ -296,7 +426,7 @@ function hasForbiddenSecretKey(value: unknown, path = '$'): OpenMontageValidatio
 
   return Object.entries(value).flatMap(([key, child]) => {
     const childPath = `${path}.${key}`
-    const issue = /(?:api[_-]?key|secret|password|credential|access[_-]?token|authorization)/i.test(key)
+    const issue = /(?:api[_-]?key|secret|password|credential|(?:access[_-]?)?token|authorization)/i.test(key)
       ? [{
           path: childPath,
           code: 'secret_forbidden' as const,
@@ -661,7 +791,7 @@ export function sanitizeOpenMontageDiagnostic(value: unknown, depth = 0): unknow
   return Object.fromEntries(
     Object.entries(value).slice(0, 100).map(([key, child]) => [
       key,
-      /(?:api[_-]?key|secret|password|credential|access[_-]?token|authorization)/i.test(key)
+      /(?:api[_-]?key|secret|password|credential|(?:access[_-]?)?token|authorization)/i.test(key)
         ? '[REDACTED]'
         : sanitizeOpenMontageDiagnostic(child, depth + 1)
     ])

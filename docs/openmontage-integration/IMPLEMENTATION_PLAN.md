@@ -13,12 +13,12 @@ Exit evidence: focused contract tests and TypeScript typecheck pass.
 
 ## Phase 2 — Persistence and health infrastructure
 
-- [ ] Add idempotent SQLite tables/repository methods for jobs, events, and outputs.
-- [ ] Add OpenMontage settings with safe defaults and no credential values.
-- [ ] Implement installation resolution and compatibility/runtime/provider probes.
-- [ ] Implement Backlot process/health/state client and sanitized event ingestion.
-- [ ] Add service, IPC, preload, and `NativeApi` surfaces.
-- [ ] Add health and persistence tests.
+- [x] Add idempotent SQLite tables/repository methods for jobs, events, and outputs.
+- [x] Add OpenMontage settings with safe defaults and no credential values.
+- [x] Implement installation resolution and compatibility/runtime/provider probes.
+- [x] Implement loopback-only Backlot health/state/SSE client and sanitized event ingestion.
+- [x] Add service, IPC, preload, and `NativeApi` surfaces.
+- [x] Add health and persistence tests.
 
 Exit evidence: health report from the real local installation, migration/restart tests, full typecheck/build.
 

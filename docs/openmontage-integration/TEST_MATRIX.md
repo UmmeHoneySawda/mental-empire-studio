@@ -21,18 +21,19 @@ Legend: PASS = executed with evidence; PENDING = not implemented/executed; BLOCK
 
 | Area | Scenario | Status |
 | --- | --- | --- |
-| Migration | Fresh database creates OpenMontage tables | PENDING |
-| Migration | Legacy database upgrades idempotently | PENDING |
-| Persistence | Events deduplicate and terminal jobs cannot regress | PENDING |
-| Health | Valid installation returns compatible report | PENDING |
-| Health | Missing/moved installation degrades safely | PENDING |
-| Runtime | Remotion/HyperFrames/FFmpeg availability is accurate | PENDING |
-| Backlot | Health, state, SSE reconnect, timeout, malformed payload | PENDING |
+| Migration | Fresh database creates OpenMontage tables | PASS — Node ABI DB test |
+| Migration | Legacy database upgrades idempotently | PASS — Node ABI DB test |
+| Persistence | Events deduplicate and guarded jobs reject stale/invalid transitions | PASS — Node ABI DB test |
+| Health | Valid installation returns compatible report | PASS — fixture + real live probe |
+| Health | Missing/moved/disabled installation degrades safely | PASS |
+| Runtime | Remotion/HyperFrames/FFmpeg availability is accurate | PASS — real provider-registry probe |
+| Backlot | Loopback validation, health, state, SSE parsing, malformed/oversized payload | PASS |
+| Backlot | SSE reconnect and long-running ingestion | PENDING |
 | Assisted | Package/workspace/prompt creation and restart recovery | PENDING |
 | Managed | Fixture runner start/pause/resume/cancel/approval | PENDING |
 | Fallback | Retry exhaustion starts MES and preserves files | PENDING |
 | Sentry | Structured lifecycle fields present; secrets absent | PENDING |
-| IPC | Renderer has typed, sanitized errors for all actions | PENDING |
+| IPC | Health/read APIs aligned across NativeApi, preload, and IPC; IDs validated | PASS |
 
 ## UI coverage
 

@@ -228,6 +228,15 @@ const api: NativeApi = {
     mergeProjects: (input: { itemIds: string[]; title: string; audioMediaId?: number }) => ipcRenderer.invoke('talkingphotos:mergeProjects', input)
   },
 
+  openMontage: {
+    health: (force?: boolean) => ipcRenderer.invoke('openmontage:health', !!force),
+    jobs: () => ipcRenderer.invoke('openmontage:jobs'),
+    job: (id: string) => ipcRenderer.invoke('openmontage:job', id),
+    events: (jobId: string, limit?: number) => ipcRenderer.invoke('openmontage:events', jobId, limit),
+    outputs: (jobId: string) => ipcRenderer.invoke('openmontage:outputs', jobId),
+    backlotProject: (projectId: string) => ipcRenderer.invoke('openmontage:backlotProject', projectId)
+  },
+
   chooseFolder: () => ipcRenderer.invoke('fs:chooseFolder'),
 
   // Master library: dry-run the reorganize-existing migration, then execute it.

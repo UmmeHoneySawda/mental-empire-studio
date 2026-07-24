@@ -59,3 +59,15 @@
 **Decision:** Follow the supplied Figma/reference information architecture while retaining the existing MES shell, tokens, amber action accent, green health status, and self-hosted typography.
 
 **Reason:** The objective explicitly makes the existing design system authoritative on conflicts. This avoids a visually disconnected microsite inside the desktop app.
+
+## D-011 — Backlot is loopback-only from MES
+
+**Decision:** Accept only HTTP(S) Backlot URLs on `localhost`, `127.0.0.1`, or `::1`, with bounded response/event buffers.
+
+**Reason:** Backlot is a local observer with no authentication contract. Restricting its configurable URL prevents renderer-controlled requests from becoming a general network/credential exfiltration surface.
+
+## D-012 — Full provider discovery is explicit, cached, and bounded
+
+**Decision:** Allow up to 60 seconds for the full OpenMontage registry probe, cache results for 30 seconds, and keep ordinary Backlot calls at a three-second timeout.
+
+**Reason:** The real installation takes about 29 seconds to discover all providers on this machine. A shorter limit produced a truthful but unnecessarily limited report; an unbounded probe would make the settings experience unreliable.

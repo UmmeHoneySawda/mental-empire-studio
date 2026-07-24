@@ -33,6 +33,16 @@ import type {
 import { asBetaOpts, DEFAULT_BETA_OPTS } from '../../shared/types'
 import { normalizeAutomationConfig } from '../../shared/automationConfig'
 import type { ProviderAsset, ProviderConnection, ProviderJob, TranscriptDocument } from '../../shared/talkingphotos'
+import {
+  assertOpenMontageJobTransition,
+  sanitizeOpenMontageDiagnostic,
+  validateOpenMontageJobPackage,
+  type OpenMontageJobEvent,
+  type OpenMontageJobOutput,
+  type OpenMontageJobPatch,
+  type OpenMontageJobRecord,
+  type OpenMontageJobState
+} from '../../shared/openmontage'
 import { seedIfEmpty, seedDemoData, seedDefaultThumbnailTemplates } from './seed'
 import { planProfileSourceMigration, type SourceMigrationCandidate } from './profile-source-migration'
 
@@ -269,6 +279,61 @@ CREATE INDEX IF NOT EXISTS idx_provider_jobs_remote ON provider_jobs(remoteProje
 CREATE INDEX IF NOT EXISTS idx_provider_jobs_fingerprint ON provider_jobs(requestFingerprint);
 CREATE INDEX IF NOT EXISTS idx_provider_jobs_parent ON provider_jobs(parentProviderJobId);
 CREATE INDEX IF NOT EXISTS idx_provider_assets_hash ON provider_assets(provider, connectionId, localSha256);
+CREATE TABLE IF NOT EXISTS openmontage_jobs (
+  id TEXT PRIMARY KEY,
+  projectId TEXT NOT NULL,
+  title TEXT NOT NULL,
+  state TEXT NOT NULL,
+  mode TEXT NOT NULL,
+  workflowMode TEXT NOT NULL,
+  engine TEXT NOT NULL,
+  pipeline TEXT,
+  runtime TEXT,
+  authoringMode TEXT,
+  jobPackageJson TEXT NOT NULL,
+  packagePath TEXT,
+  workspacePath TEXT,
+  backlotProjectId TEXT,
+  currentStage TEXT,
+  progress INTEGER NOT NULL DEFAULT 0,
+  attempts INTEGER NOT NULL DEFAULT 0,
+  fallbackEnabled INTEGER NOT NULL DEFAULT 1,
+  preserveOpenMontageProject INTEGER NOT NULL DEFAULT 1,
+  lastCheckpointAt TEXT,
+  runnerPid INTEGER,
+  errorCategory TEXT,
+  errorCode TEXT,
+  errorMessage TEXT,
+  createdAt TEXT NOT NULL,
+  updatedAt TEXT NOT NULL,
+  startedAt TEXT,
+  completedAt TEXT,
+  revision INTEGER NOT NULL DEFAULT 0
+);
+CREATE TABLE IF NOT EXISTS openmontage_job_events (
+  id TEXT PRIMARY KEY,
+  jobId TEXT NOT NULL,
+  sequence INTEGER NOT NULL,
+  type TEXT NOT NULL,
+  level TEXT NOT NULL,
+  message TEXT NOT NULL,
+  stage TEXT,
+  dataJson TEXT,
+  createdAt TEXT NOT NULL,
+  UNIQUE(jobId, sequence)
+);
+CREATE TABLE IF NOT EXISTS openmontage_job_outputs (
+  id TEXT PRIMARY KEY,
+  jobId TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  path TEXT NOT NULL,
+  sizeBytes INTEGER,
+  metadataJson TEXT,
+  createdAt TEXT NOT NULL
+);
+CREATE INDEX IF NOT EXISTS idx_openmontage_jobs_state ON openmontage_jobs(state, updatedAt);
+CREATE INDEX IF NOT EXISTS idx_openmontage_events_job ON openmontage_job_events(jobId, sequence);
+CREATE INDEX IF NOT EXISTS idx_openmontage_outputs_job ON openmontage_job_outputs(jobId, kind);
 `
 
 // Every table that holds user/domain data — wiped by resetAll(). app_meta is
@@ -278,7 +343,8 @@ const DATA_TABLES = [
   'profiles', 'thumbnail_templates', 'render_jobs', 'activity_log',
   'projects', 'project_images', 'transcript_words', 'work_item_state', 'niches',
   'automation_jobs', 'automation_job_steps', 'automation_job_items', 'automation_job_logs',
-  'provider_connections', 'provider_jobs', 'provider_assets', 'transcript_documents'
+  'provider_connections', 'provider_jobs', 'provider_assets', 'transcript_documents',
+  'openmontage_jobs', 'openmontage_job_events', 'openmontage_job_outputs'
 ]
 
 /** Add a column only if it isn't already present — idempotent forward migration. */
@@ -664,6 +730,22 @@ export interface Repositories {
   updateAutomationStep(id: string, patch: Partial<AutomationWorkflowStep>): void
   upsertAutomationItem(item: AutomationJobItem): void
   addAutomationLog(jobId: string, level: AutomationJobLog['level'], message: string, itemId?: string): void
+  // ---- OpenMontage external integration state ----
+  createOpenMontageJob(job: OpenMontageJobRecord): void
+  openMontageJob(id: string): OpenMontageJobRecord | undefined
+  openMontageJobs(): OpenMontageJobRecord[]
+  nonTerminalOpenMontageJobs(): OpenMontageJobRecord[]
+  updateOpenMontageJob(id: string, patch: OpenMontageJobPatch): OpenMontageJobRecord
+  transitionOpenMontageJob(
+    id: string,
+    expectedState: OpenMontageJobState | readonly OpenMontageJobState[],
+    nextState: OpenMontageJobState,
+    patch?: OpenMontageJobPatch
+  ): OpenMontageJobRecord
+  addOpenMontageEvent(event: OpenMontageJobEvent): boolean
+  openMontageEvents(jobId: string, limit?: number): OpenMontageJobEvent[]
+  upsertOpenMontageOutput(output: OpenMontageJobOutput): void
+  openMontageOutputs(jobId: string): OpenMontageJobOutput[]
   // ---- TalkingPhotos provider (cloud provider, separate from local render_jobs) ----
   providerConnection(id: string): ProviderConnection | undefined
   providerConnections(): ProviderConnection[]
@@ -953,6 +1035,75 @@ function rowToProviderAsset(r: Record<string, unknown>): ProviderAsset {
 
 function rowToTranscriptDocument(r: Record<string, unknown>): TranscriptDocument {
   return { ...(r as unknown as TranscriptDocument) }
+}
+
+function parseStoredJson<T>(raw: unknown, fallback: T): T {
+  if (typeof raw !== 'string' || !raw.trim()) return fallback
+  try {
+    return JSON.parse(raw) as T
+  } catch {
+    return fallback
+  }
+}
+
+function rowToOpenMontageJob(r: Record<string, unknown>): OpenMontageJobRecord {
+  return {
+    id: String(r.id),
+    projectId: String(r.projectId),
+    title: String(r.title),
+    state: r.state as OpenMontageJobState,
+    mode: r.mode as OpenMontageJobRecord['mode'],
+    workflowMode: r.workflowMode as OpenMontageJobRecord['workflowMode'],
+    engine: r.engine as OpenMontageJobRecord['engine'],
+    pipeline: r.pipeline ? r.pipeline as OpenMontageJobRecord['pipeline'] : undefined,
+    runtime: r.runtime ? r.runtime as OpenMontageJobRecord['runtime'] : undefined,
+    authoringMode: r.authoringMode ? r.authoringMode as OpenMontageJobRecord['authoringMode'] : undefined,
+    jobPackage: parseStoredJson(r.jobPackageJson, {}) as OpenMontageJobRecord['jobPackage'],
+    packagePath: r.packagePath ? String(r.packagePath) : undefined,
+    workspacePath: r.workspacePath ? String(r.workspacePath) : undefined,
+    backlotProjectId: r.backlotProjectId ? String(r.backlotProjectId) : undefined,
+    currentStage: r.currentStage ? r.currentStage as OpenMontageJobRecord['currentStage'] : undefined,
+    progress: coerceNum(r.progress, 0),
+    attempts: coerceNum(r.attempts, 0),
+    fallbackEnabled: !!r.fallbackEnabled,
+    preserveOpenMontageProject: !!r.preserveOpenMontageProject,
+    lastCheckpointAt: r.lastCheckpointAt ? String(r.lastCheckpointAt) : undefined,
+    runnerPid: r.runnerPid == null ? undefined : coerceNum(r.runnerPid, 0),
+    errorCategory: r.errorCategory ? r.errorCategory as OpenMontageJobRecord['errorCategory'] : undefined,
+    errorCode: r.errorCode ? String(r.errorCode) : undefined,
+    errorMessage: r.errorMessage ? String(r.errorMessage) : undefined,
+    createdAt: String(r.createdAt),
+    updatedAt: String(r.updatedAt),
+    startedAt: r.startedAt ? String(r.startedAt) : undefined,
+    completedAt: r.completedAt ? String(r.completedAt) : undefined,
+    revision: coerceNum(r.revision, 0)
+  }
+}
+
+function rowToOpenMontageEvent(r: Record<string, unknown>): OpenMontageJobEvent {
+  return {
+    id: String(r.id),
+    jobId: String(r.jobId),
+    sequence: coerceNum(r.sequence, 0),
+    type: r.type as OpenMontageJobEvent['type'],
+    level: r.level as OpenMontageJobEvent['level'],
+    message: String(r.message),
+    stage: r.stage ? r.stage as OpenMontageJobEvent['stage'] : undefined,
+    data: parseStoredJson<OpenMontageJobEvent['data']>(r.dataJson, undefined),
+    createdAt: String(r.createdAt)
+  }
+}
+
+function rowToOpenMontageOutput(r: Record<string, unknown>): OpenMontageJobOutput {
+  return {
+    id: String(r.id),
+    jobId: String(r.jobId),
+    kind: r.kind as OpenMontageJobOutput['kind'],
+    path: String(r.path),
+    sizeBytes: r.sizeBytes == null ? undefined : coerceNum(r.sizeBytes, 0),
+    metadata: parseStoredJson<OpenMontageJobOutput['metadata']>(r.metadataJson, undefined),
+    createdAt: String(r.createdAt)
+  }
 }
 
 function buildRepositories(d: Database.Database): Repositories {
@@ -1462,6 +1613,149 @@ function buildRepositories(d: Database.Database): Repositories {
         .run(jobId, itemId ?? null, level, message, new Date().toISOString())
     },
 
+    // ---- OpenMontage external integration state ----
+    createOpenMontageJob: (job) => {
+      const validation = validateOpenMontageJobPackage(job.jobPackage)
+      if (!validation.valid) {
+        throw new Error(`Invalid OpenMontage job package: ${validation.issues.map((entry) => entry.path).join(', ')}`)
+      }
+      d.prepare(
+        `INSERT INTO openmontage_jobs (
+          id,projectId,title,state,mode,workflowMode,engine,pipeline,runtime,authoringMode,
+          jobPackageJson,packagePath,workspacePath,backlotProjectId,currentStage,progress,attempts,
+          fallbackEnabled,preserveOpenMontageProject,lastCheckpointAt,runnerPid,errorCategory,errorCode,
+          errorMessage,createdAt,updatedAt,startedAt,completedAt,revision
+        ) VALUES (
+          @id,@projectId,@title,@state,@mode,@workflowMode,@engine,@pipeline,@runtime,@authoringMode,
+          @jobPackageJson,@packagePath,@workspacePath,@backlotProjectId,@currentStage,@progress,@attempts,
+          @fallbackEnabled,@preserveOpenMontageProject,@lastCheckpointAt,@runnerPid,@errorCategory,@errorCode,
+          @errorMessage,@createdAt,@updatedAt,@startedAt,@completedAt,@revision
+        )`
+      ).run({
+        ...job,
+        pipeline: job.pipeline ?? null,
+        runtime: job.runtime ?? null,
+        authoringMode: job.authoringMode ?? null,
+        jobPackageJson: JSON.stringify(job.jobPackage),
+        packagePath: job.packagePath ?? null,
+        workspacePath: job.workspacePath ?? null,
+        backlotProjectId: job.backlotProjectId ?? null,
+        currentStage: job.currentStage ?? null,
+        progress: Math.max(0, Math.min(100, Math.round(job.progress))),
+        attempts: Math.max(0, Math.round(job.attempts)),
+        fallbackEnabled: job.fallbackEnabled ? 1 : 0,
+        preserveOpenMontageProject: job.preserveOpenMontageProject ? 1 : 0,
+        lastCheckpointAt: job.lastCheckpointAt ?? null,
+        runnerPid: job.runnerPid ?? null,
+        errorCategory: job.errorCategory ?? null,
+        errorCode: job.errorCode ?? null,
+        errorMessage: job.errorMessage ? String(sanitizeOpenMontageDiagnostic(job.errorMessage)) : null,
+        startedAt: job.startedAt ?? null,
+        completedAt: job.completedAt ?? null
+      })
+    },
+    openMontageJob: (id) => {
+      const row = d.prepare('SELECT * FROM openmontage_jobs WHERE id=?').get(id) as Record<string, unknown> | undefined
+      return row ? rowToOpenMontageJob(row) : undefined
+    },
+    openMontageJobs: () =>
+      (d.prepare('SELECT * FROM openmontage_jobs ORDER BY updatedAt DESC').all() as Array<Record<string, unknown>>)
+        .map(rowToOpenMontageJob),
+    nonTerminalOpenMontageJobs: () =>
+      (d.prepare("SELECT * FROM openmontage_jobs WHERE state NOT IN ('cancelled','failed','completed') ORDER BY updatedAt").all() as Array<Record<string, unknown>>)
+        .map(rowToOpenMontageJob),
+    updateOpenMontageJob: (id, patch) => {
+      const allowed = new Set([
+        'packagePath', 'workspacePath', 'backlotProjectId', 'currentStage', 'progress', 'attempts',
+        'lastCheckpointAt', 'runnerPid', 'errorCategory', 'errorCode', 'errorMessage', 'startedAt', 'completedAt'
+      ])
+      const row = Object.fromEntries(Object.entries(patch).filter(([key, value]) => allowed.has(key) && value !== undefined))
+      if ('progress' in row) row.progress = Math.max(0, Math.min(100, Math.round(Number(row.progress))))
+      if ('attempts' in row) row.attempts = Math.max(0, Math.round(Number(row.attempts)))
+      if ('errorMessage' in row && typeof row.errorMessage === 'string') {
+        row.errorMessage = String(sanitizeOpenMontageDiagnostic(row.errorMessage))
+      }
+      const current = d.prepare('SELECT revision FROM openmontage_jobs WHERE id=?').get(id) as { revision: number } | undefined
+      if (!current) throw new Error(`Unknown OpenMontage job: ${id}`)
+      if (Object.keys(row).length > 0) {
+        const result = d.prepare(
+          `UPDATE openmontage_jobs SET ${Object.keys(row).map((key) => `${key}=@${key}`).join(', ')},
+           updatedAt=@updatedAt, revision=revision+1 WHERE id=@id AND revision=@revision`
+        ).run({ id, revision: current.revision, updatedAt: new Date().toISOString(), ...row })
+        if (result.changes !== 1) throw new Error(`OpenMontage job changed concurrently: ${id}`)
+      }
+      const updated = d.prepare('SELECT * FROM openmontage_jobs WHERE id=?').get(id) as Record<string, unknown>
+      return rowToOpenMontageJob(updated)
+    },
+    transitionOpenMontageJob: (id, expectedState, nextState, patch = {}) => {
+      const tx = d.transaction(() => {
+        const currentRow = d.prepare('SELECT * FROM openmontage_jobs WHERE id=?').get(id) as Record<string, unknown> | undefined
+        if (!currentRow) throw new Error(`Unknown OpenMontage job: ${id}`)
+        const current = rowToOpenMontageJob(currentRow)
+        const expected = Array.isArray(expectedState) ? expectedState : [expectedState]
+        if (!(expected as readonly OpenMontageJobState[]).includes(current.state)) {
+          throw new Error(`OpenMontage job ${id} is ${current.state}; expected ${expected.join(' or ')}`)
+        }
+        assertOpenMontageJobTransition(current.state, nextState)
+        const next: Record<string, unknown> = {
+          ...patch,
+          state: nextState,
+          progress: patch.progress == null ? current.progress : Math.max(0, Math.min(100, Math.round(patch.progress))),
+          attempts: patch.attempts == null ? current.attempts : Math.max(0, Math.round(patch.attempts)),
+          errorMessage: patch.errorMessage ? String(sanitizeOpenMontageDiagnostic(patch.errorMessage)) : patch.errorMessage,
+          updatedAt: new Date().toISOString()
+        }
+        const allowed = [
+          'state', 'packagePath', 'workspacePath', 'backlotProjectId', 'currentStage', 'progress',
+          'attempts', 'lastCheckpointAt', 'runnerPid', 'errorCategory', 'errorCode', 'errorMessage',
+          'startedAt', 'completedAt', 'updatedAt'
+        ]
+        const entries = Object.entries(next).filter(([key, value]) => allowed.includes(key) && value !== undefined)
+        const result = d.prepare(
+          `UPDATE openmontage_jobs SET ${entries.map(([key]) => `${key}=@${key}`).join(', ')},
+           revision=revision+1 WHERE id=@id AND state=@currentState AND revision=@revision`
+        ).run({ id, currentState: current.state, revision: current.revision, ...Object.fromEntries(entries) })
+        if (result.changes !== 1) throw new Error(`OpenMontage job changed concurrently: ${id}`)
+        return rowToOpenMontageJob(d.prepare('SELECT * FROM openmontage_jobs WHERE id=?').get(id) as Record<string, unknown>)
+      })
+      return tx()
+    },
+    addOpenMontageEvent: (event) => {
+      const data = event.data ? sanitizeOpenMontageDiagnostic(event.data) : undefined
+      const result = d.prepare(
+        `INSERT OR IGNORE INTO openmontage_job_events
+         (id,jobId,sequence,type,level,message,stage,dataJson,createdAt)
+         VALUES (@id,@jobId,@sequence,@type,@level,@message,@stage,@dataJson,@createdAt)`
+      ).run({
+        ...event,
+        message: String(sanitizeOpenMontageDiagnostic(event.message)),
+        stage: event.stage ?? null,
+        dataJson: data == null ? null : JSON.stringify(data)
+      })
+      return result.changes === 1
+    },
+    openMontageEvents: (jobId, limit = 250) =>
+      (d.prepare(
+        `SELECT * FROM (
+           SELECT * FROM openmontage_job_events WHERE jobId=? ORDER BY sequence DESC LIMIT ?
+         ) ORDER BY sequence`
+      ).all(jobId, Math.max(1, Math.min(1_000, Math.round(limit)))) as Array<Record<string, unknown>>)
+        .map(rowToOpenMontageEvent),
+    upsertOpenMontageOutput: (output) => {
+      d.prepare(
+        `INSERT INTO openmontage_job_outputs (id,jobId,kind,path,sizeBytes,metadataJson,createdAt)
+         VALUES (@id,@jobId,@kind,@path,@sizeBytes,@metadataJson,@createdAt)
+         ON CONFLICT(id) DO UPDATE SET kind=@kind,path=@path,sizeBytes=@sizeBytes,metadataJson=@metadataJson`
+      ).run({
+        ...output,
+        sizeBytes: output.sizeBytes ?? null,
+        metadataJson: output.metadata ? JSON.stringify(sanitizeOpenMontageDiagnostic(output.metadata)) : null
+      })
+    },
+    openMontageOutputs: (jobId) =>
+      (d.prepare('SELECT * FROM openmontage_job_outputs WHERE jobId=? ORDER BY createdAt').all(jobId) as Array<Record<string, unknown>>)
+        .map(rowToOpenMontageOutput),
+
     // ---- TalkingPhotos provider ----
     providerConnection: (id) => {
       const r = d.prepare('SELECT * FROM provider_connections WHERE id=?').get(id) as Record<string, unknown> | undefined
@@ -1766,7 +2060,8 @@ function buildRepositories(d: Database.Database): Repositories {
         'profiles', 'render_jobs', 'activity_log',
         'projects', 'project_images', 'transcript_words',
         'automation_jobs', 'automation_job_steps', 'automation_job_items', 'automation_job_logs',
-        'provider_jobs', 'provider_assets', 'transcript_documents'
+        'provider_jobs', 'provider_assets', 'transcript_documents',
+        'openmontage_jobs', 'openmontage_job_events', 'openmontage_job_outputs'
       ]
       const tx = d.transaction(() => {
         for (const t of softTables) d.prepare(`DELETE FROM ${t}`).run()
