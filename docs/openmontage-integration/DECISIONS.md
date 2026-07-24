@@ -71,3 +71,15 @@
 **Decision:** Allow up to 60 seconds for the full OpenMontage registry probe, cache results for 30 seconds, and keep ordinary Backlot calls at a three-second timeout.
 
 **Reason:** The real installation takes about 29 seconds to discover all providers on this machine. A shorter limit produced a truthful but unnecessarily limited report; an unbounded probe would make the settings experience unreliable.
+
+## D-013 — Initialize workspaces through OpenMontage
+
+**Decision:** Assisted preparation calls `lib.checkpoint.init_project` in the external Python environment and then writes only three MES-owned handoff files into that runtime workspace.
+
+**Reason:** OpenMontage must remain authoritative for project layout and `project.json`. Calling its idempotent initializer avoids copying implementation details while keeping MES files clearly namespaced.
+
+## D-014 — Assisted handoff files are atomic and resumable
+
+**Decision:** Write the job package, agent instruction, and recovery prompt through same-directory temporary files and atomic rename; persist paths before the final `handoff_required` transition.
+
+**Reason:** A crash can be retried safely from `validating`/`ready`, and MES never advertises a ready handoff until all files exist. Existing completed checkpoints remain untouched.

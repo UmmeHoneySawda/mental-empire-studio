@@ -29,7 +29,7 @@ Legend: PASS = executed with evidence; PENDING = not implemented/executed; BLOCK
 | Runtime | Remotion/HyperFrames/FFmpeg availability is accurate | PASS — real provider-registry probe |
 | Backlot | Loopback validation, health, state, SSE parsing, malformed/oversized payload | PASS |
 | Backlot | SSE reconnect and long-running ingestion | PENDING |
-| Assisted | Package/workspace/prompt creation and restart recovery | PENDING |
+| Assisted | Package/workspace/prompt creation and restart recovery | PASS — 7 fixture-backed tests |
 | Managed | Fixture runner start/pause/resume/cancel/approval | PENDING |
 | Fallback | Retry exhaustion starts MES and preserves files | PENDING |
 | Sentry | Structured lifecycle fields present; secrets absent | PENDING |

@@ -230,6 +230,12 @@ const api: NativeApi = {
 
   openMontage: {
     health: (force?: boolean) => ipcRenderer.invoke('openmontage:health', !!force),
+    prepareAssisted: (jobPackage) => ipcRenderer.invoke('openmontage:prepareAssisted', jobPackage),
+    assistedHandoff: (jobId: string) => ipcRenderer.invoke('openmontage:assistedHandoff', jobId),
+    recoverAssisted: () => ipcRenderer.invoke('openmontage:recoverAssisted'),
+    copyPrompt: (jobId: string, kind?: 'handoff' | 'recovery') => ipcRenderer.invoke('openmontage:copyPrompt', jobId, kind),
+    openProjectFolder: (jobId: string) => ipcRenderer.invoke('openmontage:openProjectFolder', jobId),
+    openBacklot: (jobId: string) => ipcRenderer.invoke('openmontage:openBacklot', jobId),
     jobs: () => ipcRenderer.invoke('openmontage:jobs'),
     job: (id: string) => ipcRenderer.invoke('openmontage:job', id),
     events: (jobId: string, limit?: number) => ipcRenderer.invoke('openmontage:events', jobId, limit),

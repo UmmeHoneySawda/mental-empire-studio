@@ -5,10 +5,10 @@
 - MES root: `D:\Work\mental-empire-studio`
 - Branch: `feat/openmontage-integration`
 - Base commit: `4d78fab8709a2cd2811e50bc72d8fd16c785c418`
-- Last committed milestone: `29fac2f` (`feat(openmontage): define integration contracts`)
+- Last committed milestone: `5637b31` (`feat(openmontage): add persistence and health probes`)
 - OpenMontage root: `D:\Work\mental-empire-studio\OpenMontage`
 - OpenMontage revision: `0af32ce5e1e830c33992af1f9179dcdcd536549b`
-- Current phase: Phase 3 — assisted handoff
+- Current phase: Phase 4 — managed execution
 
 ## Completed
 
@@ -21,6 +21,9 @@
 - Credential-free settings, real compatibility/provider/runtime probing, and cached health reports.
 - Loopback-only Backlot health/state/SSE observation.
 - Typed service, IPC, preload, and renderer contracts.
+- Assisted workspace initialization through OpenMontage's checkpoint library.
+- Atomic job package/instruction/recovery files with typed local actions.
+- Startup rediscovery and resume of interrupted preparation.
 
 ## Changed files
 
@@ -38,6 +41,10 @@
 - `test/unit/openmontage-db.test.ts`
 - `test/unit/openmontage-health.test.ts`
 - `test/unit/openmontage-ipc-validation.test.ts`
+- `electron/main.ts`
+- `electron/services/openmontage/assisted.ts`
+- `test/stubs/electron.ts`
+- `test/unit/openmontage-assisted.test.ts`
 - `docs/openmontage-integration/schemas/job-package.v1.schema.json`
 - `docs/openmontage-integration/ARCHITECTURE.md`
 - `docs/openmontage-integration/IMPLEMENTATION_PLAN.md`
@@ -56,9 +63,10 @@ npm run typecheck
 npm test -- --run test/unit/openmontage-contracts.test.ts test/unit/openmontage-db.test.ts test/unit/openmontage-backlot.test.ts test/unit/openmontage-health.test.ts test/unit/openmontage-ipc-validation.test.ts
 $env:ME_OPENMONTAGE_LIVE='1'; npm test -- --run test/unit/openmontage-health.test.ts
 npm run build
+npm test -- --run test/unit/openmontage-assisted.test.ts
 ```
 
-All pass. Focused Phase 1–2 suite: 26 tests. The opt-in live probe also passes against the checked-out external repository.
+All pass. Focused Phase 1–3 suite: 33 tests. The opt-in live probe also passes against the checked-out external repository.
 
 ## Current environment and blockers
 
@@ -71,14 +79,14 @@ All pass. Focused Phase 1–2 suite: 26 tests. The opt-in live probe also passes
 
 ## Exact next task
 
-Implement Phase 3:
+Implement Phase 4:
 
-1. Materialize the validated v1 job package with atomic write/rename.
-2. Initialize or reuse the external OpenMontage project workspace through `lib.checkpoint.init_project`.
-3. Generate deterministic agent and recovery instructions containing paths/IDs but no secrets.
-4. Add open-project-folder, start/open Backlot, and copy-prompt APIs.
-5. Persist package/workspace/handoff state and rediscover it after MES restart.
-6. Add fixture-backed assisted lifecycle tests.
+1. Define a replaceable JSON-lines agent-runner protocol and version handshake.
+2. Implement configured process launch with bounded stdout/stderr and structured events.
+3. Add pause/resume/cancel/retry and approval/revision commands.
+4. Reconcile runner events with Backlot/checkpoint observation without writing checkpoints directly.
+5. Recover managed jobs after MES restart using runner identity plus canonical workspace evidence.
+6. Add a deterministic fixture runner covering completion, controls, approval, timeout, crash, and recovery.
 7. Update continuity docs and commit the verified milestone.
 
 ## Useful commands

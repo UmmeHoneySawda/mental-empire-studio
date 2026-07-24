@@ -341,6 +341,18 @@ export interface OpenMontageBacklotSnapshot {
   data: unknown
 }
 
+export interface OpenMontageAssistedHandoff {
+  job: OpenMontageJobRecord
+  installationPath: string
+  workspacePath: string
+  packagePath: string
+  instructionPath: string
+  recoveryPromptPath: string
+  instruction: string
+  recoveryPrompt: string
+  backlotUrl: string
+}
+
 export interface OpenMontageRoutingRequest {
   workflowMode: OpenMontageWorkflowMode
   requestedRuntime: OpenMontageRuntime

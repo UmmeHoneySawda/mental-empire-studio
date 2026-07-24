@@ -24,12 +24,12 @@ Exit evidence: health report from the real local installation, migration/restart
 
 ## Phase 3 — Assisted handoff
 
-- [ ] Materialize a validated job package atomically.
-- [ ] Initialize or reuse an OpenMontage project workspace.
-- [ ] Generate a deterministic agent instruction and recovery prompt.
-- [ ] Add open folder, open Backlot, and copy prompt actions.
-- [ ] Persist handoff and recovery state.
-- [ ] Add fixture-backed assisted lifecycle test.
+- [x] Materialize a validated job package atomically.
+- [x] Initialize or reuse an OpenMontage project workspace.
+- [x] Generate a deterministic agent instruction and recovery prompt.
+- [x] Add open folder, open Backlot, and copy prompt actions.
+- [x] Persist handoff and recovery state.
+- [x] Add fixture-backed assisted lifecycle tests.
 
 Exit evidence: new project can be handed off and rediscovered after MES restart.
 

@@ -20,9 +20,11 @@ import type {
 } from './talkingphotos'
 import type {
   OpenMontageBacklotSnapshot,
+  OpenMontageAssistedHandoff,
   OpenMontageHealthReport,
   OpenMontageJobEvent,
   OpenMontageJobOutput,
+  OpenMontageJobPackage,
   OpenMontageJobRecord,
   OpenMontageSettings
 } from './openmontage'
@@ -1450,6 +1452,12 @@ export interface NativeApi {
   /** External OpenMontage installation health and persisted MES integration state. */
   openMontage: {
     health(force?: boolean): Promise<OpenMontageHealthReport>
+    prepareAssisted(jobPackage: OpenMontageJobPackage): Promise<OpenMontageAssistedHandoff>
+    assistedHandoff(jobId: string): Promise<OpenMontageAssistedHandoff>
+    recoverAssisted(): Promise<OpenMontageAssistedHandoff[]>
+    copyPrompt(jobId: string, kind?: 'handoff' | 'recovery'): Promise<void>
+    openProjectFolder(jobId: string): Promise<void>
+    openBacklot(jobId: string): Promise<string>
     jobs(): Promise<OpenMontageJobRecord[]>
     job(id: string): Promise<OpenMontageJobRecord | null>
     events(jobId: string, limit?: number): Promise<OpenMontageJobEvent[]>

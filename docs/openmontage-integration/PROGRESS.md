@@ -4,7 +4,7 @@ Last updated: 2026-07-24
 
 ## Current status
 
-Phases 1 and 2 are complete. Phase 3 (assisted handoff) is next.
+Phases 1–3 are complete. Phase 4 (managed execution) is next.
 
 ## Completed
 
@@ -26,6 +26,12 @@ Phases 1 and 2 are complete. Phase 3 (assisted handoff) is next.
 - Added a loopback-only Backlot JSON/SSE client with response limits and recursive sanitization.
 - Added typed health/job/event/output/Backlot APIs across `NativeApi`, preload, IPC, and service layers.
 - Added Sentry-wide health and Backlot observation events using sanitized primitive attributes.
+- Added idempotent assisted preparation backed by OpenMontage's own `init_project` API.
+- Added atomic job package, agent instruction, and recovery prompt files in the canonical project workspace.
+- Added strict project-ID containment checks, locked-media preservation, and pipeline-specific runtime blocking.
+- Added copy prompt, open project folder, and start/open Backlot actions through typed IPC.
+- Added startup recovery for prepared or interrupted assisted jobs.
+- Added seven fixture-backed assisted lifecycle/recovery/security tests.
 
 ## Verified facts
 
@@ -44,6 +50,7 @@ Phases 1 and 2 are complete. Phase 3 (assisted handoff) is next.
 | Focused Phase 1–2 suite (five files) | PASS — 26 tests; live-only case skipped by default |
 | `ME_OPENMONTAGE_LIVE=1` health test | PASS — real external repository and provider registry |
 | `npm run build` | PASS |
+| Focused Phase 1–3 suite (six files) | PASS — 33 tests; live-only case skipped by default |
 
 ## Blockers / limitations
 
@@ -54,4 +61,4 @@ Phases 1 and 2 are complete. Phase 3 (assisted handoff) is next.
 
 ## Next task
 
-Implement Phase 3: atomic job-package/workspace creation, OpenMontage initialization, deterministic assisted instructions, open folder/Backlot/copy actions, and restart recovery.
+Implement Phase 4: replaceable managed-runner protocol, structured events/commands, pause/resume/cancel/approval, retries/timeouts, Backlot reconciliation, and restart recovery with a deterministic fixture runner.
