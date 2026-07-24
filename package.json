@@ -47,6 +47,10 @@
     "ws": "^8.21.1",
     "zustand": "^4.5.5"
   },
+  "overrides": {
+    "fast-uri": "3.1.4",
+    "js-yaml": "4.3.0"
+  },
   "devDependencies": {
     "@electron/rebuild": "^3.7.2",
     "@types/better-sqlite3": "^7.6.13",

@@ -94,7 +94,9 @@ vulnerable code is inside the shipped Electron application:
 | Package | Installed | Status |
 | --- | --- | --- |
 | `electron` | 32.x (`^32.1.2`) | Many advisories (highest CVSS 8.1, use-after-free in the offscreen child-window paint callback). The only published fix is `electron@43.2.0`, a **semver-major** jump. Not applied: the objective forbids forcing a breaking major purely to silence an advisory, and an Electron major crosses Chromium/Node versions, the native ABI and packaging. Tracked as a follow-up with its own validation pass. |
-| `fast-uri` | 3.1.2 | Reached through a **runtime** dependency: `electron-store@8.2.0` → `conf@10.2.0` → `ajv@8.20.0` → `fast-uri@3.1.2`. `ajv` declares `fast-uri: ^3.0.1`, so `3.1.4` is in range — a **safe non-breaking patch override**, applied (see below). Practical reachability is nil: `ajv` validates the local settings schema, not attacker-supplied URLs. |
+| `fast-uri` | 3.1.2 → **3.1.4** | Reached through a **runtime** dependency: `electron-store@8.2.0` → `conf@10.2.0` → `ajv@8.20.0` → `fast-uri@3.1.2`. `ajv` declares `fast-uri: ^3.0.1`, so `3.1.4` is in range — a **safe non-breaking patch override**, applied (see below). Practical reachability is nil: `ajv` validates the local settings schema, not attacker-supplied URLs. |
+| `js-yaml` | 4.2.0 → **4.3.0** | **Correction to the earlier draft of this review, which recorded js-yaml as build-tooling only.** It also ships: `electron-updater@6.8.9` (a production dependency, loaded by `electron/services/updater.ts` for GitHub-Releases auto-update) depends on `js-yaml`. [GHSA-52cp-r559-cp3m](https://github.com/advisories/GHSA-52cp-r559-cp3m) (high — quadratic CPU via YAML merge-key chains) affects 4.0.0–4.2.0. `electron-updater` declares `^4.1.0`, so `4.3.0` is in range — applied as a **non-breaking patch override**. Verify with `npm ls js-yaml --omit=dev`. |
+| `react-router` / `react-router-dom` | 6.30.4 | Declared in `dependencies`, but **imported nowhere**: a repo-wide search for `from 'react-router`, `useNavigate` and `<Link` across `src/`, `electron/` and `shared/` returns no hits, and no router is mounted. Both advisories ([GHSA-wrjc-x8rr-h8h6](https://github.com/advisories/GHSA-wrjc-x8rr-h8h6) open redirect via `<Link>`/`useNavigate`, [GHSA-337j-9hxr-rhxg](https://github.com/advisories/GHSA-337j-9hxr-rhxg) constructor injection in SSR hydration) require using the library, and MES has no SSR. **Unreachable**, and the only published fix is a semver-major 7.x jump, so it is not forced. Tracked as a follow-up to *remove* the unused dependency rather than upgrade it. |
 
 **Does not ship — development/build tooling only**
 
@@ -110,9 +112,11 @@ vulnerable code is inside the shipped Electron application:
   `builder-util`, `@electron/rebuild`, `electron-builder` — all under the packaging/native-rebuild
   toolchain.
 - `postcss` — MES reaches it only via `vite@5.4.21` (dev bundler).
-- `js-yaml` 4.2.0 — only under `electron-builder`; a fix exists (4.3.0) but overriding the YAML
-  parser used to read `electron-builder.yml` during packaging is deliberately **not** bundled into
-  this change. Recorded as a follow-up.
+- ~~`js-yaml` 4.2.0 — only under `electron-builder`~~ — **this was wrong; see the shipped table
+  above.** `js-yaml` is also a transitive runtime dependency of `electron-updater`, so the high
+  severity advisory did reach the shipped auto-update path. It is now overridden to 4.3.0. The
+  packaging toolchain picks up the same override, which is harmless: 4.3.0 reads
+  `electron-builder.yml` identically and `dist:dir` is re-validated after the change.
 - `vite`, `vitest`, `playwright` — dev/test only. The `vitest` critical
   ([GHSA-5xrq-8626-4rwp](https://github.com/advisories/GHSA-5xrq-8626-4rwp)) requires the Vitest **UI
   server** to be listening; this repository never starts it.
@@ -121,12 +125,27 @@ vulnerable code is inside the shipped Electron application:
 
 ### Fix applied
 
-A single `overrides` entry pins `fast-uri` to the fixed patch release, because it is the one
-advisory that reaches a **shipped** MES runtime dependency and the bump stays inside the range
-`ajv` already declares. Validated by a full typecheck, the full test suite, a production build and
-a Windows unpacked package after the change — see `VALIDATION.md`.
+Two `overrides` entries, both in-range patch releases, both on paths that reach the **shipped**
+application:
 
-No other advisory had a fix that was both available and non-breaking.
+```json
+"overrides": {
+  "fast-uri": "3.1.4",
+  "js-yaml": "4.3.0"
+}
+```
+
+After applying them, `npm audit --omit=dev` drops from **1 high + 2 moderate** to **2 moderate**,
+and the only remaining production findings are the two unreachable `react-router` advisories
+analysed above.
+
+Validated after the change: `npm run typecheck`, the full suite (73 files / 599 tests, 2 opt-in
+skips), `npm run build`, and a Windows unpacked package — see `VALIDATION.md`.
+
+No other advisory had a fix that was both available and non-breaking: everything else is either
+development/build tooling that is not packaged, or requires a semver-major upgrade
+(`electron` 32 → 43, `react-router` 6 → 7), which the objective explicitly forbids doing purely to
+silence an advisory.
 
 ## Follow-ups (tracked, not silently accepted)
 
@@ -134,7 +153,10 @@ No other advisory had a fix that was both available and non-breaking.
    validation. Highest-value remaining item.
 2. **OpenMontage `remotion-composer`** — apply `postcss@>=8.5.18` and `fast-uri@>=3.1.4` in the
    OpenMontage repository; MES must not patch a pinned external checkout.
-3. **`js-yaml` 4.2.0 → 4.3.0** and the `electron-builder` 26.x line — packaging-toolchain upgrade,
-   validate with a full `dist:dir`.
-4. **Run the real `codex-security` `security-diff-scan`** from an environment where that skill
+3. **Remove the unused `react-router-dom` dependency.** It is declared but imported nowhere, so it
+   contributes two production advisories and bundle weight for no functionality. Removal is a
+   dependency change unrelated to this integration, so it is tracked rather than bundled here.
+4. **`electron-builder` 26.x line** — packaging-toolchain upgrade, validate with a full `dist:dir`.
+   (`js-yaml` itself is now fixed via the override above.)
+5. **Run the real `codex-security` `security-diff-scan`** from an environment where that skill
    exists; this manual audit covers the same invariants but is not the skill's full pipeline.
