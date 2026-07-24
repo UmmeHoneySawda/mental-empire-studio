@@ -1,8 +1,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import Database from 'better-sqlite3'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { closeDatabase, initDatabase, type Repositories } from '../../electron/db'
 import { OpenMontageAssistedService } from '../../electron/services/openmontage/assisted'
 import {
@@ -17,16 +16,7 @@ import {
   type OpenMontageJobPackage,
   type OpenMontageSettings
 } from '../../shared/openmontage'
-
-function sqliteBindingReady(): boolean {
-  try {
-    const db = new Database(':memory:')
-    db.close()
-    return true
-  } catch {
-    return false
-  }
-}
+import { describeSqlite } from '../helpers/sqlite'
 
 function tempDir(prefix: string): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix))
@@ -144,8 +134,6 @@ function harness(
 }
 
 afterEach(() => closeDatabase())
-const describeSqlite = sqliteBindingReady() ? describe : describe.skip
-
 describeSqlite('OpenMontage managed runner', () => {
   it('passes repository environment values to the managed runner without persisting them', async () => {
     const root = tempDir('me-openmontage-managed-root-')

@@ -161,9 +161,20 @@ describe('OpenMontage health probing', () => {
 
 const liveIt = process.env.ME_OPENMONTAGE_LIVE === '1' ? it : it.skip
 
+/**
+ * OpenMontage is an external engine installed beside MES, never nested inside it.
+ * Honour an explicit override first so CI/other checkouts can point at their own
+ * installation, then fall back to the documented sibling location.
+ */
+function liveRepositoryPath(): string {
+  const override = process.env.ME_OPENMONTAGE_PATH?.trim()
+  if (override) return path.resolve(override)
+  return path.resolve(process.cwd(), '..', 'OpenMontage')
+}
+
 describe('OpenMontage live installation probe', () => {
   liveIt('validates the checked-out external repository without exposing secrets', async () => {
-    const repositoryPath = path.resolve(process.cwd(), 'OpenMontage')
+    const repositoryPath = liveRepositoryPath()
     const report = await probeOpenMontageHealth(settings({ repositoryPath }))
     expect(report.installationPath).toBe(repositoryPath)
     expect(report.compatibility).toBe('compatible')

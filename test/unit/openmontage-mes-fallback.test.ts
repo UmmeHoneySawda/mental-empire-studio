@@ -1,8 +1,7 @@
 import path from 'node:path'
 import os from 'node:os'
 import fs from 'node:fs'
-import Database from 'better-sqlite3'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, expect, it } from 'vitest'
 import { closeDatabase, getRepos, initDatabase } from '../../electron/db'
 import { startMesFallbackProduction } from '../../electron/services/openmontage/mes-fallback'
 import {
@@ -10,16 +9,7 @@ import {
   OPENMONTAGE_JOB_SCHEMA,
   type OpenMontageJobPackage
 } from '../../shared/openmontage'
-
-function sqliteBindingReady(): boolean {
-  try {
-    const db = new Database(':memory:')
-    db.close()
-    return true
-  } catch {
-    return false
-  }
-}
+import { describeSqlite } from '../helpers/sqlite'
 
 function tempDir(prefix: string): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix))
@@ -64,8 +54,6 @@ function packageFixture(jobId: string): OpenMontageJobPackage {
 }
 
 afterEach(() => closeDatabase())
-const describeSqlite = sqliteBindingReady() ? describe : describe.skip
-
 describeSqlite('OpenMontage MES fallback adapter', () => {
   it('creates an ordinary MES Compose project from local narration idempotently', async () => {
     initDatabase(path.join(tempDir('me-openmontage-fallback-db-'), 'app.sqlite'))

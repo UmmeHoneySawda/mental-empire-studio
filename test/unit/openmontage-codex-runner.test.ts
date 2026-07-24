@@ -2,8 +2,7 @@ import { execFileSync } from 'node:child_process'
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import Database from 'better-sqlite3'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, expect, it } from 'vitest'
 import { closeDatabase, initDatabase } from '../../electron/db'
 import { ffmpegPath } from '../../electron/services/bin'
 import { OpenMontageAssistedService } from '../../electron/services/openmontage/assisted'
@@ -20,16 +19,7 @@ import {
   type OpenMontageJobPackage,
   type OpenMontageSettings
 } from '../../shared/openmontage'
-
-function sqliteBindingReady(): boolean {
-  try {
-    const db = new Database(':memory:')
-    db.close()
-    return true
-  } catch {
-    return false
-  }
-}
+import { describeSqlite } from '../helpers/sqlite'
 
 function tempDir(prefix: string): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix))
@@ -82,8 +72,6 @@ async function waitForFile(filePath: string, timeoutMs = 5_000): Promise<void> {
 }
 
 afterEach(() => closeDatabase())
-const describeSqlite = sqliteBindingReady() ? describe : describe.skip
-
 describeSqlite('Codex OpenMontage production runner', () => {
   it('ships a callable pinned Codex executable and protocol adapter', () => {
     const executable = resolveBundledCodexExecutable()

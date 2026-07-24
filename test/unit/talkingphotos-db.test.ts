@@ -6,16 +6,7 @@ import { afterEach, describe, expect, it } from 'vitest'
 import { closeDatabase, initDatabase } from '../../electron/db'
 import { TALKINGPHOTOS_CONNECTION_ID, TALKINGPHOTOS_PARTITION, TALKINGPHOTOS_PROVIDER } from '../../shared/talkingphotos'
 import type { ProviderAsset, ProviderConnection, ProviderJob, TranscriptDocument } from '../../shared/talkingphotos'
-
-function sqliteBindingReady(): boolean {
-  try {
-    const db = new Database(':memory:')
-    db.close()
-    return true
-  } catch {
-    return false
-  }
-}
+import { describeSqlite } from '../helpers/sqlite'
 
 function tempDbPath(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'me-talkingphotos-db-'))
@@ -25,8 +16,6 @@ function tempDbPath(): string {
 afterEach(() => {
   closeDatabase()
 })
-
-const describeSqlite = sqliteBindingReady() ? describe : describe.skip
 
 function connectionRow(patch: Partial<ProviderConnection> = {}): ProviderConnection {
   const now = new Date().toISOString()

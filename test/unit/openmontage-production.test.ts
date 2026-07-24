@@ -1,8 +1,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import Database from 'better-sqlite3'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { closeDatabase, initDatabase, type Repositories } from '../../electron/db'
 import { OpenMontageAssistedService } from '../../electron/services/openmontage/assisted'
 import { OpenMontageManagedService } from '../../electron/services/openmontage/managed'
@@ -17,16 +16,7 @@ import {
   type OpenMontageSettings,
   type OpenMontageWorkflowMode
 } from '../../shared/openmontage'
-
-function sqliteBindingReady(): boolean {
-  try {
-    const db = new Database(':memory:')
-    db.close()
-    return true
-  } catch {
-    return false
-  }
-}
+import { describeSqlite } from '../helpers/sqlite'
 
 function tempDir(prefix: string): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix))
@@ -192,8 +182,6 @@ afterEach(async () => {
   activeProductions = []
   closeDatabase()
 })
-const describeSqlite = sqliteBindingReady() ? describe : describe.skip
-
 describeSqlite('OpenMontage production routing and fallback', () => {
   it('plans, starts, and persists an explainable managed OpenMontage route', async () => {
     const root = tempDir('me-openmontage-production-root-')

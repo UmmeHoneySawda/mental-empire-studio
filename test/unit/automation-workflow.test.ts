@@ -5,7 +5,7 @@ import { tmpdir } from 'node:os'
 import { AUTOMATION_GOALS, buildAutomationWorkflow, isAutomationGoalAvailable, workflowProgress } from '../../shared/automation'
 import type { AutomationJob, AutomationJobConfig, AutomationJobItem } from '../../shared/types'
 import { closeDatabase, initDatabase } from '../../electron/db'
-import Database from 'better-sqlite3'
+import { describeSqlite } from '../helpers/sqlite'
 
 function config(captions = true): AutomationJobConfig {
   return {
@@ -45,12 +45,6 @@ describe('goal workflow generation', () => {
     expect(isAutomationGoalAvailable('talkingphotos-video')).toBe(true)
   })
 })
-
-function sqliteBindingReady(): boolean {
-  try { const db = new Database(':memory:'); db.close(); return true } catch { return false }
-}
-
-const describeSqlite = sqliteBindingReady() ? describe : describe.skip
 
 describeSqlite('automation persistence', () => {
   let dir = ''

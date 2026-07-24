@@ -1,8 +1,7 @@
 import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
-import Database from 'better-sqlite3'
-import { afterEach, describe, expect, it, vi } from 'vitest'
+import { afterEach, expect, it, vi } from 'vitest'
 import { closeDatabase, initDatabase, type Repositories } from '../../electron/db'
 import {
   OpenMontageAssistedService,
@@ -15,16 +14,7 @@ import {
   type OpenMontageHealthReport,
   type OpenMontageJobPackage
 } from '../../shared/openmontage'
-
-function sqliteBindingReady(): boolean {
-  try {
-    const db = new Database(':memory:')
-    db.close()
-    return true
-  } catch {
-    return false
-  }
-}
+import { describeSqlite } from '../helpers/sqlite'
 
 function tempDir(prefix: string): string {
   return fs.mkdtempSync(path.join(os.tmpdir(), prefix))
@@ -152,8 +142,6 @@ function dependencies(
 }
 
 afterEach(() => closeDatabase())
-const describeSqlite = sqliteBindingReady() ? describe : describe.skip
-
 describeSqlite('OpenMontage assisted handoff', () => {
   it('creates a canonical workspace, atomic package, prompts, and durable handoff state', async () => {
     const root = tempDir('me-openmontage-assisted-root-')
