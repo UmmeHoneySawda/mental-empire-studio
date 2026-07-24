@@ -71,6 +71,45 @@ async function waitForFile(filePath: string, timeoutMs = 5_000): Promise<void> {
   }
 }
 
+/** Package for the stale-gate regression: no editable output, no approvals. */
+function staleGatePackage(outputDirectory: string, sourceVideo: string): OpenMontageJobPackage {
+  return {
+    schema: OPENMONTAGE_JOB_SCHEMA,
+    contractVersion: OPENMONTAGE_CONTRACT_VERSION,
+    jobId: 'codex-stale-gate-job',
+    projectId: 'codex-stale-gate-project',
+    createdAt: new Date().toISOString(),
+    requestedBy: 'mental-empire-studio',
+    project: { title: 'Codex runner stale approval gate regression' },
+    source: { language: 'en', assets: [] },
+    production: {
+      workflowMode: 'openmontage',
+      pipeline: 'hybrid',
+      mediaControl: 'automatic',
+      style: 'documentary',
+      composition: { runtime: 'remotion', authoringMode: 'templated', editableOutput: false },
+      approvals: []
+    },
+    output: {
+      directory: outputDirectory,
+      aspectRatio: '16:9',
+      width: 320,
+      height: 180,
+      format: 'mp4',
+      captions: false
+    },
+    fallback: {
+      enabled: true,
+      engine: 'mental-empire-studio',
+      preserveOpenMontageProject: true
+    },
+    metadata: {
+      fixtureFinalVideo: sourceVideo,
+      fixtureStaleGate: true
+    }
+  }
+}
+
 afterEach(() => closeDatabase())
 describeSqlite('Codex OpenMontage production runner', () => {
   it('ships a callable pinned Codex executable and protocol adapter', () => {
@@ -220,6 +259,77 @@ describeSqlite('Codex OpenMontage production runner', () => {
     expect(editable.metadata).toMatchObject({ self_contained: true })
     expect(fs.existsSync(path.join(editable.path, 'package.json'))).toBe(true)
   }, 30_000)
+
+  /**
+   * Live scenario C failed with "Managed runner rejected the approval command"
+   * after three approvals had already succeeded. The cause was the checkpoint
+   * watcher announcing an approval gate from an `awaiting_human` file that was no
+   * longer the newest checkpoint: the turn had ended, the runner auto-continued
+   * instead of waiting, and MES's approval then landed in an already-running turn.
+   *
+   * Only `afterSuccessfulTurn` may publish a gate. Here the newest checkpoint is
+   * deliberately NOT the gate, so the run must auto-continue to completion without
+   * MES ever being told to approve anything.
+   */
+  it('never surfaces an approval gate from a checkpoint the runner has already moved past', async () => {
+    const root = tempDir('me-openmontage-stalegate-root-')
+    const fixtureCodex = path.resolve(process.cwd(), 'test', 'fixtures', 'codex-cli-openmontage.mjs')
+    const sourceVideo = path.join(tempDir('me-openmontage-stalegate-video-'), 'source.mp4')
+    makeVideo(sourceVideo)
+    fs.mkdirSync(path.join(root, 'pipeline_defs'), { recursive: true })
+    fs.writeFileSync(
+      path.join(root, 'pipeline_defs', 'hybrid.yaml'),
+      'name: hybrid\nstages:\n  - name: assets\n  - name: publish\n',
+      'utf8'
+    )
+    const outputDirectory = path.join(tempDir('me-openmontage-stalegate-output-'), 'exports')
+    const settings: OpenMontageSettings = {
+      ...DEFAULT_OPENMONTAGE_SETTINGS,
+      repositoryPath: root,
+      mode: 'managed',
+      runner: 'codex-cli',
+      runnerExecutable: process.execPath,
+      runnerArguments: [fixtureCodex],
+      stallTimeoutSec: 30
+    }
+    const repos = initDatabase(path.join(tempDir('me-openmontage-stalegate-db-'), 'app.sqlite'))
+    const workspaceService = new OpenMontageAssistedService({
+      repos,
+      getSettings: () => settings,
+      health: async () => readyHealth(root),
+      runCommand: async (_executable, args) => {
+        const workspace = path.join(args[5], args[2])
+        fs.mkdirSync(workspace, { recursive: true })
+        fs.writeFileSync(path.join(workspace, 'project.json'), JSON.stringify({
+          project_id: args[2],
+          title: args[3],
+          pipeline_type: args[4]
+        }))
+        return { stdout: `MES_OPENMONTAGE_PROJECT=${workspace}`, stderr: '' }
+      }
+    })
+    const managed = new OpenMontageManagedService({
+      repos,
+      workspace: workspaceService,
+      getSettings: () => settings,
+      protocolTimeoutMs: 10_000,
+      commandTimeoutMs: 10_000
+    })
+
+    const jobPackage = staleGatePackage(outputDirectory, sourceVideo)
+    await managed.start(jobPackage)
+    const job = await managed.waitForState(jobPackage.jobId, ['completed'], 25_000)
+
+    expect(job.state).toBe('completed')
+    const events = repos.openMontageEvents(job.id)
+    // The `awaiting_human` assets checkpoint really was written and observed…
+    expect(events.some((event) => event.type === 'checkpoint' && event.stage === 'assets')).toBe(true)
+    // …but it must never have been published to MES as an approval requirement,
+    // and MES must never have been moved into an awaiting_approval state by it.
+    expect(events.filter((event) => event.type === 'approval')).toHaveLength(0)
+    expect(events.some((event) => /requires MES approval|ready for review/i.test(event.message))).toBe(false)
+    expect(events.some((event) => /awaiting.?approval/i.test(JSON.stringify(event.data ?? {})))).toBe(false)
+  }, 40_000)
 
   /**
    * A production that requested an editable composition must not be reported as

@@ -175,6 +175,8 @@ let cancelRequested = false
 let shutdownRequested = false
 let autoContinueCount = 0
 let stderrTail = ''
+/** Sanitized message from the most recent Codex `error`/`turn.failed` event. */
+let lastTurnError = ''
 let operation = Promise.resolve()
 const seenCheckpoints = new Map()
 const emittedOutputs = new Set()
@@ -298,13 +300,17 @@ function readCheckpoints(emitChanges = true) {
             : checkpoint.status === 'failed'
               ? 'failed'
               : 'active'
-        // A canonical awaiting_human file can land a few seconds before the Codex
-        // turn actually exits. Keep MES in running until afterSuccessfulTurn emits
-        // the authoritative gate; accepting approval while Codex still owns the
-        // workspace races the command against an active turn.
-        const status = checkpointStatus === 'awaiting_approval' && currentChild
-          ? 'active'
-          : checkpointStatus
+        // The watcher NEVER publishes an approval gate. A canonical
+        // `awaiting_human` file can land before the Codex turn exits, and it also
+        // stays on disk during the short window between turns — during which
+        // afterSuccessfulTurn may decide to auto-continue instead of gating. If
+        // the watcher announced the gate in either window, MES would send an
+        // approval that the runner then rejects because a turn is already running
+        // again ("Runner is not waiting at an approval gate").
+        //
+        // Only afterSuccessfulTurn knows both that the turn has ended and that the
+        // runner is genuinely going to wait, so it owns the authoritative gate.
+        const status = checkpointStatus === 'awaiting_approval' ? 'active' : checkpointStatus
         const stable = createHash('sha256').update(`${filePath}:${fingerprint}`).digest('hex').slice(0, 20)
         emit('stage', {
           stage,
@@ -684,10 +690,25 @@ function codexEvent(line) {
   }
   lastActivityAt = Date.now()
   const type = typeof event.type === 'string' ? event.type : 'unknown'
+  // Codex reports fatal turn errors on stdout as JSON, not on stderr. Capture the
+  // message or the failure is undiagnosable: the runner log previously recorded
+  // only `turn.failed` plus `diagnostic: "unknown"`, which is what made a spent
+  // Codex usage limit look like a generic retryable runner crash.
+  const reported = typeof event.message === 'string'
+    ? event.message
+    : typeof event.error?.message === 'string'
+      ? event.error.message
+      : typeof event.item?.message === 'string'
+        ? event.item.message
+        : undefined
+  if (reported && (type === 'error' || type === 'turn.failed' || event.item?.type === 'error')) {
+    lastTurnError = sanitize(reported).slice(0, 1_000)
+  }
   localLog('codex_event', {
     eventType: type,
     itemType: typeof event.item?.type === 'string' ? event.item.type : undefined,
-    status: typeof event.item?.status === 'string' ? event.item.status : undefined
+    status: typeof event.item?.status === 'string' ? event.item.status : undefined,
+    ...(reported ? { message: sanitize(reported).slice(0, 500) } : {})
   })
   if (type === 'thread.started' && typeof event.thread_id === 'string') {
     sessionId = event.thread_id
@@ -780,6 +801,9 @@ async function afterSuccessfulTurn() {
 async function runCodexTurn(prompt, resumeThread) {
   if (settled || currentChild) return false
   pauseRequested = false
+  // Clear per-turn diagnostics so a previous turn's error can never be reported
+  // as the cause of this one.
+  lastTurnError = ''
   runnerState = 'running'
   currentTurnStartedAt = Date.now()
   lastActivityAt = Date.now()
@@ -884,13 +908,21 @@ async function runCodexTurn(prompt, resumeThread) {
   }
   if (result.error || result.code !== 0) {
     settled = true
+    const reported = lastTurnError || sanitize(result.error || stderrTail || '') || 'unknown'
+    // A spent agent-runner quota is not a retryable crash: no number of retries
+    // restores capacity. Name it so MES classifies it as a credential/quota
+    // problem and goes straight to its own renderer instead of burning retries.
+    const usageLimited = /usage limit|quota exceeded|out of credits|purchase more credits|insufficient_quota/i
+      .test(reported)
     emit('failed', {
-      code: 'CODEX_EXEC_FAILED',
-      message: `Codex production turn failed with exit code ${result.code ?? 'unavailable'}. Local sanitized runner diagnostics were preserved.`,
+      code: usageLimited ? 'CODEX_USAGE_LIMIT_REACHED' : 'CODEX_EXEC_FAILED',
+      message: usageLimited
+        ? `The Codex agent runner has no usage capacity left, so the production cannot continue: ${reported}`
+        : `Codex production turn failed with exit code ${result.code ?? 'unavailable'}: ${reported}`,
       stage: mapStage(latestCheckpoint()?.checkpoint?.stage),
       checkpointPreserved: readCheckpoints(false).length > 0
     })
-    localLog('turn_failure', { diagnostic: sanitize(result.error || stderrTail || 'unknown') })
+    localLog('turn_failure', { diagnostic: reported, usageLimited })
     setTimeout(() => process.exit(2), 25)
     return false
   }

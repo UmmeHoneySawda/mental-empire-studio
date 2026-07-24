@@ -139,7 +139,29 @@ process.stdout.write(`${JSON.stringify({ type: 'turn.started' })}\n`)
 
 let response
 try {
-  if (prompt.includes('requests a revision')) {
+  if (jobPackage.metadata?.fixtureStaleGate) {
+    // Reproduce the window that broke live scenario C: an `awaiting_human`
+    // checkpoint is left on disk, but a NEWER checkpoint means the newest state
+    // is not a gate, so the runner auto-continues instead of waiting. The
+    // checkpoint watcher must not announce an approval gate from the stale file,
+    // otherwise MES sends an approval into an already-running turn.
+    if (prompt.includes('previous turn ended without reaching a gate')) {
+      completeProduction()
+      response = { status: 'completed', stage: 'publish', summary: 'Production completed after auto-continue.' }
+    } else {
+      writeAssetsCheckpoint('awaiting_human', 'assets-v1.json')
+      await new Promise((resolve) => setTimeout(resolve, 50))
+      writeJsonAtomic(path.join(workspace, 'checkpoint_edit.json'), {
+        stage: 'edit',
+        status: 'in_progress',
+        human_approved: false,
+        artifacts: {},
+        history: [],
+        updated_at: new Date().toISOString()
+      })
+      response = { status: 'blocked', stage: 'edit', summary: 'Turn ended mid-edit without a gate.' }
+    }
+  } else if (prompt.includes('requests a revision')) {
     writeAssetsCheckpoint('awaiting_human', 'assets-v2.json')
     response = { status: 'awaiting_approval', stage: 'assets', summary: 'Revised assets are ready.' }
   } else if (prompt.includes('explicitly approves')) {
