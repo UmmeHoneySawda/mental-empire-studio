@@ -1006,6 +1006,18 @@ export function classifyOpenMontageFailure(input: OpenMontageFailureInput): Open
     // retries are exhausted.
     category = 'runtime'
     retryable = true
+  } else if (
+    rawCode === 'CODEX_USAGE_LIMIT_REACHED'
+    || /usage limit|quota exceeded|out of credits|purchase more credits|insufficient_quota/.test(haystack)
+  ) {
+    // The agent runner's account has no capacity left. This is checked before the
+    // keyword heuristics below because the generic runner-failure text contains
+    // the word "runner", which would otherwise make it look retryable — and
+    // retrying a spent quota just burns the retry budget without progress.
+    // Falling back to the MES renderer is the correct response, so fallback
+    // stays eligible.
+    category = 'credentials'
+    retryable = false
   } else if (/api[_ -]?key|credential|unauthori[sz]ed|forbidden|authentication/.test(haystack)) {
     category = 'credentials'
   } else if (/config|installation|not found|missing executable|incompatible|unsupported version/.test(haystack)) {

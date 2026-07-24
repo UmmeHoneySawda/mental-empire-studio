@@ -227,6 +227,36 @@ describe('OpenMontage failures and diagnostics', () => {
     })
   })
 
+  /**
+   * A spent Codex usage limit was previously classified as a retryable `runner`
+   * failure, because the generic runner-failure message contains the word
+   * "runner". Retrying cannot restore quota, so the retry budget was burned for
+   * nothing before MES fell back. Quota exhaustion must be non-retryable while
+   * staying fallback-eligible: MES's own renderer is the correct response.
+   */
+  it('treats a spent agent-runner quota as non-retryable but still fallback eligible', () => {
+    expect(classifyOpenMontageFailure({
+      code: 'CODEX_USAGE_LIMIT_REACHED',
+      message: 'The Codex agent runner has no usage capacity left, so the production cannot continue: '
+        + "You've hit your usage limit. Upgrade to Pro, visit .../usage to purchase more credits or try again at Jul 31st.",
+      stage: 'assets'
+    })).toMatchObject({
+      category: 'credentials',
+      retryable: false,
+      fallbackEligible: true,
+      preservesCheckpoint: true
+    })
+  })
+
+  it('detects quota exhaustion from the message even without the explicit code', () => {
+    expect(classifyOpenMontageFailure({
+      code: 'CODEX_EXEC_FAILED',
+      message: 'Codex production turn failed with exit code 1: You have hit your usage limit. '
+        + 'Local sanitized runner diagnostics were preserved.',
+      stage: 'assets'
+    })).toMatchObject({ category: 'credentials', retryable: false })
+  })
+
   it('redacts nested credentials and authorization text', () => {
     const result = sanitizeOpenMontageDiagnostic({
       provider: 'pexels',
