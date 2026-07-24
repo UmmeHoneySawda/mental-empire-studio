@@ -4,7 +4,7 @@ Last updated: 2026-07-24
 
 ## Current status
 
-Phases 1–4 are complete. Phase 5 (routing, fallback, and telemetry) is next.
+Phases 1–5 are complete. Phase 6 (production UI) is next.
 
 ## Completed
 
@@ -39,6 +39,15 @@ Phases 1–4 are complete. Phase 5 (routing, fallback, and telemetry) is next.
 - Added Backlot observation at runner checkpoints without mutating OpenMontage state.
 - Added a real Node subprocess fixture covering completion, controls, approvals, redaction, crashes, stalls, invalid output, and recovery.
 - Added startup recovery for managed jobs when managed mode is configured.
+- Added tamper-checked production plans with persisted route decisions, health evidence, reasons, and warnings.
+- Connected forced MES, forced OpenMontage, and Automatic routing to real production start paths.
+- Enforced the Documentary Montage → Remotion constraint before launch.
+- Added managed-to-assisted degradation when the configured runner is unavailable.
+- Added classified automatic retry supervision with checkpoint-preserving resume.
+- Added eligible MES fallback after retry exhaustion and explicit cancellation/fallback-disable protections.
+- Added an idempotent adapter that reuses or creates ordinary MES Compose projects from local narration.
+- Added routing/retry/fallback Sentry lifecycle events with sanitized primitive fields.
+- Added eleven production/fallback integration tests, including real subprocess faults and the real MES project adapter.
 
 ## Verified facts
 
@@ -60,6 +69,8 @@ Phases 1–4 are complete. Phase 5 (routing, fallback, and telemetry) is next.
 | Focused Phase 1–3 suite (six files) | PASS — 33 tests; live-only case skipped by default |
 | Managed protocol/subprocess suite | PASS — 12 tests |
 | Focused Phase 4 infrastructure suite | PASS — 34 tests; live-only case skipped by default |
+| Focused Phase 1–5 suite (ten files) | PASS — 57 tests; live-only case skipped by default |
+| Production/fallback fault suite | PASS — 11 tests |
 
 ## Blockers / limitations
 
@@ -70,4 +81,4 @@ Phases 1–4 are complete. Phase 5 (routing, fallback, and telemetry) is next.
 
 ## Next task
 
-Implement Phase 5: connect routing to production creation, enforce fallback eligibility/retry limits, preserve OpenMontage evidence, and add Sentry/fault-injection coverage.
+Implement Phase 6: OpenMontage navigation, dashboard, seven-step setup/plan, live progress, approvals, runtime comparison, recovery, failure/fallback, completion, settings, and degraded/empty/loading/focus states.

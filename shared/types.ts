@@ -26,6 +26,9 @@ import type {
   OpenMontageJobOutput,
   OpenMontageJobPackage,
   OpenMontageJobRecord,
+  OpenMontageProductionPlan,
+  OpenMontageProductionRequest,
+  OpenMontageProductionStart,
   OpenMontageSettings
 } from './openmontage'
 
@@ -1456,6 +1459,11 @@ export interface NativeApi {
     prepareAssisted(jobPackage: OpenMontageJobPackage): Promise<OpenMontageAssistedHandoff>
     assistedHandoff(jobId: string): Promise<OpenMontageAssistedHandoff>
     recoverAssisted(): Promise<OpenMontageAssistedHandoff[]>
+    planProduction(
+      input: OpenMontageProductionRequest,
+      forceHealth?: boolean
+    ): Promise<OpenMontageProductionPlan>
+    startProduction(plan: OpenMontageProductionPlan): Promise<OpenMontageProductionStart>
     startManaged(jobPackage: OpenMontageJobPackage): Promise<OpenMontageJobRecord>
     pauseManaged(jobId: string): Promise<OpenMontageJobRecord>
     resumeManaged(jobId: string): Promise<OpenMontageJobRecord>

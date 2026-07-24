@@ -46,12 +46,12 @@ Exit evidence: managed fixture completes, pauses/resumes, awaits approval, and r
 
 ## Phase 5 — Routing, fallback, and telemetry
 
-- [ ] Connect pure routing to production creation.
-- [ ] Enforce pipeline-specific runtime constraints.
-- [ ] Implement classified retries and MES fallback.
-- [ ] Preserve OpenMontage workspace on failure.
-- [ ] Add wide Sentry lifecycle/failure/fallback logs and exception capture.
-- [ ] Add fault-injection tests.
+- [x] Connect pure routing to production creation.
+- [x] Enforce pipeline-specific runtime constraints.
+- [x] Implement classified retries and MES fallback.
+- [x] Preserve OpenMontage workspace on failure.
+- [x] Add wide Sentry lifecycle/failure/fallback logs and exception capture.
+- [x] Add fault-injection tests.
 
 Exit evidence: forced modes, automatic decision reasons, retry policy, cancel behavior, and fallback are deterministic.
 

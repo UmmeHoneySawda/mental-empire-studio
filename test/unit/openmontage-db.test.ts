@@ -179,6 +179,34 @@ describeSqlite('OpenMontage persistence', () => {
     ])
   })
 
+  it('persists routing evidence and the linked MES fallback project through guarded transitions', () => {
+    const repos = initDatabase(tempDbPath())
+    repos.createOpenMontageJob(jobRecord())
+    const routingDecision = {
+      engine: 'openmontage' as const,
+      startable: true,
+      pipeline: 'hybrid' as const,
+      runtime: 'remotion' as const,
+      authoringMode: 'atelier' as const,
+      fallbackEngine: 'mental-empire-studio' as const,
+      reasons: ['Real footage was requested.'],
+      warnings: []
+    }
+    repos.updateOpenMontageJob('om-job-1', { routingDecision })
+    repos.transitionOpenMontageJob('om-job-1', 'created', 'validating')
+    repos.transitionOpenMontageJob('om-job-1', 'validating', 'failed')
+    repos.transitionOpenMontageJob('om-job-1', 'failed', 'falling_back')
+    const fallback = repos.transitionOpenMontageJob(
+      'om-job-1',
+      'falling_back',
+      'fallback_running',
+      { fallbackProjectId: 'proj-fallback-1' }
+    )
+
+    expect(fallback.routingDecision).toEqual(routingDecision)
+    expect(fallback.fallbackProjectId).toBe('proj-fallback-1')
+  })
+
   it('adds tables idempotently to a legacy database without touching existing data', () => {
     const file = tempDbPath()
     const legacy = new Database(file)

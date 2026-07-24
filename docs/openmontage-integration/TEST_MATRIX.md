@@ -33,8 +33,13 @@ Legend: PASS = executed with evidence; PENDING = not implemented/executed; BLOCK
 | Managed | Protocol handshake and malformed/oversized event rejection | PASS — 5 tests |
 | Managed | Fixture runner start/pause/resume/cancel/approval/revision | PASS — real Node subprocess |
 | Managed | Crash, stall, invalid output, and restart recovery | PASS — real Node subprocess |
-| Fallback | Retry exhaustion starts MES and preserves files | PENDING |
-| Sentry | Managed runner lifecycle/failure fields are structured and redacted | PASS — failure/redaction fixture |
+| Routing | Forced MES, forced OpenMontage, Automatic, and tampered/stale plans | PASS |
+| Routing | Documentary Montage rejects missing/non-Remotion runtime | PASS |
+| Reliability | Transient provider failure resumes and completes | PASS — real subprocess |
+| Fallback | Retry exhaustion starts MES and preserves OpenMontage files | PASS — real subprocess + Compose adapter |
+| Fallback | Credentials skip retry; disabled fallback and cancellation never fallback | PASS |
+| Fallback | Adapter failure is terminal and secret-redacted | PASS |
+| Sentry | Plan/start/retry/failure/fallback fields are structured and redacted | PASS — lifecycle/fault fixtures |
 | IPC | Health/read/control APIs aligned across NativeApi, preload, and IPC; IDs/text validated | PASS |
 
 ## UI coverage
@@ -43,12 +48,12 @@ Legend: PASS = executed with evidence; PENDING = not implemented/executed; BLOCK
 | --- | --- |
 | Integration dashboard | PENDING |
 | New Production seven-step setup | PENDING |
-| Automatic workflow decision | PENDING |
+| Automatic workflow decision | BACKEND PASS; UI PENDING |
 | Live production progress | PENDING |
 | Storyboard approval gate | PENDING |
 | Remotion versus HyperFrames comparison | PENDING |
 | Recoverable interruption | PENDING |
-| Failure and MES fallback | PENDING |
+| Failure and MES fallback | BACKEND PASS; UI PENDING |
 | Completed production outputs | PENDING |
 | OpenMontage settings | PENDING |
 | Loading/empty/degraded/offline/focus states | PENDING |

@@ -5,10 +5,10 @@
 - MES root: `D:\Work\mental-empire-studio`
 - Branch: `feat/openmontage-integration`
 - Base commit: `4d78fab8709a2cd2811e50bc72d8fd16c785c418`
-- Latest completed milestone: Phase 4 — managed runner execution
+- Latest completed milestone: Phase 5 — routing, fallback, and telemetry
 - OpenMontage root: `D:\Work\mental-empire-studio\OpenMontage`
 - OpenMontage revision: `0af32ce5e1e830c33992af1f9179dcdcd536549b`
-- Current phase: Phase 5 — routing, fallback, and telemetry
+- Current phase: Phase 6 — production UI
 
 ## Completed
 
@@ -30,6 +30,11 @@
 - Pause/resume/cancel/approval/revision/retry controls.
 - Managed restart recovery, fault classification, and output-path containment.
 - Deterministic real-subprocess fixture coverage.
+- Tamper-checked, persisted production routing plans.
+- Documentary Montage runtime enforcement and managed-to-assisted degradation.
+- Classified checkpoint-preserving retry supervision.
+- Real MES Compose fallback with cancellation/fallback-disable protections.
+- Structured Sentry plan/retry/fallback lifecycle logging and fault coverage.
 
 ## Changed files
 
@@ -50,12 +55,16 @@
 - `electron/main.ts`
 - `electron/services/openmontage/assisted.ts`
 - `electron/services/openmontage/managed.ts`
+- `electron/services/openmontage/production.ts`
+- `electron/services/openmontage/mes-fallback.ts`
 - `test/stubs/electron.ts`
 - `test/unit/openmontage-assisted.test.ts`
 - `shared/openmontage-runner.ts`
 - `test/fixtures/openmontage-runner.mjs`
 - `test/unit/openmontage-runner-protocol.test.ts`
 - `test/unit/openmontage-managed.test.ts`
+- `test/unit/openmontage-production.test.ts`
+- `test/unit/openmontage-mes-fallback.test.ts`
 - `docs/openmontage-integration/schemas/job-package.v1.schema.json`
 - `docs/openmontage-integration/ARCHITECTURE.md`
 - `docs/openmontage-integration/IMPLEMENTATION_PLAN.md`
@@ -76,9 +85,10 @@ $env:ME_OPENMONTAGE_LIVE='1'; npm test -- --run test/unit/openmontage-health.tes
 npm run build
 npm test -- --run test/unit/openmontage-assisted.test.ts
 npm test -- --run test/unit/openmontage-runner-protocol.test.ts test/unit/openmontage-managed.test.ts
+npm test -- --run test/unit/openmontage-production.test.ts test/unit/openmontage-mes-fallback.test.ts
 ```
 
-All pass. Managed protocol/subprocess suite: 12 tests. The opt-in live probe also passes against the checked-out external repository.
+All pass. Focused Phase 1–5 suite: 57 tests plus one live-only skip. The opt-in live probe also passes against the checked-out external repository.
 
 ## Current environment and blockers
 
@@ -91,15 +101,16 @@ All pass. Managed protocol/subprocess suite: 12 tests. The opt-in live probe als
 
 ## Exact next task
 
-Implement Phase 5:
+Implement Phase 6:
 
-1. Add a production-routing service that combines user selection, health, pipeline/runtime requirements, and execution mode.
-2. Persist and expose the selected engine/runtime and user-visible decision reasons.
-3. Apply retry limits only to eligible classified failures.
-4. Start the existing MES production path after eligible retry exhaustion when policy allows.
-5. Preserve the failed OpenMontage workspace/checkpoints and never fallback on cancellation.
-6. Add structured Sentry lifecycle/fallback events and fault-injection tests.
-7. Update continuity docs and commit the verified milestone.
+1. Add an OpenMontage navigation destination and dashboard backed by live health/jobs.
+2. Add the seven-step New Production workflow and transparent plan review/start.
+3. Add live progress, controls, activity, telemetry, and approval/revision states.
+4. Add the neutral Remotion/HyperFrames comparison.
+5. Add restart recovery, failure/fallback, and completed-output views.
+6. Add OpenMontage settings with health checks and hidden credential-status display.
+7. Cover loading, empty, degraded, offline, focus, and keyboard behavior.
+8. Add fixture/screenshot entry points, verify, update docs, and commit.
 
 ## Useful commands
 

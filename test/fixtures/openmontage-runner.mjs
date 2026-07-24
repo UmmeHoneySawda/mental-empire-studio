@@ -77,9 +77,25 @@ if (mode === 'crash') {
   emit('state', { state: 'running' })
   process.stderr.write('Authorization: Bearer fixture.secret.value\n')
   setTimeout(() => process.exit(2), 30)
+} else if (mode === 'credentials') {
+  emit('state', { state: 'running' })
+  emit('failed', {
+    code: 'AUTH_UNAUTHORIZED',
+    message: 'Provider API key is missing.',
+    stage: 'assets',
+    checkpointPreserved: true
+  })
+} else if (mode === 'provider-once' && !resume) {
+  emit('state', { state: 'running' })
+  emit('failed', {
+    code: 'PROVIDER_TIMEOUT',
+    message: 'Provider timeout while acquiring assets.',
+    stage: 'assets',
+    checkpointPreserved: true
+  })
 } else if (mode === 'stall') {
   // Intentionally emit nothing after hello.
-} else if (mode === 'recovery' && resume) {
+} else if ((mode === 'recovery' || mode === 'provider-once') && resume) {
   emit('state', { state: 'running', message: 'Recovered fixture runner.' })
   setTimeout(complete, 30)
 } else if (resumeState === 'paused') {

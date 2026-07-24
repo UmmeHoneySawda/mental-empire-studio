@@ -130,6 +130,10 @@ Database writes must use compare-and-set semantics so delayed runner or Backlot 
 
 Failure classification separates configuration, credentials, provider, runtime, checkpoint, runner, cancellation, and unknown failures. Retry and MES fallback are policy decisions stored with the job. Fallback preserves the OpenMontage project and checkpoint history. Cancellation never triggers fallback.
 
+`OpenMontageProductionService` turns that decision into a tamper-checked production plan. It persists the decision and its user-visible reasons, selects assisted handoff when a configured managed runner is unavailable and assisted fallback is enabled, and revalidates plan evidence before launch. Documentary Montage is blocked unless Remotion is available.
+
+Managed failures are supervised by category. Provider, runtime, and runner failures resume from the canonical handoff up to the configured retry limit. Credentials, configuration, and checkpoint failures skip retries. Once eligible attempts end, `mes-fallback.ts` reuses an originating MES project or creates a normal local Compose project from the narration package. The OpenMontage workspace is never deleted; cancellation and disabled fallback leave the original failure visible.
+
 ## Security and credentials
 
 - Provider credentials stay in the OpenMontage environment or external runner environment.

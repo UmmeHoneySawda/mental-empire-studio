@@ -477,6 +477,8 @@ function migrate(d: Database.Database): void {
   ensureColumn(d, 'provider_jobs', 'thumbnailUrl', 'TEXT')
   ensureColumn(d, 'provider_jobs', 'etaSeconds', 'INTEGER')
   ensureColumn(d, 'provider_jobs', 'hostName', 'TEXT')
+  ensureColumn(d, 'openmontage_jobs', 'routingDecisionJson', 'TEXT')
+  ensureColumn(d, 'openmontage_jobs', 'fallbackProjectId', 'TEXT')
   d.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_assets_content_id ON assets(id) WHERE id IS NOT NULL')
 
   purgeLegacyDemoSeed(d)
@@ -1058,6 +1060,9 @@ function rowToOpenMontageJob(r: Record<string, unknown>): OpenMontageJobRecord {
     pipeline: r.pipeline ? r.pipeline as OpenMontageJobRecord['pipeline'] : undefined,
     runtime: r.runtime ? r.runtime as OpenMontageJobRecord['runtime'] : undefined,
     authoringMode: r.authoringMode ? r.authoringMode as OpenMontageJobRecord['authoringMode'] : undefined,
+    routingDecision: r.routingDecisionJson
+      ? parseStoredJson(r.routingDecisionJson, undefined) as OpenMontageJobRecord['routingDecision']
+      : undefined,
     jobPackage: parseStoredJson(r.jobPackageJson, {}) as OpenMontageJobRecord['jobPackage'],
     packagePath: r.packagePath ? String(r.packagePath) : undefined,
     workspacePath: r.workspacePath ? String(r.workspacePath) : undefined,
@@ -1067,6 +1072,7 @@ function rowToOpenMontageJob(r: Record<string, unknown>): OpenMontageJobRecord {
     attempts: coerceNum(r.attempts, 0),
     fallbackEnabled: !!r.fallbackEnabled,
     preserveOpenMontageProject: !!r.preserveOpenMontageProject,
+    fallbackProjectId: r.fallbackProjectId ? String(r.fallbackProjectId) : undefined,
     lastCheckpointAt: r.lastCheckpointAt ? String(r.lastCheckpointAt) : undefined,
     runnerPid: r.runnerPid == null ? undefined : coerceNum(r.runnerPid, 0),
     errorCategory: r.errorCategory ? r.errorCategory as OpenMontageJobRecord['errorCategory'] : undefined,
@@ -1622,13 +1628,13 @@ function buildRepositories(d: Database.Database): Repositories {
       d.prepare(
         `INSERT INTO openmontage_jobs (
           id,projectId,title,state,mode,workflowMode,engine,pipeline,runtime,authoringMode,
-          jobPackageJson,packagePath,workspacePath,backlotProjectId,currentStage,progress,attempts,
-          fallbackEnabled,preserveOpenMontageProject,lastCheckpointAt,runnerPid,errorCategory,errorCode,
+          routingDecisionJson,jobPackageJson,packagePath,workspacePath,backlotProjectId,currentStage,progress,attempts,
+          fallbackEnabled,preserveOpenMontageProject,fallbackProjectId,lastCheckpointAt,runnerPid,errorCategory,errorCode,
           errorMessage,createdAt,updatedAt,startedAt,completedAt,revision
         ) VALUES (
           @id,@projectId,@title,@state,@mode,@workflowMode,@engine,@pipeline,@runtime,@authoringMode,
-          @jobPackageJson,@packagePath,@workspacePath,@backlotProjectId,@currentStage,@progress,@attempts,
-          @fallbackEnabled,@preserveOpenMontageProject,@lastCheckpointAt,@runnerPid,@errorCategory,@errorCode,
+          @routingDecisionJson,@jobPackageJson,@packagePath,@workspacePath,@backlotProjectId,@currentStage,@progress,@attempts,
+          @fallbackEnabled,@preserveOpenMontageProject,@fallbackProjectId,@lastCheckpointAt,@runnerPid,@errorCategory,@errorCode,
           @errorMessage,@createdAt,@updatedAt,@startedAt,@completedAt,@revision
         )`
       ).run({
@@ -1636,6 +1642,7 @@ function buildRepositories(d: Database.Database): Repositories {
         pipeline: job.pipeline ?? null,
         runtime: job.runtime ?? null,
         authoringMode: job.authoringMode ?? null,
+        routingDecisionJson: job.routingDecision ? JSON.stringify(job.routingDecision) : null,
         jobPackageJson: JSON.stringify(job.jobPackage),
         packagePath: job.packagePath ?? null,
         workspacePath: job.workspacePath ?? null,
@@ -1645,6 +1652,7 @@ function buildRepositories(d: Database.Database): Repositories {
         attempts: Math.max(0, Math.round(job.attempts)),
         fallbackEnabled: job.fallbackEnabled ? 1 : 0,
         preserveOpenMontageProject: job.preserveOpenMontageProject ? 1 : 0,
+        fallbackProjectId: job.fallbackProjectId ?? null,
         lastCheckpointAt: job.lastCheckpointAt ?? null,
         runnerPid: job.runnerPid ?? null,
         errorCategory: job.errorCategory ?? null,
@@ -1666,10 +1674,14 @@ function buildRepositories(d: Database.Database): Repositories {
         .map(rowToOpenMontageJob),
     updateOpenMontageJob: (id, patch) => {
       const allowed = new Set([
-        'packagePath', 'workspacePath', 'backlotProjectId', 'currentStage', 'progress', 'attempts',
+        'routingDecisionJson', 'packagePath', 'workspacePath', 'backlotProjectId', 'currentStage', 'progress', 'attempts',
+        'fallbackProjectId',
         'lastCheckpointAt', 'runnerPid', 'errorCategory', 'errorCode', 'errorMessage', 'startedAt', 'completedAt'
       ])
       const row = Object.fromEntries(Object.entries(patch).filter(([key, value]) => allowed.has(key) && value !== undefined))
+      if ('routingDecision' in patch && patch.routingDecision !== undefined) {
+        row.routingDecisionJson = JSON.stringify(patch.routingDecision)
+      }
       if ('progress' in row) row.progress = Math.max(0, Math.min(100, Math.round(Number(row.progress))))
       if ('attempts' in row) row.attempts = Math.max(0, Math.round(Number(row.attempts)))
       if ('errorMessage' in row && typeof row.errorMessage === 'string') {
@@ -1699,6 +1711,9 @@ function buildRepositories(d: Database.Database): Repositories {
         assertOpenMontageJobTransition(current.state, nextState)
         const next: Record<string, unknown> = {
           ...patch,
+          routingDecisionJson: patch.routingDecision === undefined
+            ? undefined
+            : JSON.stringify(patch.routingDecision),
           state: nextState,
           progress: patch.progress == null ? current.progress : Math.max(0, Math.min(100, Math.round(patch.progress))),
           attempts: patch.attempts == null ? current.attempts : Math.max(0, Math.round(patch.attempts)),
@@ -1706,7 +1721,8 @@ function buildRepositories(d: Database.Database): Repositories {
           updatedAt: new Date().toISOString()
         }
         const allowed = [
-          'state', 'packagePath', 'workspacePath', 'backlotProjectId', 'currentStage', 'progress',
+          'state', 'routingDecisionJson', 'packagePath', 'workspacePath', 'backlotProjectId',
+          'fallbackProjectId', 'currentStage', 'progress',
           'attempts', 'lastCheckpointAt', 'runnerPid', 'errorCategory', 'errorCode', 'errorMessage',
           'startedAt', 'completedAt', 'updatedAt'
         ]

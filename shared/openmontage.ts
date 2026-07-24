@@ -256,6 +256,7 @@ export interface OpenMontageJobRecord {
   pipeline?: OpenMontagePipeline
   runtime?: OpenMontageResolvedRuntime
   authoringMode?: OpenMontageAuthoringMode
+  routingDecision?: OpenMontageRoutingDecision
   jobPackage: OpenMontageJobPackage
   packagePath?: string
   workspacePath?: string
@@ -265,6 +266,7 @@ export interface OpenMontageJobRecord {
   attempts: number
   fallbackEnabled: boolean
   preserveOpenMontageProject: boolean
+  fallbackProjectId?: string
   lastCheckpointAt?: string
   runnerPid?: number
   errorCategory?: OpenMontageFailureCategory
@@ -282,6 +284,8 @@ type OpenMontageJobPatchBase = Partial<Pick<
   | 'packagePath'
   | 'workspacePath'
   | 'backlotProjectId'
+  | 'routingDecision'
+  | 'fallbackProjectId'
   | 'currentStage'
   | 'progress'
   | 'attempts'
@@ -298,6 +302,7 @@ export type OpenMontageJobPatch = OpenMontageJobPatchBase & {
 }
 
 export type OpenMontageEventType =
+  | 'routing'
   | 'state'
   | 'stage'
   | 'checkpoint'
@@ -306,6 +311,7 @@ export type OpenMontageEventType =
   | 'warning'
   | 'error'
   | 'recovery'
+  | 'fallback'
   | 'output'
 
 export interface OpenMontageJobEvent {
@@ -377,6 +383,34 @@ export interface OpenMontageRoutingDecision {
   fallbackEngine?: 'mental-empire-studio'
   reasons: string[]
   warnings: string[]
+}
+
+export interface OpenMontageProductionRequest {
+  routing: OpenMontageRoutingRequest
+  jobPackage: OpenMontageJobPackage
+}
+
+export interface OpenMontageProductionPlan {
+  routing: OpenMontageRoutingRequest
+  decision: OpenMontageRoutingDecision
+  health: OpenMontageHealthReport
+  executionMode?: OpenMontageIntegrationMode
+  jobPackage: OpenMontageJobPackage
+  plannedAt: string
+}
+
+export interface OpenMontageMesProduction {
+  projectId: string
+  status: 'running' | 'completed'
+  outputPath?: string
+}
+
+export interface OpenMontageProductionStart {
+  engine: OpenMontageEngine
+  plan: OpenMontageProductionPlan
+  job?: OpenMontageJobRecord
+  handoff?: OpenMontageAssistedHandoff
+  mesProduction?: OpenMontageMesProduction
 }
 
 export type OpenMontageFailureCategory =
@@ -701,7 +735,30 @@ export function decideOpenMontageRoute(
   const healthy = health.status === 'ready' || health.status === 'degraded'
   const compatible = health.compatibility === 'compatible' || health.compatibility === 'limited'
   const runnerReady = health.mode === 'assisted' || componentAvailable(health, 'agent_runner')
-  const runtime = resolveRuntime(request, health)
+  const pipeline = request.preferredPipeline ?? (request.requiresRealFootage ? 'hybrid' : 'documentary-montage')
+  let runtime = resolveRuntime(request, health)
+  if (pipeline === 'documentary-montage') {
+    const remotionAvailable = componentAvailable(health, 'remotion')
+    if (!remotionAvailable || request.requestedRuntime === 'hyperframes' || request.requestedRuntime === 'ffmpeg') {
+      runtime = {
+        startable: false,
+        reasons: [],
+        warnings: [
+          ...runtime.warnings,
+          'Documentary Montage requires an available Remotion runtime in this OpenMontage revision.'
+        ]
+      }
+    } else {
+      runtime = {
+        runtime: 'remotion',
+        startable: true,
+        reasons: ['Documentary Montage requires and will use Remotion.'],
+        warnings: request.requestedRuntime === 'automatic' && componentAvailable(health, 'hyperframes')
+          ? ['HyperFrames is available but is not compatible with the selected Documentary Montage pipeline.']
+          : []
+      }
+    }
+  }
   const openMontageReady = healthy && compatible && runnerReady && runtime.startable
 
   if (!forced && !openMontageReady) {
@@ -732,7 +789,7 @@ export function decideOpenMontageRoute(
   return {
     engine: 'openmontage',
     startable: openMontageReady,
-    pipeline: request.preferredPipeline ?? (request.requiresRealFootage ? 'hybrid' : 'documentary-montage'),
+    pipeline,
     runtime: runtime.runtime,
     authoringMode: request.editableComposition ? 'atelier' : 'templated',
     fallbackEngine: 'mental-empire-studio',

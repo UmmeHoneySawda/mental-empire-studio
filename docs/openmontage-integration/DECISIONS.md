@@ -95,3 +95,21 @@
 **Decision:** Accept output records only when their absolute paths are contained by the canonical OpenMontage workspace or the package's configured export root.
 
 **Reason:** Runner output is an external trust boundary. Path containment prevents a compromised or faulty adapter from publishing arbitrary local files through MES.
+
+## D-017 — Production plans carry verifiable routing evidence
+
+**Decision:** Persist health-backed engine/runtime decisions and their reasons, and re-derive the decision before start rather than trusting a renderer-supplied engine value.
+
+**Reason:** The plan drives local process launch and fallback behavior. Revalidation prevents stale or modified renderer state from bypassing runtime and compatibility gates while preserving a transparent review screen.
+
+## D-018 — Assisted degradation precedes engine fallback
+
+**Decision:** When managed mode is selected but its runner is unavailable, use the same package in assisted mode if assisted fallback is enabled and the remaining OpenMontage capabilities are launch-ready.
+
+**Reason:** A missing agent adapter does not make the OpenMontage workspace or operator-driven workflow unusable. Assisted mode remains the honest universal baseline.
+
+## D-019 — MES fallback is an ordinary Compose project
+
+**Decision:** Reuse the originating MES project when available; otherwise create an idempotent local Compose project from narration and local image inputs.
+
+**Reason:** Fallback must use the existing MES production model, storage, editor, and render queue rather than introducing a second hidden renderer.

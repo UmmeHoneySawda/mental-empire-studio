@@ -1,6 +1,10 @@
 import { ipcMain } from 'electron'
 import { openMontageService } from '../services/openmontage'
-import type { OpenMontageJobPackage } from '../../shared/openmontage'
+import type {
+  OpenMontageJobPackage,
+  OpenMontageProductionPlan,
+  OpenMontageProductionRequest
+} from '../../shared/openmontage'
 
 export function requiredOpenMontageId(value: string, field: string): string {
   const id = String(value ?? '').trim()
@@ -24,6 +28,13 @@ export function registerOpenMontageIpc(): void {
   ipcMain.handle('openmontage:assistedHandoff', (_event, jobId: string) =>
     openMontageService.assistedHandoff(requiredOpenMontageId(jobId, 'jobId')))
   ipcMain.handle('openmontage:recoverAssisted', () => openMontageService.recoverAssisted())
+  ipcMain.handle('openmontage:planProduction', (
+    _event,
+    input: OpenMontageProductionRequest,
+    forceHealth?: boolean
+  ) => openMontageService.planProduction(input, Boolean(forceHealth)))
+  ipcMain.handle('openmontage:startProduction', (_event, plan: OpenMontageProductionPlan) =>
+    openMontageService.startProduction(plan))
   ipcMain.handle('openmontage:startManaged', (_event, jobPackage: OpenMontageJobPackage) =>
     openMontageService.startManaged(jobPackage))
   ipcMain.handle('openmontage:pauseManaged', (_event, jobId: string) =>

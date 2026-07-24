@@ -10,7 +10,10 @@ import {
   type OpenMontageJobPackage,
   type OpenMontageJobEvent,
   type OpenMontageJobOutput,
-  type OpenMontageJobRecord
+  type OpenMontageJobRecord,
+  type OpenMontageProductionPlan,
+  type OpenMontageProductionRequest,
+  type OpenMontageProductionStart
 } from '../../../shared/openmontage'
 import { captureException, sentryLog } from '../sentry'
 import { OpenMontageBacklotClient } from './backlot'
@@ -18,10 +21,13 @@ import { normalizeBacklotBaseUrl } from './backlot'
 import { OpenMontageAssistedService } from './assisted'
 import { OpenMontageHealthService } from './health'
 import { OpenMontageManagedService } from './managed'
+import { startMesFallbackProduction } from './mes-fallback'
+import { OpenMontageProductionService } from './production'
 
 const healthService = new OpenMontageHealthService()
 let assistedService: OpenMontageAssistedService | undefined
 let managedService: OpenMontageManagedService | undefined
+let productionService: OpenMontageProductionService | undefined
 
 function settings() {
   return getSettings().integrations.openMontage
@@ -48,6 +54,20 @@ function managed(): OpenMontageManagedService {
     })
   }
   return managedService
+}
+
+function production(): OpenMontageProductionService {
+  if (!productionService) {
+    productionService = new OpenMontageProductionService({
+      repos: getRepos(),
+      assisted: assisted(),
+      managed: managed(),
+      health: (force) => healthService.check(settings(), force),
+      getSettings: settings,
+      startMesProduction: startMesFallbackProduction
+    })
+  }
+  return productionService
 }
 
 function runBacklotOpen(
@@ -92,6 +112,17 @@ export const openMontageService = {
     return assisted().recover()
   },
 
+  planProduction(
+    input: OpenMontageProductionRequest,
+    forceHealth = false
+  ): Promise<OpenMontageProductionPlan> {
+    return production().plan(input, forceHealth)
+  },
+
+  startProduction(plan: OpenMontageProductionPlan): Promise<OpenMontageProductionStart> {
+    return production().start(plan)
+  },
+
   startManaged(jobPackage: OpenMontageJobPackage): Promise<OpenMontageJobRecord> {
     return managed().start(jobPackage)
   },
@@ -124,8 +155,11 @@ export const openMontageService = {
     return managed().retry(jobId)
   },
 
-  recoverManaged(): Promise<OpenMontageJobRecord[]> {
-    return settings().mode === 'managed' ? managed().recover() : Promise.resolve([])
+  async recoverManaged(): Promise<OpenMontageJobRecord[]> {
+    if (settings().mode !== 'managed') return []
+    const recovered = await managed().recover()
+    production().recoverPolicyMonitors()
+    return recovered
   },
 
   async copyAssistedPrompt(jobId: string, kind: 'handoff' | 'recovery'): Promise<void> {
