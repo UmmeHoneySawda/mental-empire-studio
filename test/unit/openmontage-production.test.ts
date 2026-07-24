@@ -116,6 +116,8 @@ function harness(
     health?: OpenMontageHealthReport
     mesStatus?: 'running' | 'completed'
     mesFailure?: Error
+    /** Mutable so a test can finish the fallback render mid-flight. */
+    mesProjectState?: { status: 'running' | 'completed' }
   } = {}
 ) {
   const settings: OpenMontageSettings = {
@@ -171,6 +173,9 @@ function harness(
     health: async () => report,
     getSettings: () => settings,
     startMesProduction,
+    mesProductionStatus: options.mesProjectState
+      ? (projectId) => ({ projectId, status: options.mesProjectState!.status })
+      : undefined,
     monitorIntervalMs: 20
   })
   activeProductions.push(production)
@@ -301,6 +306,39 @@ describeSqlite('OpenMontage production routing and fallback', () => {
     expect(startMesProduction).toHaveBeenCalledOnce()
     expect(repos.openMontageEvents(fallback.id).filter((event) => event.type === 'recovery')).toHaveLength(2)
   })
+
+  it('completes a fallback job once the MES renderer finishes, keeping both attempts linked', async () => {
+    const root = tempDir('me-openmontage-production-root-')
+    const repos = initDatabase(path.join(tempDir('me-openmontage-production-db-'), 'app.sqlite'))
+    // The MES project starts mid-render, which is what actually happens: the
+    // fallback hands off and MES renders afterwards.
+    const mesProjectState: { status: 'running' | 'completed' } = { status: 'running' }
+    const { production } = harness(repos, root, {
+      settings: { retryLimit: 2 },
+      mesProjectState
+    })
+    const plan = await production.plan(requestFor(packageFixture('production-fallback-finish', 'crash')))
+    await production.start(plan)
+    const fallback = await production.waitForState('production-fallback-finish', ['fallback_running'], 10_000)
+    expect(fallback.fallbackProjectId).toBe('mes-fallback-project')
+
+    // Before MES finishes, the job must stay in fallback_running rather than
+    // reporting a completion it has not earned.
+    await new Promise((resolve) => setTimeout(resolve, 100))
+    expect(repos.openMontageJob('production-fallback-finish')?.state).toBe('fallback_running')
+
+    mesProjectState.status = 'completed'
+    const completed = await production.waitForState('production-fallback-finish', ['completed'], 10_000)
+    expect(completed).toMatchObject({
+      state: 'completed',
+      progress: 100,
+      fallbackProjectId: 'mes-fallback-project',
+      preserveOpenMontageProject: true
+    })
+    expect(completed.completedAt).toBeTruthy()
+    const fallbackEvents = repos.openMontageEvents(completed.id).filter((event) => event.type === 'fallback')
+    expect(fallbackEvents.map((event) => event.id)).toContain('production-fallback-finish:fallback:completed')
+  }, 25_000)
 
   it('does not retry credential failures and never falls back after cancellation', async () => {
     const root = tempDir('me-openmontage-production-root-')

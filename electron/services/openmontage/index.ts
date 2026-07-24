@@ -69,7 +69,14 @@ function production(): OpenMontageProductionService {
       managed: managed(),
       health: (force) => healthService.check(settings(), force),
       getSettings: settings,
-      startMesProduction: startMesFallbackProduction
+      startMesProduction: startMesFallbackProduction,
+      // Lets a job that fell back finish once MES's own renderer is done. The
+      // MES pipeline marks a project `rendered` when its render job succeeds.
+      mesProductionStatus: (projectId) => {
+        const project = getRepos().getProject(projectId)
+        if (!project) return undefined
+        return { projectId: project.id, status: project.stage === 'rendered' ? 'completed' : 'running' }
+      }
     })
   }
   return productionService

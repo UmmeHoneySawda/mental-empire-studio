@@ -40,6 +40,12 @@ export interface OpenMontageProductionDependencies {
   health: (force?: boolean) => Promise<OpenMontageHealthReport>
   getSettings: () => OpenMontageSettings
   startMesProduction: (jobPackage: OpenMontageJobPackage) => Promise<OpenMontageMesProduction>
+  /**
+   * Report the current state of a fallback MES project so a job that fell back
+   * can be closed out once MES's own renderer finishes. Without this the job
+   * would sit in `fallback_running` forever (see reconcileFallback).
+   */
+  mesProductionStatus?: (projectId: string) => OpenMontageMesProduction | undefined
   now?: () => Date
   monitorIntervalMs?: number
 }
@@ -386,7 +392,12 @@ export class OpenMontageProductionService {
   private async monitor(jobId: string, handle: MonitorHandle): Promise<void> {
     while (!handle.stopped) {
       const job = this.dependencies.repos.openMontageJob(jobId)
-      if (!job || job.state === 'cancelled' || job.state === 'fallback_running') return
+      if (!job || job.state === 'cancelled') return
+      if (job.state === 'fallback_running') {
+        if (this.reconcileFallback(job)) return
+        await delay(this.monitorIntervalMs)
+        continue
+      }
       if (job.state === 'completed') {
         sentryLog.info('openmontage.production_completed', {
           job_id: job.id,
@@ -454,13 +465,70 @@ export class OpenMontageProductionService {
       }
 
       await this.startFallback(job, failure)
-      return
+      // Keep watching: the job is now in `fallback_running` and still has to be
+      // reconciled once MES's own renderer finishes. Returning here is what
+      // previously left "completed with fallback" unreachable.
+      await delay(this.monitorIntervalMs)
+      continue
     }
   }
 
+  /**
+   * Close out a job whose OpenMontage attempt failed and whose MES fallback has
+   * now finished rendering. Returns true once the job needs no further watching
+   * — either because it reached a terminal state or because there is nothing to
+   * reconcile against.
+   *
+   * `fallback_running` used to terminate the monitor outright, so a job that
+   * fell back could never report "completed with fallback" even after MES had
+   * produced the video; the OpenMontage and fallback attempts stayed linked but
+   * the job never finished.
+   */
+  private reconcileFallback(job: OpenMontageJobRecord): boolean {
+    const projectId = job.fallbackProjectId
+    const read = this.dependencies.mesProductionStatus
+    // With no linked project or no way to read it, there is nothing this loop
+    // can observe; stop rather than spin.
+    if (!projectId || !read) return true
+    let production: OpenMontageMesProduction | undefined
+    try {
+      production = read(projectId)
+    } catch (error) {
+      captureException(error)
+      return false
+    }
+    if (production?.status !== 'completed') return false
+    if (!canTransitionOpenMontageJob(job.state, 'completed')) return true
+    this.dependencies.repos.transitionOpenMontageJob(job.id, job.state, 'completed', {
+      completedAt: this.now().toISOString(),
+      progress: 100
+    })
+    this.addEvent(job.id, {
+      id: `${job.id}:fallback:completed`,
+      type: 'fallback',
+      level: 'info',
+      message: 'Mental Empire Studio fallback finished rendering; the production completed with fallback.',
+      data: {
+        mes_project_id: projectId,
+        checkpoint_preserved: true
+      }
+    })
+    sentryLog.info('openmontage.fallback_completed', {
+      job_id: job.id,
+      project_id: job.projectId,
+      mes_project_id: projectId,
+      engine: job.engine,
+      attempts: job.attempts,
+      fallback_used: true
+    })
+    return true
+  }
+
   recoverPolicyMonitors(): OpenMontageJobRecord[] {
+    // `fallback_running` is included: a fallback that was still rendering when
+    // MES exited must be reconciled after restart, not abandoned.
     const jobs = this.dependencies.repos.openMontageJobs()
-      .filter((job) => job.mode === 'managed' && !['cancelled', 'completed', 'fallback_running'].includes(job.state))
+      .filter((job) => job.mode === 'managed' && !['cancelled', 'completed'].includes(job.state))
     for (const job of jobs) this.ensureMonitor(job.id)
     return jobs
   }
