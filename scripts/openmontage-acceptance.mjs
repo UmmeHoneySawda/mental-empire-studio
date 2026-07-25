@@ -31,6 +31,17 @@ function json(value) {
   return JSON.stringify(value, null, 2)
 }
 
+/**
+ * Progress trace on stderr, flushed per line.
+ *
+ * A live production runs for many minutes and previously printed nothing until it
+ * finished, so a run that stalled early was indistinguishable from one working
+ * normally. Every long step announces itself here.
+ */
+function step(message) {
+  process.stderr.write(`[${new Date().toISOString()}] ${message}\n`)
+}
+
 const specPath = requiredAbsolutePath(argument('--spec'), '--spec')
 const spec = JSON.parse(readFileSync(specPath, 'utf8'))
 const root = resolve(dirname(fileURLToPath(import.meta.url)), '..')
@@ -93,9 +104,10 @@ async function launch() {
       environmentFile: spec.environmentFile ?? '',
       backlotUrl: spec.backlotUrl ?? 'http://127.0.0.1:4750',
       mode: 'managed',
-      runner: 'codex-cli',
-      runnerExecutable: '',
-      runnerArguments: [],
+      // Spec-selectable so the same scenario can be proven with either agent.
+      runner: spec.runner ?? 'codex-cli',
+      runnerExecutable: spec.runnerExecutable ?? '',
+      runnerArguments: spec.runnerArguments ?? [],
       assistedFallback: false,
       retryLimit: spec.retryLimit ?? 1,
       stallTimeoutSec: spec.stallTimeoutSec ?? 900,
@@ -259,9 +271,13 @@ async function main() {
   }
 
   try {
+    step('launching Electron')
     await launch()
+    step('Electron ready; probing health (this spawns a real runner auth probe)')
     const health = await api('health', true)
+    step(`health=${health.status} agent_runner=${(health.components||[]).find((c)=>c.name==='agent_runner')?.status}`)
     evidence.health = health
+    step('capturing dashboard screenshot')
     await recordCapture(evidence, '01-dashboard.png')
 
     if (!spec.request) {
@@ -348,9 +364,13 @@ async function main() {
       started = { engine: 'openmontage', job: existing, recoveredExisting: true }
       evidence.actions.push({ action: 'resume_existing', state: existing.state, stage: existing.currentStage })
     } else {
+      step('planning production')
       plan = await api('planProduction', spec.request, true)
+      step(`plan engine=${plan?.decision?.engine} runtime=${plan?.decision?.runtime} startable=${plan?.decision?.startable}`)
       evidence.plan = plan
+      step('starting production')
       started = await api('startProduction', plan)
+      step(`started state=${started?.job?.state}`)
     }
     evidence.start = started
     const jobId = started.job?.id ?? plan?.jobPackage.jobId ?? requestedJobId
@@ -376,11 +396,14 @@ async function main() {
     const timeoutMs = Math.max(60_000, Number(spec.timeoutSec ?? 3600) * 1_000)
     const pollStartedAt = Date.now()
     let finalJob
+    let lastBeat = ''
 
     while (Date.now() - pollStartedAt < timeoutMs) {
       const job = await pollJob(jobId)
       if (!job) throw new Error(`MES job ${jobId} disappeared.`)
       finalJob = job
+      const beat = `${job.state}/${job.currentStage}/${job.progress}`
+      if (beat !== lastBeat) { step(`job ${beat} pid=${job.runnerPid ?? '-'}`); lastBeat = beat }
 
       if (
         spec.actions?.pauseResume

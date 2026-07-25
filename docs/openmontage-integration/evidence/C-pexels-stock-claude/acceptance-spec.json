@@ -1,7 +1,7 @@
 {
-  "scenario": "C-real-additional-stock-footage-pexels",
-  "evidenceDir": "D:\\Work\\mental-empire-studio\\docs\\openmontage-integration\\evidence\\C-pexels-stock",
-  "userDataDir": "D:\\Work\\openmontage-acceptance\\profiles\\C-pexels-stock",
+  "scenario": "C-real-additional-stock-footage-pexels-claude",
+  "evidenceDir": "D:\\Work\\mental-empire-studio\\docs\\openmontage-integration\\evidence\\C-pexels-stock-claude",
+  "userDataDir": "D:\\Work\\openmontage-acceptance\\profiles\\C-pexels-stock-claude",
   "openMontagePath": "D:\\Work\\OpenMontage",
   "backlotUrl": "http://127.0.0.1:4750",
   "stallTimeoutSec": 1500,
@@ -13,7 +13,7 @@
   },
   "actions": {
     "resumeExisting": true,
-    "duplicateStart": false,
+    "duplicateStart": true,
     "reviseFirstApproval": false,
     "autoApprove": true
   },
@@ -30,7 +30,7 @@
     "jobPackage": {
       "schema": "mes.openmontage.job/v1",
       "contractVersion": "mes.openmontage/v1",
-      "jobId": "mes-accept-c-pexels-stock-20260725",
+      "jobId": "mes-accept-c-pexels-claude-20260725",
       "projectId": "mes-accept-c-pexels-stock-20260725",
       "createdAt": "2026-07-25T00:00:00.000Z",
       "requestedBy": "mental-empire-studio",
@@ -143,7 +143,8 @@
         "required_provider": "pexels",
         "required_asset_kind": "motion_video",
         "provider_env_var": "PEXELS_API_KEY",
-        "cost_limit_usd": 0
+        "cost_limit_usd": 0,
+        "runner_migration": "codex-cli->claude-code"
       }
     }
   },

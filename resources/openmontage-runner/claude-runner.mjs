@@ -97,12 +97,13 @@ if (args.has('--openmontage-protocol-info')) {
   if (!existsSync(executable)) process.exit(2)
   const version = claudeVersion(executable)
   if (!version) process.exit(3)
-  // `--skip-auth-probe` keeps detection cheap when the caller only needs to know
-  // the protocol is supported; the health screen asks for the full probe because
-  // an installed-but-unauthenticated runner cannot run a production.
-  const auth = args.has('--skip-auth-probe')
-    ? { authenticated: undefined }
-    : claudeAuthState(executable)
+  // Detection is cheap BY DEFAULT (~1s): version + protocol only. The auth probe
+  // runs a real agent turn and costs ~9s, which is enough to blow a caller's
+  // timeout and make an installed runner look broken, so it is opt-in via
+  // `--auth-probe`.
+  const auth = args.has('--auth-probe')
+    ? claudeAuthState(executable)
+    : { authenticated: undefined }
   // Same marker + `protocol`/`version`/`runner` shape the Codex runner uses, so
   // the existing MES health parser needs no special case.
   process.stdout.write(`MES_OPENMONTAGE_RUNNER=${JSON.stringify({
@@ -217,14 +218,18 @@ function loadSession() {
   } catch {
     // No prior session; a fresh production.
   }
-  // A Codex-managed run stores its session separately. Detecting it is what makes
-  // a cross-runner handover explicit rather than silent.
+  // A Codex-managed run stores its session separately, under its own key names
+  // (`runner` + `threadId`, not `sessionId`). Read the runner field it actually
+  // writes; guessing at a shape is what previously made a real handover look like
+  // a fresh start and skipped the transition event.
   if (!previousRunner) {
     try {
-      const codex = JSON.parse(readFileSync(path.join(stateDirectory, 'session.json'), 'utf8'))
-      if (codex && (codex.sessionId || codex.session_id)) previousRunner = 'codex-cli'
+      const prior = JSON.parse(readFileSync(path.join(stateDirectory, 'session.json'), 'utf8'))
+      const named = typeof prior?.runner === 'string' ? prior.runner : undefined
+      if (named) previousRunner = named
+      else if (prior?.threadId || prior?.sessionId || prior?.session_id) previousRunner = 'codex-cli'
     } catch {
-      // No Codex session either.
+      // No prior session; this is a fresh production.
     }
   }
 }

@@ -290,11 +290,15 @@ export async function probeOpenMontageHealth(
     } else if (settings.runner !== 'none') {
       try {
         const runner = resolveOpenMontageRunnerLaunch(settings)
+        // `--auth-probe` makes the runner actually attempt an agent turn, which is
+        // the only way to tell "installed" from "usable". It costs real seconds,
+        // so the budget here is generous: a slow probe must not be mistaken for a
+        // broken runner. Runners that do not recognise the flag ignore it.
         const result = await runCommand(
           runner.executable,
-          [...runner.args, '--openmontage-protocol-info'],
+          [...runner.args, '--openmontage-protocol-info', '--auth-probe'],
           {
-            timeoutMs: 10_000,
+            timeoutMs: 60_000,
             env: { ...childEnvironment.env, ...runner.fixedEnvironment }
           }
         )

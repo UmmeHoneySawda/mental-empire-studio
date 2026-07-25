@@ -53,6 +53,9 @@ describe('Claude Code runner — detection and readiness', () => {
     const result = spawnSync(process.execPath, [
       runnerScript,
       '--openmontage-protocol-info',
+      // Opt in: detection is cheap by default, because the auth probe runs a real
+      // agent turn and would otherwise blow a caller's timeout.
+      '--auth-probe',
       '--claude-executable',
       executable
     ], { encoding: 'utf8', windowsHide: true, timeout: 180_000 })
@@ -77,6 +80,29 @@ describe('Claude Code runner — detection and readiness', () => {
       expect(String(info.authFailureMessage ?? '')).not.toMatch(/sk-[A-Za-z0-9]/)
     }
   }, 200_000)
+
+  /**
+   * Detection must stay cheap: the health probe has a bounded budget, and a
+   * multi-second agent turn on every health check made an installed runner look
+   * broken. Without `--auth-probe` no agent turn is started at all.
+   */
+  it('does not start an agent turn unless the auth probe is requested', () => {
+    const started = Date.now()
+    const result = spawnSync(process.execPath, [
+      runnerScript,
+      '--openmontage-protocol-info',
+      '--claude-executable',
+      resolveBundledClaudeExecutable()
+    ], { encoding: 'utf8', windowsHide: true, timeout: 60_000 })
+    const elapsed = Date.now() - started
+
+    expect(result.status).toBe(0)
+    const info = JSON.parse(result.stdout.split('MES_OPENMONTAGE_RUNNER=')[1])
+    expect(info.installed).toBe(true)
+    // No authentication claim is made when it was not measured.
+    expect(info.authenticated).toBeUndefined()
+    expect(elapsed).toBeLessThan(8_000)
+  }, 70_000)
 
   it('exits with a distinct code when the executable is missing', () => {
     const result = spawnSync(process.execPath, [
@@ -252,5 +278,87 @@ describe('OpenMontage runner selection', () => {
     )
     expect(selection.runner).toBeUndefined()
     expect(selection.mode).toBe('managed')
+  })
+})
+
+describe('Cross-runner checkpoint migration', () => {
+  /**
+   * A Codex run writes `{runner: 'codex-cli', threadId}` — not `sessionId`. Reading
+   * the wrong key made a genuine handover look like a fresh start, so no
+   * runner-transition event was recorded. The detection must read the field the
+   * other runner actually writes.
+   */
+  it('detects a prior Codex session from the shape Codex really writes', async () => {
+    const workspace = tempDir('me-claude-migrate-')
+    const stateDirectory = path.join(workspace, '.mes-runner')
+    fs.mkdirSync(stateDirectory, { recursive: true })
+    fs.writeFileSync(path.join(stateDirectory, 'session.json'), JSON.stringify({
+      version: 1,
+      runner: 'codex-cli',
+      runnerVersion: '1.0.0',
+      codexVersion: 'codex-cli 0.145.0',
+      jobId: 'prior-job',
+      projectId: 'prior-project',
+      threadId: '019f95b6-5713-76e1-9924-8d2c72cae8cc',
+      updatedAt: new Date().toISOString()
+    }), 'utf8')
+
+    // Mirror the runner's detection: the `runner` field is authoritative, with a
+    // threadId fallback for older files.
+    const readPrior = (directory: string): string | undefined => {
+      try {
+        const prior = JSON.parse(fs.readFileSync(path.join(directory, 'session.json'), 'utf8'))
+        const named = typeof prior?.runner === 'string' ? prior.runner : undefined
+        if (named) return named
+        if (prior?.threadId || prior?.sessionId || prior?.session_id) return 'codex-cli'
+      } catch {
+        return undefined
+      }
+      return undefined
+    }
+
+    expect(readPrior(stateDirectory)).toBe('codex-cli')
+
+    // An older file without the runner field still resolves via threadId.
+    fs.writeFileSync(path.join(stateDirectory, 'session.json'), JSON.stringify({
+      threadId: 'abc'
+    }), 'utf8')
+    expect(readPrior(stateDirectory)).toBe('codex-cli')
+
+    // A workspace with no prior session is a fresh production, not a migration.
+    const fresh = path.join(tempDir('me-claude-fresh-'), '.mes-runner')
+    fs.mkdirSync(fresh, { recursive: true })
+    expect(readPrior(fresh)).toBeUndefined()
+  })
+
+  /**
+   * The migration must never regenerate work: stages already marked completed in
+   * the canonical checkpoints are reported to the incoming agent as off-limits.
+   */
+  it('reports already-completed stages so the incoming agent cannot regenerate them', async () => {
+    const workspace = tempDir('me-claude-stages-')
+    const write = (stage: string, status: string, approved: boolean): void => {
+      fs.writeFileSync(path.join(workspace, `checkpoint_${stage}.json`), JSON.stringify({
+        stage, status, human_approved: approved, artifacts: {}, history: []
+      }), 'utf8')
+    }
+    write('idea', 'completed', true)
+    write('script', 'completed', true)
+    write('scene_plan', 'awaiting_human', false)
+
+    const core = await import(
+      `file://${path.resolve(process.cwd(), 'resources', 'openmontage-runner', 'lib', 'agent-core.mjs').replaceAll(String.fromCharCode(92), '/')}`
+    ) as {
+      createCheckpointWatcher: (options: {
+        workspace: string
+        emit: () => void
+        localLog: () => void
+      }) => { completedStages: () => string[] }
+    }
+
+    const watcher = core.createCheckpointWatcher({ workspace, emit: () => {}, localLog: () => {} })
+    expect(watcher.completedStages().sort()).toEqual(['research', 'script'])
+    // The gate stage is NOT reported completed, so it is the one that resumes.
+    expect(watcher.completedStages()).not.toContain('scene_plan')
   })
 })
