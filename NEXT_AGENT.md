@@ -7,22 +7,33 @@
 - Base: `origin/build/mental-empire-studio` (merge-base `4d78fab8709a2cd2811e50bc72d8fd16c785c418`)
 - OpenMontage root: `D:\Work\OpenMontage` at `0af32ce5e1e830c33992af1f9179dcdcd536549b` — **pinned,
   clean, and must not be modified**
-- Current phase: five acceptance scenarios blocked on an external quota; everything else closed
+- Current phase: two agent runners implemented; five acceptance scenarios blocked on runner authentication
 
 ## The one blocker
 
-**The Codex agent-runner account is out of usage capacity until Jul 31st, 2026 3:56 PM.**
+**No agent runner can currently authenticate.** Both supported runners are implemented, pinned and
+detected correctly:
 
-This blocks acceptance scenarios **C, E, G, H and I**, each of which requires a real
-agent-governed OpenMontage production. Full write-up, the confirming CLI transcript, the preserved
-partial workspaces and the exact unblock steps:
-`docs/openmontage-integration/evidence/BLOCKED-codex-usage-limit/REPORT.md`.
+| Runner | Installed | Authenticated | Blocker |
+| --- | --- | --- | --- |
+| Codex CLI 0.145.0 | yes | yes | usage capacity exhausted until **Jul 31st, 2026 3:56 PM** |
+| Claude Code 2.1.220 | yes | **no** | `Not logged in · Please run /login` |
 
-To unblock: wait for the reset, or add credits at <https://chatgpt.com/codex/settings/usage>. The
-existing `~/.codex/auth.json` is already valid — no new secret is needed.
+This blocks acceptance scenarios **C, E, G, H and I**, each of which needs a real agent-governed
+production. Full write-up, probe transcripts and the exact unblock:
+`docs/openmontage-integration/evidence/BLOCKED-agent-runner-auth/REPORT.md`.
 
-To resume once capacity returns (specs are written and committed; C and G **resume** from their
-existing checkpoints rather than restarting):
+**Smallest action to unblock (account owner only):**
+
+```powershell
+node_modules/@anthropic-ai/claude-code/bin/claude.exe setup-token
+# then set the printed token as a Windows USER env var:
+#   CLAUDE_CODE_OAUTH_TOKEN
+# and restart the shell. Never print, log or commit it.
+```
+
+Then set `integrations.openMontage.runner` to `claude-code` (or leave `automatic`, which now selects
+Claude once Codex is quota-blocked) and run the five committed specs:
 
 ```powershell
 npx @electron/rebuild -f -w better-sqlite3
@@ -36,8 +47,12 @@ node scripts/openmontage-acceptance.mjs --spec "D:\Work\openmontage-acceptance\s
 node scripts/openmontage-evidence-report.mjs --all
 ```
 
+C and G **resume** from their preserved Codex-era checkpoints; the Claude runner reads the canonical
+OpenMontage filesystem state rather than an agent conversation, is told which stages are already
+complete, and records a `runner_transition` event. No destructive reset is needed.
+
 `PEXELS_API_KEY` **is configured** (56-character Windows user variable, value never read or logged)
-and is not a blocker. Scenario C was stopped before it reached the Pexels call it was about to make.
+and is not a blocker.
 
 ## Acceptance status
 
@@ -45,13 +60,13 @@ and is not a blocker. Scenario C was stopped before it reached the Pexels call i
 | --- | --- | --- |
 | A | Open archival footage | **PASS** — `evidence/A-archive-footage/` |
 | B | Approval and revision | **PASS** — `evidence/B-approval-revision/` |
-| C | Additional stock footage (Pexels) | BLOCKED — quota |
+| C | Additional stock footage (Pexels) | BLOCKED — no runner auth |
 | D | Remotion render + self-contained editable project | **PASS** — `evidence/D-remotion-editable/` |
-| E | HyperFrames render + editable workspace | BLOCKED — quota |
+| E | HyperFrames render + editable workspace | BLOCKED — no runner auth |
 | F | Restart recovery (normal app restart) | **PASS** — `evidence/F-normal-restart/` |
-| G | Runner/agent interruption recovery | BLOCKED — quota |
-| H | Pause / resume / cancel / duplicate | BLOCKED — quota |
-| I | Fatal failure + MES fallback | BLOCKED — quota |
+| G | Runner/agent interruption recovery | BLOCKED — no runner auth |
+| H | Pause / resume / cancel / duplicate | BLOCKED — no runner auth |
+| I | Fatal failure + MES fallback | BLOCKED — no runner auth |
 | J | OpenMontage-unavailable regression | **PASS** — `evidence/J-unavailable/` |
 
 ## What this session changed

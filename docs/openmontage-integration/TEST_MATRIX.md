@@ -37,17 +37,20 @@ is not evidence.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | A | Open archival footage workflow | PASS | PASS | PASS | PASS | PASS | PASS | NOT EXECUTED | `evidence/A-archive-footage/` |
 | B | Approval and revision flow | PASS | PASS | PASS | PASS | PASS | PASS | NOT EXECUTED | `evidence/B-approval-revision/` |
-| C | Additional stock footage (Pexels) | PASS | PASS | PASS | PASS — real runner reached a genuine approval gate before quota loss | **BLOCKED** — Codex quota | NOT EXECUTED | NOT EXECUTED | `evidence/BLOCKED-codex-usage-limit/` |
+| C | Additional stock footage (Pexels) | PASS | PASS | PASS | PASS — real runner reached a genuine approval gate before quota loss | **BLOCKED** — no runner auth | NOT EXECUTED | NOT EXECUTED | `evidence/BLOCKED-agent-runner-auth/` |
 | D | Remotion render + self-contained editable project | PASS | PASS | PASS | PASS | **PASS** | PASS | NOT EXECUTED | `evidence/D-remotion-editable/` |
-| E | HyperFrames render + editable workspace | PASS | PASS | NOT EXECUTED | NOT EXECUTED | **BLOCKED** — Codex quota | NOT EXECUTED | NOT EXECUTED | `evidence/BLOCKED-codex-usage-limit/` |
+| E | HyperFrames render + editable workspace | PASS | PASS | NOT EXECUTED | NOT EXECUTED | **BLOCKED** — no runner auth | NOT EXECUTED | NOT EXECUTED | `evidence/BLOCKED-agent-runner-auth/` |
 | F | Restart recovery — normal application restart | PASS | PASS | PASS | PASS | PASS | PASS | NOT EXECUTED | `evidence/F-normal-restart/` |
-| G | Recovery from real runner/agent interruption | PASS | PASS | PASS | PASS | **BLOCKED** — Codex quota | NOT EXECUTED | NOT EXECUTED | `evidence/BLOCKED-codex-usage-limit/` |
-| H | Pause / resume / cancel / duplicate prevention | PASS | PASS | PASS | PASS | **BLOCKED** — Codex quota | NOT EXECUTED | NOT EXECUTED | `evidence/BLOCKED-codex-usage-limit/` |
-| I | Forced fatal failure + MES fallback | PASS | PASS | PASS | PASS | **BLOCKED** — Codex quota | NOT EXECUTED | NOT EXECUTED | `evidence/BLOCKED-codex-usage-limit/` |
+| G | Recovery from real runner/agent interruption | PASS | PASS | PASS | PASS | **BLOCKED** — no runner auth | NOT EXECUTED | NOT EXECUTED | `evidence/BLOCKED-agent-runner-auth/` |
+| H | Pause / resume / cancel / duplicate prevention | PASS | PASS | PASS | PASS | **BLOCKED** — no runner auth | NOT EXECUTED | NOT EXECUTED | `evidence/BLOCKED-agent-runner-auth/` |
+| I | Forced fatal failure + MES fallback | PASS | PASS | PASS | PASS | **BLOCKED** — no runner auth | NOT EXECUTED | NOT EXECUTED | `evidence/BLOCKED-agent-runner-auth/` |
 | J | OpenMontage-unavailable MES regression | PASS | PASS | PASS | N/R — no external process involved | **PASS** | PASS | NOT EXECUTED | `evidence/J-unavailable/` |
 
-**Five rows are BLOCKED on one external prerequisite: the Codex agent-runner account is out of usage
-capacity until Jul 31st, 2026.** C and G were launched as real live productions and reached the real
+**Five rows are BLOCKED because no agent runner can currently authenticate.** Both supported
+runners are implemented and detected correctly: Codex CLI 0.145.0 is authenticated but out of usage
+capacity until Jul 31st, 2026, and Claude Code 2.1.220 is installed but reports
+`Not logged in · Please run /login`. Full write-up and the exact one-command unblock:
+`evidence/BLOCKED-agent-runner-auth/REPORT.md`. C and G were launched as real live productions and reached the real
 engine — C completed `idea`, `script` and `scene_plan` and was waiting at a genuine approval gate
 whose own summary said the next step was "begin real Pexels acquisition" — before every subsequent
 Codex turn began failing. The full write-up, the confirming CLI transcript, the preserved partial
@@ -87,6 +90,34 @@ The frame-rate question is also resolved: that job package contained **no `fps` 
 its 30 fps render violated no locked decision. The evaluator now reports an unlocked frame rate as
 `NOT_APPLICABLE` rather than inventing a pass or a failure. Scenario D's package locks 24 fps
 explicitly so the enforcement path is exercised for real.
+
+---
+
+## Agent runner support
+
+Two managed runners are implemented behind one abstraction, both speaking the same
+runner-neutral protocol `mes.openmontage.runner/v1`. No protocol version change was required.
+
+| Capability | Codex CLI | Claude Code | Evidence |
+| --- | --- | --- | --- |
+| Pinned and bundled | PASS — `@openai/codex` 0.145.0 | PASS — `@anthropic-ai/claude-code` 2.1.220 | `package.json`, `electron-builder.yml` asarUnpack |
+| Detect + version parse | PASS | PASS | `openmontage-codex-runner.test.ts`, `openmontage-claude-runner.test.ts` |
+| Protocol probe against the real CLI | PASS | PASS | both suites |
+| Authentication state reported truthfully | N/R — authenticated | PASS — reports `CLAUDE_NOT_AUTHENTICATED` | `openmontage-claude-runner.test.ts` |
+| Launch construction (shell-free, array args) | PASS | PASS | both suites |
+| Quota / auth / permission / network classification | PASS | PASS | `openmontage-contracts.test.ts`, `claude-failures` cases |
+| Approval + revision handling | PASS — real subprocess | Implemented; **live NOT EXECUTED** (auth) | fixture-driven |
+| Pause / resume / cancel | PASS — real subprocess | Implemented; **live NOT EXECUTED** (auth) | — |
+| Windows process-tree cleanup | PASS — real parent+descendant | Shared `agent-core` implementation | `openmontage-process-tree.test.ts` |
+| Stall detection | PASS | Implemented | — |
+| Duplicate-launch prevention | PASS — live rejected | Managed-service level, runner-agnostic | `evidence/B-approval-revision/` |
+| Secret redaction | PASS | PASS — shared redactor over env values | both suites |
+| Runner selection (automatic / explicit / assisted) | PASS | PASS | `selectOpenMontageRunner` cases |
+| Codex → Claude checkpoint migration | N/A | Implemented — resumes from canonical checkpoints, records a `runner_transition` event, regenerates nothing; **live NOT EXECUTED** (auth) | `claude-runner.mjs` |
+
+The Claude runner's live rows are **NOT EXECUTED**, not passed: the CLI is installed and detected but
+not logged in. Fixture-level and real-process coverage of the shared machinery is real, but it is not
+a substitute for a live agent-governed production.
 
 ---
 
