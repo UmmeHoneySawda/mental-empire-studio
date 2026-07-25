@@ -1,0 +1,444 @@
+import { execFileSync } from 'node:child_process'
+import fs from 'node:fs'
+import os from 'node:os'
+import path from 'node:path'
+import { afterEach, expect, it } from 'vitest'
+import { closeDatabase, initDatabase } from '../../electron/db'
+import { ffmpegPath } from '../../electron/services/bin'
+import { OpenMontageAssistedService } from '../../electron/services/openmontage/assisted'
+import { OpenMontageManagedService } from '../../electron/services/openmontage/managed'
+import {
+  resolveBundledCodexExecutable,
+  resolveOpenMontageRunnerLaunch
+} from '../../electron/services/openmontage/runner-launch'
+import {
+  DEFAULT_OPENMONTAGE_SETTINGS,
+  OPENMONTAGE_CONTRACT_VERSION,
+  OPENMONTAGE_JOB_SCHEMA,
+  type OpenMontageHealthReport,
+  type OpenMontageJobPackage,
+  type OpenMontageSettings
+} from '../../shared/openmontage'
+import { describeSqlite } from '../helpers/sqlite'
+
+function tempDir(prefix: string): string {
+  return fs.mkdtempSync(path.join(os.tmpdir(), prefix))
+}
+
+function readyHealth(root: string): OpenMontageHealthReport {
+  const checkedAt = new Date().toISOString()
+  return {
+    contractVersion: OPENMONTAGE_CONTRACT_VERSION,
+    status: 'ready',
+    installationPath: root,
+    compatibility: 'compatible',
+    mode: 'managed',
+    components: [
+      { name: 'installation', status: 'available', checkedAt },
+      { name: 'python', status: 'available', checkedAt },
+      { name: 'ffmpeg', status: 'available', checkedAt },
+      { name: 'remotion', status: 'available', checkedAt },
+      { name: 'backlot', status: 'available', checkedAt },
+      { name: 'agent_runner', status: 'available', checkedAt }
+    ],
+    providers: [],
+    credentials: [],
+    checkedAt,
+    warnings: []
+  }
+}
+
+function makeVideo(target: string): void {
+  fs.mkdirSync(path.dirname(target), { recursive: true })
+  execFileSync(ffmpegPath(), [
+    '-hide_banner',
+    '-loglevel', 'error',
+    '-f', 'lavfi',
+    '-i', 'color=c=black:s=320x180:d=1:r=24',
+    '-an',
+    '-c:v', 'libx264',
+    '-pix_fmt', 'yuv420p',
+    '-y',
+    target
+  ], { windowsHide: true, timeout: 30_000 })
+}
+
+async function waitForFile(filePath: string, timeoutMs = 5_000): Promise<void> {
+  const startedAt = Date.now()
+  while (!fs.existsSync(filePath)) {
+    if (Date.now() - startedAt >= timeoutMs) throw new Error(`Timed out waiting for ${filePath}`)
+    await new Promise((resolve) => setTimeout(resolve, 25))
+  }
+}
+
+/** Package for the stale-gate regression: no editable output, no approvals. */
+function staleGatePackage(outputDirectory: string, sourceVideo: string): OpenMontageJobPackage {
+  return {
+    schema: OPENMONTAGE_JOB_SCHEMA,
+    contractVersion: OPENMONTAGE_CONTRACT_VERSION,
+    jobId: 'codex-stale-gate-job',
+    projectId: 'codex-stale-gate-project',
+    createdAt: new Date().toISOString(),
+    requestedBy: 'mental-empire-studio',
+    project: { title: 'Codex runner stale approval gate regression' },
+    source: { language: 'en', assets: [] },
+    production: {
+      workflowMode: 'openmontage',
+      pipeline: 'hybrid',
+      mediaControl: 'automatic',
+      style: 'documentary',
+      composition: { runtime: 'remotion', authoringMode: 'templated', editableOutput: false },
+      approvals: []
+    },
+    output: {
+      directory: outputDirectory,
+      aspectRatio: '16:9',
+      width: 320,
+      height: 180,
+      format: 'mp4',
+      captions: false
+    },
+    fallback: {
+      enabled: true,
+      engine: 'mental-empire-studio',
+      preserveOpenMontageProject: true
+    },
+    metadata: {
+      fixtureFinalVideo: sourceVideo,
+      fixtureStaleGate: true
+    }
+  }
+}
+
+afterEach(() => closeDatabase())
+describeSqlite('Codex OpenMontage production runner', () => {
+  it('ships a callable pinned Codex executable and protocol adapter', () => {
+    const executable = resolveBundledCodexExecutable()
+    expect(fs.existsSync(executable)).toBe(true)
+    expect(execFileSync(executable, ['--version'], { encoding: 'utf8', windowsHide: true }))
+      .toMatch(/codex-cli 0\.145\.0/)
+
+    const launch = resolveOpenMontageRunnerLaunch({
+      ...DEFAULT_OPENMONTAGE_SETTINGS,
+      mode: 'managed',
+      runner: 'codex-cli'
+    })
+    const stdout = execFileSync(
+      launch.executable,
+      [...launch.args, '--openmontage-protocol-info'],
+      {
+        encoding: 'utf8',
+        windowsHide: true,
+        env: { ...process.env, ...launch.fixedEnvironment }
+      }
+    )
+    expect(stdout).toContain('mes.openmontage.runner/v1')
+    expect(stdout).toContain('codex-cli 0.145.0')
+  })
+
+  it('persists a Codex session, revises a real checkpoint, approves once, and collects validated outputs', async () => {
+    const root = tempDir('me-openmontage-codex-root-')
+    const fixtureCodex = path.resolve(process.cwd(), 'test', 'fixtures', 'codex-cli-openmontage.mjs')
+    const sourceVideo = path.join(tempDir('me-openmontage-codex-video-'), 'source.mp4')
+    makeVideo(sourceVideo)
+    fs.mkdirSync(path.join(root, 'pipeline_defs'), { recursive: true })
+    fs.writeFileSync(
+      path.join(root, 'pipeline_defs', 'hybrid.yaml'),
+      'name: hybrid\nstages:\n  - name: assets\n  - name: publish\n',
+      'utf8'
+    )
+    const outputDirectory = path.join(tempDir('me-openmontage-codex-output-'), 'exports')
+    const settings: OpenMontageSettings = {
+      ...DEFAULT_OPENMONTAGE_SETTINGS,
+      repositoryPath: root,
+      mode: 'managed',
+      runner: 'codex-cli',
+      runnerExecutable: process.execPath,
+      runnerArguments: [fixtureCodex],
+      stallTimeoutSec: 30
+    }
+    const repos = initDatabase(path.join(tempDir('me-openmontage-codex-db-'), 'app.sqlite'))
+    const workspaceService = new OpenMontageAssistedService({
+      repos,
+      getSettings: () => settings,
+      health: async () => readyHealth(root),
+      runCommand: async (_executable, args) => {
+        const workspace = path.join(args[5], args[2])
+        fs.mkdirSync(workspace, { recursive: true })
+        fs.writeFileSync(path.join(workspace, 'project.json'), JSON.stringify({
+          project_id: args[2],
+          title: args[3],
+          pipeline_type: args[4]
+        }))
+        return { stdout: `MES_OPENMONTAGE_PROJECT=${workspace}`, stderr: '' }
+      }
+    })
+    const managed = new OpenMontageManagedService({
+      repos,
+      workspace: workspaceService,
+      getSettings: () => settings,
+      protocolTimeoutMs: 5_000,
+      commandTimeoutMs: 5_000
+    })
+    const jobPackage: OpenMontageJobPackage = {
+      schema: OPENMONTAGE_JOB_SCHEMA,
+      contractVersion: OPENMONTAGE_CONTRACT_VERSION,
+      jobId: 'codex-runner-job',
+      projectId: 'codex-runner-project',
+      createdAt: new Date().toISOString(),
+      requestedBy: 'mental-empire-studio',
+      project: { title: 'Codex runner acceptance fixture' },
+      source: { language: 'en', assets: [] },
+      production: {
+        workflowMode: 'openmontage',
+        pipeline: 'hybrid',
+        mediaControl: 'automatic',
+        style: 'documentary',
+        composition: { runtime: 'remotion', authoringMode: 'atelier', editableOutput: true },
+        approvals: ['assets']
+      },
+      output: {
+        directory: outputDirectory,
+        aspectRatio: '16:9',
+        width: 320,
+        height: 180,
+        format: 'mp4',
+        captions: true
+      },
+      fallback: {
+        enabled: true,
+        engine: 'mental-empire-studio',
+        preserveOpenMontageProject: true
+      },
+      metadata: {
+        fixtureFinalVideo: sourceVideo,
+        fixtureGateDelayMs: 1_000
+      }
+    }
+
+    await managed.start(jobPackage)
+    const pendingCheckpointPath = path.join(
+      repos.openMontageJob(jobPackage.jobId)!.workspacePath!,
+      'checkpoint_assets.json'
+    )
+    await waitForFile(pendingCheckpointPath)
+    expect(JSON.parse(fs.readFileSync(pendingCheckpointPath, 'utf8')).status).toBe('awaiting_human')
+    expect(repos.openMontageJob(jobPackage.jobId)?.state).toBe('running')
+
+    let job = await managed.waitForState(jobPackage.jobId, ['awaiting_approval'], 10_000)
+    expect(job.runnerSessionId).toBe('019f0000-0000-7000-8000-000000000001')
+    const workspace = job.workspacePath!
+    const firstCheckpoint = JSON.parse(fs.readFileSync(path.join(workspace, 'checkpoint_assets.json'), 'utf8'))
+    expect(firstCheckpoint).toMatchObject({ status: 'awaiting_human', human_approved: false, history: [] })
+
+    await managed.revise(job.id, 'Use the second reviewed selection.', 'assets')
+    job = await managed.waitForState(job.id, ['awaiting_approval'], 10_000)
+    const revisedCheckpoint = JSON.parse(fs.readFileSync(path.join(workspace, 'checkpoint_assets.json'), 'utf8'))
+    expect(revisedCheckpoint.status).toBe('awaiting_human')
+    expect(revisedCheckpoint.history).toHaveLength(1)
+
+    await managed.approve(job.id, 'assets')
+    job = await managed.waitForState(job.id, ['completed'], 10_000)
+    expect(job).toMatchObject({
+      state: 'completed',
+      progress: 100,
+      runnerSessionId: '019f0000-0000-7000-8000-000000000001'
+    })
+    const completedCheckpoint = JSON.parse(fs.readFileSync(path.join(workspace, 'checkpoint_assets.json'), 'utf8'))
+    expect(completedCheckpoint).toMatchObject({ status: 'completed', human_approved: true })
+    expect(completedCheckpoint.history).toHaveLength(2)
+    expect(repos.openMontageOutputs(job.id).map((output) => output.kind)).toEqual(expect.arrayContaining([
+      'final_mp4',
+      'editable_project',
+      'captions',
+      'production_assets',
+      'decision_log',
+      'render_report'
+    ]))
+    const editable = repos.openMontageOutputs(job.id).find((output) => output.kind === 'editable_project')!
+    expect(editable.metadata).toMatchObject({ self_contained: true })
+    expect(fs.existsSync(path.join(editable.path, 'package.json'))).toBe(true)
+  }, 30_000)
+
+  /**
+   * Live scenario C failed with "Managed runner rejected the approval command"
+   * after three approvals had already succeeded. The cause was the checkpoint
+   * watcher announcing an approval gate from an `awaiting_human` file that was no
+   * longer the newest checkpoint: the turn had ended, the runner auto-continued
+   * instead of waiting, and MES's approval then landed in an already-running turn.
+   *
+   * Only `afterSuccessfulTurn` may publish a gate. Here the newest checkpoint is
+   * deliberately NOT the gate, so the run must auto-continue to completion without
+   * MES ever being told to approve anything.
+   */
+  it('never surfaces an approval gate from a checkpoint the runner has already moved past', async () => {
+    const root = tempDir('me-openmontage-stalegate-root-')
+    const fixtureCodex = path.resolve(process.cwd(), 'test', 'fixtures', 'codex-cli-openmontage.mjs')
+    const sourceVideo = path.join(tempDir('me-openmontage-stalegate-video-'), 'source.mp4')
+    makeVideo(sourceVideo)
+    fs.mkdirSync(path.join(root, 'pipeline_defs'), { recursive: true })
+    fs.writeFileSync(
+      path.join(root, 'pipeline_defs', 'hybrid.yaml'),
+      'name: hybrid\nstages:\n  - name: assets\n  - name: publish\n',
+      'utf8'
+    )
+    const outputDirectory = path.join(tempDir('me-openmontage-stalegate-output-'), 'exports')
+    const settings: OpenMontageSettings = {
+      ...DEFAULT_OPENMONTAGE_SETTINGS,
+      repositoryPath: root,
+      mode: 'managed',
+      runner: 'codex-cli',
+      runnerExecutable: process.execPath,
+      runnerArguments: [fixtureCodex],
+      stallTimeoutSec: 30
+    }
+    const repos = initDatabase(path.join(tempDir('me-openmontage-stalegate-db-'), 'app.sqlite'))
+    const workspaceService = new OpenMontageAssistedService({
+      repos,
+      getSettings: () => settings,
+      health: async () => readyHealth(root),
+      runCommand: async (_executable, args) => {
+        const workspace = path.join(args[5], args[2])
+        fs.mkdirSync(workspace, { recursive: true })
+        fs.writeFileSync(path.join(workspace, 'project.json'), JSON.stringify({
+          project_id: args[2],
+          title: args[3],
+          pipeline_type: args[4]
+        }))
+        return { stdout: `MES_OPENMONTAGE_PROJECT=${workspace}`, stderr: '' }
+      }
+    })
+    const managed = new OpenMontageManagedService({
+      repos,
+      workspace: workspaceService,
+      getSettings: () => settings,
+      protocolTimeoutMs: 10_000,
+      commandTimeoutMs: 10_000
+    })
+
+    const jobPackage = staleGatePackage(outputDirectory, sourceVideo)
+    await managed.start(jobPackage)
+    const job = await managed.waitForState(jobPackage.jobId, ['completed'], 25_000)
+
+    expect(job.state).toBe('completed')
+    const events = repos.openMontageEvents(job.id)
+    // The `awaiting_human` assets checkpoint really was written and observed…
+    expect(events.some((event) => event.type === 'checkpoint' && event.stage === 'assets')).toBe(true)
+    // …but it must never have been published to MES as an approval requirement,
+    // and MES must never have been moved into an awaiting_approval state by it.
+    expect(events.filter((event) => event.type === 'approval')).toHaveLength(0)
+    expect(events.some((event) => /requires MES approval|ready for review/i.test(event.message))).toBe(false)
+    expect(events.some((event) => /awaiting.?approval/i.test(JSON.stringify(event.data ?? {})))).toBe(false)
+  }, 40_000)
+
+  /**
+   * A production that requested an editable composition must not be reported as
+   * a success when the agent only left composition sources behind. This is the
+   * regression guard for the combined acceptance run that reported PASS while
+   * `editable/remotion` had no manifest and could not be rendered by anyone.
+   */
+  it.each([
+    ['sources-only', /not self-contained|no package\.json/i],
+    ['missing', /no editable project was written/i]
+  ])('fails a requested editable composition that is %s instead of reporting success', async (mode, expectedMessage) => {
+    const previous = process.env.MES_FIXTURE_EDITABLE
+    process.env.MES_FIXTURE_EDITABLE = mode
+    try {
+      const root = tempDir('me-openmontage-codex-root-')
+      const fixtureCodex = path.resolve(process.cwd(), 'test', 'fixtures', 'codex-cli-openmontage.mjs')
+      const sourceVideo = path.join(tempDir('me-openmontage-codex-video-'), 'source.mp4')
+      makeVideo(sourceVideo)
+      fs.mkdirSync(path.join(root, 'pipeline_defs'), { recursive: true })
+      fs.writeFileSync(
+        path.join(root, 'pipeline_defs', 'hybrid.yaml'),
+        'name: hybrid\nstages:\n  - name: assets\n  - name: publish\n',
+        'utf8'
+      )
+      const settings: OpenMontageSettings = {
+        ...DEFAULT_OPENMONTAGE_SETTINGS,
+        repositoryPath: root,
+        mode: 'managed',
+        runner: 'codex-cli',
+        runnerExecutable: process.execPath,
+        runnerArguments: [fixtureCodex],
+        stallTimeoutSec: 30,
+        retryLimit: 0,
+        automaticMesFallback: false
+      }
+      const repos = initDatabase(path.join(tempDir('me-openmontage-codex-db-'), 'app.sqlite'))
+      const workspaceService = new OpenMontageAssistedService({
+        repos,
+        getSettings: () => settings,
+        health: async () => readyHealth(root),
+        runCommand: async (_executable, args) => {
+          const workspace = path.join(args[5], args[2])
+          fs.mkdirSync(workspace, { recursive: true })
+          fs.writeFileSync(path.join(workspace, 'project.json'), JSON.stringify({
+            project_id: args[2],
+            title: args[3],
+            pipeline_type: args[4]
+          }))
+          return { stdout: `MES_OPENMONTAGE_PROJECT=${workspace}`, stderr: '' }
+        }
+      })
+      const managed = new OpenMontageManagedService({
+        repos,
+        workspace: workspaceService,
+        getSettings: () => settings,
+        protocolTimeoutMs: 5_000,
+        commandTimeoutMs: 5_000
+      })
+      const jobPackage: OpenMontageJobPackage = {
+        schema: OPENMONTAGE_JOB_SCHEMA,
+        contractVersion: OPENMONTAGE_CONTRACT_VERSION,
+        jobId: `codex-editable-${mode}`,
+        projectId: `codex-editable-${mode}`,
+        createdAt: new Date().toISOString(),
+        requestedBy: 'mental-empire-studio',
+        project: { title: 'Editable output contract' },
+        source: { language: 'en', assets: [] },
+        production: {
+          workflowMode: 'openmontage',
+          pipeline: 'hybrid',
+          mediaControl: 'automatic',
+          style: 'documentary',
+          composition: { runtime: 'remotion', authoringMode: 'atelier', editableOutput: true },
+          approvals: ['assets']
+        },
+        output: {
+          directory: path.join(tempDir('me-openmontage-codex-output-'), 'exports'),
+          aspectRatio: '16:9',
+          width: 320,
+          height: 180,
+          format: 'mp4',
+          captions: true
+        },
+        fallback: { enabled: false, engine: 'mental-empire-studio', preserveOpenMontageProject: true },
+        metadata: { fixtureFinalVideo: sourceVideo, fixtureGateDelayMs: 0 }
+      }
+
+      await managed.start(jobPackage)
+      const gated = await managed.waitForState(jobPackage.jobId, ['awaiting_approval'], 15_000)
+      await managed.approve(gated.id, 'assets')
+      const job = await managed.waitForState(jobPackage.jobId, ['failed', 'completed'], 20_000)
+
+      // The MP4 exists and is valid, so only the editable-output contract can fail this.
+      expect(job).toMatchObject({
+        state: 'failed',
+        errorCode: 'EDITABLE_PROJECT_MISSING',
+        errorCategory: 'runtime'
+      })
+      expect(job.errorMessage).toMatch(expectedMessage)
+      const errorEvent = repos.openMontageEvents(job.id, 200).find((event) => event.level === 'error')
+      expect(errorEvent?.message).toMatch(expectedMessage)
+      expect(errorEvent?.data).toMatchObject({ failure_category: 'runtime', checkpoint_preserved: true })
+      // Checkpoints must survive so the production can be resumed or inspected.
+      expect(fs.existsSync(path.join(job.workspacePath!, 'checkpoint_publish.json'))).toBe(true)
+      // The final MP4 itself was fine — this failure is specifically the missing export.
+      expect(repos.openMontageOutputs(job.id).some((output) => output.kind === 'final_mp4')).toBe(true)
+    } finally {
+      if (previous === undefined) delete process.env.MES_FIXTURE_EDITABLE
+      else process.env.MES_FIXTURE_EDITABLE = previous
+    }
+  }, 40_000)
+})

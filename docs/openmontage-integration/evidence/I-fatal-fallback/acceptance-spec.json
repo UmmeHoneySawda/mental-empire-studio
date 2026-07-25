@@ -1,0 +1,143 @@
+{
+  "scenario": "I-forced-fatal-failure-and-mes-fallback",
+  "evidenceDir": "D:\\Work\\mental-empire-studio\\docs\\openmontage-integration\\evidence\\I-fatal-fallback",
+  "userDataDir": "D:\\\\Work\\\\openmontage-acceptance\\\\profiles\\\\I-fatal-fallback-grok2",
+  "openMontagePath": "D:\\Work\\OpenMontage",
+  "backlotUrl": "http://127.0.0.1:4750",
+  "stallTimeoutSec": 900,
+  "timeoutSec": 4200,
+  "retryLimit": 1,
+  "automaticMesFallback": true,
+  "expectedFinalState": "completed",
+  "postconditions": {
+    "minDurationSeconds": 5
+  },
+  "actions": {
+    "resumeExisting": false,
+    "autoApprove": true,
+    "interruptRunner": {
+      "times": 4
+    },
+    "driveMesFallbackRender": true
+  },
+  "request": {
+    "routing": {
+      "workflowMode": "openmontage",
+      "requestedRuntime": "remotion",
+      "requiresRealFootage": true,
+      "advancedStockSelection": false,
+      "editableComposition": false,
+      "kineticTypography": false,
+      "preferredPipeline": "hybrid"
+    },
+    "jobPackage": {
+      "schema": "mes.openmontage.job/v1",
+      "contractVersion": "mes.openmontage/v1",
+      "jobId": "mes-accept-i-fallback-grok2-20260725",
+      "projectId": "mes-accept-i-fallback-grok2-20260725",
+      "createdAt": "2026-07-25T00:00:00Z",
+      "requestedBy": "mental-empire-studio",
+      "project": {
+        "title": "MES Acceptance I - Fatal failure and MES fallback",
+        "description": "Create an 8 second narrated documentary montage at EXACTLY 24 fps using only real open motion footage from NASA and/or Wikimedia Commons. Use the supplied narration, trimmed to the 8 second timeline. Music is explicitly opted out, so the mix is narration only. Honour the supplied locked timeline: 24 fps and the two locked scene boundaries.\n\nThis run is deliberately interrupted more times than the configured retry limit allows, so the OpenMontage attempt is expected to end in a classified fatal failure. Checkpoint whatever completes; never delete prior work. No fault-injection code exists in the runner - the failure is produced purely by killing the real runner process tree."
+      },
+      "source": {
+        "narrationPath": "D:\\Work\\openmontage-acceptance\\inputs\\archive-remotion-narration.wav",
+        "scriptPath": "D:\\Work\\mental-empire-studio\\test\\acceptance\\openmontage\\archive-remotion-script.txt",
+        "language": "en",
+        "assets": [
+          {
+            "id": "fallback_image_01",
+            "path": "D:\\Work\\openmontage-acceptance\\inputs\\fallback-images\\scene_01.png",
+            "kind": "image",
+            "locked": true,
+            "attribution": "Frame sampled from the scenario A archive production (NASA / Wikimedia Commons source footage)"
+          },
+          {
+            "id": "fallback_image_02",
+            "path": "D:\\Work\\openmontage-acceptance\\inputs\\fallback-images\\scene_02.png",
+            "kind": "image",
+            "locked": true,
+            "attribution": "Frame sampled from the scenario A archive production (NASA / Wikimedia Commons source footage)"
+          },
+          {
+            "id": "fallback_image_03",
+            "path": "D:\\Work\\openmontage-acceptance\\inputs\\fallback-images\\scene_03.png",
+            "kind": "image",
+            "locked": true,
+            "attribution": "Frame sampled from the scenario A archive production (NASA / Wikimedia Commons source footage)"
+          }
+        ]
+      },
+      "production": {
+        "workflowMode": "openmontage",
+        "pipeline": "hybrid",
+        "mediaControl": "fill",
+        "style": "restrained archival science documentary",
+        "composition": {
+          "runtime": "remotion",
+          "authoringMode": "templated",
+          "editableOutput": false
+        },
+        "approvals": []
+      },
+      "timeline": {
+        "version": "1.0",
+        "fps": 24,
+        "durationSeconds": 8,
+        "crossfadeSeconds": 0.5,
+        "scenes": [
+          {
+            "id": "scene_01",
+            "order": 0,
+            "type": "gap",
+            "startSeconds": 0,
+            "endSeconds": 4,
+            "durationSeconds": 4,
+            "locked": true,
+            "motion": {
+              "preset": "cinematic",
+              "direction": "auto",
+              "amount": 0.12
+            }
+          },
+          {
+            "id": "scene_02",
+            "order": 1,
+            "type": "gap",
+            "startSeconds": 4,
+            "endSeconds": 8,
+            "durationSeconds": 4,
+            "locked": true,
+            "motion": {
+              "preset": "cinematic",
+              "direction": "auto",
+              "amount": 0.12
+            }
+          }
+        ]
+      },
+      "output": {
+        "directory": "D:\\Work\\openmontage-acceptance\\outputs\\I-fatal-fallback",
+        "aspectRatio": "16:9",
+        "width": 1280,
+        "height": 720,
+        "format": "mp4",
+        "captions": false
+      },
+      "fallback": {
+        "enabled": true,
+        "engine": "mental-empire-studio",
+        "preserveOpenMontageProject": true
+      },
+      "metadata": {
+        "acceptance_scenarios": "I",
+        "duration_target_seconds": 8,
+        "locked_fps": 24,
+        "music_opt_out": true,
+        "cost_limit_usd": 0
+      }
+    }
+  },
+  "runner": "grok-build"
+}

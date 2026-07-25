@@ -1,0 +1,204 @@
+{
+  "schema": "mes.openmontage.evidence-report/v1",
+  "scenario": "G-recovery-from-real-runner-process-interruption",
+  "evidenceDirectory": "D:\\Work\\mental-empire-studio\\docs\\openmontage-integration\\evidence\\G-runner-interruption",
+  "evaluatedAt": "2026-07-25T09:04:04.582Z",
+  "runStartedAt": "2026-07-25T08:37:43.331Z",
+  "runCompletedAt": "2026-07-25T09:03:51.477Z",
+  "mesCommit": "5a0872e676c56678ddd38896fc398bb076221cc0",
+  "openMontageCommit": "0af32ce5e1e830c33992af1f9179dcdcd536549b",
+  "operatingSystem": "win32 x64",
+  "runner": "codex-cli @openai/codex 0.145.0",
+  "pipeline": "hybrid",
+  "runtime": "remotion",
+  "jobId": "mes-accept-g-interrupt-grok-20260725",
+  "projectId": "mes-accept-g-interrupt-grok-20260725",
+  "projectDirectory": "D:\\Work\\OpenMontage\\projects\\mes-accept-g-interrupt-grok-20260725",
+  "jobState": "completed",
+  "jobProgress": 100,
+  "jobStage": "export",
+  "runnerSessionId": "019f986d-5979-7441-b2b8-03de16098de4",
+  "costUsd": 0,
+  "credentialPrerequisites": [
+    "Codex agent-runner usage capacity (EXHAUSTED — this is the blocker)"
+  ],
+  "commands": [
+    "npm run build",
+    "node scripts/openmontage-acceptance.mjs --spec \"D:\\Work\\openmontage-acceptance\\specs\\G-runner-interruption.json\""
+  ],
+  "screenshots": [
+    "evidence/G-runner-interruption\\01-dashboard.png",
+    "evidence/G-runner-interruption\\02-approval.png",
+    "evidence/G-runner-interruption\\03-final.png"
+  ],
+  "checkpoints": [
+    {
+      "stage": "assets",
+      "status": "completed",
+      "humanApproved": true,
+      "savedAt": null
+    },
+    {
+      "stage": "compose",
+      "status": "completed",
+      "humanApproved": false,
+      "savedAt": null
+    },
+    {
+      "stage": "edit",
+      "status": "completed",
+      "humanApproved": false,
+      "savedAt": null
+    },
+    {
+      "stage": "idea",
+      "status": "completed",
+      "humanApproved": true,
+      "savedAt": null
+    },
+    {
+      "stage": "publish",
+      "status": "completed",
+      "humanApproved": true,
+      "savedAt": null
+    },
+    {
+      "stage": "scene_plan",
+      "status": "completed",
+      "humanApproved": true,
+      "savedAt": null
+    },
+    {
+      "stage": "script",
+      "status": "completed",
+      "humanApproved": true,
+      "savedAt": null
+    }
+  ],
+  "outputs": [
+    {
+      "kind": "decision_log",
+      "path": "D:\\Work\\OpenMontage\\projects\\mes-accept-g-interrupt-grok-20260725\\decision_log.json",
+      "sizeBytes": 12881,
+      "sha256": "5a74126772f62def1a380016a7b9f1ef725019ccce6dacdd74040085dc9c010c",
+      "metadata": {}
+    },
+    {
+      "kind": "final_mp4",
+      "path": "D:\\Work\\OpenMontage\\projects\\mes-accept-g-interrupt-grok-20260725\\renders\\final.mp4",
+      "sizeBytes": 2803215,
+      "sha256": "8a21959ff1b1b572e2ab428929274782ebb7d1747445b6e356ed5c383be46f25",
+      "metadata": {
+        "duration_seconds": 8,
+        "video_codec": "h264",
+        "audio_codec": "aac",
+        "width": 1280,
+        "height": 720,
+        "fps": 24
+      }
+    },
+    {
+      "kind": "render_report",
+      "path": "D:\\Work\\OpenMontage\\projects\\mes-accept-g-interrupt-grok-20260725\\artifacts\\render_report.json",
+      "sizeBytes": 1191,
+      "sha256": "9e79daf51fe6e04ce55a9d212e4abba5356e50efa4d9d96d26f9620167253e0d",
+      "metadata": {}
+    },
+    {
+      "kind": "production_assets",
+      "path": "D:\\Work\\OpenMontage\\projects\\mes-accept-g-interrupt-grok-20260725\\assets",
+      "sizeBytes": null,
+      "sha256": null,
+      "metadata": {}
+    }
+  ],
+  "postconditions": [
+    {
+      "name": "terminal_state",
+      "result": "PASS",
+      "detail": "expected completed, observed completed"
+    },
+    {
+      "name": "output_present:final_mp4",
+      "result": "PASS",
+      "detail": "1 recorded"
+    },
+    {
+      "name": "final_mp4_exists_on_disk",
+      "result": "PASS",
+      "detail": "D:\\Work\\OpenMontage\\projects\\mes-accept-g-interrupt-grok-20260725\\renders\\final.mp4"
+    },
+    {
+      "name": "final_mp4_ffprobe",
+      "result": "PASS",
+      "detail": "ffprobe parsed the container"
+    },
+    {
+      "name": "final_mp4_has_video",
+      "result": "PASS",
+      "detail": "video codec h264"
+    },
+    {
+      "name": "final_mp4_width",
+      "result": "PASS",
+      "detail": "requested 1280, observed 1280"
+    },
+    {
+      "name": "final_mp4_height",
+      "result": "PASS",
+      "detail": "requested 720, observed 720"
+    },
+    {
+      "name": "final_mp4_locked_fps",
+      "result": "PASS",
+      "detail": "locked 24 fps, observed 24 fps"
+    },
+    {
+      "name": "final_mp4_min_duration",
+      "result": "PASS",
+      "detail": ">= 6s, observed 8s"
+    }
+  ],
+  "media": {
+    "finalMp4": {
+      "path": "D:\\Work\\OpenMontage\\projects\\mes-accept-g-interrupt-grok-20260725\\renders\\final.mp4",
+      "sizeBytes": 2803215,
+      "sha256": "8a21959ff1b1b572e2ab428929274782ebb7d1747445b6e356ed5c383be46f25",
+      "ffprobe": {
+        "ok": true,
+        "durationSeconds": 8,
+        "formatName": "mov,mp4,m4a,3gp,3g2,mj2",
+        "videoCodec": "h264",
+        "audioCodec": "aac",
+        "width": 1280,
+        "height": 720,
+        "fps": 24
+      }
+    }
+  },
+  "declaredScenarios": [
+    "G"
+  ],
+  "provenBehaviours": {
+    "managed_production": true,
+    "approval_gate": true,
+    "revision_request": false,
+    "duplicate_start_rejected": false,
+    "normal_application_restart": false,
+    "resume_existing": false,
+    "runner_interruption_recovery": true,
+    "pause_resume": false,
+    "cancellation": false,
+    "editable_output_requested": false
+  },
+  "notes": [
+    "INCOMPLETE RUN — BLOCKED, not a product failure. See ../BLOCKED-codex-usage-limit/REPORT.md.",
+    "The production was launched against the real OpenMontage engine and its workspace was initialised, but every one of its four Codex turns failed immediately: the agent-runner account had no usage capacity left (resets Jul 31st, 2026 3:56 PM). No checkpoint was ever reached, so the planned interruption could not be exercised.",
+    "The interruption mechanism itself is implemented and covered below the live tier: the harness action `actions.interruptRunner` kills the recorded runner PID with `taskkill /T /F`, waits for a new runner, and records stage/progress/checkpoint/session before and after plus a surviving-descendant count. Windows process-tree termination is separately proven against a real parent+descendant process in `openmontage-process-tree.test.ts`.",
+    "This run is also what exposed two real defects, both fixed on this branch: the runner discarded the Codex error message (so the failure logged only `diagnostic: \"unknown\"`), and quota exhaustion was classified as a retryable `runner` fault, which burned the retry budget on turns that could never succeed.",
+    "Resume with: node scripts/openmontage-acceptance.mjs --spec \"D:\\Work\\openmontage-acceptance\\specs\\G-runner-interruption.json\"",
+    "Preserved workspace: D:\\Work\\OpenMontage\\projects\\mes-accept-g-interrupt-20260725"
+  ],
+  "harnessReportedResult": "PASS",
+  "result": "PASS"
+}

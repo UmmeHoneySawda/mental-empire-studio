@@ -1,0 +1,150 @@
+{
+  "scenario": "E-real-hyperframes-render-and-editable-workspace",
+  "evidenceDir": "D:\\Work\\mental-empire-studio\\docs\\openmontage-integration\\evidence\\E-hyperframes",
+  "userDataDir": "D:\\Work\\openmontage-acceptance\\profiles\\E-hyperframes-grok",
+  "openMontagePath": "D:\\Work\\OpenMontage",
+  "backlotUrl": "http://127.0.0.1:4750",
+  "stallTimeoutSec": 1500,
+  "timeoutSec": 5400,
+  "retryLimit": 1,
+  "expectedFinalState": "completed",
+  "postconditions": {
+    "minDurationSeconds": 12
+  },
+  "actions": {
+    "resumeExisting": true,
+    "duplicateStart": false,
+    "reviseFirstApproval": false,
+    "autoApprove": true
+  },
+  "request": {
+    "routing": {
+      "workflowMode": "openmontage",
+      "requestedRuntime": "hyperframes",
+      "requiresRealFootage": false,
+      "advancedStockSelection": false,
+      "editableComposition": true,
+      "kineticTypography": true,
+      "preferredPipeline": "hybrid"
+    },
+    "jobPackage": {
+      "schema": "mes.openmontage.job/v1",
+      "contractVersion": "mes.openmontage/v1",
+      "jobId": "mes-accept-e-hyperframes-grok-20260725",
+      "projectId": "mes-accept-e-hyperframes-grok-20260725",
+      "createdAt": "2026-07-25T00:00:00Z",
+      "requestedBy": "mental-empire-studio",
+      "project": {
+        "title": "MES Acceptance E - HyperFrames Kinetic Typography",
+        "description": "Create a 15.6 second narrated KINETIC TYPOGRAPHY piece at EXACTLY 30 fps using the HyperFrames runtime. Use the supplied narration exactly. Music is explicitly opted out, so the mix is narration only. Honour the supplied locked timeline: 30 fps, the four locked scene boundaries, and the 0.5s crossfade.\n\nThis production exists to prove the HyperFrames path end to end, so the compose stage MUST use the real `hyperframes_compose` tool and MUST NOT fall back to Remotion or plain FFmpeg. Silently swapping the render runtime is a governance violation - if HyperFrames cannot do something, fail the stage and report it.\n\nRequired, in this order:\n\n1. Materialize a real HyperFrames workspace (HTML/CSS/GSAP) for the narration, driven by the locked scene boundaries. Kinetic typography of the narration text is the primary visual; no stock footage is required.\n2. Run `hyperframes lint` on the workspace and record the result. Lint must pass.\n3. Run `hyperframes validate` on the workspace and record the result. Validation must pass.\n4. Run `hyperframes render` to produce `renders/final.mp4` at 1280x720 and exactly 30 fps.\n5. Export a SELF-CONTAINED editable HyperFrames workspace under `editable/hyperframes/` that an unrelated third party can install and render on its own machine: its own `package.json` with pinned dependencies and a `render` script, every HTML/CSS/JS source, every referenced asset copied inside the workspace and referenced by RELATIVE path only (never an absolute path into the MES or OpenMontage checkouts), and a `README.md` giving the exact install and render commands. A directory holding only sources does NOT satisfy this.\n\nRecord the lint, validate and render tool results in `artifacts/render_report.json`."
+      },
+      "source": {
+        "narrationPath": "D:\\Work\\openmontage-acceptance\\inputs\\archive-remotion-narration.wav",
+        "scriptPath": "D:\\Work\\mental-empire-studio\\test\\acceptance\\openmontage\\archive-remotion-script.txt",
+        "language": "en",
+        "assets": []
+      },
+      "production": {
+        "workflowMode": "openmontage",
+        "pipeline": "hybrid",
+        "mediaControl": "automatic",
+        "style": "high-contrast kinetic typography; HTML/CSS/GSAP motion graphics",
+        "composition": {
+          "runtime": "hyperframes",
+          "authoringMode": "atelier",
+          "editableOutput": true
+        },
+        "approvals": [
+          "scene_plan"
+        ]
+      },
+      "timeline": {
+        "version": "1.0",
+        "fps": 30,
+        "durationSeconds": 15.6,
+        "crossfadeSeconds": 0.5,
+        "scenes": [
+          {
+            "id": "scene_01",
+            "order": 0,
+            "type": "gap",
+            "startSeconds": 0,
+            "endSeconds": 4,
+            "durationSeconds": 4,
+            "locked": true,
+            "motion": {
+              "preset": "cinematic",
+              "direction": "auto",
+              "amount": 0.2
+            }
+          },
+          {
+            "id": "scene_02",
+            "order": 1,
+            "type": "gap",
+            "startSeconds": 4,
+            "endSeconds": 8,
+            "durationSeconds": 4,
+            "locked": true,
+            "motion": {
+              "preset": "cinematic",
+              "direction": "auto",
+              "amount": 0.2
+            }
+          },
+          {
+            "id": "scene_03",
+            "order": 2,
+            "type": "gap",
+            "startSeconds": 8,
+            "endSeconds": 11.8,
+            "durationSeconds": 3.8,
+            "locked": true,
+            "motion": {
+              "preset": "cinematic",
+              "direction": "auto",
+              "amount": 0.2
+            }
+          },
+          {
+            "id": "scene_04",
+            "order": 3,
+            "type": "gap",
+            "startSeconds": 11.8,
+            "endSeconds": 15.6,
+            "durationSeconds": 3.8,
+            "locked": true,
+            "motion": {
+              "preset": "cinematic",
+              "direction": "auto",
+              "amount": 0.2
+            }
+          }
+        ]
+      },
+      "output": {
+        "directory": "D:\\Work\\openmontage-acceptance\\outputs\\E-hyperframes",
+        "aspectRatio": "16:9",
+        "width": 1280,
+        "height": 720,
+        "format": "mp4",
+        "captions": true
+      },
+      "fallback": {
+        "enabled": false,
+        "engine": "mental-empire-studio",
+        "preserveOpenMontageProject": true
+      },
+      "metadata": {
+        "acceptance_scenarios": "E",
+        "duration_target_seconds": 15.6,
+        "locked_fps": 30,
+        "music_opt_out": true,
+        "required_runtime": "hyperframes",
+        "required_tool": "hyperframes_compose",
+        "cost_limit_usd": 0
+      }
+    }
+  },
+  "runner": "grok-build"
+}

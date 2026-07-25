@@ -14,6 +14,7 @@ import { Publish } from './screens/Publish'
 import { Profiles } from './screens/Profiles'
 import { Niches } from './screens/Niches'
 import { Settings } from './screens/Settings'
+import { OpenMontage } from './screens/OpenMontage'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import type { ScreenKey } from '@shared/types'
 
@@ -29,6 +30,7 @@ const SCREENS: Record<ScreenKey, ComponentType> = {
   sources: Download,
   download: Download,
   compose: Compose,
+  openmontage: OpenMontage,
   'talking-video': TalkingVideo,
   thumb: Thumbnails,
   render: RenderQueue,

@@ -21,6 +21,8 @@ files:
 # uses Electron's built-in Crashpad crash reporter.)
 asarUnpack:
   - "**/node_modules/better-sqlite3/**"
+  - "**/node_modules/@openai/codex*/**"
+  - "**/node_modules/@anthropic-ai/claude-code*/**"
 
 # Bundled sidecars (yt-dlp, ffmpeg, ffprobe) + the tray icon, copied into
 # the app's resources/ dir so resolveBinDir()/trayIconPath() find them.
@@ -36,6 +38,9 @@ extraResources:
     filter: ["**/*"]
   - from: resources/fonts
     to: fonts
+    filter: ["**/*"]
+  - from: resources/openmontage-runner
+    to: openmontage-runner
     filter: ["**/*"]
 
 # Publish to GitHub Releases (consumed by electron-updater).

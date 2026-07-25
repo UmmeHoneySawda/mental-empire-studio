@@ -1,0 +1,121 @@
+{
+  "scenario": "G-recovery-from-real-runner-process-interruption",
+  "evidenceDir": "D:\\Work\\mental-empire-studio\\docs\\openmontage-integration\\evidence\\G-runner-interruption",
+  "userDataDir": "D:\\\\Work\\\\openmontage-acceptance\\\\profiles\\\\G-runner-interruption-grok2",
+  "openMontagePath": "D:\\Work\\OpenMontage",
+  "backlotUrl": "http://127.0.0.1:4750",
+  "stallTimeoutSec": 900,
+  "timeoutSec": 4200,
+  "retryLimit": 3,
+  "automaticMesFallback": true,
+  "expectedFinalState": "completed",
+  "postconditions": {
+    "minDurationSeconds": 6
+  },
+  "actions": {
+    "resumeExisting": true,
+    "autoApprove": true,
+    "interruptRunner": {
+      "times": 1
+    }
+  },
+  "request": {
+    "routing": {
+      "workflowMode": "openmontage",
+      "requestedRuntime": "remotion",
+      "requiresRealFootage": true,
+      "advancedStockSelection": false,
+      "editableComposition": false,
+      "kineticTypography": false,
+      "preferredPipeline": "hybrid"
+    },
+    "jobPackage": {
+      "schema": "mes.openmontage.job/v1",
+      "contractVersion": "mes.openmontage/v1",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "projectId": "mes-accept-g-interrupt-grok-20260725",
+      "createdAt": "2026-07-25T00:00:00Z",
+      "requestedBy": "mental-empire-studio",
+      "project": {
+        "title": "MES Acceptance G-INTERRUPT",
+        "description": "Create an 8 second narrated documentary montage at EXACTLY 24 fps using only real open motion footage from NASA and/or Wikimedia Commons. Use the supplied narration, trimmed to the 8 second timeline. Music is explicitly opted out, so the mix is narration only. Honour the supplied locked timeline: 24 fps and the two locked scene boundaries. Fill each locked gap scene with real motion footage. Do not use still-image substitutes, fixtures, generated video, Pexels, or Pixabay. No editable project export is requested for this run.\n\nThis run will have its runner process tree killed mid-production. On resume, continue from the last valid checkpoint: do not redo stages already recorded as completed, and do not create a parallel project."
+      },
+      "source": {
+        "narrationPath": "D:\\Work\\openmontage-acceptance\\inputs\\archive-remotion-narration.wav",
+        "scriptPath": "D:\\Work\\mental-empire-studio\\test\\acceptance\\openmontage\\archive-remotion-script.txt",
+        "language": "en",
+        "assets": []
+      },
+      "production": {
+        "workflowMode": "openmontage",
+        "pipeline": "hybrid",
+        "mediaControl": "fill",
+        "style": "restrained archival science documentary; real motion footage only",
+        "composition": {
+          "runtime": "remotion",
+          "authoringMode": "templated",
+          "editableOutput": false
+        },
+        "approvals": []
+      },
+      "timeline": {
+        "version": "1.0",
+        "fps": 24,
+        "durationSeconds": 8,
+        "crossfadeSeconds": 0.5,
+        "scenes": [
+          {
+            "id": "scene_01",
+            "order": 0,
+            "type": "gap",
+            "startSeconds": 0,
+            "endSeconds": 4,
+            "durationSeconds": 4,
+            "locked": true,
+            "motion": {
+              "preset": "cinematic",
+              "direction": "auto",
+              "amount": 0.12
+            }
+          },
+          {
+            "id": "scene_02",
+            "order": 1,
+            "type": "gap",
+            "startSeconds": 4,
+            "endSeconds": 8,
+            "durationSeconds": 4,
+            "locked": true,
+            "motion": {
+              "preset": "cinematic",
+              "direction": "auto",
+              "amount": 0.12
+            }
+          }
+        ]
+      },
+      "output": {
+        "directory": "D:\\Work\\openmontage-acceptance\\outputs\\G-runner-interruption",
+        "aspectRatio": "16:9",
+        "width": 1280,
+        "height": 720,
+        "format": "mp4",
+        "captions": false
+      },
+      "fallback": {
+        "enabled": true,
+        "engine": "mental-empire-studio",
+        "preserveOpenMontageProject": true
+      },
+      "metadata": {
+        "acceptance_scenarios": "G",
+        "duration_target_seconds": 8,
+        "locked_fps": 24,
+        "music_opt_out": true,
+        "required_open_sources": "NASA,Wikimedia Commons",
+        "cost_limit_usd": 0
+      }
+    }
+  },
+  "runner": "grok-build"
+}
