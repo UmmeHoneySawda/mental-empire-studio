@@ -1,8 +1,0 @@
-{
-  "scenario": "preflight-real-electron-health",
-  "evidenceDir": "D:\\Work\\mental-empire-studio\\docs\\openmontage-integration\\evidence\\preflight",
-  "userDataDir": "D:\\Work\\openmontage-acceptance\\profiles\\preflight",
-  "openMontagePath": "D:\\Work\\OpenMontage",
-  "backlotUrl": "http://127.0.0.1:4750",
-  "expectedHealthStatus": "ready"
-}

@@ -5,7 +5,6 @@ import { useData } from '../store/useData'
 import { useStore } from '../store/useStore'
 import { useTalkingPhotos } from '../store/useTalkingPhotos'
 import { describeTalkingPhotosCapabilities } from '@shared/talkingphotos'
-import { OpenMontageSettingsPanel } from '../features/openmontage/OpenMontageSettingsPanel'
 import type { AccentName, AppSettings, RenderCapabilities } from '@shared/types'
 
 const ACCENTS: AccentName[] = ['Amber', 'Violet', 'Emerald', 'Crimson']
@@ -17,13 +16,12 @@ const RENDER_ENGINES: Array<{ value: NonNullable<AppSettings['renderEngine']>; l
   { value: 'auto', label: 'Auto', note: 'Use the GPU engine when hardware H.264 encode is available, otherwise ffmpeg.' },
 ]
 
-type Section = 'looks' | 'output' | 'scraping' | 'integrations' | 'openmontage' | 'beta' | 'advanced' | 'danger'
+type Section = 'looks' | 'output' | 'scraping' | 'integrations' | 'beta' | 'advanced' | 'danger'
 const NAV: Array<{ id: Section; label: string }> = [
   { id: 'looks', label: 'Looks' },
   { id: 'output', label: 'Output & Quality' },
   { id: 'scraping', label: 'Scraping' },
   { id: 'integrations', label: 'Integrations' },
-  { id: 'openmontage', label: 'OpenMontage' },
   { id: 'beta', label: 'Video effects' },
   { id: 'advanced', label: 'Advanced' },
   { id: 'danger', label: 'Danger zone' },
@@ -109,11 +107,7 @@ export function Settings(): JSX.Element {
   const { quality, autoScrape, background } = settings
   const [caps, setCaps] = useState<RenderCapabilities | null>(null)
   const [checkingCaps, setCheckingCaps] = useState(true)
-  const [section, setSection] = useState<Section>(() => {
-    const requested = sessionStorage.getItem('me.settings.section')
-    sessionStorage.removeItem('me.settings.section')
-    return requested === 'openmontage' ? 'openmontage' : 'looks'
-  })
+  const [section, setSection] = useState<Section>('looks')
   const [savedAt, setSavedAt] = useState(0)
   const [confirmReset, setConfirmReset] = useState<'soft' | 'hard' | null>(null)
 
@@ -293,7 +287,6 @@ export function Settings(): JSX.Element {
         </Card>
       </div>
     ),
-    openmontage: <OpenMontageSettingsPanel />,
     beta: (
       <Card label="VIDEO EFFECTS">
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>

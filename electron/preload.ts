@@ -228,32 +228,6 @@ const api: NativeApi = {
     mergeProjects: (input: { itemIds: string[]; title: string; audioMediaId?: number }) => ipcRenderer.invoke('talkingphotos:mergeProjects', input)
   },
 
-  openMontage: {
-    health: (force?: boolean) => ipcRenderer.invoke('openmontage:health', !!force),
-    prepareAssisted: (jobPackage) => ipcRenderer.invoke('openmontage:prepareAssisted', jobPackage),
-    assistedHandoff: (jobId: string) => ipcRenderer.invoke('openmontage:assistedHandoff', jobId),
-    recoverAssisted: () => ipcRenderer.invoke('openmontage:recoverAssisted'),
-    planProduction: (input, forceHealth) => ipcRenderer.invoke('openmontage:planProduction', input, !!forceHealth),
-    startProduction: (plan) => ipcRenderer.invoke('openmontage:startProduction', plan),
-    startManaged: (jobPackage) => ipcRenderer.invoke('openmontage:startManaged', jobPackage),
-    pauseManaged: (jobId: string) => ipcRenderer.invoke('openmontage:pauseManaged', jobId),
-    resumeManaged: (jobId: string) => ipcRenderer.invoke('openmontage:resumeManaged', jobId),
-    cancelManaged: (jobId: string) => ipcRenderer.invoke('openmontage:cancelManaged', jobId),
-    approveManaged: (jobId, stage) => ipcRenderer.invoke('openmontage:approveManaged', jobId, stage),
-    reviseManaged: (jobId, instructions, stage) =>
-      ipcRenderer.invoke('openmontage:reviseManaged', jobId, instructions, stage),
-    retryManaged: (jobId: string) => ipcRenderer.invoke('openmontage:retryManaged', jobId),
-    recoverManaged: () => ipcRenderer.invoke('openmontage:recoverManaged'),
-    copyPrompt: (jobId: string, kind?: 'handoff' | 'recovery') => ipcRenderer.invoke('openmontage:copyPrompt', jobId, kind),
-    openProjectFolder: (jobId: string) => ipcRenderer.invoke('openmontage:openProjectFolder', jobId),
-    openBacklot: (jobId: string) => ipcRenderer.invoke('openmontage:openBacklot', jobId),
-    jobs: () => ipcRenderer.invoke('openmontage:jobs'),
-    job: (id: string) => ipcRenderer.invoke('openmontage:job', id),
-    events: (jobId: string, limit?: number) => ipcRenderer.invoke('openmontage:events', jobId, limit),
-    outputs: (jobId: string) => ipcRenderer.invoke('openmontage:outputs', jobId),
-    backlotProject: (projectId: string) => ipcRenderer.invoke('openmontage:backlotProject', projectId)
-  },
-
   chooseFolder: () => ipcRenderer.invoke('fs:chooseFolder'),
 
   // Master library: dry-run the reorganize-existing migration, then execute it.

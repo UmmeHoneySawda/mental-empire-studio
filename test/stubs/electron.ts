@@ -14,12 +14,7 @@ export class BrowserWindow {
   static getAllWindows(): unknown[] { return [] }
 }
 export const ipcMain = { handle: (): void => {}, on: (): void => {} }
-export const shell = {
-  openPath: (): Promise<string> => Promise.resolve(''),
-  openExternal: (): Promise<void> => Promise.resolve(),
-  showItemInFolder: (): void => {}
-}
-export const clipboard = { writeText: (): void => {} }
+export const shell = { openPath: (): void => {}, showItemInFolder: (): void => {} }
 export const dialog = {}
 export const safeStorage = {
   isEncryptionAvailable: (): boolean => false,

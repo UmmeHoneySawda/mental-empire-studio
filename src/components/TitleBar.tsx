@@ -11,7 +11,6 @@ const LABELS: Record<ScreenKey, string> = {
   sources: 'Sources',
   download: 'Download',
   compose: 'Compose',
-  openmontage: 'OpenMontage',
   'talking-video': 'Talking Video',
   thumb: 'Thumbnails',
   render: 'Render Queue',

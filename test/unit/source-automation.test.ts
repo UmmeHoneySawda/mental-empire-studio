@@ -2,9 +2,18 @@ import fs from 'node:fs'
 import os from 'node:os'
 import path from 'node:path'
 import Database from 'better-sqlite3'
-import { afterEach, expect, it } from 'vitest'
+import { afterEach, describe, expect, it } from 'vitest'
 import { closeDatabase, initDatabase } from '../../electron/db'
-import { describeSqlite } from '../helpers/sqlite'
+
+function sqliteBindingReady(): boolean {
+  try {
+    const db = new Database(':memory:')
+    db.close()
+    return true
+  } catch {
+    return false
+  }
+}
 
 function tempDbPath(): string {
   const dir = fs.mkdtempSync(path.join(os.tmpdir(), 'me-source-auto-'))
@@ -14,6 +23,8 @@ function tempDbPath(): string {
 afterEach(() => {
   closeDatabase()
 })
+
+const describeSqlite = sqliteBindingReady() ? describe : describe.skip
 
 describeSqlite('source-owned automation storage', () => {
   it('persists source automation patches on source_channels', () => {

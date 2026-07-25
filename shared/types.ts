@@ -18,19 +18,6 @@ import type {
   TalkingPhotosRemoteMedia,
   TalkingPhotosScriptCreateInput
 } from './talkingphotos'
-import type {
-  OpenMontageBacklotSnapshot,
-  OpenMontageAssistedHandoff,
-  OpenMontageHealthReport,
-  OpenMontageJobEvent,
-  OpenMontageJobOutput,
-  OpenMontageJobPackage,
-  OpenMontageJobRecord,
-  OpenMontageProductionPlan,
-  OpenMontageProductionRequest,
-  OpenMontageProductionStart,
-  OpenMontageSettings
-} from './openmontage'
 
 export type AccentName = 'Amber' | 'Violet' | 'Emerald' | 'Crimson'
 
@@ -42,7 +29,6 @@ export type ScreenKey =
   | 'sources'
   | 'download'
   | 'compose'
-  | 'openmontage'
   | 'thumb'
   | 'render'
   | 'publish'
@@ -1081,7 +1067,7 @@ export interface AppSettings {
   /** duplicate-download behavior for source videos already uploaded to owned channels */
   dedup: { allowReupload: boolean }
   /** third-party cloud provider connections, gated off by default until each is ready */
-  integrations: { talkingPhotos: { enabled: boolean }; openMontage: OpenMontageSettings }
+  integrations: { talkingPhotos: { enabled: boolean } }
   /** global Sentry kill switch — crash reports, perf traces, and resource sampling.
    *  Flipping this off fully disables telemetry app-wide, live, no restart needed. */
   telemetryEnabled: boolean
@@ -1124,26 +1110,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   features: { workflowP1: true, videoEditorV2: true, thumbEditorV2: true },
   detection: { auto: true, confirmBand: [0.6, 0.82] },
   dedup: { allowReupload: false },
-  integrations: {
-    talkingPhotos: { enabled: false },
-    openMontage: {
-      enabled: true,
-      repositoryPath: '',
-      environmentFile: '',
-      pythonExecutable: 'python',
-      backlotUrl: 'http://127.0.0.1:5150',
-      mode: 'assisted',
-      runner: 'none',
-      runnerExecutable: '',
-      runnerArguments: [],
-      assistedFallback: true,
-      retryLimit: 3,
-      stallTimeoutSec: 300,
-      automaticMesFallback: true,
-      preserveFailedProjects: true,
-      sendSanitizedErrorsToSentry: true
-    }
-  },
+  integrations: { talkingPhotos: { enabled: false } },
   telemetryEnabled: true
 }
 
@@ -1454,38 +1421,6 @@ export interface NativeApi {
     deleteProject(remoteProjectId: string): Promise<void>
     /** Merge selected remote projects (`POST /project/merge_videos`). */
     mergeProjects(input: { itemIds: string[]; title: string; audioMediaId?: number }): Promise<ProviderProjectSummary>
-  }
-  /** External OpenMontage installation health and persisted MES integration state. */
-  openMontage: {
-    health(force?: boolean): Promise<OpenMontageHealthReport>
-    prepareAssisted(jobPackage: OpenMontageJobPackage): Promise<OpenMontageAssistedHandoff>
-    assistedHandoff(jobId: string): Promise<OpenMontageAssistedHandoff>
-    recoverAssisted(): Promise<OpenMontageAssistedHandoff[]>
-    planProduction(
-      input: OpenMontageProductionRequest,
-      forceHealth?: boolean
-    ): Promise<OpenMontageProductionPlan>
-    startProduction(plan: OpenMontageProductionPlan): Promise<OpenMontageProductionStart>
-    startManaged(jobPackage: OpenMontageJobPackage): Promise<OpenMontageJobRecord>
-    pauseManaged(jobId: string): Promise<OpenMontageJobRecord>
-    resumeManaged(jobId: string): Promise<OpenMontageJobRecord>
-    cancelManaged(jobId: string): Promise<OpenMontageJobRecord>
-    approveManaged(jobId: string, stage?: OpenMontageJobRecord['currentStage']): Promise<OpenMontageJobRecord>
-    reviseManaged(
-      jobId: string,
-      instructions: string,
-      stage?: OpenMontageJobRecord['currentStage']
-    ): Promise<OpenMontageJobRecord>
-    retryManaged(jobId: string): Promise<OpenMontageJobRecord>
-    recoverManaged(): Promise<OpenMontageJobRecord[]>
-    copyPrompt(jobId: string, kind?: 'handoff' | 'recovery'): Promise<void>
-    openProjectFolder(jobId: string): Promise<void>
-    openBacklot(jobId: string): Promise<string>
-    jobs(): Promise<OpenMontageJobRecord[]>
-    job(id: string): Promise<OpenMontageJobRecord | null>
-    events(jobId: string, limit?: number): Promise<OpenMontageJobEvent[]>
-    outputs(jobId: string): Promise<OpenMontageJobOutput[]>
-    backlotProject(projectId: string): Promise<OpenMontageBacklotSnapshot>
   }
   /** pick an output folder via the OS dialog; returns the chosen path or '' */
   chooseFolder(): Promise<string>

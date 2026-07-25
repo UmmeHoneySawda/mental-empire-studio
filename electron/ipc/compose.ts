@@ -448,4 +448,4 @@ export function registerComposeIpc(): void {
 }
 
 // Exported for the headless M4 smoke harness.
-export { createProject, defaultProject, setImages, sendToRender, runTranscribe }
+export { createProject, setImages, sendToRender, runTranscribe }

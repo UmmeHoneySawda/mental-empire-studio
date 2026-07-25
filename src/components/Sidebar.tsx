@@ -27,7 +27,6 @@ const CHANNELS: NavDef[] = [
 
 const CREATE: NavDef[] = [
   { key: 'compose', label: 'Compose', icon: icon(<><path d="M12 3l8 4-8 4-8-4z" /><path d="M4 12l8 4 8-4" /><path d="M4 17l8 4 8-4" /></>) },
-  { key: 'openmontage', label: 'OpenMontage', icon: icon(<><path d="M4 5h16v14H4z" /><path d="M8 5v14M16 5v14M4 9h4M16 9h4M4 15h4M16 15h4" /><path d="M11 9l4 3-4 3z" /></>) },
   { key: 'talking-video', label: 'Talking Video', icon: icon(<><circle cx="12" cy="9" r="4" /><path d="M5 20c0-3.9 3.1-7 7-7s7 3.1 7 7" /></>) },
   { key: 'thumb', label: 'Thumbnails', icon: icon(<><rect x="3" y="5" width="18" height="14" rx="2.5" /><path d="M8 11h8" /><path d="M8 15h5" /></>) }
 ]
