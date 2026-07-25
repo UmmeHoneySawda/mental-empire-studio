@@ -1,6 +1,8 @@
 import { existsSync } from 'node:fs'
 import { createRequire } from 'node:module'
+import { homedir } from 'node:os'
 import path from 'node:path'
+import { spawnSync } from 'node:child_process'
 import type { OpenMontageSettings } from '../../../shared/openmontage'
 import { ffprobePath } from '../bin'
 
@@ -126,6 +128,55 @@ export function resolveCodexRunnerScript(): string {
   return candidate
 }
 
+export function resolveGrokRunnerScript(): string {
+  const packaged = typeof process.resourcesPath === 'string'
+    ? path.join(process.resourcesPath, 'openmontage-runner', 'grok-runner.mjs')
+    : ''
+  const candidate = packaged && existsSync(packaged)
+    ? packaged
+    : path.resolve(process.cwd(), 'resources', 'openmontage-runner', 'grok-runner.mjs')
+  if (!existsSync(candidate)) throw new Error('MES Grok OpenMontage runner script is missing.')
+  return candidate
+}
+
+/**
+ * Grok Build is a system-installed CLI (not an npm-pinned dependency). Probe
+ * common install locations and PATH rather than assuming a package layout.
+ */
+export function resolveSystemGrokExecutable(): string {
+  const fromEnv = process.env.GROK_EXECUTABLE?.trim()
+  if (fromEnv && existsSync(fromEnv)) return fromEnv
+
+  const homeCandidates = [
+    path.join(homedir(), '.grok', 'bin', process.platform === 'win32' ? 'grok.exe' : 'grok'),
+    path.join(homedir(), '.local', 'bin', 'grok')
+  ]
+  for (const candidate of homeCandidates) {
+    if (existsSync(candidate)) return candidate
+  }
+
+  try {
+    if (process.platform === 'win32') {
+      const result = spawnSync('where.exe', ['grok'], { encoding: 'utf8', windowsHide: true, timeout: 10_000 })
+      const first = String(result.stdout || '')
+        .split(/\r?\n/)
+        .map((line) => line.trim())
+        .find((line) => line.length > 0 && existsSync(line))
+      if (first) return first
+    } else {
+      const result = spawnSync('which', ['grok'], { encoding: 'utf8', windowsHide: true, timeout: 10_000 })
+      const first = String(result.stdout || '').trim().split(/\r?\n/)[0]
+      if (first && existsSync(first)) return first
+    }
+  } catch {
+    // fall through
+  }
+
+  throw new Error(
+    'Grok Build CLI was not found. Install the Grok CLI or set integrations.openMontage.runnerExecutable / GROK_EXECUTABLE.'
+  )
+}
+
 export function resolveOpenMontageRunnerLaunch(settings: OpenMontageSettings): OpenMontageRunnerLaunch {
   if (settings.runner === 'codex-cli') {
     const codexExecutable = settings.runnerExecutable.trim() || resolveBundledCodexExecutable()
@@ -161,6 +212,28 @@ export function resolveOpenMontageRunnerLaunch(settings: OpenMontageSettings): O
         '--ffprobe-executable',
         ffprobePath(),
         ...settings.runnerArguments.flatMap((argument) => ['--claude-argument', argument]),
+        '--stall-timeout-sec',
+        String(Math.max(30, settings.stallTimeoutSec))
+      ],
+      fixedEnvironment: {
+        ELECTRON_RUN_AS_NODE: '1',
+        PYTHONIOENCODING: 'utf-8'
+      },
+      kind: settings.runner
+    }
+  }
+  if (settings.runner === 'grok-build') {
+    const grokExecutable = settings.runnerExecutable.trim() || resolveSystemGrokExecutable()
+    if (!existsSync(grokExecutable)) throw new Error('Configured Grok Build executable was not found.')
+    return {
+      executable: process.execPath,
+      args: [
+        resolveGrokRunnerScript(),
+        '--grok-executable',
+        grokExecutable,
+        '--ffprobe-executable',
+        ffprobePath(),
+        ...settings.runnerArguments.flatMap((argument) => ['--grok-argument', argument]),
         '--stall-timeout-sec',
         String(Math.max(30, settings.stallTimeoutSec))
       ],

@@ -1,0 +1,6378 @@
+{
+  "schema": "mes.openmontage.acceptance/v1",
+  "scenario": "G-recovery-from-real-runner-process-interruption",
+  "startedAt": "2026-07-25T08:37:43.331Z",
+  "specPath": "D:\\Work\\openmontage-acceptance\\specs\\G-runner-interruption.json",
+  "commands": [
+    "npm run build",
+    "node scripts/openmontage-acceptance.mjs --spec \"D:\\Work\\openmontage-acceptance\\specs\\G-runner-interruption.json\""
+  ],
+  "applicationBoundary": "Electron renderer window.api.openMontage -> IPC -> main-process integration service",
+  "actions": [
+    {
+      "action": "approval",
+      "stage": "research",
+      "resumedState": "running"
+    },
+    {
+      "action": "interrupt_runner",
+      "attempt": 1,
+      "killResult": {
+        "killed": true,
+        "status": 0,
+        "output": "SUCCESS: The process with PID 1408 (child process of PID 1564) has been terminated.\r\nSUCCESS: The process with PID 14424 (child process of PID 18936) has been terminated.\r\nSUCCESS: The process with PID 10812 (child process of PID 12348) has been terminated.\r\nSUCCESS: The process with PID 19152 (chil"
+      },
+      "before": {
+        "state": "running",
+        "stage": "research",
+        "progress": 100,
+        "checkpoint": "2026-07-25T08:43:23.247493+00:00",
+        "runnerSessionId": "019f986d-5979-7441-b2b8-03de16098de4",
+        "runnerPid": 14372
+      },
+      "after": {
+        "state": "running",
+        "stage": "research",
+        "progress": 100,
+        "checkpoint": "2026-07-25T08:43:23.247493+00:00",
+        "runnerSessionId": "019f986d-5979-7441-b2b8-03de16098de4",
+        "runnerPid": 9280
+      },
+      "checkpointPreserved": true,
+      "orphanProcesses": 0
+    },
+    {
+      "action": "approval",
+      "stage": "script",
+      "resumedState": "running"
+    },
+    {
+      "action": "approval",
+      "stage": "scene_plan",
+      "resumedState": "running"
+    },
+    {
+      "action": "approval",
+      "stage": "assets",
+      "resumedState": "running"
+    },
+    {
+      "action": "approval",
+      "stage": "export",
+      "resumedState": "running"
+    }
+  ],
+  "screenshots": [
+    "D:\\Work\\mental-empire-studio\\docs\\openmontage-integration\\evidence\\G-runner-interruption\\01-dashboard.png",
+    "D:\\Work\\mental-empire-studio\\docs\\openmontage-integration\\evidence\\G-runner-interruption\\02-approval.png",
+    "D:\\Work\\mental-empire-studio\\docs\\openmontage-integration\\evidence\\G-runner-interruption\\03-final.png"
+  ],
+  "priorRun": {
+    "schema": "mes.openmontage.acceptance/v1",
+    "scenario": "G-recovery-from-real-runner-process-interruption",
+    "startedAt": "2026-07-25T08:32:08.788Z",
+    "specPath": "D:\\Work\\openmontage-acceptance\\specs\\G-runner-interruption.json",
+    "commands": [
+      "npm run build",
+      "node scripts/openmontage-acceptance.mjs --spec \"D:\\Work\\openmontage-acceptance\\specs\\G-runner-interruption.json\""
+    ],
+    "applicationBoundary": "Electron renderer window.api.openMontage -> IPC -> main-process integration service",
+    "actions": [],
+    "screenshots": [
+      "D:\\Work\\mental-empire-studio\\docs\\openmontage-integration\\evidence\\G-runner-interruption\\01-dashboard.png"
+    ],
+    "health": {
+      "contractVersion": "mes.openmontage/v1",
+      "status": "ready",
+      "installationPath": "D:\\Work\\OpenMontage",
+      "installedRevision": "0af32ce5e1e830c33992af1f9179dcdcd536549b",
+      "compatibility": "compatible",
+      "mode": "managed",
+      "components": [
+        {
+          "name": "installation",
+          "status": "available",
+          "checkedAt": "2026-07-25T08:32:10.650Z",
+          "detail": "Required integration surfaces are present.",
+          "version": "0af32ce5e1e8"
+        },
+        {
+          "name": "python",
+          "status": "available",
+          "checkedAt": "2026-07-25T08:32:10.650Z",
+          "detail": "Python environment is callable.",
+          "version": "Python 3.11.9"
+        },
+        {
+          "name": "ffmpeg",
+          "status": "available",
+          "checkedAt": "2026-07-25T08:32:10.650Z"
+        },
+        {
+          "name": "remotion",
+          "status": "available",
+          "checkedAt": "2026-07-25T08:32:10.650Z"
+        },
+        {
+          "name": "hyperframes",
+          "status": "available",
+          "checkedAt": "2026-07-25T08:32:10.650Z"
+        },
+        {
+          "name": "backlot",
+          "status": "available",
+          "checkedAt": "2026-07-25T08:32:10.650Z",
+          "detail": "Backlot responded."
+        },
+        {
+          "name": "agent_runner",
+          "status": "available",
+          "checkedAt": "2026-07-25T08:32:10.650Z",
+          "detail": "Managed JSON-lines protocol is available.",
+          "version": "1.0.0 (grok 0.2.112 (9bbd559437) [stable])"
+        }
+      ],
+      "providers": [
+        {
+          "id": "analysis:ffmpeg",
+          "label": "ffmpeg",
+          "category": "analysis",
+          "status": "available",
+          "configured": true
+        },
+        {
+          "id": "analysis:ffprobe",
+          "label": "ffprobe",
+          "category": "analysis",
+          "status": "available",
+          "configured": true
+        },
+        {
+          "id": "analysis:local",
+          "label": "local",
+          "category": "analysis",
+          "status": "available",
+          "configured": true
+        },
+        {
+          "id": "analysis:multi",
+          "label": "multi",
+          "category": "analysis",
+          "status": "available",
+          "configured": true
+        },
+        {
+          "id": "analysis:whisperx",
+          "label": "whisperx",
+          "category": "analysis",
+          "status": "available",
+          "configured": true
+        },
+        {
+          "id": "analysis:azure",
+          "label": "azure",
+          "category": "analysis",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "analysis:dashscope",
+          "label": "dashscope",
+          "category": "analysis",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "analysis:mediapipe",
+          "label": "mediapipe",
+          "category": "analysis",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "analysis:transformers",
+          "label": "transformers",
+          "category": "analysis",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "analysis:youtube-transcript-api",
+          "label": "youtube-transcript-api",
+          "category": "analysis",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "audio_processing:ffmpeg",
+          "label": "ffmpeg",
+          "category": "audio_processing",
+          "status": "available",
+          "configured": true
+        },
+        {
+          "id": "avatar:kling_official",
+          "label": "kling_official",
+          "category": "avatar",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "avatar:sadtalker",
+          "label": "sadtalker",
+          "category": "avatar",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "avatar:wav2lip",
+          "label": "wav2lip",
+          "category": "avatar",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "character_animation:openmontage",
+          "label": "openmontage",
+          "category": "character_animation",
+          "status": "available",
+          "configured": true
+        },
+        {
+          "id": "clip_acquisition:openmontage",
+          "label": "openmontage",
+          "category": "clip_acquisition",
+          "status": "available",
+          "configured": true
+        },
+        {
+          "id": "clip_retrieval:openmontage",
+          "label": "openmontage",
+          "category": "clip_retrieval",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "corpus_population:openmontage",
+          "label": "openmontage",
+          "category": "corpus_population",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "enhancement:ffmpeg",
+          "label": "ffmpeg",
+          "category": "enhancement",
+          "status": "available",
+          "configured": true
+        },
+        {
+          "id": "enhancement:codeformer",
+          "label": "codeformer",
+          "category": "enhancement",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "enhancement:mediapipe",
+          "label": "mediapipe",
+          "category": "enhancement",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "enhancement:realesrgan",
+          "label": "realesrgan",
+          "category": "enhancement",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "enhancement:rembg",
+          "label": "rembg",
+          "category": "enhancement",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "graphics:mermaid",
+          "label": "mermaid",
+          "category": "graphics",
+          "status": "available",
+          "configured": true
+        },
+        {
+          "id": "graphics:pygments",
+          "label": "pygments",
+          "category": "graphics",
+          "status": "available",
+          "configured": true
+        },
+        {
+          "id": "graphics:manim",
+          "label": "manim",
+          "category": "graphics",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "image_generation:pexels",
+          "label": "pexels",
+          "category": "image_generation",
+          "status": "available",
+          "configured": true
+        },
+        {
+          "id": "image_generation:comfyui",
+          "label": "comfyui",
+          "category": "image_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "image_generation:dashscope",
+          "label": "dashscope",
+          "category": "image_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "image_generation:flux",
+          "label": "flux",
+          "category": "image_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "image_generation:google_imagen",
+          "label": "google_imagen",
+          "category": "image_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "image_generation:grok",
+          "label": "grok",
+          "category": "image_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "image_generation:kling_official",
+          "label": "kling_official",
+          "category": "image_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "image_generation:local_diffusion",
+          "label": "local_diffusion",
+          "category": "image_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "image_generation:multi",
+          "label": "multi",
+          "category": "image_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "image_generation:openai",
+          "label": "openai",
+          "category": "image_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "image_generation:pixabay",
+          "label": "pixabay",
+          "category": "image_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "image_generation:recraft",
+          "label": "recraft",
+          "category": "image_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "music_generation:elevenlabs",
+          "label": "elevenlabs",
+          "category": "music_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "music_generation:google",
+          "label": "google",
+          "category": "music_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "music_generation:suno",
+          "label": "suno",
+          "category": "music_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "music_library:local",
+          "label": "local",
+          "category": "music_library",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "music_search:pixabay_music",
+          "label": "pixabay_music",
+          "category": "music_search",
+          "status": "available",
+          "configured": true
+        },
+        {
+          "id": "music_search:freesound",
+          "label": "freesound",
+          "category": "music_search",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "publish:local",
+          "label": "local",
+          "category": "publish",
+          "status": "available",
+          "configured": true
+        },
+        {
+          "id": "screen_capture:cap",
+          "label": "cap",
+          "category": "screen_capture",
+          "status": "available",
+          "configured": true
+        },
+        {
+          "id": "screen_capture:ffmpeg",
+          "label": "ffmpeg",
+          "category": "screen_capture",
+          "status": "available",
+          "configured": true
+        },
+        {
+          "id": "source_ingest:yt-dlp",
+          "label": "yt-dlp",
+          "category": "source_ingest",
+          "status": "available",
+          "configured": true
+        },
+        {
+          "id": "subtitle:openmontage",
+          "label": "openmontage",
+          "category": "subtitle",
+          "status": "available",
+          "configured": true
+        },
+        {
+          "id": "subtitle:remotion",
+          "label": "remotion",
+          "category": "subtitle",
+          "status": "available",
+          "configured": true
+        },
+        {
+          "id": "tts:dashscope",
+          "label": "dashscope",
+          "category": "tts",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "tts:doubao",
+          "label": "doubao",
+          "category": "tts",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "tts:elevenlabs",
+          "label": "elevenlabs",
+          "category": "tts",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "tts:google_tts",
+          "label": "google_tts",
+          "category": "tts",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "tts:kling_official",
+          "label": "kling_official",
+          "category": "tts",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "tts:openai",
+          "label": "openai",
+          "category": "tts",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "tts:piper",
+          "label": "piper",
+          "category": "tts",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "video_generation:pexels",
+          "label": "pexels",
+          "category": "video_generation",
+          "status": "available",
+          "configured": true
+        },
+        {
+          "id": "video_generation:cogvideo",
+          "label": "cogvideo",
+          "category": "video_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "video_generation:comfyui",
+          "label": "comfyui",
+          "category": "video_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "video_generation:gemini_omni",
+          "label": "gemini_omni",
+          "category": "video_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "video_generation:grok",
+          "label": "grok",
+          "category": "video_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "video_generation:heygen",
+          "label": "heygen",
+          "category": "video_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "video_generation:higgsfield",
+          "label": "higgsfield",
+          "category": "video_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "video_generation:hunyuan",
+          "label": "hunyuan",
+          "category": "video_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "video_generation:kling",
+          "label": "kling",
+          "category": "video_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "video_generation:kling_official",
+          "label": "kling_official",
+          "category": "video_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "video_generation:ltx",
+          "label": "ltx",
+          "category": "video_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "video_generation:ltx-modal",
+          "label": "ltx-modal",
+          "category": "video_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "video_generation:minimax",
+          "label": "minimax",
+          "category": "video_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "video_generation:openai",
+          "label": "openai",
+          "category": "video_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "video_generation:pixabay",
+          "label": "pixabay",
+          "category": "video_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "video_generation:runway",
+          "label": "runway",
+          "category": "video_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "video_generation:seedance",
+          "label": "seedance",
+          "category": "video_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "video_generation:veo",
+          "label": "veo",
+          "category": "video_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "video_generation:volcengine",
+          "label": "volcengine",
+          "category": "video_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "video_generation:wan",
+          "label": "wan",
+          "category": "video_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "video_post:ffmpeg",
+          "label": "ffmpeg",
+          "category": "video_post",
+          "status": "available",
+          "configured": true
+        },
+        {
+          "id": "video_post:hyperframes",
+          "label": "hyperframes",
+          "category": "video_post",
+          "status": "available",
+          "configured": true
+        }
+      ],
+      "environment": {
+        "filePath": "D:\\Work\\OpenMontage\\.env",
+        "status": "not-found",
+        "explicit": false,
+        "loadedVariableCount": 0,
+        "blockedVariableNames": [],
+        "detail": "No repository .env file was found; inherited process variables will be used."
+      },
+      "credentials": [
+        {
+          "provider": "ffmpeg",
+          "configured": true,
+          "source": "openmontage-environment"
+        },
+        {
+          "provider": "ffprobe",
+          "configured": true,
+          "source": "openmontage-environment"
+        },
+        {
+          "provider": "local",
+          "configured": true,
+          "source": "openmontage-environment"
+        },
+        {
+          "provider": "multi",
+          "configured": true,
+          "source": "openmontage-environment"
+        },
+        {
+          "provider": "whisperx",
+          "configured": true,
+          "source": "openmontage-environment"
+        },
+        {
+          "provider": "azure",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "dashscope",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "mediapipe",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "transformers",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "youtube-transcript-api",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "kling_official",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "sadtalker",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "wav2lip",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "openmontage",
+          "configured": true,
+          "source": "openmontage-environment"
+        },
+        {
+          "provider": "codeformer",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "realesrgan",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "rembg",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "mermaid",
+          "configured": true,
+          "source": "openmontage-environment"
+        },
+        {
+          "provider": "pygments",
+          "configured": true,
+          "source": "openmontage-environment"
+        },
+        {
+          "provider": "manim",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "pexels",
+          "configured": true,
+          "source": "openmontage-environment"
+        },
+        {
+          "provider": "comfyui",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "flux",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "google_imagen",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "grok",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "local_diffusion",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "openai",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "pixabay",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "recraft",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "elevenlabs",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "google",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "suno",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "pixabay_music",
+          "configured": true,
+          "source": "openmontage-environment"
+        },
+        {
+          "provider": "freesound",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "cap",
+          "configured": true,
+          "source": "openmontage-environment"
+        },
+        {
+          "provider": "yt-dlp",
+          "configured": true,
+          "source": "openmontage-environment"
+        },
+        {
+          "provider": "remotion",
+          "configured": true,
+          "source": "openmontage-environment"
+        },
+        {
+          "provider": "doubao",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "google_tts",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "piper",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "cogvideo",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "gemini_omni",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "heygen",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "higgsfield",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "hunyuan",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "kling",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "ltx",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "ltx-modal",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "minimax",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "runway",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "seedance",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "veo",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "volcengine",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "wan",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "hyperframes",
+          "configured": true,
+          "source": "openmontage-environment"
+        }
+      ],
+      "checkedAt": "2026-07-25T08:32:10.650Z",
+      "warnings": [
+        "comfyui_video: The top-level resource_profile is a ComfyUI provider floor, not a promise that every workflow fits 8GB VRAM. Bundled WAN 2.2 14B FP8 workflows recommend 16GB VRAM; custom low-VRAM workflows can target 8GB-12GB depending on model, quantization, resolution, and frame count."
+      ]
+    },
+    "plan": {
+      "routing": {
+        "workflowMode": "openmontage",
+        "requestedRuntime": "remotion",
+        "requiresRealFootage": true,
+        "advancedStockSelection": false,
+        "editableComposition": false,
+        "kineticTypography": false,
+        "preferredPipeline": "hybrid"
+      },
+      "decision": {
+        "engine": "openmontage",
+        "startable": false,
+        "pipeline": "hybrid",
+        "runtime": "remotion",
+        "authoringMode": "templated",
+        "fallbackEngine": "mental-empire-studio",
+        "reasons": [
+          "OpenMontage was explicitly selected.",
+          "Real footage was requested.",
+          "The explicitly requested remotion runtime is available."
+        ],
+        "warnings": [
+          "comfyui_video: The top-level resource_profile is a ComfyUI provider floor, not a promise that every workflow fits 8GB VRAM. Bundled WAN 2.2 14B FP8 workflows recommend 16GB VRAM; custom low-VRAM workflows can target 8GB-12GB depending on model, quantization, resolution, and frame count.",
+          "The grok-build runner needs authentication before it can run a production.",
+          "OpenMontage health is misconfigured.",
+          "Managed mode requires an available agent runner."
+        ]
+      },
+      "health": {
+        "contractVersion": "mes.openmontage/v1",
+        "status": "misconfigured",
+        "installationPath": "D:\\Work\\OpenMontage",
+        "installedRevision": "0af32ce5e1e830c33992af1f9179dcdcd536549b",
+        "compatibility": "compatible",
+        "mode": "managed",
+        "components": [
+          {
+            "name": "installation",
+            "status": "available",
+            "checkedAt": "2026-07-25T08:33:18.084Z",
+            "detail": "Required integration surfaces are present.",
+            "version": "0af32ce5e1e8"
+          },
+          {
+            "name": "python",
+            "status": "available",
+            "checkedAt": "2026-07-25T08:33:18.084Z",
+            "detail": "Python environment is callable.",
+            "version": "Python 3.11.9"
+          },
+          {
+            "name": "ffmpeg",
+            "status": "available",
+            "checkedAt": "2026-07-25T08:33:18.084Z"
+          },
+          {
+            "name": "remotion",
+            "status": "available",
+            "checkedAt": "2026-07-25T08:33:18.084Z"
+          },
+          {
+            "name": "hyperframes",
+            "status": "available",
+            "checkedAt": "2026-07-25T08:33:18.084Z"
+          },
+          {
+            "name": "backlot",
+            "status": "available",
+            "checkedAt": "2026-07-25T08:33:18.084Z",
+            "detail": "Backlot responded."
+          },
+          {
+            "name": "agent_runner",
+            "status": "limited",
+            "checkedAt": "2026-07-25T08:33:18.084Z",
+            "detail": "The grok-build runner is installed but not usable: GROK_USAGE_LIMIT_REACHED",
+            "version": "1.0.0 (grok 0.2.112 (9bbd559437) [stable])"
+          }
+        ],
+        "providers": [
+          {
+            "id": "analysis:ffmpeg",
+            "label": "ffmpeg",
+            "category": "analysis",
+            "status": "available",
+            "configured": true
+          },
+          {
+            "id": "analysis:ffprobe",
+            "label": "ffprobe",
+            "category": "analysis",
+            "status": "available",
+            "configured": true
+          },
+          {
+            "id": "analysis:local",
+            "label": "local",
+            "category": "analysis",
+            "status": "available",
+            "configured": true
+          },
+          {
+            "id": "analysis:multi",
+            "label": "multi",
+            "category": "analysis",
+            "status": "available",
+            "configured": true
+          },
+          {
+            "id": "analysis:whisperx",
+            "label": "whisperx",
+            "category": "analysis",
+            "status": "available",
+            "configured": true
+          },
+          {
+            "id": "analysis:azure",
+            "label": "azure",
+            "category": "analysis",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "analysis:dashscope",
+            "label": "dashscope",
+            "category": "analysis",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "analysis:mediapipe",
+            "label": "mediapipe",
+            "category": "analysis",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "analysis:transformers",
+            "label": "transformers",
+            "category": "analysis",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "analysis:youtube-transcript-api",
+            "label": "youtube-transcript-api",
+            "category": "analysis",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "audio_processing:ffmpeg",
+            "label": "ffmpeg",
+            "category": "audio_processing",
+            "status": "available",
+            "configured": true
+          },
+          {
+            "id": "avatar:kling_official",
+            "label": "kling_official",
+            "category": "avatar",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "avatar:sadtalker",
+            "label": "sadtalker",
+            "category": "avatar",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "avatar:wav2lip",
+            "label": "wav2lip",
+            "category": "avatar",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "character_animation:openmontage",
+            "label": "openmontage",
+            "category": "character_animation",
+            "status": "available",
+            "configured": true
+          },
+          {
+            "id": "clip_acquisition:openmontage",
+            "label": "openmontage",
+            "category": "clip_acquisition",
+            "status": "available",
+            "configured": true
+          },
+          {
+            "id": "clip_retrieval:openmontage",
+            "label": "openmontage",
+            "category": "clip_retrieval",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "corpus_population:openmontage",
+            "label": "openmontage",
+            "category": "corpus_population",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "enhancement:ffmpeg",
+            "label": "ffmpeg",
+            "category": "enhancement",
+            "status": "available",
+            "configured": true
+          },
+          {
+            "id": "enhancement:codeformer",
+            "label": "codeformer",
+            "category": "enhancement",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "enhancement:mediapipe",
+            "label": "mediapipe",
+            "category": "enhancement",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "enhancement:realesrgan",
+            "label": "realesrgan",
+            "category": "enhancement",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "enhancement:rembg",
+            "label": "rembg",
+            "category": "enhancement",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "graphics:mermaid",
+            "label": "mermaid",
+            "category": "graphics",
+            "status": "available",
+            "configured": true
+          },
+          {
+            "id": "graphics:pygments",
+            "label": "pygments",
+            "category": "graphics",
+            "status": "available",
+            "configured": true
+          },
+          {
+            "id": "graphics:manim",
+            "label": "manim",
+            "category": "graphics",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "image_generation:pexels",
+            "label": "pexels",
+            "category": "image_generation",
+            "status": "available",
+            "configured": true
+          },
+          {
+            "id": "image_generation:comfyui",
+            "label": "comfyui",
+            "category": "image_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "image_generation:dashscope",
+            "label": "dashscope",
+            "category": "image_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "image_generation:flux",
+            "label": "flux",
+            "category": "image_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "image_generation:google_imagen",
+            "label": "google_imagen",
+            "category": "image_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "image_generation:grok",
+            "label": "grok",
+            "category": "image_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "image_generation:kling_official",
+            "label": "kling_official",
+            "category": "image_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "image_generation:local_diffusion",
+            "label": "local_diffusion",
+            "category": "image_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "image_generation:multi",
+            "label": "multi",
+            "category": "image_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "image_generation:openai",
+            "label": "openai",
+            "category": "image_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "image_generation:pixabay",
+            "label": "pixabay",
+            "category": "image_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "image_generation:recraft",
+            "label": "recraft",
+            "category": "image_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "music_generation:elevenlabs",
+            "label": "elevenlabs",
+            "category": "music_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "music_generation:google",
+            "label": "google",
+            "category": "music_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "music_generation:suno",
+            "label": "suno",
+            "category": "music_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "music_library:local",
+            "label": "local",
+            "category": "music_library",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "music_search:pixabay_music",
+            "label": "pixabay_music",
+            "category": "music_search",
+            "status": "available",
+            "configured": true
+          },
+          {
+            "id": "music_search:freesound",
+            "label": "freesound",
+            "category": "music_search",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "publish:local",
+            "label": "local",
+            "category": "publish",
+            "status": "available",
+            "configured": true
+          },
+          {
+            "id": "screen_capture:cap",
+            "label": "cap",
+            "category": "screen_capture",
+            "status": "available",
+            "configured": true
+          },
+          {
+            "id": "screen_capture:ffmpeg",
+            "label": "ffmpeg",
+            "category": "screen_capture",
+            "status": "available",
+            "configured": true
+          },
+          {
+            "id": "source_ingest:yt-dlp",
+            "label": "yt-dlp",
+            "category": "source_ingest",
+            "status": "available",
+            "configured": true
+          },
+          {
+            "id": "subtitle:openmontage",
+            "label": "openmontage",
+            "category": "subtitle",
+            "status": "available",
+            "configured": true
+          },
+          {
+            "id": "subtitle:remotion",
+            "label": "remotion",
+            "category": "subtitle",
+            "status": "available",
+            "configured": true
+          },
+          {
+            "id": "tts:dashscope",
+            "label": "dashscope",
+            "category": "tts",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "tts:doubao",
+            "label": "doubao",
+            "category": "tts",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "tts:elevenlabs",
+            "label": "elevenlabs",
+            "category": "tts",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "tts:google_tts",
+            "label": "google_tts",
+            "category": "tts",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "tts:kling_official",
+            "label": "kling_official",
+            "category": "tts",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "tts:openai",
+            "label": "openai",
+            "category": "tts",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "tts:piper",
+            "label": "piper",
+            "category": "tts",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "video_generation:pexels",
+            "label": "pexels",
+            "category": "video_generation",
+            "status": "available",
+            "configured": true
+          },
+          {
+            "id": "video_generation:cogvideo",
+            "label": "cogvideo",
+            "category": "video_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "video_generation:comfyui",
+            "label": "comfyui",
+            "category": "video_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "video_generation:gemini_omni",
+            "label": "gemini_omni",
+            "category": "video_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "video_generation:grok",
+            "label": "grok",
+            "category": "video_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "video_generation:heygen",
+            "label": "heygen",
+            "category": "video_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "video_generation:higgsfield",
+            "label": "higgsfield",
+            "category": "video_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "video_generation:hunyuan",
+            "label": "hunyuan",
+            "category": "video_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "video_generation:kling",
+            "label": "kling",
+            "category": "video_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "video_generation:kling_official",
+            "label": "kling_official",
+            "category": "video_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "video_generation:ltx",
+            "label": "ltx",
+            "category": "video_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "video_generation:ltx-modal",
+            "label": "ltx-modal",
+            "category": "video_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "video_generation:minimax",
+            "label": "minimax",
+            "category": "video_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "video_generation:openai",
+            "label": "openai",
+            "category": "video_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "video_generation:pixabay",
+            "label": "pixabay",
+            "category": "video_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "video_generation:runway",
+            "label": "runway",
+            "category": "video_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "video_generation:seedance",
+            "label": "seedance",
+            "category": "video_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "video_generation:veo",
+            "label": "veo",
+            "category": "video_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "video_generation:volcengine",
+            "label": "volcengine",
+            "category": "video_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "video_generation:wan",
+            "label": "wan",
+            "category": "video_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "video_post:ffmpeg",
+            "label": "ffmpeg",
+            "category": "video_post",
+            "status": "available",
+            "configured": true
+          },
+          {
+            "id": "video_post:hyperframes",
+            "label": "hyperframes",
+            "category": "video_post",
+            "status": "available",
+            "configured": true
+          }
+        ],
+        "environment": {
+          "filePath": "D:\\Work\\OpenMontage\\.env",
+          "status": "not-found",
+          "explicit": false,
+          "loadedVariableCount": 0,
+          "blockedVariableNames": [],
+          "detail": "No repository .env file was found; inherited process variables will be used."
+        },
+        "credentials": [
+          {
+            "provider": "ffmpeg",
+            "configured": true,
+            "source": "openmontage-environment"
+          },
+          {
+            "provider": "ffprobe",
+            "configured": true,
+            "source": "openmontage-environment"
+          },
+          {
+            "provider": "local",
+            "configured": true,
+            "source": "openmontage-environment"
+          },
+          {
+            "provider": "multi",
+            "configured": true,
+            "source": "openmontage-environment"
+          },
+          {
+            "provider": "whisperx",
+            "configured": true,
+            "source": "openmontage-environment"
+          },
+          {
+            "provider": "azure",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "dashscope",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "mediapipe",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "transformers",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "youtube-transcript-api",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "kling_official",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "sadtalker",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "wav2lip",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "openmontage",
+            "configured": true,
+            "source": "openmontage-environment"
+          },
+          {
+            "provider": "codeformer",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "realesrgan",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "rembg",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "mermaid",
+            "configured": true,
+            "source": "openmontage-environment"
+          },
+          {
+            "provider": "pygments",
+            "configured": true,
+            "source": "openmontage-environment"
+          },
+          {
+            "provider": "manim",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "pexels",
+            "configured": true,
+            "source": "openmontage-environment"
+          },
+          {
+            "provider": "comfyui",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "flux",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "google_imagen",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "grok",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "local_diffusion",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "openai",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "pixabay",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "recraft",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "elevenlabs",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "google",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "suno",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "pixabay_music",
+            "configured": true,
+            "source": "openmontage-environment"
+          },
+          {
+            "provider": "freesound",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "cap",
+            "configured": true,
+            "source": "openmontage-environment"
+          },
+          {
+            "provider": "yt-dlp",
+            "configured": true,
+            "source": "openmontage-environment"
+          },
+          {
+            "provider": "remotion",
+            "configured": true,
+            "source": "openmontage-environment"
+          },
+          {
+            "provider": "doubao",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "google_tts",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "piper",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "cogvideo",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "gemini_omni",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "heygen",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "higgsfield",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "hunyuan",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "kling",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "ltx",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "ltx-modal",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "minimax",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "runway",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "seedance",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "veo",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "volcengine",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "wan",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "hyperframes",
+            "configured": true,
+            "source": "openmontage-environment"
+          }
+        ],
+        "checkedAt": "2026-07-25T08:33:18.084Z",
+        "warnings": [
+          "comfyui_video: The top-level resource_profile is a ComfyUI provider floor, not a promise that every workflow fits 8GB VRAM. Bundled WAN 2.2 14B FP8 workflows recommend 16GB VRAM; custom low-VRAM workflows can target 8GB-12GB depending on model, quantization, resolution, and frame count.",
+          "The grok-build runner needs authentication before it can run a production."
+        ]
+      },
+      "executionMode": "managed",
+      "jobPackage": {
+        "schema": "mes.openmontage.job/v1",
+        "contractVersion": "mes.openmontage/v1",
+        "jobId": "mes-accept-g-interrupt-claude-20260725",
+        "projectId": "mes-accept-g-interrupt-claude-20260725",
+        "createdAt": "2026-07-25T00:00:00Z",
+        "requestedBy": "mental-empire-studio",
+        "project": {
+          "title": "MES Acceptance G-INTERRUPT",
+          "description": "Create an 8 second narrated documentary montage at EXACTLY 24 fps using only real open motion footage from NASA and/or Wikimedia Commons. Use the supplied narration, trimmed to the 8 second timeline. Music is explicitly opted out, so the mix is narration only. Honour the supplied locked timeline: 24 fps and the two locked scene boundaries. Fill each locked gap scene with real motion footage. Do not use still-image substitutes, fixtures, generated video, Pexels, or Pixabay. No editable project export is requested for this run.\n\nThis run will have its runner process tree killed mid-production. On resume, continue from the last valid checkpoint: do not redo stages already recorded as completed, and do not create a parallel project."
+        },
+        "source": {
+          "narrationPath": "D:\\Work\\openmontage-acceptance\\inputs\\archive-remotion-narration.wav",
+          "scriptPath": "D:\\Work\\mental-empire-studio\\test\\acceptance\\openmontage\\archive-remotion-script.txt",
+          "language": "en",
+          "assets": []
+        },
+        "production": {
+          "workflowMode": "openmontage",
+          "pipeline": "hybrid",
+          "mediaControl": "fill",
+          "style": "restrained archival science documentary; real motion footage only",
+          "composition": {
+            "runtime": "remotion",
+            "authoringMode": "templated",
+            "editableOutput": false
+          },
+          "approvals": []
+        },
+        "timeline": {
+          "version": "1.0",
+          "fps": 24,
+          "durationSeconds": 8,
+          "crossfadeSeconds": 0.5,
+          "scenes": [
+            {
+              "id": "scene_01",
+              "order": 0,
+              "type": "gap",
+              "startSeconds": 0,
+              "endSeconds": 4,
+              "durationSeconds": 4,
+              "locked": true,
+              "motion": {
+                "preset": "cinematic",
+                "direction": "auto",
+                "amount": 0.12
+              }
+            },
+            {
+              "id": "scene_02",
+              "order": 1,
+              "type": "gap",
+              "startSeconds": 4,
+              "endSeconds": 8,
+              "durationSeconds": 4,
+              "locked": true,
+              "motion": {
+                "preset": "cinematic",
+                "direction": "auto",
+                "amount": 0.12
+              }
+            }
+          ]
+        },
+        "output": {
+          "directory": "D:\\Work\\openmontage-acceptance\\outputs\\G-runner-interruption",
+          "aspectRatio": "16:9",
+          "width": 1280,
+          "height": 720,
+          "format": "mp4",
+          "captions": false
+        },
+        "fallback": {
+          "enabled": true,
+          "engine": "mental-empire-studio",
+          "preserveOpenMontageProject": true
+        },
+        "metadata": {
+          "acceptance_scenarios": "G",
+          "duration_target_seconds": 8,
+          "locked_fps": 24,
+          "music_opt_out": true,
+          "required_open_sources": "NASA,Wikimedia Commons",
+          "cost_limit_usd": 0
+        }
+      },
+      "plannedAt": "2026-07-25T08:33:50.486Z"
+    },
+    "result": "FAIL",
+    "completedAt": "2026-07-25T08:33:50.528Z",
+    "error": "Error: page.evaluate: Error: Error invoking remote method 'openmontage:startProduction': Error: Production plan cannot start. OpenMontage was explicitly selected. Real footage was requested. The explicitly requested remotion runtime is available. comfyui_video: The top-level resource_profile is a ComfyUI provider floor, not a promise that every workflow fits 8GB VRAM. Bundled WAN 2.2 14B FP8 workflows recommend 16GB VRAM; custom low-VRAM workflows can target 8GB-12GB depending on model, quantization, resolution, and frame count. The grok-build runner needs authentication before it can run a production. OpenMontage health is misconfigured. Managed mode requires an available agent runner.",
+    "applicationStdout": "",
+    "applicationStderr": "Error occurred in handler for 'openmontage:startProduction': Error: Production plan cannot start. OpenMontage was explicitly selected. Real footage was requested. The explicitly requested remotion runtime is available. comfyui_video: The top-level resource_profile is a ComfyUI provider floor, not a promise that every workflow fits 8GB VRAM. Bundled WAN 2.2 14B FP8 workflows recommend 16GB VRAM; custom low-VRAM workflows can target 8GB-12GB depending on model, quantization, resolution, and frame count. The grok-build runner needs authentication before it can run a production. OpenMontage health is misconfigured. Managed mode requires an available agent runner.\n    at OpenMontageProductionService.start (file:///D:/Work/mental-empire-studio/out/main/main.js:15691:13)\n    at Object.startProduction (file:///D:/Work/mental-empire-studio/out/main/main.js:16085:25)\n    at file:///D:/Work/mental-empire-studio/out/main/main.js:16193:86\n    at file:///D:/Work/mental-empire-studio/out/main/main.js:138:32\n    at file:///D:/Work/mental-empire-studio/node_modules/@sentry/opentelemetry/build/esm/resource-DazDAxCp.js:606:15\n    at handleCallbackErrors (file:///D:/Work/mental-empire-studio/node_modules/@sentry/core/build/esm/utils/handleCallbackErrors.js:9:26)\n    at file:///D:/Work/mental-empire-studio/node_modules/@sentry/opentelemetry/build/esm/resource-DazDAxCp.js:605:14\n    at AsyncLocalStorage.run (node:async_hooks:346:14)\n    at SentryAsyncLocalStorageContextManager.with (file:///D:/Work/mental-empire-studio/node_modules/@sentry/opentelemetry/build/esm/index.js:25:36)\n    at ContextAPI.with (D:\\Work\\mental-empire-studio\\node_modules\\@opentelemetry\\api\\build\\src\\api\\context.js:51:46)\n"
+  },
+  "health": {
+    "contractVersion": "mes.openmontage/v1",
+    "status": "ready",
+    "installationPath": "D:\\Work\\OpenMontage",
+    "installedRevision": "0af32ce5e1e830c33992af1f9179dcdcd536549b",
+    "compatibility": "compatible",
+    "mode": "managed",
+    "components": [
+      {
+        "name": "installation",
+        "status": "available",
+        "checkedAt": "2026-07-25T08:37:45.169Z",
+        "detail": "Required integration surfaces are present.",
+        "version": "0af32ce5e1e8"
+      },
+      {
+        "name": "python",
+        "status": "available",
+        "checkedAt": "2026-07-25T08:37:45.169Z",
+        "detail": "Python environment is callable.",
+        "version": "Python 3.11.9"
+      },
+      {
+        "name": "ffmpeg",
+        "status": "available",
+        "checkedAt": "2026-07-25T08:37:45.169Z"
+      },
+      {
+        "name": "remotion",
+        "status": "available",
+        "checkedAt": "2026-07-25T08:37:45.169Z"
+      },
+      {
+        "name": "hyperframes",
+        "status": "available",
+        "checkedAt": "2026-07-25T08:37:45.169Z"
+      },
+      {
+        "name": "backlot",
+        "status": "available",
+        "checkedAt": "2026-07-25T08:37:45.169Z",
+        "detail": "Backlot responded."
+      },
+      {
+        "name": "agent_runner",
+        "status": "available",
+        "checkedAt": "2026-07-25T08:37:45.169Z",
+        "detail": "Managed JSON-lines protocol is available.",
+        "version": "1.0.0 (grok 0.2.112 (9bbd559437) [stable])"
+      }
+    ],
+    "providers": [
+      {
+        "id": "analysis:ffmpeg",
+        "label": "ffmpeg",
+        "category": "analysis",
+        "status": "available",
+        "configured": true
+      },
+      {
+        "id": "analysis:ffprobe",
+        "label": "ffprobe",
+        "category": "analysis",
+        "status": "available",
+        "configured": true
+      },
+      {
+        "id": "analysis:local",
+        "label": "local",
+        "category": "analysis",
+        "status": "available",
+        "configured": true
+      },
+      {
+        "id": "analysis:multi",
+        "label": "multi",
+        "category": "analysis",
+        "status": "available",
+        "configured": true
+      },
+      {
+        "id": "analysis:whisperx",
+        "label": "whisperx",
+        "category": "analysis",
+        "status": "available",
+        "configured": true
+      },
+      {
+        "id": "analysis:azure",
+        "label": "azure",
+        "category": "analysis",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "analysis:dashscope",
+        "label": "dashscope",
+        "category": "analysis",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "analysis:mediapipe",
+        "label": "mediapipe",
+        "category": "analysis",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "analysis:transformers",
+        "label": "transformers",
+        "category": "analysis",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "analysis:youtube-transcript-api",
+        "label": "youtube-transcript-api",
+        "category": "analysis",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "audio_processing:ffmpeg",
+        "label": "ffmpeg",
+        "category": "audio_processing",
+        "status": "available",
+        "configured": true
+      },
+      {
+        "id": "avatar:kling_official",
+        "label": "kling_official",
+        "category": "avatar",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "avatar:sadtalker",
+        "label": "sadtalker",
+        "category": "avatar",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "avatar:wav2lip",
+        "label": "wav2lip",
+        "category": "avatar",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "character_animation:openmontage",
+        "label": "openmontage",
+        "category": "character_animation",
+        "status": "available",
+        "configured": true
+      },
+      {
+        "id": "clip_acquisition:openmontage",
+        "label": "openmontage",
+        "category": "clip_acquisition",
+        "status": "available",
+        "configured": true
+      },
+      {
+        "id": "clip_retrieval:openmontage",
+        "label": "openmontage",
+        "category": "clip_retrieval",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "corpus_population:openmontage",
+        "label": "openmontage",
+        "category": "corpus_population",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "enhancement:ffmpeg",
+        "label": "ffmpeg",
+        "category": "enhancement",
+        "status": "available",
+        "configured": true
+      },
+      {
+        "id": "enhancement:codeformer",
+        "label": "codeformer",
+        "category": "enhancement",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "enhancement:mediapipe",
+        "label": "mediapipe",
+        "category": "enhancement",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "enhancement:realesrgan",
+        "label": "realesrgan",
+        "category": "enhancement",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "enhancement:rembg",
+        "label": "rembg",
+        "category": "enhancement",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "graphics:mermaid",
+        "label": "mermaid",
+        "category": "graphics",
+        "status": "available",
+        "configured": true
+      },
+      {
+        "id": "graphics:pygments",
+        "label": "pygments",
+        "category": "graphics",
+        "status": "available",
+        "configured": true
+      },
+      {
+        "id": "graphics:manim",
+        "label": "manim",
+        "category": "graphics",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "image_generation:pexels",
+        "label": "pexels",
+        "category": "image_generation",
+        "status": "available",
+        "configured": true
+      },
+      {
+        "id": "image_generation:comfyui",
+        "label": "comfyui",
+        "category": "image_generation",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "image_generation:dashscope",
+        "label": "dashscope",
+        "category": "image_generation",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "image_generation:flux",
+        "label": "flux",
+        "category": "image_generation",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "image_generation:google_imagen",
+        "label": "google_imagen",
+        "category": "image_generation",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "image_generation:grok",
+        "label": "grok",
+        "category": "image_generation",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "image_generation:kling_official",
+        "label": "kling_official",
+        "category": "image_generation",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "image_generation:local_diffusion",
+        "label": "local_diffusion",
+        "category": "image_generation",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "image_generation:multi",
+        "label": "multi",
+        "category": "image_generation",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "image_generation:openai",
+        "label": "openai",
+        "category": "image_generation",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "image_generation:pixabay",
+        "label": "pixabay",
+        "category": "image_generation",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "image_generation:recraft",
+        "label": "recraft",
+        "category": "image_generation",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "music_generation:elevenlabs",
+        "label": "elevenlabs",
+        "category": "music_generation",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "music_generation:google",
+        "label": "google",
+        "category": "music_generation",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "music_generation:suno",
+        "label": "suno",
+        "category": "music_generation",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "music_library:local",
+        "label": "local",
+        "category": "music_library",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "music_search:pixabay_music",
+        "label": "pixabay_music",
+        "category": "music_search",
+        "status": "available",
+        "configured": true
+      },
+      {
+        "id": "music_search:freesound",
+        "label": "freesound",
+        "category": "music_search",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "publish:local",
+        "label": "local",
+        "category": "publish",
+        "status": "available",
+        "configured": true
+      },
+      {
+        "id": "screen_capture:cap",
+        "label": "cap",
+        "category": "screen_capture",
+        "status": "available",
+        "configured": true
+      },
+      {
+        "id": "screen_capture:ffmpeg",
+        "label": "ffmpeg",
+        "category": "screen_capture",
+        "status": "available",
+        "configured": true
+      },
+      {
+        "id": "source_ingest:yt-dlp",
+        "label": "yt-dlp",
+        "category": "source_ingest",
+        "status": "available",
+        "configured": true
+      },
+      {
+        "id": "subtitle:openmontage",
+        "label": "openmontage",
+        "category": "subtitle",
+        "status": "available",
+        "configured": true
+      },
+      {
+        "id": "subtitle:remotion",
+        "label": "remotion",
+        "category": "subtitle",
+        "status": "available",
+        "configured": true
+      },
+      {
+        "id": "tts:dashscope",
+        "label": "dashscope",
+        "category": "tts",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "tts:doubao",
+        "label": "doubao",
+        "category": "tts",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "tts:elevenlabs",
+        "label": "elevenlabs",
+        "category": "tts",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "tts:google_tts",
+        "label": "google_tts",
+        "category": "tts",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "tts:kling_official",
+        "label": "kling_official",
+        "category": "tts",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "tts:openai",
+        "label": "openai",
+        "category": "tts",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "tts:piper",
+        "label": "piper",
+        "category": "tts",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "video_generation:pexels",
+        "label": "pexels",
+        "category": "video_generation",
+        "status": "available",
+        "configured": true
+      },
+      {
+        "id": "video_generation:cogvideo",
+        "label": "cogvideo",
+        "category": "video_generation",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "video_generation:comfyui",
+        "label": "comfyui",
+        "category": "video_generation",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "video_generation:gemini_omni",
+        "label": "gemini_omni",
+        "category": "video_generation",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "video_generation:grok",
+        "label": "grok",
+        "category": "video_generation",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "video_generation:heygen",
+        "label": "heygen",
+        "category": "video_generation",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "video_generation:higgsfield",
+        "label": "higgsfield",
+        "category": "video_generation",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "video_generation:hunyuan",
+        "label": "hunyuan",
+        "category": "video_generation",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "video_generation:kling",
+        "label": "kling",
+        "category": "video_generation",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "video_generation:kling_official",
+        "label": "kling_official",
+        "category": "video_generation",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "video_generation:ltx",
+        "label": "ltx",
+        "category": "video_generation",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "video_generation:ltx-modal",
+        "label": "ltx-modal",
+        "category": "video_generation",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "video_generation:minimax",
+        "label": "minimax",
+        "category": "video_generation",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "video_generation:openai",
+        "label": "openai",
+        "category": "video_generation",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "video_generation:pixabay",
+        "label": "pixabay",
+        "category": "video_generation",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "video_generation:runway",
+        "label": "runway",
+        "category": "video_generation",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "video_generation:seedance",
+        "label": "seedance",
+        "category": "video_generation",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "video_generation:veo",
+        "label": "veo",
+        "category": "video_generation",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "video_generation:volcengine",
+        "label": "volcengine",
+        "category": "video_generation",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "video_generation:wan",
+        "label": "wan",
+        "category": "video_generation",
+        "status": "unavailable",
+        "configured": false
+      },
+      {
+        "id": "video_post:ffmpeg",
+        "label": "ffmpeg",
+        "category": "video_post",
+        "status": "available",
+        "configured": true
+      },
+      {
+        "id": "video_post:hyperframes",
+        "label": "hyperframes",
+        "category": "video_post",
+        "status": "available",
+        "configured": true
+      }
+    ],
+    "environment": {
+      "filePath": "D:\\Work\\OpenMontage\\.env",
+      "status": "not-found",
+      "explicit": false,
+      "loadedVariableCount": 0,
+      "blockedVariableNames": [],
+      "detail": "No repository .env file was found; inherited process variables will be used."
+    },
+    "credentials": [
+      {
+        "provider": "ffmpeg",
+        "configured": true,
+        "source": "openmontage-environment"
+      },
+      {
+        "provider": "ffprobe",
+        "configured": true,
+        "source": "openmontage-environment"
+      },
+      {
+        "provider": "local",
+        "configured": true,
+        "source": "openmontage-environment"
+      },
+      {
+        "provider": "multi",
+        "configured": true,
+        "source": "openmontage-environment"
+      },
+      {
+        "provider": "whisperx",
+        "configured": true,
+        "source": "openmontage-environment"
+      },
+      {
+        "provider": "azure",
+        "configured": false,
+        "source": "not-detected"
+      },
+      {
+        "provider": "dashscope",
+        "configured": false,
+        "source": "not-detected"
+      },
+      {
+        "provider": "mediapipe",
+        "configured": false,
+        "source": "not-detected"
+      },
+      {
+        "provider": "transformers",
+        "configured": false,
+        "source": "not-detected"
+      },
+      {
+        "provider": "youtube-transcript-api",
+        "configured": false,
+        "source": "not-detected"
+      },
+      {
+        "provider": "kling_official",
+        "configured": false,
+        "source": "not-detected"
+      },
+      {
+        "provider": "sadtalker",
+        "configured": false,
+        "source": "not-detected"
+      },
+      {
+        "provider": "wav2lip",
+        "configured": false,
+        "source": "not-detected"
+      },
+      {
+        "provider": "openmontage",
+        "configured": true,
+        "source": "openmontage-environment"
+      },
+      {
+        "provider": "codeformer",
+        "configured": false,
+        "source": "not-detected"
+      },
+      {
+        "provider": "realesrgan",
+        "configured": false,
+        "source": "not-detected"
+      },
+      {
+        "provider": "rembg",
+        "configured": false,
+        "source": "not-detected"
+      },
+      {
+        "provider": "mermaid",
+        "configured": true,
+        "source": "openmontage-environment"
+      },
+      {
+        "provider": "pygments",
+        "configured": true,
+        "source": "openmontage-environment"
+      },
+      {
+        "provider": "manim",
+        "configured": false,
+        "source": "not-detected"
+      },
+      {
+        "provider": "pexels",
+        "configured": true,
+        "source": "openmontage-environment"
+      },
+      {
+        "provider": "comfyui",
+        "configured": false,
+        "source": "not-detected"
+      },
+      {
+        "provider": "flux",
+        "configured": false,
+        "source": "not-detected"
+      },
+      {
+        "provider": "google_imagen",
+        "configured": false,
+        "source": "not-detected"
+      },
+      {
+        "provider": "grok",
+        "configured": false,
+        "source": "not-detected"
+      },
+      {
+        "provider": "local_diffusion",
+        "configured": false,
+        "source": "not-detected"
+      },
+      {
+        "provider": "openai",
+        "configured": false,
+        "source": "not-detected"
+      },
+      {
+        "provider": "pixabay",
+        "configured": false,
+        "source": "not-detected"
+      },
+      {
+        "provider": "recraft",
+        "configured": false,
+        "source": "not-detected"
+      },
+      {
+        "provider": "elevenlabs",
+        "configured": false,
+        "source": "not-detected"
+      },
+      {
+        "provider": "google",
+        "configured": false,
+        "source": "not-detected"
+      },
+      {
+        "provider": "suno",
+        "configured": false,
+        "source": "not-detected"
+      },
+      {
+        "provider": "pixabay_music",
+        "configured": true,
+        "source": "openmontage-environment"
+      },
+      {
+        "provider": "freesound",
+        "configured": false,
+        "source": "not-detected"
+      },
+      {
+        "provider": "cap",
+        "configured": true,
+        "source": "openmontage-environment"
+      },
+      {
+        "provider": "yt-dlp",
+        "configured": true,
+        "source": "openmontage-environment"
+      },
+      {
+        "provider": "remotion",
+        "configured": true,
+        "source": "openmontage-environment"
+      },
+      {
+        "provider": "doubao",
+        "configured": false,
+        "source": "not-detected"
+      },
+      {
+        "provider": "google_tts",
+        "configured": false,
+        "source": "not-detected"
+      },
+      {
+        "provider": "piper",
+        "configured": false,
+        "source": "not-detected"
+      },
+      {
+        "provider": "cogvideo",
+        "configured": false,
+        "source": "not-detected"
+      },
+      {
+        "provider": "gemini_omni",
+        "configured": false,
+        "source": "not-detected"
+      },
+      {
+        "provider": "heygen",
+        "configured": false,
+        "source": "not-detected"
+      },
+      {
+        "provider": "higgsfield",
+        "configured": false,
+        "source": "not-detected"
+      },
+      {
+        "provider": "hunyuan",
+        "configured": false,
+        "source": "not-detected"
+      },
+      {
+        "provider": "kling",
+        "configured": false,
+        "source": "not-detected"
+      },
+      {
+        "provider": "ltx",
+        "configured": false,
+        "source": "not-detected"
+      },
+      {
+        "provider": "ltx-modal",
+        "configured": false,
+        "source": "not-detected"
+      },
+      {
+        "provider": "minimax",
+        "configured": false,
+        "source": "not-detected"
+      },
+      {
+        "provider": "runway",
+        "configured": false,
+        "source": "not-detected"
+      },
+      {
+        "provider": "seedance",
+        "configured": false,
+        "source": "not-detected"
+      },
+      {
+        "provider": "veo",
+        "configured": false,
+        "source": "not-detected"
+      },
+      {
+        "provider": "volcengine",
+        "configured": false,
+        "source": "not-detected"
+      },
+      {
+        "provider": "wan",
+        "configured": false,
+        "source": "not-detected"
+      },
+      {
+        "provider": "hyperframes",
+        "configured": true,
+        "source": "openmontage-environment"
+      }
+    ],
+    "checkedAt": "2026-07-25T08:37:45.169Z",
+    "warnings": [
+      "comfyui_video: The top-level resource_profile is a ComfyUI provider floor, not a promise that every workflow fits 8GB VRAM. Bundled WAN 2.2 14B FP8 workflows recommend 16GB VRAM; custom low-VRAM workflows can target 8GB-12GB depending on model, quantization, resolution, and frame count."
+    ]
+  },
+  "plan": {
+    "routing": {
+      "workflowMode": "openmontage",
+      "requestedRuntime": "remotion",
+      "requiresRealFootage": true,
+      "advancedStockSelection": false,
+      "editableComposition": false,
+      "kineticTypography": false,
+      "preferredPipeline": "hybrid"
+    },
+    "decision": {
+      "engine": "openmontage",
+      "startable": true,
+      "pipeline": "hybrid",
+      "runtime": "remotion",
+      "authoringMode": "templated",
+      "fallbackEngine": "mental-empire-studio",
+      "reasons": [
+        "OpenMontage was explicitly selected.",
+        "Real footage was requested.",
+        "The explicitly requested remotion runtime is available."
+      ],
+      "warnings": [
+        "comfyui_video: The top-level resource_profile is a ComfyUI provider floor, not a promise that every workflow fits 8GB VRAM. Bundled WAN 2.2 14B FP8 workflows recommend 16GB VRAM; custom low-VRAM workflows can target 8GB-12GB depending on model, quantization, resolution, and frame count."
+      ]
+    },
+    "health": {
+      "contractVersion": "mes.openmontage/v1",
+      "status": "ready",
+      "installationPath": "D:\\Work\\OpenMontage",
+      "installedRevision": "0af32ce5e1e830c33992af1f9179dcdcd536549b",
+      "compatibility": "compatible",
+      "mode": "managed",
+      "components": [
+        {
+          "name": "installation",
+          "status": "available",
+          "checkedAt": "2026-07-25T08:37:45.169Z",
+          "detail": "Required integration surfaces are present.",
+          "version": "0af32ce5e1e8"
+        },
+        {
+          "name": "python",
+          "status": "available",
+          "checkedAt": "2026-07-25T08:37:45.169Z",
+          "detail": "Python environment is callable.",
+          "version": "Python 3.11.9"
+        },
+        {
+          "name": "ffmpeg",
+          "status": "available",
+          "checkedAt": "2026-07-25T08:37:45.169Z"
+        },
+        {
+          "name": "remotion",
+          "status": "available",
+          "checkedAt": "2026-07-25T08:37:45.169Z"
+        },
+        {
+          "name": "hyperframes",
+          "status": "available",
+          "checkedAt": "2026-07-25T08:37:45.169Z"
+        },
+        {
+          "name": "backlot",
+          "status": "available",
+          "checkedAt": "2026-07-25T08:37:45.169Z",
+          "detail": "Backlot responded."
+        },
+        {
+          "name": "agent_runner",
+          "status": "available",
+          "checkedAt": "2026-07-25T08:37:45.169Z",
+          "detail": "Managed JSON-lines protocol is available.",
+          "version": "1.0.0 (grok 0.2.112 (9bbd559437) [stable])"
+        }
+      ],
+      "providers": [
+        {
+          "id": "analysis:ffmpeg",
+          "label": "ffmpeg",
+          "category": "analysis",
+          "status": "available",
+          "configured": true
+        },
+        {
+          "id": "analysis:ffprobe",
+          "label": "ffprobe",
+          "category": "analysis",
+          "status": "available",
+          "configured": true
+        },
+        {
+          "id": "analysis:local",
+          "label": "local",
+          "category": "analysis",
+          "status": "available",
+          "configured": true
+        },
+        {
+          "id": "analysis:multi",
+          "label": "multi",
+          "category": "analysis",
+          "status": "available",
+          "configured": true
+        },
+        {
+          "id": "analysis:whisperx",
+          "label": "whisperx",
+          "category": "analysis",
+          "status": "available",
+          "configured": true
+        },
+        {
+          "id": "analysis:azure",
+          "label": "azure",
+          "category": "analysis",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "analysis:dashscope",
+          "label": "dashscope",
+          "category": "analysis",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "analysis:mediapipe",
+          "label": "mediapipe",
+          "category": "analysis",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "analysis:transformers",
+          "label": "transformers",
+          "category": "analysis",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "analysis:youtube-transcript-api",
+          "label": "youtube-transcript-api",
+          "category": "analysis",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "audio_processing:ffmpeg",
+          "label": "ffmpeg",
+          "category": "audio_processing",
+          "status": "available",
+          "configured": true
+        },
+        {
+          "id": "avatar:kling_official",
+          "label": "kling_official",
+          "category": "avatar",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "avatar:sadtalker",
+          "label": "sadtalker",
+          "category": "avatar",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "avatar:wav2lip",
+          "label": "wav2lip",
+          "category": "avatar",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "character_animation:openmontage",
+          "label": "openmontage",
+          "category": "character_animation",
+          "status": "available",
+          "configured": true
+        },
+        {
+          "id": "clip_acquisition:openmontage",
+          "label": "openmontage",
+          "category": "clip_acquisition",
+          "status": "available",
+          "configured": true
+        },
+        {
+          "id": "clip_retrieval:openmontage",
+          "label": "openmontage",
+          "category": "clip_retrieval",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "corpus_population:openmontage",
+          "label": "openmontage",
+          "category": "corpus_population",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "enhancement:ffmpeg",
+          "label": "ffmpeg",
+          "category": "enhancement",
+          "status": "available",
+          "configured": true
+        },
+        {
+          "id": "enhancement:codeformer",
+          "label": "codeformer",
+          "category": "enhancement",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "enhancement:mediapipe",
+          "label": "mediapipe",
+          "category": "enhancement",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "enhancement:realesrgan",
+          "label": "realesrgan",
+          "category": "enhancement",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "enhancement:rembg",
+          "label": "rembg",
+          "category": "enhancement",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "graphics:mermaid",
+          "label": "mermaid",
+          "category": "graphics",
+          "status": "available",
+          "configured": true
+        },
+        {
+          "id": "graphics:pygments",
+          "label": "pygments",
+          "category": "graphics",
+          "status": "available",
+          "configured": true
+        },
+        {
+          "id": "graphics:manim",
+          "label": "manim",
+          "category": "graphics",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "image_generation:pexels",
+          "label": "pexels",
+          "category": "image_generation",
+          "status": "available",
+          "configured": true
+        },
+        {
+          "id": "image_generation:comfyui",
+          "label": "comfyui",
+          "category": "image_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "image_generation:dashscope",
+          "label": "dashscope",
+          "category": "image_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "image_generation:flux",
+          "label": "flux",
+          "category": "image_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "image_generation:google_imagen",
+          "label": "google_imagen",
+          "category": "image_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "image_generation:grok",
+          "label": "grok",
+          "category": "image_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "image_generation:kling_official",
+          "label": "kling_official",
+          "category": "image_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "image_generation:local_diffusion",
+          "label": "local_diffusion",
+          "category": "image_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "image_generation:multi",
+          "label": "multi",
+          "category": "image_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "image_generation:openai",
+          "label": "openai",
+          "category": "image_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "image_generation:pixabay",
+          "label": "pixabay",
+          "category": "image_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "image_generation:recraft",
+          "label": "recraft",
+          "category": "image_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "music_generation:elevenlabs",
+          "label": "elevenlabs",
+          "category": "music_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "music_generation:google",
+          "label": "google",
+          "category": "music_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "music_generation:suno",
+          "label": "suno",
+          "category": "music_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "music_library:local",
+          "label": "local",
+          "category": "music_library",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "music_search:pixabay_music",
+          "label": "pixabay_music",
+          "category": "music_search",
+          "status": "available",
+          "configured": true
+        },
+        {
+          "id": "music_search:freesound",
+          "label": "freesound",
+          "category": "music_search",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "publish:local",
+          "label": "local",
+          "category": "publish",
+          "status": "available",
+          "configured": true
+        },
+        {
+          "id": "screen_capture:cap",
+          "label": "cap",
+          "category": "screen_capture",
+          "status": "available",
+          "configured": true
+        },
+        {
+          "id": "screen_capture:ffmpeg",
+          "label": "ffmpeg",
+          "category": "screen_capture",
+          "status": "available",
+          "configured": true
+        },
+        {
+          "id": "source_ingest:yt-dlp",
+          "label": "yt-dlp",
+          "category": "source_ingest",
+          "status": "available",
+          "configured": true
+        },
+        {
+          "id": "subtitle:openmontage",
+          "label": "openmontage",
+          "category": "subtitle",
+          "status": "available",
+          "configured": true
+        },
+        {
+          "id": "subtitle:remotion",
+          "label": "remotion",
+          "category": "subtitle",
+          "status": "available",
+          "configured": true
+        },
+        {
+          "id": "tts:dashscope",
+          "label": "dashscope",
+          "category": "tts",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "tts:doubao",
+          "label": "doubao",
+          "category": "tts",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "tts:elevenlabs",
+          "label": "elevenlabs",
+          "category": "tts",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "tts:google_tts",
+          "label": "google_tts",
+          "category": "tts",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "tts:kling_official",
+          "label": "kling_official",
+          "category": "tts",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "tts:openai",
+          "label": "openai",
+          "category": "tts",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "tts:piper",
+          "label": "piper",
+          "category": "tts",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "video_generation:pexels",
+          "label": "pexels",
+          "category": "video_generation",
+          "status": "available",
+          "configured": true
+        },
+        {
+          "id": "video_generation:cogvideo",
+          "label": "cogvideo",
+          "category": "video_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "video_generation:comfyui",
+          "label": "comfyui",
+          "category": "video_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "video_generation:gemini_omni",
+          "label": "gemini_omni",
+          "category": "video_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "video_generation:grok",
+          "label": "grok",
+          "category": "video_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "video_generation:heygen",
+          "label": "heygen",
+          "category": "video_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "video_generation:higgsfield",
+          "label": "higgsfield",
+          "category": "video_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "video_generation:hunyuan",
+          "label": "hunyuan",
+          "category": "video_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "video_generation:kling",
+          "label": "kling",
+          "category": "video_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "video_generation:kling_official",
+          "label": "kling_official",
+          "category": "video_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "video_generation:ltx",
+          "label": "ltx",
+          "category": "video_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "video_generation:ltx-modal",
+          "label": "ltx-modal",
+          "category": "video_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "video_generation:minimax",
+          "label": "minimax",
+          "category": "video_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "video_generation:openai",
+          "label": "openai",
+          "category": "video_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "video_generation:pixabay",
+          "label": "pixabay",
+          "category": "video_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "video_generation:runway",
+          "label": "runway",
+          "category": "video_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "video_generation:seedance",
+          "label": "seedance",
+          "category": "video_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "video_generation:veo",
+          "label": "veo",
+          "category": "video_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "video_generation:volcengine",
+          "label": "volcengine",
+          "category": "video_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "video_generation:wan",
+          "label": "wan",
+          "category": "video_generation",
+          "status": "unavailable",
+          "configured": false
+        },
+        {
+          "id": "video_post:ffmpeg",
+          "label": "ffmpeg",
+          "category": "video_post",
+          "status": "available",
+          "configured": true
+        },
+        {
+          "id": "video_post:hyperframes",
+          "label": "hyperframes",
+          "category": "video_post",
+          "status": "available",
+          "configured": true
+        }
+      ],
+      "environment": {
+        "filePath": "D:\\Work\\OpenMontage\\.env",
+        "status": "not-found",
+        "explicit": false,
+        "loadedVariableCount": 0,
+        "blockedVariableNames": [],
+        "detail": "No repository .env file was found; inherited process variables will be used."
+      },
+      "credentials": [
+        {
+          "provider": "ffmpeg",
+          "configured": true,
+          "source": "openmontage-environment"
+        },
+        {
+          "provider": "ffprobe",
+          "configured": true,
+          "source": "openmontage-environment"
+        },
+        {
+          "provider": "local",
+          "configured": true,
+          "source": "openmontage-environment"
+        },
+        {
+          "provider": "multi",
+          "configured": true,
+          "source": "openmontage-environment"
+        },
+        {
+          "provider": "whisperx",
+          "configured": true,
+          "source": "openmontage-environment"
+        },
+        {
+          "provider": "azure",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "dashscope",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "mediapipe",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "transformers",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "youtube-transcript-api",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "kling_official",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "sadtalker",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "wav2lip",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "openmontage",
+          "configured": true,
+          "source": "openmontage-environment"
+        },
+        {
+          "provider": "codeformer",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "realesrgan",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "rembg",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "mermaid",
+          "configured": true,
+          "source": "openmontage-environment"
+        },
+        {
+          "provider": "pygments",
+          "configured": true,
+          "source": "openmontage-environment"
+        },
+        {
+          "provider": "manim",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "pexels",
+          "configured": true,
+          "source": "openmontage-environment"
+        },
+        {
+          "provider": "comfyui",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "flux",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "google_imagen",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "grok",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "local_diffusion",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "openai",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "pixabay",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "recraft",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "elevenlabs",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "google",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "suno",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "pixabay_music",
+          "configured": true,
+          "source": "openmontage-environment"
+        },
+        {
+          "provider": "freesound",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "cap",
+          "configured": true,
+          "source": "openmontage-environment"
+        },
+        {
+          "provider": "yt-dlp",
+          "configured": true,
+          "source": "openmontage-environment"
+        },
+        {
+          "provider": "remotion",
+          "configured": true,
+          "source": "openmontage-environment"
+        },
+        {
+          "provider": "doubao",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "google_tts",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "piper",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "cogvideo",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "gemini_omni",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "heygen",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "higgsfield",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "hunyuan",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "kling",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "ltx",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "ltx-modal",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "minimax",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "runway",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "seedance",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "veo",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "volcengine",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "wan",
+          "configured": false,
+          "source": "not-detected"
+        },
+        {
+          "provider": "hyperframes",
+          "configured": true,
+          "source": "openmontage-environment"
+        }
+      ],
+      "checkedAt": "2026-07-25T08:37:45.169Z",
+      "warnings": [
+        "comfyui_video: The top-level resource_profile is a ComfyUI provider floor, not a promise that every workflow fits 8GB VRAM. Bundled WAN 2.2 14B FP8 workflows recommend 16GB VRAM; custom low-VRAM workflows can target 8GB-12GB depending on model, quantization, resolution, and frame count."
+      ]
+    },
+    "executionMode": "managed",
+    "jobPackage": {
+      "schema": "mes.openmontage.job/v1",
+      "contractVersion": "mes.openmontage/v1",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "projectId": "mes-accept-g-interrupt-grok-20260725",
+      "createdAt": "2026-07-25T00:00:00Z",
+      "requestedBy": "mental-empire-studio",
+      "project": {
+        "title": "MES Acceptance G-INTERRUPT",
+        "description": "Create an 8 second narrated documentary montage at EXACTLY 24 fps using only real open motion footage from NASA and/or Wikimedia Commons. Use the supplied narration, trimmed to the 8 second timeline. Music is explicitly opted out, so the mix is narration only. Honour the supplied locked timeline: 24 fps and the two locked scene boundaries. Fill each locked gap scene with real motion footage. Do not use still-image substitutes, fixtures, generated video, Pexels, or Pixabay. No editable project export is requested for this run.\n\nThis run will have its runner process tree killed mid-production. On resume, continue from the last valid checkpoint: do not redo stages already recorded as completed, and do not create a parallel project."
+      },
+      "source": {
+        "narrationPath": "D:\\Work\\openmontage-acceptance\\inputs\\archive-remotion-narration.wav",
+        "scriptPath": "D:\\Work\\mental-empire-studio\\test\\acceptance\\openmontage\\archive-remotion-script.txt",
+        "language": "en",
+        "assets": []
+      },
+      "production": {
+        "workflowMode": "openmontage",
+        "pipeline": "hybrid",
+        "mediaControl": "fill",
+        "style": "restrained archival science documentary; real motion footage only",
+        "composition": {
+          "runtime": "remotion",
+          "authoringMode": "templated",
+          "editableOutput": false
+        },
+        "approvals": []
+      },
+      "timeline": {
+        "version": "1.0",
+        "fps": 24,
+        "durationSeconds": 8,
+        "crossfadeSeconds": 0.5,
+        "scenes": [
+          {
+            "id": "scene_01",
+            "order": 0,
+            "type": "gap",
+            "startSeconds": 0,
+            "endSeconds": 4,
+            "durationSeconds": 4,
+            "locked": true,
+            "motion": {
+              "preset": "cinematic",
+              "direction": "auto",
+              "amount": 0.12
+            }
+          },
+          {
+            "id": "scene_02",
+            "order": 1,
+            "type": "gap",
+            "startSeconds": 4,
+            "endSeconds": 8,
+            "durationSeconds": 4,
+            "locked": true,
+            "motion": {
+              "preset": "cinematic",
+              "direction": "auto",
+              "amount": 0.12
+            }
+          }
+        ]
+      },
+      "output": {
+        "directory": "D:\\Work\\openmontage-acceptance\\outputs\\G-runner-interruption",
+        "aspectRatio": "16:9",
+        "width": 1280,
+        "height": 720,
+        "format": "mp4",
+        "captions": false
+      },
+      "fallback": {
+        "enabled": true,
+        "engine": "mental-empire-studio",
+        "preserveOpenMontageProject": true
+      },
+      "metadata": {
+        "acceptance_scenarios": "G",
+        "duration_target_seconds": 8,
+        "locked_fps": 24,
+        "music_opt_out": true,
+        "required_open_sources": "NASA,Wikimedia Commons",
+        "cost_limit_usd": 0
+      }
+    },
+    "plannedAt": "2026-07-25T08:38:49.277Z"
+  },
+  "start": {
+    "engine": "openmontage",
+    "plan": {
+      "routing": {
+        "workflowMode": "openmontage",
+        "requestedRuntime": "remotion",
+        "requiresRealFootage": true,
+        "advancedStockSelection": false,
+        "editableComposition": false,
+        "kineticTypography": false,
+        "preferredPipeline": "hybrid"
+      },
+      "decision": {
+        "engine": "openmontage",
+        "startable": true,
+        "pipeline": "hybrid",
+        "runtime": "remotion",
+        "authoringMode": "templated",
+        "fallbackEngine": "mental-empire-studio",
+        "reasons": [
+          "OpenMontage was explicitly selected.",
+          "Real footage was requested.",
+          "The explicitly requested remotion runtime is available."
+        ],
+        "warnings": [
+          "comfyui_video: The top-level resource_profile is a ComfyUI provider floor, not a promise that every workflow fits 8GB VRAM. Bundled WAN 2.2 14B FP8 workflows recommend 16GB VRAM; custom low-VRAM workflows can target 8GB-12GB depending on model, quantization, resolution, and frame count."
+        ]
+      },
+      "health": {
+        "contractVersion": "mes.openmontage/v1",
+        "status": "ready",
+        "installationPath": "D:\\Work\\OpenMontage",
+        "installedRevision": "0af32ce5e1e830c33992af1f9179dcdcd536549b",
+        "compatibility": "compatible",
+        "mode": "managed",
+        "components": [
+          {
+            "name": "installation",
+            "status": "available",
+            "checkedAt": "2026-07-25T08:37:45.169Z",
+            "detail": "Required integration surfaces are present.",
+            "version": "0af32ce5e1e8"
+          },
+          {
+            "name": "python",
+            "status": "available",
+            "checkedAt": "2026-07-25T08:37:45.169Z",
+            "detail": "Python environment is callable.",
+            "version": "Python 3.11.9"
+          },
+          {
+            "name": "ffmpeg",
+            "status": "available",
+            "checkedAt": "2026-07-25T08:37:45.169Z"
+          },
+          {
+            "name": "remotion",
+            "status": "available",
+            "checkedAt": "2026-07-25T08:37:45.169Z"
+          },
+          {
+            "name": "hyperframes",
+            "status": "available",
+            "checkedAt": "2026-07-25T08:37:45.169Z"
+          },
+          {
+            "name": "backlot",
+            "status": "available",
+            "checkedAt": "2026-07-25T08:37:45.169Z",
+            "detail": "Backlot responded."
+          },
+          {
+            "name": "agent_runner",
+            "status": "available",
+            "checkedAt": "2026-07-25T08:37:45.169Z",
+            "detail": "Managed JSON-lines protocol is available.",
+            "version": "1.0.0 (grok 0.2.112 (9bbd559437) [stable])"
+          }
+        ],
+        "providers": [
+          {
+            "id": "analysis:ffmpeg",
+            "label": "ffmpeg",
+            "category": "analysis",
+            "status": "available",
+            "configured": true
+          },
+          {
+            "id": "analysis:ffprobe",
+            "label": "ffprobe",
+            "category": "analysis",
+            "status": "available",
+            "configured": true
+          },
+          {
+            "id": "analysis:local",
+            "label": "local",
+            "category": "analysis",
+            "status": "available",
+            "configured": true
+          },
+          {
+            "id": "analysis:multi",
+            "label": "multi",
+            "category": "analysis",
+            "status": "available",
+            "configured": true
+          },
+          {
+            "id": "analysis:whisperx",
+            "label": "whisperx",
+            "category": "analysis",
+            "status": "available",
+            "configured": true
+          },
+          {
+            "id": "analysis:azure",
+            "label": "azure",
+            "category": "analysis",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "analysis:dashscope",
+            "label": "dashscope",
+            "category": "analysis",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "analysis:mediapipe",
+            "label": "mediapipe",
+            "category": "analysis",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "analysis:transformers",
+            "label": "transformers",
+            "category": "analysis",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "analysis:youtube-transcript-api",
+            "label": "youtube-transcript-api",
+            "category": "analysis",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "audio_processing:ffmpeg",
+            "label": "ffmpeg",
+            "category": "audio_processing",
+            "status": "available",
+            "configured": true
+          },
+          {
+            "id": "avatar:kling_official",
+            "label": "kling_official",
+            "category": "avatar",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "avatar:sadtalker",
+            "label": "sadtalker",
+            "category": "avatar",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "avatar:wav2lip",
+            "label": "wav2lip",
+            "category": "avatar",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "character_animation:openmontage",
+            "label": "openmontage",
+            "category": "character_animation",
+            "status": "available",
+            "configured": true
+          },
+          {
+            "id": "clip_acquisition:openmontage",
+            "label": "openmontage",
+            "category": "clip_acquisition",
+            "status": "available",
+            "configured": true
+          },
+          {
+            "id": "clip_retrieval:openmontage",
+            "label": "openmontage",
+            "category": "clip_retrieval",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "corpus_population:openmontage",
+            "label": "openmontage",
+            "category": "corpus_population",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "enhancement:ffmpeg",
+            "label": "ffmpeg",
+            "category": "enhancement",
+            "status": "available",
+            "configured": true
+          },
+          {
+            "id": "enhancement:codeformer",
+            "label": "codeformer",
+            "category": "enhancement",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "enhancement:mediapipe",
+            "label": "mediapipe",
+            "category": "enhancement",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "enhancement:realesrgan",
+            "label": "realesrgan",
+            "category": "enhancement",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "enhancement:rembg",
+            "label": "rembg",
+            "category": "enhancement",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "graphics:mermaid",
+            "label": "mermaid",
+            "category": "graphics",
+            "status": "available",
+            "configured": true
+          },
+          {
+            "id": "graphics:pygments",
+            "label": "pygments",
+            "category": "graphics",
+            "status": "available",
+            "configured": true
+          },
+          {
+            "id": "graphics:manim",
+            "label": "manim",
+            "category": "graphics",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "image_generation:pexels",
+            "label": "pexels",
+            "category": "image_generation",
+            "status": "available",
+            "configured": true
+          },
+          {
+            "id": "image_generation:comfyui",
+            "label": "comfyui",
+            "category": "image_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "image_generation:dashscope",
+            "label": "dashscope",
+            "category": "image_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "image_generation:flux",
+            "label": "flux",
+            "category": "image_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "image_generation:google_imagen",
+            "label": "google_imagen",
+            "category": "image_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "image_generation:grok",
+            "label": "grok",
+            "category": "image_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "image_generation:kling_official",
+            "label": "kling_official",
+            "category": "image_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "image_generation:local_diffusion",
+            "label": "local_diffusion",
+            "category": "image_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "image_generation:multi",
+            "label": "multi",
+            "category": "image_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "image_generation:openai",
+            "label": "openai",
+            "category": "image_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "image_generation:pixabay",
+            "label": "pixabay",
+            "category": "image_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "image_generation:recraft",
+            "label": "recraft",
+            "category": "image_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "music_generation:elevenlabs",
+            "label": "elevenlabs",
+            "category": "music_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "music_generation:google",
+            "label": "google",
+            "category": "music_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "music_generation:suno",
+            "label": "suno",
+            "category": "music_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "music_library:local",
+            "label": "local",
+            "category": "music_library",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "music_search:pixabay_music",
+            "label": "pixabay_music",
+            "category": "music_search",
+            "status": "available",
+            "configured": true
+          },
+          {
+            "id": "music_search:freesound",
+            "label": "freesound",
+            "category": "music_search",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "publish:local",
+            "label": "local",
+            "category": "publish",
+            "status": "available",
+            "configured": true
+          },
+          {
+            "id": "screen_capture:cap",
+            "label": "cap",
+            "category": "screen_capture",
+            "status": "available",
+            "configured": true
+          },
+          {
+            "id": "screen_capture:ffmpeg",
+            "label": "ffmpeg",
+            "category": "screen_capture",
+            "status": "available",
+            "configured": true
+          },
+          {
+            "id": "source_ingest:yt-dlp",
+            "label": "yt-dlp",
+            "category": "source_ingest",
+            "status": "available",
+            "configured": true
+          },
+          {
+            "id": "subtitle:openmontage",
+            "label": "openmontage",
+            "category": "subtitle",
+            "status": "available",
+            "configured": true
+          },
+          {
+            "id": "subtitle:remotion",
+            "label": "remotion",
+            "category": "subtitle",
+            "status": "available",
+            "configured": true
+          },
+          {
+            "id": "tts:dashscope",
+            "label": "dashscope",
+            "category": "tts",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "tts:doubao",
+            "label": "doubao",
+            "category": "tts",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "tts:elevenlabs",
+            "label": "elevenlabs",
+            "category": "tts",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "tts:google_tts",
+            "label": "google_tts",
+            "category": "tts",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "tts:kling_official",
+            "label": "kling_official",
+            "category": "tts",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "tts:openai",
+            "label": "openai",
+            "category": "tts",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "tts:piper",
+            "label": "piper",
+            "category": "tts",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "video_generation:pexels",
+            "label": "pexels",
+            "category": "video_generation",
+            "status": "available",
+            "configured": true
+          },
+          {
+            "id": "video_generation:cogvideo",
+            "label": "cogvideo",
+            "category": "video_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "video_generation:comfyui",
+            "label": "comfyui",
+            "category": "video_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "video_generation:gemini_omni",
+            "label": "gemini_omni",
+            "category": "video_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "video_generation:grok",
+            "label": "grok",
+            "category": "video_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "video_generation:heygen",
+            "label": "heygen",
+            "category": "video_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "video_generation:higgsfield",
+            "label": "higgsfield",
+            "category": "video_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "video_generation:hunyuan",
+            "label": "hunyuan",
+            "category": "video_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "video_generation:kling",
+            "label": "kling",
+            "category": "video_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "video_generation:kling_official",
+            "label": "kling_official",
+            "category": "video_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "video_generation:ltx",
+            "label": "ltx",
+            "category": "video_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "video_generation:ltx-modal",
+            "label": "ltx-modal",
+            "category": "video_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "video_generation:minimax",
+            "label": "minimax",
+            "category": "video_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "video_generation:openai",
+            "label": "openai",
+            "category": "video_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "video_generation:pixabay",
+            "label": "pixabay",
+            "category": "video_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "video_generation:runway",
+            "label": "runway",
+            "category": "video_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "video_generation:seedance",
+            "label": "seedance",
+            "category": "video_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "video_generation:veo",
+            "label": "veo",
+            "category": "video_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "video_generation:volcengine",
+            "label": "volcengine",
+            "category": "video_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "video_generation:wan",
+            "label": "wan",
+            "category": "video_generation",
+            "status": "unavailable",
+            "configured": false
+          },
+          {
+            "id": "video_post:ffmpeg",
+            "label": "ffmpeg",
+            "category": "video_post",
+            "status": "available",
+            "configured": true
+          },
+          {
+            "id": "video_post:hyperframes",
+            "label": "hyperframes",
+            "category": "video_post",
+            "status": "available",
+            "configured": true
+          }
+        ],
+        "environment": {
+          "filePath": "D:\\Work\\OpenMontage\\.env",
+          "status": "not-found",
+          "explicit": false,
+          "loadedVariableCount": 0,
+          "blockedVariableNames": [],
+          "detail": "No repository .env file was found; inherited process variables will be used."
+        },
+        "credentials": [
+          {
+            "provider": "ffmpeg",
+            "configured": true,
+            "source": "openmontage-environment"
+          },
+          {
+            "provider": "ffprobe",
+            "configured": true,
+            "source": "openmontage-environment"
+          },
+          {
+            "provider": "local",
+            "configured": true,
+            "source": "openmontage-environment"
+          },
+          {
+            "provider": "multi",
+            "configured": true,
+            "source": "openmontage-environment"
+          },
+          {
+            "provider": "whisperx",
+            "configured": true,
+            "source": "openmontage-environment"
+          },
+          {
+            "provider": "azure",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "dashscope",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "mediapipe",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "transformers",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "youtube-transcript-api",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "kling_official",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "sadtalker",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "wav2lip",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "openmontage",
+            "configured": true,
+            "source": "openmontage-environment"
+          },
+          {
+            "provider": "codeformer",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "realesrgan",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "rembg",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "mermaid",
+            "configured": true,
+            "source": "openmontage-environment"
+          },
+          {
+            "provider": "pygments",
+            "configured": true,
+            "source": "openmontage-environment"
+          },
+          {
+            "provider": "manim",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "pexels",
+            "configured": true,
+            "source": "openmontage-environment"
+          },
+          {
+            "provider": "comfyui",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "flux",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "google_imagen",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "grok",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "local_diffusion",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "openai",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "pixabay",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "recraft",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "elevenlabs",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "google",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "suno",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "pixabay_music",
+            "configured": true,
+            "source": "openmontage-environment"
+          },
+          {
+            "provider": "freesound",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "cap",
+            "configured": true,
+            "source": "openmontage-environment"
+          },
+          {
+            "provider": "yt-dlp",
+            "configured": true,
+            "source": "openmontage-environment"
+          },
+          {
+            "provider": "remotion",
+            "configured": true,
+            "source": "openmontage-environment"
+          },
+          {
+            "provider": "doubao",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "google_tts",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "piper",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "cogvideo",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "gemini_omni",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "heygen",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "higgsfield",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "hunyuan",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "kling",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "ltx",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "ltx-modal",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "minimax",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "runway",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "seedance",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "veo",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "volcengine",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "wan",
+            "configured": false,
+            "source": "not-detected"
+          },
+          {
+            "provider": "hyperframes",
+            "configured": true,
+            "source": "openmontage-environment"
+          }
+        ],
+        "checkedAt": "2026-07-25T08:37:45.169Z",
+        "warnings": [
+          "comfyui_video: The top-level resource_profile is a ComfyUI provider floor, not a promise that every workflow fits 8GB VRAM. Bundled WAN 2.2 14B FP8 workflows recommend 16GB VRAM; custom low-VRAM workflows can target 8GB-12GB depending on model, quantization, resolution, and frame count."
+        ]
+      },
+      "executionMode": "managed",
+      "jobPackage": {
+        "schema": "mes.openmontage.job/v1",
+        "contractVersion": "mes.openmontage/v1",
+        "jobId": "mes-accept-g-interrupt-grok-20260725",
+        "projectId": "mes-accept-g-interrupt-grok-20260725",
+        "createdAt": "2026-07-25T00:00:00Z",
+        "requestedBy": "mental-empire-studio",
+        "project": {
+          "title": "MES Acceptance G-INTERRUPT",
+          "description": "Create an 8 second narrated documentary montage at EXACTLY 24 fps using only real open motion footage from NASA and/or Wikimedia Commons. Use the supplied narration, trimmed to the 8 second timeline. Music is explicitly opted out, so the mix is narration only. Honour the supplied locked timeline: 24 fps and the two locked scene boundaries. Fill each locked gap scene with real motion footage. Do not use still-image substitutes, fixtures, generated video, Pexels, or Pixabay. No editable project export is requested for this run.\n\nThis run will have its runner process tree killed mid-production. On resume, continue from the last valid checkpoint: do not redo stages already recorded as completed, and do not create a parallel project."
+        },
+        "source": {
+          "narrationPath": "D:\\Work\\openmontage-acceptance\\inputs\\archive-remotion-narration.wav",
+          "scriptPath": "D:\\Work\\mental-empire-studio\\test\\acceptance\\openmontage\\archive-remotion-script.txt",
+          "language": "en",
+          "assets": []
+        },
+        "production": {
+          "workflowMode": "openmontage",
+          "pipeline": "hybrid",
+          "mediaControl": "fill",
+          "style": "restrained archival science documentary; real motion footage only",
+          "composition": {
+            "runtime": "remotion",
+            "authoringMode": "templated",
+            "editableOutput": false
+          },
+          "approvals": []
+        },
+        "timeline": {
+          "version": "1.0",
+          "fps": 24,
+          "durationSeconds": 8,
+          "crossfadeSeconds": 0.5,
+          "scenes": [
+            {
+              "id": "scene_01",
+              "order": 0,
+              "type": "gap",
+              "startSeconds": 0,
+              "endSeconds": 4,
+              "durationSeconds": 4,
+              "locked": true,
+              "motion": {
+                "preset": "cinematic",
+                "direction": "auto",
+                "amount": 0.12
+              }
+            },
+            {
+              "id": "scene_02",
+              "order": 1,
+              "type": "gap",
+              "startSeconds": 4,
+              "endSeconds": 8,
+              "durationSeconds": 4,
+              "locked": true,
+              "motion": {
+                "preset": "cinematic",
+                "direction": "auto",
+                "amount": 0.12
+              }
+            }
+          ]
+        },
+        "output": {
+          "directory": "D:\\Work\\openmontage-acceptance\\outputs\\G-runner-interruption",
+          "aspectRatio": "16:9",
+          "width": 1280,
+          "height": 720,
+          "format": "mp4",
+          "captions": false
+        },
+        "fallback": {
+          "enabled": true,
+          "engine": "mental-empire-studio",
+          "preserveOpenMontageProject": true
+        },
+        "metadata": {
+          "acceptance_scenarios": "G",
+          "duration_target_seconds": 8,
+          "locked_fps": 24,
+          "music_opt_out": true,
+          "required_open_sources": "NASA,Wikimedia Commons",
+          "cost_limit_usd": 0
+        }
+      },
+      "plannedAt": "2026-07-25T08:38:49.277Z"
+    },
+    "job": {
+      "id": "mes-accept-g-interrupt-grok-20260725",
+      "projectId": "mes-accept-g-interrupt-grok-20260725",
+      "title": "MES Acceptance G-INTERRUPT",
+      "state": "running",
+      "mode": "managed",
+      "workflowMode": "openmontage",
+      "engine": "openmontage",
+      "pipeline": "hybrid",
+      "runtime": "remotion",
+      "authoringMode": "templated",
+      "routingDecision": {
+        "engine": "openmontage",
+        "startable": true,
+        "pipeline": "hybrid",
+        "runtime": "remotion",
+        "authoringMode": "templated",
+        "fallbackEngine": "mental-empire-studio",
+        "reasons": [
+          "OpenMontage was explicitly selected.",
+          "Real footage was requested.",
+          "The explicitly requested remotion runtime is available."
+        ],
+        "warnings": [
+          "comfyui_video: The top-level resource_profile is a ComfyUI provider floor, not a promise that every workflow fits 8GB VRAM. Bundled WAN 2.2 14B FP8 workflows recommend 16GB VRAM; custom low-VRAM workflows can target 8GB-12GB depending on model, quantization, resolution, and frame count."
+        ]
+      },
+      "jobPackage": {
+        "schema": "mes.openmontage.job/v1",
+        "contractVersion": "mes.openmontage/v1",
+        "jobId": "mes-accept-g-interrupt-grok-20260725",
+        "projectId": "mes-accept-g-interrupt-grok-20260725",
+        "createdAt": "2026-07-25T00:00:00Z",
+        "requestedBy": "mental-empire-studio",
+        "project": {
+          "title": "MES Acceptance G-INTERRUPT",
+          "description": "Create an 8 second narrated documentary montage at EXACTLY 24 fps using only real open motion footage from NASA and/or Wikimedia Commons. Use the supplied narration, trimmed to the 8 second timeline. Music is explicitly opted out, so the mix is narration only. Honour the supplied locked timeline: 24 fps and the two locked scene boundaries. Fill each locked gap scene with real motion footage. Do not use still-image substitutes, fixtures, generated video, Pexels, or Pixabay. No editable project export is requested for this run.\n\nThis run will have its runner process tree killed mid-production. On resume, continue from the last valid checkpoint: do not redo stages already recorded as completed, and do not create a parallel project."
+        },
+        "source": {
+          "narrationPath": "D:\\Work\\openmontage-acceptance\\inputs\\archive-remotion-narration.wav",
+          "scriptPath": "D:\\Work\\mental-empire-studio\\test\\acceptance\\openmontage\\archive-remotion-script.txt",
+          "language": "en",
+          "assets": []
+        },
+        "production": {
+          "workflowMode": "openmontage",
+          "pipeline": "hybrid",
+          "mediaControl": "fill",
+          "style": "restrained archival science documentary; real motion footage only",
+          "composition": {
+            "runtime": "remotion",
+            "authoringMode": "templated",
+            "editableOutput": false
+          },
+          "approvals": []
+        },
+        "timeline": {
+          "version": "1.0",
+          "fps": 24,
+          "durationSeconds": 8,
+          "crossfadeSeconds": 0.5,
+          "scenes": [
+            {
+              "id": "scene_01",
+              "order": 0,
+              "type": "gap",
+              "startSeconds": 0,
+              "endSeconds": 4,
+              "durationSeconds": 4,
+              "locked": true,
+              "motion": {
+                "preset": "cinematic",
+                "direction": "auto",
+                "amount": 0.12
+              }
+            },
+            {
+              "id": "scene_02",
+              "order": 1,
+              "type": "gap",
+              "startSeconds": 4,
+              "endSeconds": 8,
+              "durationSeconds": 4,
+              "locked": true,
+              "motion": {
+                "preset": "cinematic",
+                "direction": "auto",
+                "amount": 0.12
+              }
+            }
+          ]
+        },
+        "output": {
+          "directory": "D:\\Work\\openmontage-acceptance\\outputs\\G-runner-interruption",
+          "aspectRatio": "16:9",
+          "width": 1280,
+          "height": 720,
+          "format": "mp4",
+          "captions": false
+        },
+        "fallback": {
+          "enabled": true,
+          "engine": "mental-empire-studio",
+          "preserveOpenMontageProject": true
+        },
+        "metadata": {
+          "acceptance_scenarios": "G",
+          "duration_target_seconds": 8,
+          "locked_fps": 24,
+          "music_opt_out": true,
+          "required_open_sources": "NASA,Wikimedia Commons",
+          "cost_limit_usd": 0
+        }
+      },
+      "packagePath": "D:\\Work\\OpenMontage\\projects\\mes-accept-g-interrupt-grok-20260725\\mes-job-package.v1.json",
+      "workspacePath": "D:\\Work\\OpenMontage\\projects\\mes-accept-g-interrupt-grok-20260725",
+      "backlotProjectId": "mes-accept-g-interrupt-grok-20260725",
+      "progress": 100,
+      "attempts": 1,
+      "fallbackEnabled": true,
+      "preserveOpenMontageProject": true,
+      "runnerPid": 14372,
+      "createdAt": "2026-07-25T08:38:49.311Z",
+      "updatedAt": "2026-07-25T08:38:49.757Z",
+      "startedAt": "2026-07-25T08:38:49.727Z",
+      "revision": 8
+    }
+  },
+  "jobId": "mes-accept-g-interrupt-grok-20260725",
+  "job": {
+    "id": "mes-accept-g-interrupt-grok-20260725",
+    "projectId": "mes-accept-g-interrupt-grok-20260725",
+    "title": "MES Acceptance G-INTERRUPT",
+    "state": "completed",
+    "mode": "managed",
+    "workflowMode": "openmontage",
+    "engine": "openmontage",
+    "pipeline": "hybrid",
+    "runtime": "remotion",
+    "authoringMode": "templated",
+    "routingDecision": {
+      "engine": "openmontage",
+      "startable": true,
+      "pipeline": "hybrid",
+      "runtime": "remotion",
+      "authoringMode": "templated",
+      "fallbackEngine": "mental-empire-studio",
+      "reasons": [
+        "OpenMontage was explicitly selected.",
+        "Real footage was requested.",
+        "The explicitly requested remotion runtime is available."
+      ],
+      "warnings": [
+        "comfyui_video: The top-level resource_profile is a ComfyUI provider floor, not a promise that every workflow fits 8GB VRAM. Bundled WAN 2.2 14B FP8 workflows recommend 16GB VRAM; custom low-VRAM workflows can target 8GB-12GB depending on model, quantization, resolution, and frame count."
+      ]
+    },
+    "jobPackage": {
+      "schema": "mes.openmontage.job/v1",
+      "contractVersion": "mes.openmontage/v1",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "projectId": "mes-accept-g-interrupt-grok-20260725",
+      "createdAt": "2026-07-25T00:00:00Z",
+      "requestedBy": "mental-empire-studio",
+      "project": {
+        "title": "MES Acceptance G-INTERRUPT",
+        "description": "Create an 8 second narrated documentary montage at EXACTLY 24 fps using only real open motion footage from NASA and/or Wikimedia Commons. Use the supplied narration, trimmed to the 8 second timeline. Music is explicitly opted out, so the mix is narration only. Honour the supplied locked timeline: 24 fps and the two locked scene boundaries. Fill each locked gap scene with real motion footage. Do not use still-image substitutes, fixtures, generated video, Pexels, or Pixabay. No editable project export is requested for this run.\n\nThis run will have its runner process tree killed mid-production. On resume, continue from the last valid checkpoint: do not redo stages already recorded as completed, and do not create a parallel project."
+      },
+      "source": {
+        "narrationPath": "D:\\Work\\openmontage-acceptance\\inputs\\archive-remotion-narration.wav",
+        "scriptPath": "D:\\Work\\mental-empire-studio\\test\\acceptance\\openmontage\\archive-remotion-script.txt",
+        "language": "en",
+        "assets": []
+      },
+      "production": {
+        "workflowMode": "openmontage",
+        "pipeline": "hybrid",
+        "mediaControl": "fill",
+        "style": "restrained archival science documentary; real motion footage only",
+        "composition": {
+          "runtime": "remotion",
+          "authoringMode": "templated",
+          "editableOutput": false
+        },
+        "approvals": []
+      },
+      "timeline": {
+        "version": "1.0",
+        "fps": 24,
+        "durationSeconds": 8,
+        "crossfadeSeconds": 0.5,
+        "scenes": [
+          {
+            "id": "scene_01",
+            "order": 0,
+            "type": "gap",
+            "startSeconds": 0,
+            "endSeconds": 4,
+            "durationSeconds": 4,
+            "locked": true,
+            "motion": {
+              "preset": "cinematic",
+              "direction": "auto",
+              "amount": 0.12
+            }
+          },
+          {
+            "id": "scene_02",
+            "order": 1,
+            "type": "gap",
+            "startSeconds": 4,
+            "endSeconds": 8,
+            "durationSeconds": 4,
+            "locked": true,
+            "motion": {
+              "preset": "cinematic",
+              "direction": "auto",
+              "amount": 0.12
+            }
+          }
+        ]
+      },
+      "output": {
+        "directory": "D:\\Work\\openmontage-acceptance\\outputs\\G-runner-interruption",
+        "aspectRatio": "16:9",
+        "width": 1280,
+        "height": 720,
+        "format": "mp4",
+        "captions": false
+      },
+      "fallback": {
+        "enabled": true,
+        "engine": "mental-empire-studio",
+        "preserveOpenMontageProject": true
+      },
+      "metadata": {
+        "acceptance_scenarios": "G",
+        "duration_target_seconds": 8,
+        "locked_fps": 24,
+        "music_opt_out": true,
+        "required_open_sources": "NASA,Wikimedia Commons",
+        "cost_limit_usd": 0
+      }
+    },
+    "packagePath": "D:\\Work\\OpenMontage\\projects\\mes-accept-g-interrupt-grok-20260725\\mes-job-package.v1.json",
+    "workspacePath": "D:\\Work\\OpenMontage\\projects\\mes-accept-g-interrupt-grok-20260725",
+    "backlotProjectId": "mes-accept-g-interrupt-grok-20260725",
+    "currentStage": "export",
+    "progress": 100,
+    "attempts": 2,
+    "fallbackEnabled": true,
+    "preserveOpenMontageProject": true,
+    "lastCheckpointAt": "2026-07-25T09:03:12.224262+00:00",
+    "runnerSessionId": "019f986d-5979-7441-b2b8-03de16098de4",
+    "createdAt": "2026-07-25T08:38:49.311Z",
+    "updatedAt": "2026-07-25T09:03:19.129Z",
+    "startedAt": "2026-07-25T08:38:49.727Z",
+    "completedAt": "2026-07-25T09:03:19.128Z",
+    "revision": 64
+  },
+  "events": [
+    {
+      "id": "f8e6db9a-1245-4151-9587-740d23a14c4e",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 1,
+      "type": "state",
+      "level": "info",
+      "message": "Managed OpenMontage job created.",
+      "createdAt": "2026-07-25T08:38:49.312Z"
+    },
+    {
+      "id": "d6167c7d-ac93-4464-9a76-acec0e80caa9",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 2,
+      "type": "state",
+      "level": "info",
+      "message": "Validating OpenMontage installation and production package.",
+      "createdAt": "2026-07-25T08:38:49.313Z"
+    },
+    {
+      "id": "1b012981-9826-4ef0-b7c2-a1e08b47dd0f",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 3,
+      "type": "state",
+      "level": "info",
+      "message": "OpenMontage workspace and handoff files prepared.",
+      "createdAt": "2026-07-25T08:38:49.583Z"
+    },
+    {
+      "id": "14683dd0-6e30-4492-9a9b-8ccd29e590fc",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 4,
+      "type": "state",
+      "level": "info",
+      "message": "Assisted handoff is ready for an operator or agent.",
+      "createdAt": "2026-07-25T08:38:49.583Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:hello",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 5,
+      "type": "state",
+      "level": "info",
+      "message": "Managed runner grok-build connected with protocol mes.openmontage.runner/v1.",
+      "data": {
+        "runner_id": "grok-build",
+        "runner_version": "1.0.0"
+      },
+      "createdAt": "2026-07-25T08:38:49.724Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:grok-build-1",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 6,
+      "type": "state",
+      "level": "info",
+      "message": "MES Grok OpenMontage runner started.",
+      "data": {
+        "runner_sequence": 1
+      },
+      "createdAt": "2026-07-25T08:38:49.728Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:routing",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 7,
+      "type": "routing",
+      "level": "warning",
+      "message": "OpenMontage was explicitly selected. Real footage was requested. The explicitly requested remotion runtime is available.",
+      "data": {
+        "engine": "openmontage",
+        "pipeline": "hybrid",
+        "runtime": "remotion",
+        "execution_mode": "managed",
+        "warning_count": 1
+      },
+      "createdAt": "2026-07-25T08:38:49.758Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:grok-build-2",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 8,
+      "type": "activity",
+      "level": "info",
+      "message": "Grok Build runner ready (grok 0.2.112 (9bbd559437) [stable]).",
+      "data": {
+        "runner_sequence": 2,
+        "runner_type": "grok-build",
+        "agent_version": "grok 0.2.112 (9bbd559437) [stable]"
+      },
+      "createdAt": "2026-07-25T08:38:49.773Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:grok-build-3",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 9,
+      "type": "state",
+      "level": "info",
+      "message": "Grok started the OpenMontage production.",
+      "data": {
+        "runner_sequence": 3
+      },
+      "createdAt": "2026-07-25T08:38:49.776Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:grok-build-13",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 10,
+      "type": "activity",
+      "level": "info",
+      "message": "Grok production session established.",
+      "data": {
+        "runner_sequence": 13,
+        "runner_session_id": "019f986d-5979-7441-b2b8-03de16098de4",
+        "runner_type": "grok-build",
+        "stop_reason": "EndTurn",
+        "num_turns": 17
+      },
+      "createdAt": "2026-07-25T08:43:37.742Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:checkpoint-stage-025c1373fc210de36f28",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 11,
+      "type": "stage",
+      "level": "info",
+      "message": "research checkpoint: active.",
+      "stage": "research",
+      "data": {
+        "runner_sequence": 14,
+        "progress": 100
+      },
+      "createdAt": "2026-07-25T08:43:38.079Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:checkpoint-025c1373fc210de36f28",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 12,
+      "type": "checkpoint",
+      "level": "info",
+      "message": "Canonical OpenMontage checkpoint saved for research.",
+      "stage": "research",
+      "data": {
+        "runner_sequence": 15
+      },
+      "createdAt": "2026-07-25T08:43:38.080Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:grok-build-16",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 13,
+      "type": "stage",
+      "level": "info",
+      "message": "research requires MES approval.",
+      "stage": "research",
+      "data": {
+        "runner_sequence": 16,
+        "progress": 100
+      },
+      "createdAt": "2026-07-25T08:43:38.086Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:grok-build-17",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 14,
+      "type": "approval",
+      "level": "warning",
+      "message": "OpenMontage idea artifact is ready for review.",
+      "stage": "research",
+      "data": {
+        "runner_sequence": 17,
+        "openmontage_stage": "idea",
+        "artifact_count": 2,
+        "checkpoint_status": "awaiting_human",
+        "human_approved": false
+      },
+      "createdAt": "2026-07-25T08:43:38.087Z"
+    },
+    {
+      "id": "ace630f5-232d-4e62-82e6-3435ef82c7e5",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 15,
+      "type": "checkpoint",
+      "level": "info",
+      "message": "Backlot confirmed updated project state.",
+      "stage": "research",
+      "data": {
+        "backlot_observed": true
+      },
+      "createdAt": "2026-07-25T08:43:38.132Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:grok-build-19",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 16,
+      "type": "state",
+      "level": "info",
+      "message": "Grok resumed from the canonical OpenMontage checkpoint.",
+      "data": {
+        "runner_sequence": 19
+      },
+      "createdAt": "2026-07-25T08:44:09.517Z"
+    },
+    {
+      "id": "16293345-2bcb-4e74-9af1-7e104483056d",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 17,
+      "type": "error",
+      "level": "error",
+      "message": "Managed runner exited before a terminal event (code 1, signal none).",
+      "data": {
+        "failure_category": "runner",
+        "retryable": true,
+        "checkpoint_preserved": true
+      },
+      "createdAt": "2026-07-25T08:44:11.757Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:retry:1",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 18,
+      "type": "recovery",
+      "level": "warning",
+      "message": "Retrying OpenMontage after runner failure (1/3).",
+      "stage": "research",
+      "data": {
+        "retry_count": 1,
+        "retry_limit": 3,
+        "failure_category": "runner",
+        "checkpoint_preserved": true
+      },
+      "createdAt": "2026-07-25T08:44:11.851Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:grok-build-5",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 19,
+      "type": "state",
+      "level": "info",
+      "message": "Grok resumed from the canonical OpenMontage checkpoint.",
+      "data": {
+        "runner_sequence": 5
+      },
+      "createdAt": "2026-07-25T08:44:12.041Z"
+    },
+    {
+      "id": "eeca182f-270c-47b4-ba28-c5f0bcf50108",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 20,
+      "type": "checkpoint",
+      "level": "info",
+      "message": "Backlot confirmed updated project state.",
+      "stage": "research",
+      "data": {
+        "backlot_observed": true
+      },
+      "createdAt": "2026-07-25T08:44:12.090Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:checkpoint-stage-50bf139d93c58ceccbe6",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 21,
+      "type": "stage",
+      "level": "info",
+      "message": "research checkpoint: completed.",
+      "stage": "research",
+      "data": {
+        "runner_sequence": 6,
+        "progress": 100
+      },
+      "createdAt": "2026-07-25T08:44:42.009Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:checkpoint-50bf139d93c58ceccbe6",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 22,
+      "type": "checkpoint",
+      "level": "info",
+      "message": "Canonical OpenMontage checkpoint saved for research.",
+      "stage": "research",
+      "data": {
+        "runner_sequence": 7
+      },
+      "createdAt": "2026-07-25T08:44:42.010Z"
+    },
+    {
+      "id": "5b4110d3-7546-4455-b371-1fba6033ab11",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 23,
+      "type": "checkpoint",
+      "level": "info",
+      "message": "Backlot confirmed updated project state.",
+      "stage": "research",
+      "data": {
+        "backlot_observed": true
+      },
+      "createdAt": "2026-07-25T08:44:42.062Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:checkpoint-stage-2b45f06a255eb32ef719",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 24,
+      "type": "stage",
+      "level": "info",
+      "message": "script checkpoint: active.",
+      "stage": "script",
+      "data": {
+        "runner_sequence": 10,
+        "progress": 100
+      },
+      "createdAt": "2026-07-25T08:45:21.727Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:checkpoint-2b45f06a255eb32ef719",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 25,
+      "type": "checkpoint",
+      "level": "info",
+      "message": "Canonical OpenMontage checkpoint saved for script.",
+      "stage": "script",
+      "data": {
+        "runner_sequence": 11
+      },
+      "createdAt": "2026-07-25T08:45:21.728Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:grok-build-12",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 26,
+      "type": "stage",
+      "level": "info",
+      "message": "script requires MES approval.",
+      "stage": "script",
+      "data": {
+        "runner_sequence": 12,
+        "progress": 100
+      },
+      "createdAt": "2026-07-25T08:45:21.734Z"
+    },
+    {
+      "id": "cc0f421c-8015-4138-b39d-5baaf0afa9a9",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 27,
+      "type": "checkpoint",
+      "level": "info",
+      "message": "Backlot confirmed updated project state.",
+      "stage": "script",
+      "data": {
+        "backlot_observed": true
+      },
+      "createdAt": "2026-07-25T08:45:21.781Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:grok-build-15",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 28,
+      "type": "state",
+      "level": "info",
+      "message": "Grok resumed from the canonical OpenMontage checkpoint.",
+      "data": {
+        "runner_sequence": 15
+      },
+      "createdAt": "2026-07-25T08:45:23.067Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:checkpoint-stage-dda622189ec5fd3b3197",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 29,
+      "type": "stage",
+      "level": "info",
+      "message": "script checkpoint: completed.",
+      "stage": "script",
+      "data": {
+        "runner_sequence": 19,
+        "progress": 100
+      },
+      "createdAt": "2026-07-25T08:47:12.050Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:checkpoint-dda622189ec5fd3b3197",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 30,
+      "type": "checkpoint",
+      "level": "info",
+      "message": "Canonical OpenMontage checkpoint saved for script.",
+      "stage": "script",
+      "data": {
+        "runner_sequence": 20
+      },
+      "createdAt": "2026-07-25T08:47:12.050Z"
+    },
+    {
+      "id": "9c58adab-b42d-46bc-8a93-0b7b0d875e04",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 31,
+      "type": "checkpoint",
+      "level": "info",
+      "message": "Backlot confirmed updated project state.",
+      "stage": "script",
+      "data": {
+        "backlot_observed": true
+      },
+      "createdAt": "2026-07-25T08:47:12.102Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:checkpoint-stage-d8208a728764f3877a15",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 32,
+      "type": "stage",
+      "level": "info",
+      "message": "scene plan checkpoint: active.",
+      "stage": "scene_plan",
+      "data": {
+        "runner_sequence": 22,
+        "progress": 100
+      },
+      "createdAt": "2026-07-25T08:47:27.770Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:checkpoint-d8208a728764f3877a15",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 33,
+      "type": "checkpoint",
+      "level": "info",
+      "message": "Canonical OpenMontage checkpoint saved for scene plan.",
+      "stage": "scene_plan",
+      "data": {
+        "runner_sequence": 23
+      },
+      "createdAt": "2026-07-25T08:47:27.770Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:grok-build-24",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 34,
+      "type": "stage",
+      "level": "info",
+      "message": "scene plan requires MES approval.",
+      "stage": "scene_plan",
+      "data": {
+        "runner_sequence": 24,
+        "progress": 100
+      },
+      "createdAt": "2026-07-25T08:47:27.776Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:grok-build-25",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 35,
+      "type": "approval",
+      "level": "warning",
+      "message": "OpenMontage scene plan artifact is ready for review.",
+      "stage": "scene_plan",
+      "data": {
+        "runner_sequence": 25,
+        "openmontage_stage": "scene_plan",
+        "artifact_count": 2,
+        "checkpoint_status": "awaiting_human",
+        "human_approved": false
+      },
+      "createdAt": "2026-07-25T08:47:27.776Z"
+    },
+    {
+      "id": "91db4f06-ca07-4ed3-af4d-45a25cae2ffc",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 36,
+      "type": "checkpoint",
+      "level": "info",
+      "message": "Backlot confirmed updated project state.",
+      "stage": "scene_plan",
+      "data": {
+        "backlot_observed": true
+      },
+      "createdAt": "2026-07-25T08:47:27.826Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:grok-build-27",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 37,
+      "type": "state",
+      "level": "info",
+      "message": "Grok resumed from the canonical OpenMontage checkpoint.",
+      "data": {
+        "runner_sequence": 27
+      },
+      "createdAt": "2026-07-25T08:47:28.390Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:checkpoint-stage-998a0061b08dc51e3b14",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 38,
+      "type": "stage",
+      "level": "info",
+      "message": "scene plan checkpoint: completed.",
+      "stage": "scene_plan",
+      "data": {
+        "runner_sequence": 29,
+        "progress": 100
+      },
+      "createdAt": "2026-07-25T08:48:12.087Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:checkpoint-998a0061b08dc51e3b14",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 39,
+      "type": "checkpoint",
+      "level": "info",
+      "message": "Canonical OpenMontage checkpoint saved for scene plan.",
+      "stage": "scene_plan",
+      "data": {
+        "runner_sequence": 30
+      },
+      "createdAt": "2026-07-25T08:48:12.088Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:checkpoint-stage-45612db044bbc222d6fc",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 40,
+      "type": "stage",
+      "level": "info",
+      "message": "assets checkpoint: active.",
+      "stage": "assets",
+      "data": {
+        "runner_sequence": 31,
+        "progress": 100
+      },
+      "createdAt": "2026-07-25T08:48:12.093Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:checkpoint-45612db044bbc222d6fc",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 41,
+      "type": "checkpoint",
+      "level": "info",
+      "message": "Canonical OpenMontage checkpoint saved for assets.",
+      "stage": "assets",
+      "data": {
+        "runner_sequence": 32
+      },
+      "createdAt": "2026-07-25T08:48:12.093Z"
+    },
+    {
+      "id": "c8d84e45-9f3b-4607-8ac4-ea70d96c0e2f",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 42,
+      "type": "checkpoint",
+      "level": "info",
+      "message": "Backlot confirmed updated project state.",
+      "stage": "scene_plan",
+      "data": {
+        "backlot_observed": true
+      },
+      "createdAt": "2026-07-25T08:48:12.191Z"
+    },
+    {
+      "id": "2c97185c-0ede-4ace-9182-156c92bdd686",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 43,
+      "type": "checkpoint",
+      "level": "info",
+      "message": "Backlot confirmed updated project state.",
+      "stage": "assets",
+      "data": {
+        "backlot_observed": true
+      },
+      "createdAt": "2026-07-25T08:48:12.196Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:checkpoint-stage-c31426560582d2136ff0",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 44,
+      "type": "stage",
+      "level": "info",
+      "message": "assets checkpoint: active.",
+      "stage": "assets",
+      "data": {
+        "runner_sequence": 47,
+        "progress": 100
+      },
+      "createdAt": "2026-07-25T08:55:12.188Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:checkpoint-c31426560582d2136ff0",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 45,
+      "type": "checkpoint",
+      "level": "info",
+      "message": "Canonical OpenMontage checkpoint saved for assets.",
+      "stage": "assets",
+      "data": {
+        "runner_sequence": 48
+      },
+      "createdAt": "2026-07-25T08:55:12.189Z"
+    },
+    {
+      "id": "2467ef80-7461-470a-9eef-a9df33390828",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 46,
+      "type": "checkpoint",
+      "level": "info",
+      "message": "Backlot confirmed updated project state.",
+      "stage": "assets",
+      "data": {
+        "backlot_observed": true
+      },
+      "createdAt": "2026-07-25T08:55:12.265Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:grok-build-50",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 47,
+      "type": "stage",
+      "level": "info",
+      "message": "assets requires MES approval.",
+      "stage": "assets",
+      "data": {
+        "runner_sequence": 50,
+        "progress": 100
+      },
+      "createdAt": "2026-07-25T08:55:24.624Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:grok-build-51",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 48,
+      "type": "approval",
+      "level": "warning",
+      "message": "OpenMontage assets artifact is ready for review.",
+      "stage": "assets",
+      "data": {
+        "runner_sequence": 51,
+        "openmontage_stage": "assets",
+        "artifact_count": 2,
+        "checkpoint_status": "awaiting_human",
+        "human_approved": false
+      },
+      "createdAt": "2026-07-25T08:55:24.624Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:grok-build-53",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 49,
+      "type": "state",
+      "level": "info",
+      "message": "Grok resumed from the canonical OpenMontage checkpoint.",
+      "data": {
+        "runner_sequence": 53
+      },
+      "createdAt": "2026-07-25T08:55:25.191Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:checkpoint-stage-fe0bfd73bb52ffa01821",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 50,
+      "type": "stage",
+      "level": "info",
+      "message": "assets checkpoint: completed.",
+      "stage": "assets",
+      "data": {
+        "runner_sequence": 57,
+        "progress": 100
+      },
+      "createdAt": "2026-07-25T08:57:12.223Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:checkpoint-fe0bfd73bb52ffa01821",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 51,
+      "type": "checkpoint",
+      "level": "info",
+      "message": "Canonical OpenMontage checkpoint saved for assets.",
+      "stage": "assets",
+      "data": {
+        "runner_sequence": 58
+      },
+      "createdAt": "2026-07-25T08:57:12.224Z"
+    },
+    {
+      "id": "49040a43-cce4-49bc-89a6-2588fb5feb57",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 52,
+      "type": "checkpoint",
+      "level": "info",
+      "message": "Backlot confirmed updated project state.",
+      "stage": "assets",
+      "data": {
+        "backlot_observed": true
+      },
+      "createdAt": "2026-07-25T08:57:12.288Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:checkpoint-stage-b2b244ee56dab8f59803",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 53,
+      "type": "stage",
+      "level": "info",
+      "message": "edit checkpoint: completed.",
+      "stage": "edit",
+      "data": {
+        "runner_sequence": 65,
+        "progress": 100
+      },
+      "createdAt": "2026-07-25T09:00:12.328Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:checkpoint-b2b244ee56dab8f59803",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 54,
+      "type": "checkpoint",
+      "level": "info",
+      "message": "Canonical OpenMontage checkpoint saved for edit.",
+      "stage": "edit",
+      "data": {
+        "runner_sequence": 66
+      },
+      "createdAt": "2026-07-25T09:00:12.329Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:checkpoint-stage-a5d7fe1f22c4d048c9cd",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 55,
+      "type": "stage",
+      "level": "info",
+      "message": "compose checkpoint: active.",
+      "stage": "compose",
+      "data": {
+        "runner_sequence": 67,
+        "progress": 100
+      },
+      "createdAt": "2026-07-25T09:00:12.333Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:checkpoint-a5d7fe1f22c4d048c9cd",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 56,
+      "type": "checkpoint",
+      "level": "info",
+      "message": "Canonical OpenMontage checkpoint saved for compose.",
+      "stage": "compose",
+      "data": {
+        "runner_sequence": 68
+      },
+      "createdAt": "2026-07-25T09:00:12.334Z"
+    },
+    {
+      "id": "d612413a-e282-49d2-9320-9b69af2fa2e5",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 57,
+      "type": "checkpoint",
+      "level": "info",
+      "message": "Backlot confirmed updated project state.",
+      "stage": "edit",
+      "data": {
+        "backlot_observed": true
+      },
+      "createdAt": "2026-07-25T09:00:12.440Z"
+    },
+    {
+      "id": "a53af7e5-0d8d-40ea-ad05-92e86c64d780",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 58,
+      "type": "checkpoint",
+      "level": "info",
+      "message": "Backlot confirmed updated project state.",
+      "stage": "compose",
+      "data": {
+        "backlot_observed": true
+      },
+      "createdAt": "2026-07-25T09:00:12.446Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:checkpoint-stage-9e27c3705ab3c044a3b0",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 59,
+      "type": "stage",
+      "level": "info",
+      "message": "compose checkpoint: active.",
+      "stage": "compose",
+      "data": {
+        "runner_sequence": 70,
+        "progress": 100
+      },
+      "createdAt": "2026-07-25T09:00:42.336Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:checkpoint-9e27c3705ab3c044a3b0",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 60,
+      "type": "checkpoint",
+      "level": "info",
+      "message": "Canonical OpenMontage checkpoint saved for compose.",
+      "stage": "compose",
+      "data": {
+        "runner_sequence": 71
+      },
+      "createdAt": "2026-07-25T09:00:42.336Z"
+    },
+    {
+      "id": "d642f5f4-dda6-454a-a431-64aa704d1b6c",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 61,
+      "type": "checkpoint",
+      "level": "info",
+      "message": "Backlot confirmed updated project state.",
+      "stage": "compose",
+      "data": {
+        "backlot_observed": true
+      },
+      "createdAt": "2026-07-25T09:00:42.400Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:checkpoint-stage-bba92224fbdf609207c8",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 62,
+      "type": "stage",
+      "level": "info",
+      "message": "compose checkpoint: completed.",
+      "stage": "compose",
+      "data": {
+        "runner_sequence": 76,
+        "progress": 100
+      },
+      "createdAt": "2026-07-25T09:02:42.356Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:checkpoint-bba92224fbdf609207c8",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 63,
+      "type": "checkpoint",
+      "level": "info",
+      "message": "Canonical OpenMontage checkpoint saved for compose.",
+      "stage": "compose",
+      "data": {
+        "runner_sequence": 77
+      },
+      "createdAt": "2026-07-25T09:02:42.356Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:checkpoint-stage-ef658daa8fe4c680212f",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 64,
+      "type": "stage",
+      "level": "info",
+      "message": "export checkpoint: active.",
+      "stage": "export",
+      "data": {
+        "runner_sequence": 78,
+        "progress": 100
+      },
+      "createdAt": "2026-07-25T09:02:42.361Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:checkpoint-ef658daa8fe4c680212f",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 65,
+      "type": "checkpoint",
+      "level": "info",
+      "message": "Canonical OpenMontage checkpoint saved for export.",
+      "stage": "export",
+      "data": {
+        "runner_sequence": 79
+      },
+      "createdAt": "2026-07-25T09:02:42.362Z"
+    },
+    {
+      "id": "2d1be440-4f05-402f-bf51-aa24a21a51de",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 66,
+      "type": "checkpoint",
+      "level": "info",
+      "message": "Backlot confirmed updated project state.",
+      "stage": "compose",
+      "data": {
+        "backlot_observed": true
+      },
+      "createdAt": "2026-07-25T09:02:42.472Z"
+    },
+    {
+      "id": "ef2d6b8e-5789-4505-9aa9-08a63dfdbea5",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 67,
+      "type": "checkpoint",
+      "level": "info",
+      "message": "Backlot confirmed updated project state.",
+      "stage": "export",
+      "data": {
+        "backlot_observed": true
+      },
+      "createdAt": "2026-07-25T09:02:42.477Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:checkpoint-stage-e1cef27bcf4d57b98fe1",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 68,
+      "type": "stage",
+      "level": "info",
+      "message": "export checkpoint: active.",
+      "stage": "export",
+      "data": {
+        "runner_sequence": 81,
+        "progress": 100
+      },
+      "createdAt": "2026-07-25T09:02:57.036Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:checkpoint-e1cef27bcf4d57b98fe1",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 69,
+      "type": "checkpoint",
+      "level": "info",
+      "message": "Canonical OpenMontage checkpoint saved for export.",
+      "stage": "export",
+      "data": {
+        "runner_sequence": 82
+      },
+      "createdAt": "2026-07-25T09:02:57.037Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:grok-build-83",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 70,
+      "type": "stage",
+      "level": "info",
+      "message": "export requires MES approval.",
+      "stage": "export",
+      "data": {
+        "runner_sequence": 83,
+        "progress": 100
+      },
+      "createdAt": "2026-07-25T09:02:57.042Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:grok-build-84",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 71,
+      "type": "approval",
+      "level": "warning",
+      "message": "OpenMontage publish artifact is ready for review.",
+      "stage": "export",
+      "data": {
+        "runner_sequence": 84,
+        "openmontage_stage": "publish",
+        "artifact_count": 1,
+        "checkpoint_status": "awaiting_human",
+        "human_approved": false
+      },
+      "createdAt": "2026-07-25T09:02:57.043Z"
+    },
+    {
+      "id": "44ef76a9-4287-4c0f-b4f6-45e2274778d1",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 72,
+      "type": "checkpoint",
+      "level": "info",
+      "message": "Backlot confirmed updated project state.",
+      "stage": "export",
+      "data": {
+        "backlot_observed": true
+      },
+      "createdAt": "2026-07-25T09:02:57.098Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:grok-build-86",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 73,
+      "type": "state",
+      "level": "info",
+      "message": "Grok resumed from the canonical OpenMontage checkpoint.",
+      "data": {
+        "runner_sequence": 86
+      },
+      "createdAt": "2026-07-25T09:02:58.177Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:checkpoint-stage-4c2604fd66723339306c",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 74,
+      "type": "stage",
+      "level": "info",
+      "message": "export checkpoint: completed.",
+      "stage": "export",
+      "data": {
+        "runner_sequence": 87,
+        "progress": 100
+      },
+      "createdAt": "2026-07-25T09:03:12.380Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:checkpoint-4c2604fd66723339306c",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 75,
+      "type": "checkpoint",
+      "level": "info",
+      "message": "Canonical OpenMontage checkpoint saved for export.",
+      "stage": "export",
+      "data": {
+        "runner_sequence": 88
+      },
+      "createdAt": "2026-07-25T09:03:12.381Z"
+    },
+    {
+      "id": "58379107-b625-4776-8274-006b60876bce",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 76,
+      "type": "checkpoint",
+      "level": "info",
+      "message": "Backlot confirmed updated project state.",
+      "stage": "export",
+      "data": {
+        "backlot_observed": true
+      },
+      "createdAt": "2026-07-25T09:03:12.446Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:grok-build-90",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 77,
+      "type": "output",
+      "level": "info",
+      "message": "Output ready: final_mp4.",
+      "data": {
+        "runner_sequence": 90
+      },
+      "createdAt": "2026-07-25T09:03:19.124Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:grok-build-91",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 78,
+      "type": "output",
+      "level": "info",
+      "message": "Output ready: decision_log.",
+      "data": {
+        "runner_sequence": 91
+      },
+      "createdAt": "2026-07-25T09:03:19.126Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:grok-build-92",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 79,
+      "type": "output",
+      "level": "info",
+      "message": "Output ready: render_report.",
+      "data": {
+        "runner_sequence": 92
+      },
+      "createdAt": "2026-07-25T09:03:19.127Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:grok-build-93",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 80,
+      "type": "output",
+      "level": "info",
+      "message": "Output ready: production_assets.",
+      "data": {
+        "runner_sequence": 93
+      },
+      "createdAt": "2026-07-25T09:03:19.127Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:grok-build-94",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 81,
+      "type": "stage",
+      "level": "info",
+      "message": "OpenMontage publish and output validation completed.",
+      "stage": "export",
+      "data": {
+        "runner_sequence": 94,
+        "progress": 100
+      },
+      "createdAt": "2026-07-25T09:03:19.128Z"
+    },
+    {
+      "id": "mes-accept-g-interrupt-grok-20260725:runner:grok-build-95",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "sequence": 82,
+      "type": "state",
+      "level": "info",
+      "message": "Real Grok-managed OpenMontage production completed.",
+      "data": {
+        "runner_sequence": 95
+      },
+      "createdAt": "2026-07-25T09:03:19.129Z"
+    }
+  ],
+  "outputs": [
+    {
+      "id": "261305c613e73f17ac3fff78",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "kind": "decision_log",
+      "path": "D:\\Work\\OpenMontage\\projects\\mes-accept-g-interrupt-grok-20260725\\decision_log.json",
+      "sizeBytes": 12881,
+      "createdAt": "2026-07-25T09:03:19.122Z"
+    },
+    {
+      "id": "e880416a7e31e7b36cf5f2e3",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "kind": "final_mp4",
+      "path": "D:\\Work\\OpenMontage\\projects\\mes-accept-g-interrupt-grok-20260725\\renders\\final.mp4",
+      "sizeBytes": 2803215,
+      "metadata": {
+        "duration_seconds": 8,
+        "video_codec": "h264",
+        "audio_codec": "aac",
+        "width": 1280,
+        "height": 720,
+        "fps": 24
+      },
+      "createdAt": "2026-07-25T09:03:19.122Z"
+    },
+    {
+      "id": "df0c7018ee1f5990e057f53b",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "kind": "render_report",
+      "path": "D:\\Work\\OpenMontage\\projects\\mes-accept-g-interrupt-grok-20260725\\artifacts\\render_report.json",
+      "sizeBytes": 1191,
+      "createdAt": "2026-07-25T09:03:19.122Z"
+    },
+    {
+      "id": "093bd4b6af0678e25ef84cab",
+      "jobId": "mes-accept-g-interrupt-grok-20260725",
+      "kind": "production_assets",
+      "path": "D:\\Work\\OpenMontage\\projects\\mes-accept-g-interrupt-grok-20260725\\assets",
+      "createdAt": "2026-07-25T09:03:19.123Z"
+    }
+  ],
+  "postconditions": [
+    {
+      "name": "terminal_state",
+      "result": "PASS",
+      "detail": "expected completed, observed completed"
+    },
+    {
+      "name": "output_present:final_mp4",
+      "result": "PASS",
+      "detail": "1 recorded"
+    },
+    {
+      "name": "final_mp4_exists_on_disk",
+      "result": "PASS",
+      "detail": "D:\\Work\\OpenMontage\\projects\\mes-accept-g-interrupt-grok-20260725\\renders\\final.mp4"
+    },
+    {
+      "name": "final_mp4_ffprobe",
+      "result": "PASS",
+      "detail": "ffprobe parsed the container"
+    },
+    {
+      "name": "final_mp4_has_video",
+      "result": "PASS",
+      "detail": "video codec h264"
+    },
+    {
+      "name": "final_mp4_width",
+      "result": "PASS",
+      "detail": "requested 1280, observed 1280"
+    },
+    {
+      "name": "final_mp4_height",
+      "result": "PASS",
+      "detail": "requested 720, observed 720"
+    },
+    {
+      "name": "final_mp4_locked_fps",
+      "result": "PASS",
+      "detail": "locked 24 fps, observed 24 fps"
+    },
+    {
+      "name": "final_mp4_min_duration",
+      "result": "PASS",
+      "detail": ">= 6s, observed 8s"
+    }
+  ],
+  "media": {
+    "finalMp4": {
+      "path": "D:\\Work\\OpenMontage\\projects\\mes-accept-g-interrupt-grok-20260725\\renders\\final.mp4",
+      "sizeBytes": 2803215,
+      "sha256": "8a21959ff1b1b572e2ab428929274782ebb7d1747445b6e356ed5c383be46f25",
+      "ffprobe": {
+        "ok": true,
+        "durationSeconds": 8,
+        "formatName": "mov,mp4,m4a,3gp,3g2,mj2",
+        "videoCodec": "h264",
+        "audioCodec": "aac",
+        "width": 1280,
+        "height": 720,
+        "fps": 24
+      }
+    }
+  },
+  "result": "PASS",
+  "completedAt": "2026-07-25T09:03:51.477Z"
+}

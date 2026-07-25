@@ -1,23 +1,21 @@
 {
-  "scenario": "G-recovery-from-real-runner-process-interruption",
-  "evidenceDir": "D:\\Work\\mental-empire-studio\\docs\\openmontage-integration\\evidence\\G-runner-interruption",
-  "userDataDir": "D:\\\\Work\\\\openmontage-acceptance\\\\profiles\\\\G-runner-interruption-grok2",
+  "scenario": "H-pause-resume-cancel-and-duplicate-prevention",
+  "evidenceDir": "D:\\Work\\mental-empire-studio\\docs\\openmontage-integration\\evidence\\H-process-control",
+  "userDataDir": "D:\\Work\\openmontage-acceptance\\profiles\\H-process-control",
   "openMontagePath": "D:\\Work\\OpenMontage",
   "backlotUrl": "http://127.0.0.1:4750",
   "stallTimeoutSec": 900,
   "timeoutSec": 4200,
-  "retryLimit": 3,
-  "automaticMesFallback": true,
-  "expectedFinalState": "completed",
-  "postconditions": {
-    "minDurationSeconds": 6
-  },
+  "retryLimit": 1,
+  "automaticMesFallback": false,
+  "expectedFinalState": "cancelled",
+  "postconditions": {},
   "actions": {
-    "resumeExisting": true,
+    "resumeExisting": false,
     "autoApprove": true,
-    "interruptRunner": {
-      "times": 1
-    }
+    "duplicateStart": true,
+    "pauseResume": true,
+    "cancelAfterCheckpoint": true
   },
   "request": {
     "routing": {
@@ -32,13 +30,13 @@
     "jobPackage": {
       "schema": "mes.openmontage.job/v1",
       "contractVersion": "mes.openmontage/v1",
-      "jobId": "mes-accept-g-interrupt-grok-20260725",
-      "projectId": "mes-accept-g-interrupt-grok-20260725",
+      "jobId": "mes-accept-h-control-20260725",
+      "projectId": "mes-accept-h-control-20260725",
       "createdAt": "2026-07-25T00:00:00Z",
       "requestedBy": "mental-empire-studio",
       "project": {
-        "title": "MES Acceptance G-INTERRUPT",
-        "description": "Create an 8 second narrated documentary montage at EXACTLY 24 fps using only real open motion footage from NASA and/or Wikimedia Commons. Use the supplied narration, trimmed to the 8 second timeline. Music is explicitly opted out, so the mix is narration only. Honour the supplied locked timeline: 24 fps and the two locked scene boundaries. Fill each locked gap scene with real motion footage. Do not use still-image substitutes, fixtures, generated video, Pexels, or Pixabay. No editable project export is requested for this run.\n\nThis run will have its runner process tree killed mid-production. On resume, continue from the last valid checkpoint: do not redo stages already recorded as completed, and do not create a parallel project."
+        "title": "MES Acceptance H-CONTROL",
+        "description": "Create an 8 second narrated documentary montage at EXACTLY 24 fps using only real open motion footage from NASA and/or Wikimedia Commons. Use the supplied narration, trimmed to the 8 second timeline. Music is explicitly opted out, so the mix is narration only. Honour the supplied locked timeline: 24 fps and the two locked scene boundaries. Fill each locked gap scene with real motion footage. Do not use still-image substitutes, fixtures, generated video, Pexels, or Pixabay. No editable project export is requested for this run.\n\nThis run exercises MES process control: it will be paused and resumed, a duplicate start will be attempted and must be rejected, and the production will then be cancelled. Checkpoint whatever is complete before yielding."
       },
       "source": {
         "narrationPath": "D:\\Work\\openmontage-acceptance\\inputs\\archive-remotion-narration.wav",
@@ -95,7 +93,7 @@
         ]
       },
       "output": {
-        "directory": "D:\\Work\\openmontage-acceptance\\outputs\\G-runner-interruption",
+        "directory": "D:\\Work\\openmontage-acceptance\\outputs\\H-process-control",
         "aspectRatio": "16:9",
         "width": 1280,
         "height": 720,
@@ -103,16 +101,15 @@
         "captions": false
       },
       "fallback": {
-        "enabled": true,
+        "enabled": false,
         "engine": "mental-empire-studio",
         "preserveOpenMontageProject": true
       },
       "metadata": {
-        "acceptance_scenarios": "G",
+        "acceptance_scenarios": "H",
         "duration_target_seconds": 8,
         "locked_fps": 24,
         "music_opt_out": true,
-        "required_open_sources": "NASA,Wikimedia Commons",
         "cost_limit_usd": 0
       }
     }

@@ -37,13 +37,13 @@ is not evidence.
 | --- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
 | A | Open archival footage workflow | PASS | PASS | PASS | PASS | PASS | PASS | NOT EXECUTED | `evidence/A-archive-footage/` |
 | B | Approval and revision flow | PASS | PASS | PASS | PASS | PASS | PASS | NOT EXECUTED | `evidence/B-approval-revision/` |
-| C | Additional stock footage (Pexels) | PASS | PASS | PASS | PASS — real runner reached a genuine approval gate before quota loss | **BLOCKED** — no runner auth | NOT EXECUTED | NOT EXECUTED | `evidence/BLOCKED-agent-runner-auth/` |
+| C | Additional stock footage (Pexels) | PASS | PASS | PASS | PASS | **PASS** | PASS | NOT EXECUTED | `evidence/C-pexels-stock-claude/` |
 | D | Remotion render + self-contained editable project | PASS | PASS | PASS | PASS | **PASS** | PASS | NOT EXECUTED | `evidence/D-remotion-editable/` |
-| E | HyperFrames render + editable workspace | PASS | PASS | NOT EXECUTED | NOT EXECUTED | **BLOCKED** — no runner auth | NOT EXECUTED | NOT EXECUTED | `evidence/BLOCKED-agent-runner-auth/` |
+| E | HyperFrames render + editable workspace | PASS | PASS | PASS | PASS | **PASS** | PASS | NOT EXECUTED | `evidence/E-hyperframes/` |
 | F | Restart recovery — normal application restart | PASS | PASS | PASS | PASS | PASS | PASS | NOT EXECUTED | `evidence/F-normal-restart/` |
-| G | Recovery from real runner/agent interruption | PASS | PASS | PASS | PASS | **BLOCKED** — no runner auth | NOT EXECUTED | NOT EXECUTED | `evidence/BLOCKED-agent-runner-auth/` |
-| H | Pause / resume / cancel / duplicate prevention | PASS | PASS | PASS | PASS | **BLOCKED** — no runner auth | NOT EXECUTED | NOT EXECUTED | `evidence/BLOCKED-agent-runner-auth/` |
-| I | Forced fatal failure + MES fallback | PASS | PASS | PASS | PASS | **BLOCKED** — no runner auth | NOT EXECUTED | NOT EXECUTED | `evidence/BLOCKED-agent-runner-auth/` |
+| G | Recovery from real runner/agent interruption | PASS | PASS | PASS | PASS | **PASS** | PASS | NOT EXECUTED | `evidence/G-runner-interruption/` |
+| H | Pause / resume / cancel / duplicate prevention | PASS | PASS | PASS | PASS | **PASS** | PASS | NOT EXECUTED | `evidence/H-process-control/` |
+| I | Forced fatal failure + MES fallback | PASS | PASS | PASS | PASS | **PASS** | PASS | NOT EXECUTED | `evidence/I-fatal-fallback/` |
 | J | OpenMontage-unavailable MES regression | PASS | PASS | PASS | N/R — no external process involved | **PASS** | PASS | NOT EXECUTED | `evidence/J-unavailable/` |
 
 **Five rows are BLOCKED because no agent runner can currently authenticate.** Both supported

@@ -179,6 +179,7 @@ export function OpenMontageSettingsPanel(): JSX.Element {
             <option value="none">No managed runner</option>
             <option value="codex-cli">Codex CLI</option>
             <option value="claude-code">Claude Code</option>
+            <option value="grok-build">Grok Build</option>
             <option value="custom">Custom executable</option>
           </select>
         </label>

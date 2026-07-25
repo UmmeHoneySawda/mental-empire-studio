@@ -2,7 +2,7 @@
 
 import { _electron as electron } from 'playwright'
 import { spawnSync } from 'node:child_process'
-import { existsSync, mkdirSync, readFileSync, writeFileSync } from 'node:fs'
+import { existsSync, mkdirSync, readFileSync, readdirSync, statSync, writeFileSync } from 'node:fs'
 import { fileURLToPath } from 'node:url'
 import { dirname, isAbsolute, join, resolve } from 'node:path'
 import process from 'node:process'
@@ -365,7 +365,10 @@ async function main() {
       evidence.actions.push({ action: 'resume_existing', state: existing.state, stage: existing.currentStage })
     } else {
       step('planning production')
-      plan = await api('planProduction', spec.request, true)
+      // Do not force a second health/auth probe here. The harness already ran a
+      // full health check above; forcing again re-spends a real agent turn
+      // (especially Grok) and can time out into a false "needs authentication".
+      plan = await api('planProduction', spec.request, false)
       step(`plan engine=${plan?.decision?.engine} runtime=${plan?.decision?.runtime} startable=${plan?.decision?.startable}`)
       evidence.plan = plan
       step('starting production')
@@ -545,11 +548,62 @@ async function main() {
           record.queued = true
           await callApi('render', 'all')
           record.rendered = true
-          const rows = await callApi('render', 'jobs')
-          const row = (Array.isArray(rows) ? rows : []).find((candidate) => candidate?.projectId === job.fallbackProjectId)
-          record.renderRow = row
-            ? { status: row.status, outputPath: row.outputPath ?? null, error: row.error ?? null }
-            : null
+          // Wait briefly for the queue runner to settle a done row with an output path.
+          let resolved = null
+          for (let attempt = 0; attempt < 30 && !resolved; attempt += 1) {
+            const rows = await callApi('render', 'jobs')
+            const list = Array.isArray(rows) ? rows : []
+            // render:jobs returns RenderQueueRow { job: { projectId, outputPath, status }, ... }
+            // older fixtures may flatten the same fields onto the root.
+            const match = list.find((candidate) => {
+              const projectId = candidate?.projectId ?? candidate?.job?.projectId
+              return projectId === job.fallbackProjectId
+            })
+            if (match) {
+              const nested = match.job && typeof match.job === 'object' ? match.job : match
+              const outputPath = nested.outputPath ?? match.outputPath ?? null
+              const status = nested.status ?? match.status ?? null
+              if (outputPath || status === 'done' || status === 'error' || status === 'failed') {
+                resolved = {
+                  status,
+                  outputPath,
+                  error: nested.error ?? match.error ?? null
+                }
+                break
+              }
+            }
+            await delay(1_000)
+          }
+          // If the queue view still has no path, recover from the MES project
+          // folder the renderer actually wrote (Documents/.../OpenMontage fallback).
+          if (!resolved?.outputPath) {
+            const home = process.env.USERPROFILE || process.env.HOME || ''
+            const candidates = []
+            if (home) {
+              const root = join(home, 'Documents', 'MentalEmpireStudio', 'OpenMontage fallback')
+              if (existsSync(root)) {
+                for (const entry of readdirSync(root, { withFileTypes: true })) {
+                  if (!entry.isDirectory()) continue
+                  if (!entry.name.includes(String(job.fallbackProjectId).replace(/^proj-/, ''))
+                    && !entry.name.includes(String(job.jobId || job.id || ''))) continue
+                  const outputDir = join(root, entry.name, 'output')
+                  if (!existsSync(outputDir)) continue
+                  for (const file of readdirSync(outputDir)) {
+                    if (file.toLowerCase().endsWith('.mp4')) candidates.push(join(outputDir, file))
+                  }
+                }
+              }
+            }
+            if (candidates.length) {
+              resolved = {
+                status: resolved?.status ?? 'done',
+                outputPath: candidates.sort((a, b) => statSync(b).mtimeMs - statSync(a).mtimeMs)[0],
+                error: null,
+                recoveredFromFilesystem: true
+              }
+            }
+          }
+          record.renderRow = resolved
         } catch (error) {
           record.error = String(error).slice(0, 800)
         }

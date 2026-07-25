@@ -294,11 +294,15 @@ export async function probeOpenMontageHealth(
         // the only way to tell "installed" from "usable". It costs real seconds,
         // so the budget here is generous: a slow probe must not be mistaken for a
         // broken runner. Runners that do not recognise the flag ignore it.
+        // Grok Build auth probes can take well over a minute when the CLI is cold
+        // or contending with another local Grok process; 60s was mistaking a slow
+        // but healthy runner for "needs authentication".
+        const authProbeTimeoutMs = settings.runner === 'grok-build' ? 180_000 : 120_000
         const result = await runCommand(
           runner.executable,
           [...runner.args, '--openmontage-protocol-info', '--auth-probe'],
           {
-            timeoutMs: 60_000,
+            timeoutMs: authProbeTimeoutMs,
             env: { ...childEnvironment.env, ...runner.fixedEnvironment }
           }
         )
@@ -428,14 +432,38 @@ export async function probeOpenMontageHealth(
 }
 
 export class OpenMontageHealthService {
-  private cached?: { report: OpenMontageHealthReport; expiresAt: number }
+  private cached?: { report: OpenMontageHealthReport; expiresAt: number; runnerKey: string }
 
   constructor(private readonly options: OpenMontageHealthProbeOptions = {}) {}
 
   async check(settings: OpenMontageSettings, force = false): Promise<OpenMontageHealthReport> {
-    if (!force && this.cached && this.cached.expiresAt > Date.now()) return this.cached.report
+    const runnerKey = `${settings.runner}|${settings.runnerExecutable}|${settings.mode}|${settings.repositoryPath}`
+    const cacheHit = this.cached
+      && this.cached.runnerKey === runnerKey
+      && this.cached.expiresAt > Date.now()
+    if (cacheHit && !force) return this.cached!.report
+    // Grok (and similar cloud CLIs) burn a real agent turn on `--auth-probe`. A
+    // forced re-check within two minutes of a ready report would re-run that
+    // turn, often time out, and flip a healthy runner to "needs authentication"
+    // just as plan/start runs. Reuse a fresh ready cache instead.
+    if (
+      cacheHit
+      && force
+      && this.cached!.report.status === 'ready'
+      && this.cached!.report.components.some(
+        (component) => component.name === 'agent_runner' && component.status === 'available'
+      )
+    ) {
+      return this.cached!.report
+    }
     const report = await probeOpenMontageHealth(settings, this.options)
-    this.cached = { report, expiresAt: Date.now() + 30_000 }
+    // Keep successful managed-runner results a bit longer so plan + start can
+    // share one auth probe without a second cold CLI turn.
+    const runnerReady = report.components.some(
+      (component) => component.name === 'agent_runner' && component.status === 'available'
+    )
+    const ttlMs = report.status === 'ready' && runnerReady ? 120_000 : 30_000
+    this.cached = { report, expiresAt: Date.now() + ttlMs, runnerKey }
     return report
   }
 

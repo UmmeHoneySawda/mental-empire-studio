@@ -259,7 +259,7 @@ export interface OpenMontageSettings {
   pythonExecutable: string
   backlotUrl: string
   mode: OpenMontageIntegrationMode
-  runner: 'none' | 'codex-cli' | 'claude-code' | 'custom'
+  runner: 'none' | 'codex-cli' | 'claude-code' | 'grok-build' | 'custom'
   runnerExecutable: string
   runnerArguments: string[]
   assistedFallback: boolean
@@ -907,7 +907,10 @@ function resolveRuntime(
  * mode uses OpenMontage only when health and the requested capabilities support
  * it; runtime changes are never made silently.
  */
-export type OpenMontageManagedRunner = Extract<OpenMontageSettings['runner'], 'codex-cli' | 'claude-code' | 'custom'>
+export type OpenMontageManagedRunner = Extract<
+  OpenMontageSettings['runner'],
+  'codex-cli' | 'claude-code' | 'grok-build' | 'custom'
+>
 
 /** What MES knows about one candidate agent runner at selection time. */
 export interface OpenMontageRunnerCandidate {
@@ -931,6 +934,7 @@ export interface OpenMontageRunnerSelection {
 const RUNNER_LABELS: Record<OpenMontageManagedRunner, string> = {
   'codex-cli': 'Codex CLI',
   'claude-code': 'Claude Code',
+  'grok-build': 'Grok Build',
   custom: 'the custom runner'
 }
 
@@ -995,9 +999,10 @@ export function selectOpenMontageRunner(
 
   if (!usable.length) return assisted()
 
-  // Automatic order: prefer Codex, then Claude Code, then a custom runner, so
-  // behaviour stays predictable rather than depending on probe ordering.
-  const order: OpenMontageManagedRunner[] = ['codex-cli', 'claude-code', 'custom']
+  // Automatic order: prefer Codex, then Claude Code, then Grok Build, then a
+  // custom runner, so behaviour stays predictable rather than depending on
+  // probe ordering.
+  const order: OpenMontageManagedRunner[] = ['codex-cli', 'claude-code', 'grok-build', 'custom']
   const chosen = [...usable].sort((left, right) => order.indexOf(left.runner) - order.indexOf(right.runner))[0]
   reasons.push(`Automatic runner selection chose ${RUNNER_LABELS[chosen.runner]} because it is installed, authenticated and has capacity.`)
   for (const entry of rejected) reasons.push(`Skipped ${RUNNER_LABELS[entry.runner]}: ${entry.reason}`)
@@ -1105,7 +1110,9 @@ export function classifyOpenMontageFailure(input: OpenMontageFailureInput): Open
     retryable = true
   } else if (
     rawCode === 'CODEX_USAGE_LIMIT_REACHED'
-    || /usage limit|quota exceeded|out of credits|purchase more credits|insufficient_quota/.test(haystack)
+    || rawCode === 'CLAUDE_USAGE_LIMIT_REACHED'
+    || rawCode === 'GROK_USAGE_LIMIT_REACHED'
+    || /usage limit|session limit|quota exceeded|out of credits|purchase more credits|insufficient_quota/.test(haystack)
   ) {
     // The agent runner's account has no capacity left. This is checked before the
     // keyword heuristics below because the generic runner-failure text contains
