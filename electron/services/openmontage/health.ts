@@ -300,17 +300,44 @@ export async function probeOpenMontageHealth(
         )
         const marker = 'MES_OPENMONTAGE_RUNNER='
         const line = result.stdout.split(/\r?\n/).findLast((entry) => entry.startsWith(marker))
-        const info = line ? JSON.parse(line.slice(marker.length)) as { protocol?: unknown; version?: unknown } : {}
+        const info = line
+          ? JSON.parse(line.slice(marker.length)) as {
+            protocol?: unknown
+            version?: unknown
+            runner?: unknown
+            authenticated?: unknown
+            authFailureCode?: unknown
+            authFailureMessage?: unknown
+          }
+          : {}
         if (info.protocol !== OPENMONTAGE_RUNNER_PROTOCOL) {
           throw new Error('Runner did not advertise the required protocol.')
         }
-        components.push(component(
-          'agent_runner',
-          'available',
-          checkedAt,
-          'Managed JSON-lines protocol is available.',
-          typeof info.version === 'string' ? info.version : undefined
-        ))
+        const version = typeof info.version === 'string' ? info.version : undefined
+        // A runner that is installed but cannot authenticate is *not* available:
+        // reporting it as ready would let routing pick an agent that fails on its
+        // first turn. Report it as limited and name the reason.
+        if (info.authenticated === false) {
+          const reason = typeof info.authFailureMessage === 'string' && info.authFailureMessage.trim()
+            ? sanitizeOpenMontageDiagnostic(info.authFailureMessage)
+            : typeof info.authFailureCode === 'string' ? info.authFailureCode : 'authentication failed'
+          components.push(component(
+            'agent_runner',
+            'limited',
+            checkedAt,
+            `The ${String(info.runner ?? settings.runner)} runner is installed but not usable: ${String(reason)}`,
+            version
+          ))
+          warnings.push(`The ${String(info.runner ?? settings.runner)} runner needs authentication before it can run a production.`)
+        } else {
+          components.push(component(
+            'agent_runner',
+            'available',
+            checkedAt,
+            'Managed JSON-lines protocol is available.',
+            version
+          ))
+        }
       } catch (error) {
         components.push(component(
           'agent_runner',

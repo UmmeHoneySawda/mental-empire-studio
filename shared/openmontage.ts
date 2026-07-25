@@ -907,6 +907,103 @@ function resolveRuntime(
  * mode uses OpenMontage only when health and the requested capabilities support
  * it; runtime changes are never made silently.
  */
+export type OpenMontageManagedRunner = Extract<OpenMontageSettings['runner'], 'codex-cli' | 'claude-code' | 'custom'>
+
+/** What MES knows about one candidate agent runner at selection time. */
+export interface OpenMontageRunnerCandidate {
+  runner: OpenMontageManagedRunner
+  installed: boolean
+  authenticated: boolean
+  /** Set when the runner is installed and authenticated but out of capacity. */
+  quotaExhausted?: boolean
+  version?: string
+}
+
+export interface OpenMontageRunnerSelection {
+  /** `undefined` means no managed runner can run; the caller should go assisted or MES. */
+  runner?: OpenMontageManagedRunner
+  mode: 'managed' | 'assisted'
+  reasons: string[]
+  warnings: string[]
+  rejected: Array<{ runner: OpenMontageManagedRunner; reason: string }>
+}
+
+const RUNNER_LABELS: Record<OpenMontageManagedRunner, string> = {
+  'codex-cli': 'Codex CLI',
+  'claude-code': 'Claude Code',
+  custom: 'the custom runner'
+}
+
+/**
+ * Choose which agent runner drives a production.
+ *
+ * Selection happens *before* a production starts, or at a safe checkpoint
+ * boundary — never mid-turn. A runner that is installed but unauthenticated, or
+ * whose quota is spent, is rejected with a named reason rather than being tried
+ * and failing on its first turn. When an explicit preference is given it is
+ * honoured if usable and never silently swapped for a different agent.
+ */
+export function selectOpenMontageRunner(
+  candidates: readonly OpenMontageRunnerCandidate[],
+  preferred: OpenMontageSettings['runner'] | 'automatic',
+  options: { assistedFallback?: boolean } = {}
+): OpenMontageRunnerSelection {
+  const reasons: string[] = []
+  const warnings: string[] = []
+  const rejected: Array<{ runner: OpenMontageManagedRunner; reason: string }> = []
+
+  const why = (candidate: OpenMontageRunnerCandidate): string | undefined => {
+    if (!candidate.installed) return `${RUNNER_LABELS[candidate.runner]} is not installed.`
+    if (!candidate.authenticated) return `${RUNNER_LABELS[candidate.runner]} is installed but not authenticated.`
+    if (candidate.quotaExhausted) return `${RUNNER_LABELS[candidate.runner]} has no usage capacity left.`
+    return undefined
+  }
+
+  const usable: OpenMontageRunnerCandidate[] = []
+  for (const candidate of candidates) {
+    const problem = why(candidate)
+    if (problem) rejected.push({ runner: candidate.runner, reason: problem })
+    else usable.push(candidate)
+  }
+
+  const assisted = (): OpenMontageRunnerSelection => {
+    if (options.assistedFallback === false) {
+      return { mode: 'managed', reasons, warnings, rejected }
+    }
+    reasons.push('No managed agent runner is usable, so the production falls back to assisted handoff.')
+    return { mode: 'assisted', reasons, warnings, rejected }
+  }
+
+  if (preferred !== 'automatic' && preferred !== 'none') {
+    const candidate = candidates.find((entry) => entry.runner === preferred)
+    if (!candidate) {
+      reasons.push(`${RUNNER_LABELS[preferred as OpenMontageManagedRunner] ?? preferred} was requested but is not a known runner.`)
+      return assisted()
+    }
+    const problem = why(candidate)
+    if (!problem) {
+      reasons.push(`${RUNNER_LABELS[candidate.runner]} was explicitly selected and is ready.`)
+      return { runner: candidate.runner, mode: 'managed', reasons, warnings, rejected }
+    }
+    // An explicit choice is never silently replaced by a different agent.
+    reasons.push(`${problem} It was explicitly requested, so MES does not substitute a different agent automatically.`)
+    if (usable.length) {
+      warnings.push(`${RUNNER_LABELS[usable[0].runner]} is available if you want to switch runners.`)
+    }
+    return assisted()
+  }
+
+  if (!usable.length) return assisted()
+
+  // Automatic order: prefer Codex, then Claude Code, then a custom runner, so
+  // behaviour stays predictable rather than depending on probe ordering.
+  const order: OpenMontageManagedRunner[] = ['codex-cli', 'claude-code', 'custom']
+  const chosen = [...usable].sort((left, right) => order.indexOf(left.runner) - order.indexOf(right.runner))[0]
+  reasons.push(`Automatic runner selection chose ${RUNNER_LABELS[chosen.runner]} because it is installed, authenticated and has capacity.`)
+  for (const entry of rejected) reasons.push(`Skipped ${RUNNER_LABELS[entry.runner]}: ${entry.reason}`)
+  return { runner: chosen.runner, mode: 'managed', reasons, warnings, rejected }
+}
+
 export function decideOpenMontageRoute(
   request: OpenMontageRoutingRequest,
   health: OpenMontageHealthReport

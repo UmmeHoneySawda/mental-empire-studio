@@ -26,6 +26,7 @@
     "test:watch": "vitest"
   },
   "dependencies": {
+    "@anthropic-ai/claude-code": "2.1.220",
     "@fontsource/anton": "^5.2.7",
     "@fontsource/hanken-grotesk": "^5.2.8",
     "@fontsource/jetbrains-mono": "^5.2.8",

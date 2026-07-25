@@ -84,6 +84,37 @@ export function resolveBundledCodexExecutable(): string {
   return executable
 }
 
+/**
+ * The Claude Code package's install script drops the platform binary at
+ * `bin/claude(.exe)`, so resolving the package manifest and appending `bin` works
+ * on every platform it supports.
+ */
+export function resolveBundledClaudeExecutable(): string {
+  let packageJson: string
+  try {
+    packageJson = require.resolve('@anthropic-ai/claude-code/package.json')
+  } catch {
+    throw new Error('Bundled Claude Code runtime package is missing: @anthropic-ai/claude-code.')
+  }
+  const binDirectory = unpackedPath(path.join(path.dirname(packageJson), 'bin'))
+  const executable = path.join(binDirectory, process.platform === 'win32' ? 'claude.exe' : 'claude')
+  if (!existsSync(executable)) {
+    throw new Error('Bundled Claude Code executable was not found after installation.')
+  }
+  return executable
+}
+
+export function resolveClaudeRunnerScript(): string {
+  const packaged = typeof process.resourcesPath === 'string'
+    ? path.join(process.resourcesPath, 'openmontage-runner', 'claude-runner.mjs')
+    : ''
+  const candidate = packaged && existsSync(packaged)
+    ? packaged
+    : path.resolve(process.cwd(), 'resources', 'openmontage-runner', 'claude-runner.mjs')
+  if (!existsSync(candidate)) throw new Error('MES Claude OpenMontage runner script is missing.')
+  return candidate
+}
+
 export function resolveCodexRunnerScript(): string {
   const packaged = typeof process.resourcesPath === 'string'
     ? path.join(process.resourcesPath, 'openmontage-runner', 'codex-runner.mjs')
@@ -108,6 +139,28 @@ export function resolveOpenMontageRunnerLaunch(settings: OpenMontageSettings): O
         '--ffprobe-executable',
         ffprobePath(),
         ...settings.runnerArguments.flatMap((argument) => ['--codex-argument', argument]),
+        '--stall-timeout-sec',
+        String(Math.max(30, settings.stallTimeoutSec))
+      ],
+      fixedEnvironment: {
+        ELECTRON_RUN_AS_NODE: '1',
+        PYTHONIOENCODING: 'utf-8'
+      },
+      kind: settings.runner
+    }
+  }
+  if (settings.runner === 'claude-code') {
+    const claudeExecutable = settings.runnerExecutable.trim() || resolveBundledClaudeExecutable()
+    if (!existsSync(claudeExecutable)) throw new Error('Configured Claude Code executable was not found.')
+    return {
+      executable: process.execPath,
+      args: [
+        resolveClaudeRunnerScript(),
+        '--claude-executable',
+        claudeExecutable,
+        '--ffprobe-executable',
+        ffprobePath(),
+        ...settings.runnerArguments.flatMap((argument) => ['--claude-argument', argument]),
         '--stall-timeout-sec',
         String(Math.max(30, settings.stallTimeoutSec))
       ],
