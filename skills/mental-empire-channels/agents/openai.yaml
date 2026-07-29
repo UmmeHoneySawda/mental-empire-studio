@@ -1,0 +1,4 @@
+interface:
+  display_name: "Mental Empire Channels"
+  short_description: "Inspect and refresh owned and source YouTube channel mappings"
+  default_prompt: "Read the Mental Empire Studio channel database, explain owned-to-source mappings, or refresh channel metadata with yt-dlp."

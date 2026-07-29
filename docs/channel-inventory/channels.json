@@ -1,0 +1,39 @@
+{
+  "snapshotDate": "2026-07-29",
+  "relationshipRules": {
+    "ownedToSource": "my_channels.linkedSourceId -> source_channels.id",
+    "sourceToOwned": "source_channels.linkedMyChannelId -> my_channels.id",
+    "conflictPolicy": "Report both fields and flag disagreement; never guess."
+  },
+  "ownedChannels": [
+    {
+      "id": "UCmKPyUMH1H8VOyRN2J6okwA",
+      "name": "Neural Vault",
+      "handle": "@NeuralVaultPsych",
+      "url": "https://www.youtube.com/@NeuralVaultPsych",
+      "linkedSourceId": null,
+      "liveSubscribers": 172
+    }
+  ],
+  "sourceChannels": [
+    {
+      "id": "src-NARCEO05",
+      "youtubeChannelId": "UCYa2AmsZjRLMolfzkt5RNyg",
+      "name": "NARCEO",
+      "handle": "@NARCEO05",
+      "url": "https://www.youtube.com/@narceo05",
+      "linkedMyChannelId": null,
+      "liveSubscribers": 17300,
+      "cachedVideoCount": 30
+    }
+  ],
+  "groups": [
+    {
+      "ownedChannelId": null,
+      "label": "Unassigned",
+      "sourceIds": [
+        "src-NARCEO05"
+      ]
+    }
+  ]
+}
