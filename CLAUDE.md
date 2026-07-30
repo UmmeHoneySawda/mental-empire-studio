@@ -57,6 +57,11 @@ headlessly under `xvfb-run`:
 
 ## Git / push
 
-The environment's git proxy blocks direct `git push`; pushes go through the GitHub Data API
-(`scratchpad/push_m2.py` pattern): commit locally, then create blobs/tree/commit and update the branch
-ref via the API. Branch: `build/mental-empire-studio`.
+Branch: `build/mental-empire-studio`. `git push origin build/mental-empire-studio` works directly
+(verified 2026-07-30). Only if a proxy blocks it, fall back to the GitHub Data API
+(`scratchpad/push_m2.py` pattern): commit locally, then create blobs/tree/commit and update the
+branch ref via the API.
+
+Installed agent-skill content (`.agents/skills/`, `.claude/skills/*`) is git-ignored — the
+`.claude/skills` entries are absolute symlinks into the checkout, so they are machine-specific.
+`skills-lock.json` pins every source + hash and IS tracked; `npx skills install` reproduces the tree.
