@@ -22,6 +22,26 @@ import type {
   AutomationJob
 } from '../shared/types'
 import type { ProviderConnection, ProviderJob, ProviderMotionQuery, TalkingPhotosAspectRatio, TalkingPhotosCreateInput, TalkingPhotosScriptCreateInput } from '../shared/talkingphotos'
+import type {
+  AddVideoScenePatch,
+  ApplyVideoTransitionInput,
+  CreateVideoProjectInput,
+  HookPromptInput,
+  ImportantWordsPromptInput,
+  InstantiateVideoTemplateInput,
+  JsonObject,
+  PlaceVideoBrollInput,
+  RendererId,
+  SetVideoCaptionsFromSrtInput,
+  SetVideoCaptionsInput,
+  VideoBrollCandidate,
+  VideoBrollSearchInput,
+  VideoCanvasPatch,
+  VideoGrading,
+  VideoRenderJob,
+  VideoScenePatch,
+  VideoTemplateFilter
+} from '../shared/video-engine'
 
 /** Subscribe to a main→renderer event; returns an unsubscribe fn. */
 function subscribe<T>(channel: string, cb: (payload: T) => void): () => void {
@@ -247,6 +267,85 @@ const api: NativeApi = {
     warm: (id: string) => ipcRenderer.invoke('niche:warm', id)
   },
 
+  // Template video engine (Remotion + HyperFrames) driving the Compose studio.
+  videoEngine: {
+    status: () => ipcRenderer.invoke('videoEngine:status'),
+    templates: (filter?: VideoTemplateFilter) => ipcRenderer.invoke('videoEngine:templates', filter),
+    capabilities: () => ipcRenderer.invoke('videoEngine:capabilities'),
+    gradingPresets: () => ipcRenderer.invoke('videoEngine:gradingPresets'),
+
+    projects: () => ipcRenderer.invoke('videoEngine:projects'),
+    project: (projectId: string) => ipcRenderer.invoke('videoEngine:project', projectId),
+    createProject: (input: CreateVideoProjectInput) => ipcRenderer.invoke('videoEngine:createProject', input),
+    deleteProject: (projectId: string) => ipcRenderer.invoke('videoEngine:deleteProject', projectId),
+    renameProject: (projectId: string, name: string) => ipcRenderer.invoke('videoEngine:renameProject', projectId, name),
+    setCanvas: (projectId: string, patch: VideoCanvasPatch) => ipcRenderer.invoke('videoEngine:setCanvas', projectId, patch),
+
+    binding: (downloadId: string) => ipcRenderer.invoke('videoEngine:binding', downloadId),
+    bindDownload: (downloadId: string, rendererId: RendererId, reseed?: boolean) =>
+      ipcRenderer.invoke('videoEngine:bindDownload', downloadId, rendererId, reseed),
+    unbindDownload: (downloadId: string, rendererId: RendererId) =>
+      ipcRenderer.invoke('videoEngine:unbindDownload', downloadId, rendererId),
+
+    importAssets: (projectId: string, paths: string[]) => ipcRenderer.invoke('videoEngine:importAssets', projectId, paths),
+    removeAsset: (projectId: string, assetId: string) => ipcRenderer.invoke('videoEngine:removeAsset', projectId, assetId),
+
+    addScene: (projectId: string, patch: AddVideoScenePatch) => ipcRenderer.invoke('videoEngine:addScene', projectId, patch),
+    updateScene: (projectId: string, sceneId: string, patch: VideoScenePatch) =>
+      ipcRenderer.invoke('videoEngine:updateScene', projectId, sceneId, patch),
+    removeScene: (projectId: string, sceneId: string) => ipcRenderer.invoke('videoEngine:removeScene', projectId, sceneId),
+    setTrackMuted: (projectId: string, trackId: string, muted: boolean) =>
+      ipcRenderer.invoke('videoEngine:setTrackMuted', projectId, trackId, muted),
+
+    instantiateTemplate: (projectId: string, input: InstantiateVideoTemplateInput) =>
+      ipcRenderer.invoke('videoEngine:instantiateTemplate', projectId, input),
+
+    hookPrompt: (projectId: string, input: HookPromptInput) => ipcRenderer.invoke('videoEngine:hookPrompt', projectId, input),
+    importHookPlan: (projectId: string, json: string) => ipcRenderer.invoke('videoEngine:importHookPlan', projectId, json),
+    resolveHookBroll: (projectId: string, beatId: string, candidate: VideoBrollCandidate) =>
+      ipcRenderer.invoke('videoEngine:resolveHookBroll', projectId, beatId, candidate),
+
+    setCaptions: (projectId: string, input: SetVideoCaptionsInput) => ipcRenderer.invoke('videoEngine:setCaptions', projectId, input),
+    setCaptionsFromSrt: (projectId: string, input: SetVideoCaptionsFromSrtInput) =>
+      ipcRenderer.invoke('videoEngine:setCaptionsFromSrt', projectId, input),
+    setCaptionsFromTranscript: (projectId: string, downloadId: string, templateId?: string, templateProps?: JsonObject) =>
+      ipcRenderer.invoke('videoEngine:setCaptionsFromTranscript', projectId, downloadId, templateId, templateProps),
+    setCaptionTemplate: (projectId: string, templateId: string, props?: JsonObject) =>
+      ipcRenderer.invoke('videoEngine:setCaptionTemplate', projectId, templateId, props),
+    captionCues: (projectId: string, maxWordsPerCue?: number) =>
+      ipcRenderer.invoke('videoEngine:captionCues', projectId, maxWordsPerCue),
+    importantWordsPrompt: (projectId: string, input?: ImportantWordsPromptInput) =>
+      ipcRenderer.invoke('videoEngine:importantWordsPrompt', projectId, input),
+    applyImportantWords: (projectId: string, json: string, maximumSelectionRatio?: number) =>
+      ipcRenderer.invoke('videoEngine:applyImportantWords', projectId, json, maximumSelectionRatio),
+    setWordImportance: (projectId: string, wordIds: string[], importance: 0 | 1 | 2 | 3) =>
+      ipcRenderer.invoke('videoEngine:setWordImportance', projectId, wordIds, importance),
+
+    applyTransition: (projectId: string, input: ApplyVideoTransitionInput) =>
+      ipcRenderer.invoke('videoEngine:applyTransition', projectId, input),
+    removeTransition: (projectId: string, transitionId: string) =>
+      ipcRenderer.invoke('videoEngine:removeTransition', projectId, transitionId),
+
+    setGrading: (projectId: string, grading: VideoGrading) => ipcRenderer.invoke('videoEngine:setGrading', projectId, grading),
+
+    brollProviders: () => ipcRenderer.invoke('videoEngine:brollProviders'),
+    searchBroll: (projectId: string, input: VideoBrollSearchInput) =>
+      ipcRenderer.invoke('videoEngine:searchBroll', projectId, input),
+    placeBroll: (projectId: string, input: PlaceVideoBrollInput) => ipcRenderer.invoke('videoEngine:placeBroll', projectId, input),
+
+    preflight: (projectId: string) => ipcRenderer.invoke('videoEngine:preflight', projectId),
+    enqueueRender: (projectId: string, container?: '.mp4' | '.mov' | '.webm') =>
+      ipcRenderer.invoke('videoEngine:enqueueRender', projectId, container),
+    jobs: () => ipcRenderer.invoke('videoEngine:jobs'),
+    cancelRender: (jobId: string) => ipcRenderer.invoke('videoEngine:cancelRender', jobId),
+    retryRender: (jobId: string) => ipcRenderer.invoke('videoEngine:retryRender', jobId),
+    revealRender: (jobId: string) => ipcRenderer.invoke('videoEngine:revealRender', jobId),
+    openRender: (jobId: string) => ipcRenderer.invoke('videoEngine:openRender', jobId),
+
+    preview: (projectId: string) => ipcRenderer.invoke('videoEngine:preview', projectId),
+    assetUrl: (absolutePath: string) => ipcRenderer.invoke('videoEngine:assetUrl', absolutePath)
+  } satisfies NativeApi['videoEngine'],
+
   // Electron 32 removed the File.path property; webUtils.getPathForFile is the
   // supported way to get the absolute path of a dropped/picked file for the main
   // process (used to import images/audio in Compose).
@@ -266,6 +365,7 @@ const api: NativeApi = {
   onAutomation: (cb: (e: AutomationEvent) => void) => subscribe('automation:event', cb),
   onAutomationJob: (cb: (job: AutomationJob) => void) => subscribe('automation:job', cb),
   onProviderJob: (cb: (job: ProviderJob) => void) => subscribe('talkingphotos:job', cb),
+  onVideoEngineJob: (cb: (job: VideoRenderJob) => void) => subscribe('videoEngine:job', cb),
   onConnectionStatusChanged: (cb: (connection: ProviderConnection) => void) => subscribe('talkingphotos:connectionStatus', cb)
 }
 

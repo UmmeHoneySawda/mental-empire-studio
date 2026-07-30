@@ -1,7 +1,8 @@
-import { app, BrowserWindow, ipcMain, shell, Tray, Menu, nativeImage } from 'electron'
-import { fileURLToPath } from 'node:url'
+import { app, BrowserWindow, ipcMain, protocol, shell, Tray, Menu, nativeImage } from 'electron'
+import { fileURLToPath, pathToFileURL } from 'node:url'
 import { dirname, join } from 'node:path'
-import { copyFileSync, existsSync, mkdirSync, statSync, writeFileSync, readFileSync, rmSync, unlinkSync } from 'node:fs'
+import { copyFileSync, createReadStream, existsSync, mkdirSync, statSync, writeFileSync, readFileSync, rmSync, unlinkSync } from 'node:fs'
+import { Readable } from 'node:stream'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { applyLoginItem, trayIconPath } from './services/background'
 import * as scheduler from './services/scheduler'
@@ -83,6 +84,23 @@ if (process.env['ME_SMOKE'] || process.env['ME_SHOOT']) {
 // call (across every electron/ipc/* module) gets Sentry tracing for free once telemetry
 // is on. No-ops entirely when telemetry is off or during headless smokes.
 instrumentIpcMain()
+
+// The Compose video studio previews real project media (and whole compiled
+// HyperFrames compositions) inside the renderer, where `file:` is unreachable under
+// the app CSP. `mestudio://` is a standard, secure, fetchable scheme served only from
+// inside the video engine's own data root — it must be declared before 'ready'.
+protocol.registerSchemesAsPrivileged([
+  {
+    scheme: 'mestudio',
+    privileges: {
+      standard: true,
+      secure: true,
+      supportFetchAPI: true,
+      stream: true,
+      corsEnabled: true
+    }
+  }
+])
 
 // Sentry.init() MUST run before the 'ready' event fires (it hooks the protocol
 // registration Electron does at startup) — settings/telemetryEnabled just needs
@@ -1693,9 +1711,81 @@ function sweepTempArtifacts(): void {
   }
 }
 
+/** Serves `mestudio://asset/<b64 path>` and `mestudio://hf/<projectId>/<file>` from
+ *  inside the video engine's data root. `resolvePreviewRequest` throws for anything
+ *  that escapes it, which becomes a 403 rather than a disk read.
+ *
+ *  The file is streamed with real Range support: `<video>`/`<audio>` in the preview
+ *  seek by requesting byte ranges, and a 200-with-whole-file response makes scrubbing
+ *  either fail or re-download the clip on every seek. */
+function registerStudioPreviewProtocol(): void {
+  protocol.handle('mestudio', async (request) => {
+    try {
+      const { resolvePreviewRequest } = await import('./services/video-engine/studio')
+      const filePath = resolvePreviewRequest(request.url)
+      if (!existsSync(filePath)) return new Response('Not found', { status: 404 })
+      const size = statSync(filePath).size
+      const headers = new Headers({
+        'accept-ranges': 'bytes',
+        // An edited project restages its workspace; caching would preview the old one.
+        'cache-control': 'no-store'
+      })
+      const type = studioPreviewMimeType(filePath)
+      if (type) headers.set('content-type', type)
+
+      const range = /^bytes=(\d*)-(\d*)$/.exec(request.headers.get('range') ?? '')
+      if (range) {
+        const start = range[1] ? Number(range[1]) : Math.max(0, size - Number(range[2] || 0))
+        const end = range[2] && range[1] ? Math.min(size - 1, Number(range[2])) : size - 1
+        if (!Number.isFinite(start) || start >= size || end < start) {
+          headers.set('content-range', `bytes */${size}`)
+          return new Response(null, { status: 416, headers })
+        }
+        headers.set('content-range', `bytes ${start}-${end}/${size}`)
+        headers.set('content-length', String(end - start + 1))
+        const stream = Readable.toWeb(createReadStream(filePath, { start, end })) as ReadableStream
+        return new Response(stream, { status: 206, headers })
+      }
+
+      headers.set('content-length', String(size))
+      return new Response(Readable.toWeb(createReadStream(filePath)) as ReadableStream, { status: 200, headers })
+    } catch (err) {
+      L.warn('mestudio protocol request rejected', (err as Error).message)
+      return new Response('Forbidden', { status: 403 })
+    }
+  })
+}
+
+function studioPreviewMimeType(filePath: string): string | undefined {
+  const table: Record<string, string> = {
+    '.html': 'text/html; charset=utf-8',
+    '.js': 'text/javascript; charset=utf-8',
+    '.css': 'text/css; charset=utf-8',
+    '.json': 'application/json; charset=utf-8',
+    '.woff2': 'font/woff2',
+    '.woff': 'font/woff',
+    '.png': 'image/png',
+    '.jpg': 'image/jpeg',
+    '.jpeg': 'image/jpeg',
+    '.webp': 'image/webp',
+    '.gif': 'image/gif',
+    '.avif': 'image/avif',
+    '.mp4': 'video/mp4',
+    '.m4v': 'video/x-m4v',
+    '.mov': 'video/quicktime',
+    '.webm': 'video/webm',
+    '.mp3': 'audio/mpeg',
+    '.m4a': 'audio/mp4',
+    '.wav': 'audio/wav'
+  }
+  const dot = filePath.lastIndexOf('.')
+  return dot < 0 ? undefined : table[filePath.slice(dot).toLowerCase()]
+}
+
 app.whenReady().then(() => {
   initPersistence()
   registerIpc()
+  registerStudioPreviewProtocol()
   sweepTempArtifacts()
 
   if (process.env['ME_GPU_SELFTEST']) {
@@ -1961,6 +2051,14 @@ app.on('before-quit', () => {
   stopTalkingPhotosPoller()
   // Tear down the hidden GPU render-worker window if it was created.
   destroyGpuWorker()
+  // Stop the template-engine render queue and drop staged HyperFrames preview
+  // workspaces (they only exist to feed the on-screen player).
+  void import('./services/video-engine/studio')
+    .then(async (studio) => {
+      await studio.discardStagedPreviews().catch(() => undefined)
+      await studio.shutdownVideoEngine().catch(() => undefined)
+    })
+    .catch(() => undefined)
   // Close the DB here too: with the tray enabled, the real quit comes through here
   // (not window-all-closed), so this is the only path that checkpoints the WAL cleanly.
   closeDatabase()

@@ -3,7 +3,10 @@
   <head>
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob: https://i.ytimg.com https://*.ytimg.com https://yt3.ggpht.com https://*.ggpht.com https://yt3.googleusercontent.com https://*.googleusercontent.com; media-src 'self' blob: data: file:; style-src 'self' 'unsafe-inline'; font-src 'self' data:; connect-src 'self'" />
+    <!-- mestudio: is the app's own scheme for video-engine project media and staged
+         HyperFrames compositions (registered in electron/main.ts, confined to the
+         engine data root). frame-src lets <hyperframes-player> load one. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob: mestudio: https://i.ytimg.com https://*.ytimg.com https://yt3.ggpht.com https://*.ggpht.com https://yt3.googleusercontent.com https://*.googleusercontent.com; media-src 'self' blob: data: file: mestudio:; style-src 'self' 'unsafe-inline'; font-src 'self' data: mestudio:; connect-src 'self' mestudio: data: blob:; frame-src 'self' mestudio:; worker-src 'self' blob:" />
     <title>Mental Empire Studio</title>
   </head>
   <body>

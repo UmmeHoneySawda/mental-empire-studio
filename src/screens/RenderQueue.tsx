@@ -9,6 +9,7 @@ import { rollupSegments, describeProgress, titleFromProviderJob, mapJobStatusToL
 import { mediaSrc } from '../lib/media'
 import { renderLiveState } from '../lib/renderProgress'
 import { PipelineRibbon } from '../components/PipelineRibbon'
+import { useVideoStudio } from '../features/video-studio/store/useVideoStudio'
 
 const PROVIDER_JOB_LABEL: Record<string, string> = {
   queued: 'Queued', running: 'Processing', downloading: 'Downloading', completed: 'Completed', failed: 'Failed', attention: 'Reconnect needed', cancelled: 'Cancelled'
@@ -124,6 +125,87 @@ function TalkingPhotosJobsSection(): JSX.Element | null {
                   {localPath && <button type="button" onClick={() => void window.api?.publish?.reveal?.(localPath)} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 7, padding: '5px 10px', fontSize: 10.5, color: '#c4cad3', cursor: 'pointer' }}>Folder</button>}
                 </div>
               )}
+            </div>
+          )
+        })}
+      </div>
+    </div>
+  )
+}
+
+/** Template-engine renders (Remotion / HyperFrames) run in their own main-process
+ *  queue, so without this they would only ever be visible inside the Compose studio —
+ *  and this screen is where a user goes to ask "is my video done?". */
+function TemplateEngineJobsSection(): JSX.Element | null {
+  const jobs = useVideoStudio((s) => s.jobs)
+  const refreshJobs = useVideoStudio((s) => s.refreshJobs)
+  const applyJob = useVideoStudio((s) => s.applyJob)
+  const cancelRender = useVideoStudio((s) => s.cancelRender)
+  const retryRender = useVideoStudio((s) => s.retryRender)
+  const revealRender = useVideoStudio((s) => s.revealRender)
+  const openRender = useVideoStudio((s) => s.openRender)
+
+  useEffect(() => { void refreshJobs() }, [refreshJobs])
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.api?.onVideoEngineJob) return
+    return window.api.onVideoEngineJob(applyJob)
+  }, [applyJob])
+
+  if (jobs.length === 0) return null
+  const ordered = [...jobs].sort((a, b) => b.createdAt.localeCompare(a.createdAt))
+
+  return (
+    <div style={{ marginTop: 26 }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '.6px', color: '#5b616f', flex: 1 }}>TEMPLATE ENGINE · REMOTION / HYPERFRAMES</div>
+        <button type="button" onClick={() => void refreshJobs()} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', color: '#c4cad3', borderRadius: 8, padding: '5px 11px', fontSize: 11, cursor: 'pointer' }}>Refresh</button>
+      </div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
+        {ordered.map((job) => {
+          const terminal = job.stage === 'completed' || job.stage === 'failed' || job.stage === 'canceled'
+          const tone: Tone = job.stage === 'completed' ? 'ok' : job.stage === 'failed' ? 'err' : job.stage === 'canceled' ? 'idle' : 'active'
+          const seconds = job.canvas.durationFrames / Math.max(1, job.canvas.fps)
+          const engineTint = job.rendererId === 'remotion' ? '#6c7bff' : '#ff8a3d'
+          return (
+            <div key={job.id} className="me-card" style={{ border: `1px solid ${job.stage === 'completed' ? '#1e2f28' : job.stage === 'failed' ? '#3a2025' : '#1d2129'}`, borderRadius: 12, background: '#12151b', padding: '12px 14px' }}>
+              <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
+                <span style={{ fontSize: 9.5, fontWeight: 700, fontFamily: 'var(--font-mono)', color: '#0a0c10', background: engineTint, borderRadius: 5, padding: '2px 6px', flex: 'none' }}>
+                  {job.rendererId === 'remotion' ? 'RMT' : 'HF'}
+                </span>
+                <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: '#dde0e5', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={job.projectName}>{job.projectName}</span>
+                <StatusPill label={job.stage} tone={tone} />
+              </div>
+              <div style={{ marginTop: 5, fontSize: 10.5, color: '#8a909c', fontFamily: 'var(--font-mono)' }}>
+                {job.canvas.width}×{job.canvas.height} · {job.canvas.fps}fps · {seconds.toFixed(1)}s ({job.canvas.durationFrames}f) · rev {job.projectRevision}
+                {job.attempt > 1 ? ` · attempt ${job.attempt}` : ''}
+              </div>
+              {!terminal && (
+                <div style={{ marginTop: 9, display: 'flex', alignItems: 'center', gap: 8 }}>
+                  <div style={{ flex: 1, height: 6, borderRadius: 4, background: '#1a1e26', overflow: 'hidden' }}>
+                    <div style={{ width: `${Math.round(job.progress * 100)}%`, height: '100%', background: engineTint, transition: 'width .4s ease' }} />
+                  </div>
+                  <span style={{ fontSize: 10.5, color: engineTint, fontFamily: 'var(--font-mono)', width: 38, textAlign: 'right', flex: 'none' }}>{Math.round(job.progress * 100)}%</span>
+                </div>
+              )}
+              {job.stage === 'failed' && job.errorMessage && (
+                <div title={job.errorMessage} className="me-clamp-2" style={{ marginTop: 8, fontSize: 10.5, color: '#ff8a96', lineHeight: 1.35 }}>
+                  <span style={{ fontFamily: 'var(--font-mono)' }}>{job.errorCode ?? 'RENDER_FAILED'}</span> — {job.errorMessage}
+                </div>
+              )}
+              <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
+                {!terminal && (
+                  <button type="button" onClick={() => void cancelRender(job.id)} className="me-btn" style={{ border: '1px solid #3a2025', background: '#1a1216', borderRadius: 7, padding: '5px 10px', fontSize: 10.5, color: '#ff8a96', cursor: 'pointer' }}>Cancel</button>
+                )}
+                {(job.stage === 'failed' || job.stage === 'canceled') && (
+                  <button type="button" onClick={() => void retryRender(job.id)} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 7, padding: '5px 10px', fontSize: 10.5, color: '#c4cad3', cursor: 'pointer' }}>Retry</button>
+                )}
+                {job.stage === 'completed' && (
+                  <>
+                    <button type="button" onClick={() => void openRender(job.id)} className="me-btn" style={{ border: '1px solid #26352f', background: '#101b16', borderRadius: 7, padding: '5px 10px', fontSize: 10.5, color: '#4fd6a0', cursor: 'pointer' }}>Open</button>
+                    <button type="button" onClick={() => void revealRender(job.id)} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 7, padding: '5px 10px', fontSize: 10.5, color: '#c4cad3', cursor: 'pointer' }}>Folder</button>
+                  </>
+                )}
+              </div>
             </div>
           )
         })}
@@ -422,6 +504,7 @@ export function RenderQueue(): JSX.Element {
           )
         })}
       </div>
+      <TemplateEngineJobsSection />
       <TalkingPhotosJobsSection />
     </ScreenPad>
   )

@@ -18,6 +18,38 @@ import type {
   TalkingPhotosRemoteMedia,
   TalkingPhotosScriptCreateInput
 } from './talkingphotos'
+import type {
+  AddVideoScenePatch,
+  ApplyVideoTransitionInput,
+  CaptionCueList,
+  CaptionImportSummary,
+  CreateVideoProjectInput,
+  HookPromptInput,
+  ImportantWordsPromptInput,
+  ImportedHookPlan,
+  ImportedVideoAssets,
+  InstantiateVideoTemplateInput,
+  JsonObject,
+  PlaceVideoBrollInput,
+  RendererId,
+  SetVideoCaptionsFromSrtInput,
+  SetVideoCaptionsInput,
+  VideoBrollCandidate,
+  VideoBrollSearchInput,
+  VideoCanvasPatch,
+  VideoEngineStatus,
+  VideoGrading,
+  VideoGradingPreset,
+  VideoPreviewPayload,
+  VideoProject,
+  VideoRenderJob,
+  VideoRendererCapabilities,
+  VideoRenderProblem,
+  VideoScenePatch,
+  VideoStudioBinding,
+  VideoTemplate,
+  VideoTemplateFilter
+} from './video-engine'
 
 export type AccentName = 'Amber' | 'Violet' | 'Emerald' | 'Crimson'
 
@@ -1441,6 +1473,92 @@ export interface NativeApi {
     assignChannel(channelId: string, nicheId: string | null): Promise<SourceChannel[]>
     warm(id: string): Promise<NichePoolHealth>
   }
+  /** Template video engine (Remotion + HyperFrames) backing the Compose studio.
+   *  Every mutation returns the saved project, so the UI never guesses state. */
+  videoEngine: {
+    /** engine readiness, renderer availability, and configured b-roll providers */
+    status(): Promise<VideoEngineStatus>
+    /** renderer-filtered template manifests (hooks, captions, transitions, scenes) */
+    templates(filter?: VideoTemplateFilter): Promise<VideoTemplate[]>
+    capabilities(): Promise<VideoRendererCapabilities[]>
+    /** built-in cinematic looks the grading panel offers before any LUT is imported */
+    gradingPresets(): Promise<VideoGradingPreset[]>
+
+    projects(): Promise<VideoProject[]>
+    project(projectId: string): Promise<VideoProject>
+    createProject(input: CreateVideoProjectInput): Promise<VideoProject>
+    deleteProject(projectId: string): Promise<void>
+    renameProject(projectId: string, name: string): Promise<VideoProject>
+    /** resize/retime the canvas; scenes and captions are clamped, never orphaned */
+    setCanvas(projectId: string, patch: VideoCanvasPatch): Promise<VideoProject>
+
+    /** which engine project backs a downloaded clip, per renderer */
+    binding(downloadId: string): Promise<VideoStudioBinding>
+    /** open (or seed) the engine project for a clip: audio, stills, and transcript */
+    bindDownload(
+      downloadId: string,
+      rendererId: RendererId,
+      reseed?: boolean
+    ): Promise<{ binding: VideoStudioBinding; project: VideoProject }>
+    unbindDownload(downloadId: string, rendererId: RendererId): Promise<VideoStudioBinding>
+
+    importAssets(projectId: string, paths: string[]): Promise<ImportedVideoAssets>
+    removeAsset(projectId: string, assetId: string): Promise<VideoProject>
+
+    addScene(projectId: string, patch: AddVideoScenePatch): Promise<VideoProject>
+    updateScene(projectId: string, sceneId: string, patch: VideoScenePatch): Promise<VideoProject>
+    removeScene(projectId: string, sceneId: string): Promise<VideoProject>
+    setTrackMuted(projectId: string, trackId: string, muted: boolean): Promise<VideoProject>
+
+    instantiateTemplate(projectId: string, input: InstantiateVideoTemplateInput): Promise<VideoProject>
+
+    /** build the copy-paste prompt for an external AI hook plan (data only) */
+    hookPrompt(projectId: string, input: HookPromptInput): Promise<string>
+    /** validate + compile a pasted hook plan; rejects anything executable-shaped */
+    importHookPlan(projectId: string, json: string): Promise<ImportedHookPlan>
+    /** cache and attach a stock clip to one hook beat that asked for b-roll */
+    resolveHookBroll(projectId: string, beatId: string, candidate: VideoBrollCandidate): Promise<VideoProject>
+
+    setCaptions(projectId: string, input: SetVideoCaptionsInput): Promise<VideoProject>
+    setCaptionsFromSrt(projectId: string, input: SetVideoCaptionsFromSrtInput): Promise<VideoProject>
+    /** reuse the clip's existing Groq transcript as word-timed captions */
+    setCaptionsFromTranscript(
+      projectId: string,
+      downloadId: string,
+      templateId?: string,
+      templateProps?: JsonObject
+    ): Promise<CaptionImportSummary>
+    setCaptionTemplate(projectId: string, templateId: string, props?: JsonObject): Promise<VideoProject>
+    captionCues(projectId: string, maxWordsPerCue?: number): Promise<CaptionCueList>
+    importantWordsPrompt(projectId: string, input?: ImportantWordsPromptInput): Promise<string>
+    applyImportantWords(projectId: string, json: string, maximumSelectionRatio?: number): Promise<VideoProject>
+    /** manual emphasis, same field the AI import writes */
+    setWordImportance(projectId: string, wordIds: string[], importance: 0 | 1 | 2 | 3): Promise<VideoProject>
+
+    applyTransition(projectId: string, input: ApplyVideoTransitionInput): Promise<VideoProject>
+    removeTransition(projectId: string, transitionId: string): Promise<VideoProject>
+
+    setGrading(projectId: string, grading: VideoGrading): Promise<VideoProject>
+
+    brollProviders(): Promise<string[]>
+    searchBroll(projectId: string, input: VideoBrollSearchInput): Promise<VideoBrollCandidate[]>
+    /** cache the clip, then place it on the b-roll track with its license sidecar */
+    placeBroll(projectId: string, input: PlaceVideoBrollInput): Promise<VideoProject>
+
+    preflight(projectId: string): Promise<VideoRenderProblem[]>
+    enqueueRender(projectId: string, container?: '.mp4' | '.mov' | '.webm'): Promise<VideoRenderJob>
+    jobs(): Promise<VideoRenderJob[]>
+    cancelRender(jobId: string): Promise<VideoRenderJob>
+    retryRender(jobId: string): Promise<VideoRenderJob>
+    revealRender(jobId: string): Promise<void>
+    openRender(jobId: string): Promise<void>
+
+    /** everything the on-screen player needs: a Remotion project with app-scheme
+     *  asset URLs, or the URL of a staged HyperFrames composition */
+    preview(projectId: string): Promise<VideoPreviewPayload>
+    /** app-scheme URL for one absolute path inside the engine data root */
+    assetUrl(absolutePath: string): Promise<string>
+  }
   /** resolve the absolute filesystem path of a picked/dropped File (Electron webUtils) */
   pathForFile(file: File): string
   /** subscribe to live scrape progress; returns an unsubscribe fn */
@@ -1459,6 +1577,8 @@ export interface NativeApi {
   onAutomationJob(cb: (job: AutomationJob) => void): () => void
   /** subscribe to TalkingPhotos provider-job changes; provider_jobs remains source of truth */
   onProviderJob(cb: (job: ProviderJob) => void): () => void
+  /** subscribe to template-engine render-job changes (Remotion / HyperFrames queue) */
+  onVideoEngineJob(cb: (job: VideoRenderJob) => void): () => void
   /** subscribe to TalkingPhotos connection-status changes; this is the only source of
    *  progress/outcome once talkingPhotos.connect()'s login window is open — the
    *  connect() promise itself resolves as soon as the window opens. */

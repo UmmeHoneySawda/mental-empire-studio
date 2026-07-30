@@ -1,4 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
+// Imported from the leaf module rather than the barrel: the barrel pulls every zod
+// schema in the engine's shared model into this chunk, and Compose only needs the guard.
+import { isRendererEngine, type ComposeEngine } from '@shared/video-engine/ipc'
 import { useStore } from '../store/useStore'
 import { useData } from '../store/useData'
 import { Banner, Btn, SectionLabel } from '../components/ui/kit'
@@ -12,10 +15,16 @@ import { StylePanel } from '../features/compose/ui/StylePanel'
 import { EffectsPanel } from '../features/compose/ui/EffectsPanel'
 import { GpuChip } from '../features/compose/ui/GpuChip'
 import { composeRenderPreflight, editorSelectionLabel, fmt } from '../features/compose/ui/util'
+import { EngineSwitch } from '../features/video-studio/EngineSwitch'
+import { VideoStudio } from '../features/video-studio/VideoStudio'
+import { useVideoStudio } from '../features/video-studio/store/useVideoStudio'
 
-/* Compose — the video editor. Layout: header (project switcher + render CTA),
-   live preview stage beside a tabbed inspector, and the multi-track timeline
-   with its selection editor underneath. */
+/* Compose — the video editor. The render head at the top picks which engine builds
+   the file: Classic (the original GPU pipeline, below) or one of the two template
+   engines, which take over the whole workspace with their own studio.
+
+   Classic layout: header (project switcher + render CTA), live preview stage beside a
+   tabbed inspector, and the multi-track timeline with its selection editor underneath. */
 
 type InspectorTab = 'media' | 'captions' | 'style' | 'effects'
 
@@ -53,6 +62,10 @@ export function Compose(): JSX.Element {
   const sendActiveToRender = useData((s) => s.sendActiveToRender)
 
   const [tab, setTab] = useState<InspectorTab>('media')
+  // Seeded from the studio store so navigating away and back keeps the render head
+  // where the user left it.
+  const [engine, setEngine] = useState<ComposeEngine>(() => useVideoStudio.getState().engine)
+  const engineStatus = useVideoStudio((s) => s.status)
   const [error, setError] = useState('')
   const [queued, setQueued] = useState(false)
   const [sending, setSending] = useState(false)
@@ -82,6 +95,12 @@ export function Compose(): JSX.Element {
     setQueued(false)
     setError('')
   }, [project?.id])
+
+  // Probe the template engines once so the render head's lamps are honest before the
+  // user clicks one — an unavailable renderer should not look identical to a ready one.
+  useEffect(() => {
+    if (!engineStatus) void useVideoStudio.getState().refreshStatus()
+  }, [engineStatus])
 
   const openComposeProject = async (downloadId: string): Promise<void> => {
     if (openingDownloadId) return
@@ -125,8 +144,9 @@ export function Compose(): JSX.Element {
             Video studio
           </div>
         </div>
+        <EngineSwitch engine={engine} status={engineStatus} onChange={setEngine} />
         <div style={{ flex: 1 }} />
-        <GpuChip />
+        {engine === 'classic' && <GpuChip />}
         {downloads.length > 0 && (
           <select
             className="ed-input"
@@ -141,7 +161,7 @@ export function Compose(): JSX.Element {
             ))}
           </select>
         )}
-        {project && (
+        {project && engine === 'classic' && (
           <Btn
             variant={queued ? 'soft' : 'primary'}
             disabled={sending || (!queued && !preflight.ready)}
@@ -170,6 +190,8 @@ export function Compose(): JSX.Element {
             onSources={() => setActive('sources')}
           />
         </div>
+      ) : isRendererEngine(engine) ? (
+        <VideoStudio downloadId={project.downloadId} engine={engine} />
       ) : (
         <>
           <div style={{ flex: 'none' }}>

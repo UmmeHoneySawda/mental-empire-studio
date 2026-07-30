@@ -657,6 +657,33 @@ function installMock(): void {
       }
     },
     onConnectionStatusChanged: () => noop,
+    onVideoEngineJob: () => noop,
+    // The template engines render with local ffmpeg and a headless browser, so they
+    // cannot exist in browser-QA mode. Report that plainly instead of throwing —
+    // the Compose render head then shows both engines as unavailable.
+    videoEngine: ns({
+      status: async () => ({
+        ready: false,
+        error: 'The Remotion and HyperFrames engines need the desktop app — they render with local ffmpeg and a headless browser.',
+        dataRoot: 'browser://video-engine',
+        nodeVersion: 'n/a',
+        renderers: [
+          { rendererId: 'remotion' as const, available: false, detail: 'Desktop app only' },
+          { rendererId: 'hyperframes' as const, available: false, detail: 'Desktop app only' }
+        ],
+        brollProviders: [],
+        brollMissingCredentials: ['pexels', 'pixabay', 'coverr'],
+        ffmpegPath: '',
+        ffprobePath: ''
+      }),
+      templates: async () => [],
+      capabilities: async () => [],
+      gradingPresets: async () => [],
+      projects: async () => [],
+      jobs: async () => [],
+      brollProviders: async () => [],
+      binding: async (downloadId: string) => ({ downloadId })
+    }),
     pathForFile: (file: File) => `browser://${file.name}`,
     settings: ns({
       get: async () => settings,

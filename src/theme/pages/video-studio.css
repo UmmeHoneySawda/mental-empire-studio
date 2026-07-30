@@ -1,0 +1,1362 @@
+/* Compose video studio (Remotion / HyperFrames).
+   Prefix: .vs-*
+
+   Design intent — the page's one structural idea is that the *render head* is
+   visible: which engine will actually produce the file colours the whole studio
+   through --engine, and every duration is stated in frames because this pipeline is
+   frame-addressed, not time-addressed. Everything else stays as quiet as the rest of
+   the app. The second deliberate move is that template cards demonstrate themselves:
+   the thumbnails are real miniature animations of the preset, not placeholder art. */
+
+.vs {
+  --engine: var(--text-muted);
+  --engine-soft: rgba(138, 146, 158, 0.14);
+  --engine-glow: rgba(138, 146, 158, 0.35);
+  --engine-ink: #0a0c10;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  min-height: 0;
+  height: 100%;
+}
+
+.vs[data-engine='remotion'] {
+  --engine: #6c7bff;
+  --engine-soft: rgba(108, 123, 255, 0.15);
+  --engine-glow: rgba(108, 123, 255, 0.42);
+  --engine-ink: #ffffff;
+}
+
+.vs[data-engine='hyperframes'] {
+  --engine: #ff8a3d;
+  --engine-soft: rgba(255, 138, 61, 0.15);
+  --engine-glow: rgba(255, 138, 61, 0.42);
+  --engine-ink: #16100a;
+}
+
+/* ── the render-head switch ─────────────────────────────────────────────────
+   Three hard cells, mono-labelled, with the active engine's accent bleeding into
+   a hairline that runs the width of the studio. It reads as a machine selector
+   rather than a settings toggle, which is what it is. */
+
+.vs-engine {
+  display: inline-flex;
+  align-items: stretch;
+  border: 1px solid var(--border-3);
+  border-radius: var(--radius-sm);
+  background: var(--bg-inset-2);
+  overflow: hidden;
+  flex: none;
+}
+
+.vs-engine-btn {
+  appearance: none;
+  border: none;
+  border-right: 1px solid var(--border);
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  letter-spacing: 0.7px;
+  text-transform: uppercase;
+  padding: 8px 13px 7px;
+  cursor: pointer;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  transition: color 0.15s, background 0.15s;
+}
+
+.vs-engine-btn:last-child {
+  border-right: none;
+}
+
+.vs-engine-btn:hover:not([aria-pressed='true']) {
+  color: var(--text-bright);
+  background: var(--surface-hover);
+}
+
+.vs-engine-btn[aria-pressed='true'] {
+  color: var(--engine-ink);
+  background: var(--engine);
+  font-weight: 700;
+}
+
+.vs-engine-btn[disabled] {
+  opacity: 0.4;
+  cursor: not-allowed;
+}
+
+/* The lamp: a filled square when the engine is live, hollow when it is not. */
+.vs-engine-lamp {
+  width: 6px;
+  height: 6px;
+  flex: none;
+  border: 1px solid currentColor;
+  background: currentColor;
+}
+
+.vs-engine-lamp[data-live='0'] {
+  background: transparent;
+}
+
+.vs-rule {
+  height: 2px;
+  flex: none;
+  background: linear-gradient(90deg, var(--engine), transparent 62%);
+  opacity: 0.85;
+}
+
+/* ── header ─────────────────────────────────────────────────────────────── */
+
+.vs-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  flex: none;
+  min-width: 0;
+}
+
+.vs-head-title {
+  font-family: var(--font-display);
+  font-weight: 600;
+  font-size: 21px;
+  letter-spacing: -0.4px;
+  color: var(--text-strong);
+  line-height: 1;
+}
+
+.vs-head-spec {
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  color: var(--text-faint);
+  letter-spacing: 0.3px;
+  margin-top: 5px;
+  display: flex;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.vs-head-spec b {
+  color: var(--text-muted);
+  font-weight: 500;
+}
+
+/* ── body: stage beside inspector, timeline underneath ──────────────────── */
+
+.vs-body {
+  flex: 1;
+  min-height: 260px;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) clamp(320px, 27vw, 400px);
+  gap: var(--space-3);
+}
+
+.vs-inspector {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  overflow: hidden;
+  min-height: 0;
+}
+
+.vs-tabs {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  border-bottom: 1px solid var(--border);
+  flex: none;
+}
+
+.vs-tab {
+  appearance: none;
+  border: none;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: var(--text-dim);
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 600;
+  padding: 9px 4px;
+  cursor: pointer;
+  transition: color 0.15s, background 0.15s, border-color 0.15s;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+
+.vs-tab + .vs-tab {
+  border-left: 1px solid var(--border-soft);
+}
+
+.vs-tab:hover {
+  color: var(--text-bright);
+  background: var(--bg-card-2);
+}
+
+.vs-tab[aria-selected='true'] {
+  color: var(--engine);
+  background: var(--engine-soft);
+  border-bottom-color: var(--engine);
+  font-weight: 700;
+}
+
+/* A dot on a tab means that step already has content in the project. */
+.vs-tab-dot {
+  width: 4px;
+  height: 4px;
+  border-radius: 50%;
+  background: var(--engine);
+  flex: none;
+}
+
+.vs-panel {
+  flex: 1;
+  min-height: 0;
+  overflow-y: auto;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-4);
+}
+
+.vs-foot {
+  flex: none;
+  border-top: 1px solid var(--border);
+  padding: 7px 12px;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+/* ── sections + fields ──────────────────────────────────────────────────── */
+
+.vs-section {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  min-width: 0;
+}
+
+.vs-section + .vs-section {
+  border-top: 1px solid var(--border);
+  padding-top: var(--space-4);
+}
+
+.vs-section-head {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  min-width: 0;
+}
+
+.vs-hint {
+  margin: 0;
+  font-size: 11px;
+  line-height: 1.5;
+  color: var(--text-dim);
+}
+
+.vs-row {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+  min-width: 0;
+}
+
+.vs-grid {
+  display: grid;
+  gap: 9px;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+}
+
+.vs-grid--cards {
+  grid-template-columns: repeat(auto-fill, minmax(138px, 1fr));
+}
+
+.vs-split {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 8px;
+}
+
+.vs-scroll {
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+
+/* A template's declared parameter contract, rendered as controls. Two columns so
+   colour/number pairs sit together; long strings claim the full row. */
+.vs-params {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 9px;
+  align-items: start;
+}
+
+.vs-field {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.vs-field--wide {
+  grid-column: 1 / -1;
+}
+
+.vs-field-label {
+  font-size: 10.5px;
+  color: var(--text-dim);
+  letter-spacing: 0.1px;
+}
+
+.vs-field-hint {
+  font-size: 10px;
+  color: var(--text-faint);
+  line-height: 1.4;
+}
+
+.vs-input {
+  width: 100%;
+  font-size: 11.5px;
+}
+
+.vs-input--number {
+  font-family: var(--font-mono);
+  text-align: right;
+}
+
+.vs-number {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  min-width: 0;
+}
+
+.vs-number-suffix {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  flex: none;
+}
+
+.vs-textarea {
+  width: 100%;
+  min-height: 92px;
+  resize: vertical;
+  font-family: var(--font-mono);
+  font-size: 10.5px;
+  line-height: 1.5;
+}
+
+.vs-textarea--short {
+  min-height: 56px;
+}
+
+.vs-color {
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+}
+
+.vs-color input[type='color'] {
+  width: 30px;
+  height: 24px;
+  padding: 0;
+  border: 1px solid var(--border-3);
+  border-radius: 6px;
+  background: transparent;
+  cursor: pointer;
+}
+
+.vs-color code {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+}
+
+.vs-checkbox {
+  width: 15px;
+  height: 15px;
+  accent-color: var(--engine);
+  cursor: pointer;
+}
+
+/* ── template cards ─────────────────────────────────────────────────────── */
+
+.vs-card {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-md);
+  background: var(--bg-card-3);
+  padding: 8px;
+  min-width: 0;
+  transition: border-color 0.15s, box-shadow 0.15s;
+}
+
+.vs-card:hover {
+  border-color: var(--border-3);
+}
+
+.vs-card[data-selected='1'] {
+  border-color: var(--engine);
+  box-shadow: 0 0 0 1px var(--engine-soft), 0 8px 22px -14px var(--engine-glow);
+}
+
+.vs-card-hit {
+  appearance: none;
+  border: none;
+  background: transparent;
+  padding: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  text-align: left;
+  cursor: pointer;
+  color: inherit;
+  min-width: 0;
+}
+
+.vs-card-name {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-bright);
+  line-height: 1.25;
+}
+
+.vs-card-meta {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+}
+
+.vs-card-desc {
+  margin: 0;
+  font-size: 10px;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+
+.vs-card-caps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 4px;
+}
+
+.vs-tag {
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  letter-spacing: 0.3px;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  border: 1px solid var(--border-2);
+  border-radius: 4px;
+  padding: 2px 5px;
+  white-space: nowrap;
+}
+
+/* ── self-demonstrating template thumbnails ─────────────────────────────────
+   Each preset animates a miniature of what it actually does. They run only while
+   the card is hovered, focused, or selected (data-play="1"), so a gallery at rest
+   is completely still. */
+
+.vs-demo {
+  --demo-accent: var(--engine);
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: 6px;
+  background:
+    radial-gradient(circle at 70% 20%, rgba(255, 255, 255, 0.05), transparent 55%),
+    linear-gradient(160deg, #14171e, #0a0c10);
+  border: 1px solid var(--border);
+  overflow: hidden;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  gap: 3px;
+  padding: 0 6px 9px;
+  font-family: var(--font-body);
+  font-size: 9.5px;
+  font-weight: 800;
+  color: #ffffff;
+  letter-spacing: -0.02em;
+}
+
+.vs-demo-word {
+  display: inline-block;
+  padding: 1px 2px;
+  border-radius: 2px;
+  transform-origin: center bottom;
+}
+
+.vs-demo[data-play='1'] .vs-demo-word:nth-child(1) { animation-delay: 0s; }
+.vs-demo[data-play='1'] .vs-demo-word:nth-child(2) { animation-delay: 0.33s; }
+.vs-demo[data-play='1'] .vs-demo-word:nth-child(3) { animation-delay: 0.66s; }
+
+.vs-demo[data-play='1'] .vs-demo-word {
+  animation-duration: 1.5s;
+  animation-iteration-count: infinite;
+  animation-timing-function: cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+
+/* Active Highlight — the spoken word takes the accent, emphasis gets an underline. */
+.vs-demo[data-demo='caption-highlight'][data-play='1'] .vs-demo-word {
+  animation-name: vs-word-highlight;
+}
+.vs-demo[data-demo='caption-highlight'] .vs-demo-word:nth-child(3) {
+  text-decoration: underline;
+  text-decoration-thickness: 1px;
+  text-underline-offset: 2px;
+  text-decoration-color: #ff5a45;
+}
+@keyframes vs-word-highlight {
+  0%, 20% { color: var(--demo-accent); transform: scale(1.16) translateY(-1px); }
+  32%, 100% { color: #ffffff; transform: scale(1); }
+}
+
+/* Emoji Pop — uppercase punch with a dark chip behind the live word. */
+.vs-demo[data-demo='caption-emoji-pop'] {
+  align-items: center;
+  padding-bottom: 0;
+  text-transform: uppercase;
+  font-weight: 900;
+}
+.vs-demo[data-demo='caption-emoji-pop'][data-play='1'] .vs-demo-word {
+  animation-name: vs-word-pop;
+}
+@keyframes vs-word-pop {
+  0% { transform: scale(0.6); background: transparent; color: #ffffff; }
+  14% { transform: scale(1.3); background: rgba(0, 0, 0, 0.76); color: var(--demo-accent); }
+  30%, 100% { transform: scale(1); background: transparent; color: #ffffff; }
+}
+
+/* Clip Wipe — the live word inverts into a solid accent block. */
+.vs-demo[data-demo='caption-clip-wipe'] .vs-demo-word {
+  border-radius: 1px;
+}
+.vs-demo[data-demo='caption-clip-wipe'][data-play='1'] .vs-demo-word {
+  animation-name: vs-word-wipe;
+}
+@keyframes vs-word-wipe {
+  0% { background: linear-gradient(90deg, var(--demo-accent) 0 0) no-repeat 0 / 0% 100%; color: #ffffff; }
+  16% { background: linear-gradient(90deg, var(--demo-accent) 0 0) no-repeat 0 / 100% 100%; color: #07090d; }
+  30% { background: linear-gradient(90deg, var(--demo-accent) 0 0) no-repeat 0 / 100% 100%; color: #07090d; }
+  46%, 100% { background: linear-gradient(90deg, var(--demo-accent) 0 0) no-repeat 0 / 0% 100%; color: #ffffff; }
+}
+
+/* Neon Accent — glow, no fill. */
+.vs-demo[data-demo='caption-neon-accent'] {
+  text-transform: uppercase;
+}
+.vs-demo[data-demo='caption-neon-accent'][data-play='1'] .vs-demo-word {
+  animation-name: vs-word-neon;
+}
+@keyframes vs-word-neon {
+  0%, 18% {
+    color: #43f6ff;
+    text-shadow: 0 0 6px rgba(67, 246, 255, 0.9), 0 0 14px rgba(67, 246, 255, 0.5);
+  }
+  34%, 100% { color: #ffffff; text-shadow: none; }
+}
+
+/* Particle Burst — the live word throws a ring of sparks. */
+.vs-demo[data-demo='caption-particle-burst'] {
+  align-items: center;
+  padding-bottom: 0;
+  text-transform: uppercase;
+  font-weight: 900;
+}
+.vs-demo[data-demo='caption-particle-burst'][data-play='1'] .vs-demo-word {
+  animation-name: vs-word-burst;
+}
+@keyframes vs-word-burst {
+  0% { transform: scale(0.9); color: #ffffff; box-shadow: 0 0 0 0 rgba(255, 242, 61, 0); }
+  14% { transform: scale(1.24); color: #fff23d; box-shadow: 0 0 0 2px rgba(255, 242, 61, 0.55); }
+  34% { transform: scale(1); color: #ffffff; box-shadow: 0 0 0 9px rgba(255, 242, 61, 0); }
+  100% { transform: scale(1); color: #ffffff; box-shadow: 0 0 0 0 rgba(255, 242, 61, 0); }
+}
+
+/* Weight Shift — the only thing that moves is the type's weight. */
+.vs-demo[data-demo='caption-weight-shift'] {
+  font-weight: 500;
+  letter-spacing: 0;
+}
+.vs-demo[data-demo='caption-weight-shift'][data-play='1'] .vs-demo-word {
+  animation-name: vs-word-weight;
+}
+@keyframes vs-word-weight {
+  0%, 20% { font-weight: 900; color: #ffffff; }
+  34%, 100% { font-weight: 500; color: rgba(255, 255, 255, 0.72); }
+}
+
+/* ── transition demos: two plates, one move ─────────────────────────────── */
+
+.vs-demo--transition {
+  padding: 0;
+  gap: 0;
+}
+
+.vs-demo-plate {
+  position: absolute;
+  inset: 0;
+}
+
+.vs-demo-plate--a {
+  background: repeating-linear-gradient(135deg, #1b2030 0 5px, #141824 5px 10px);
+}
+
+.vs-demo-plate--b {
+  background: linear-gradient(140deg, var(--demo-accent), rgba(0, 0, 0, 0.65));
+}
+
+.vs-demo--transition[data-play='1'] .vs-demo-plate--b {
+  animation-duration: 1.6s;
+  animation-iteration-count: infinite;
+  animation-timing-function: cubic-bezier(0.4, 0, 0.2, 1);
+}
+
+.vs-demo--transition[data-demo='transition-fade'] .vs-demo-plate--b { opacity: 0; }
+.vs-demo--transition[data-demo='transition-fade'][data-play='1'] .vs-demo-plate--b {
+  animation-name: vs-tr-fade;
+}
+@keyframes vs-tr-fade {
+  0%, 12% { opacity: 0; }
+  50%, 78% { opacity: 1; }
+  100% { opacity: 0; }
+}
+
+.vs-demo--transition[data-demo='transition-slide'] .vs-demo-plate--b { transform: translateX(100%); }
+.vs-demo--transition[data-demo='transition-slide'][data-play='1'] .vs-demo-plate--b {
+  animation-name: vs-tr-slide;
+}
+@keyframes vs-tr-slide {
+  0%, 12% { transform: translateX(100%); }
+  50%, 78% { transform: translateX(0); }
+  100% { transform: translateX(-100%); }
+}
+
+.vs-demo--transition[data-demo='transition-wipe'] .vs-demo-plate--b { clip-path: inset(0 100% 0 0); }
+.vs-demo--transition[data-demo='transition-wipe'][data-play='1'] .vs-demo-plate--b {
+  animation-name: vs-tr-wipe;
+}
+@keyframes vs-tr-wipe {
+  0%, 12% { clip-path: inset(0 100% 0 0); }
+  50%, 78% { clip-path: inset(0 0 0 0); }
+  100% { clip-path: inset(0 0 0 100%); }
+}
+
+.vs-demo--transition[data-demo='transition-zoom'] .vs-demo-plate--b { transform: scale(0.2); opacity: 0; }
+.vs-demo--transition[data-demo='transition-zoom'][data-play='1'] .vs-demo-plate--b {
+  animation-name: vs-tr-zoom;
+}
+@keyframes vs-tr-zoom {
+  0%, 12% { transform: scale(0.2); opacity: 0; }
+  50%, 78% { transform: scale(1); opacity: 1; }
+  100% { transform: scale(1.7); opacity: 0; }
+}
+
+.vs-demo--transition[data-demo='transition-blur'] .vs-demo-plate--b { opacity: 0; filter: blur(6px); }
+.vs-demo--transition[data-demo='transition-blur'] .vs-demo-plate--a { filter: blur(0); }
+.vs-demo--transition[data-demo='transition-blur'][data-play='1'] .vs-demo-plate--b {
+  animation-name: vs-tr-blur;
+}
+@keyframes vs-tr-blur {
+  0%, 12% { opacity: 0; filter: blur(7px); }
+  50%, 78% { opacity: 1; filter: blur(0); }
+  100% { opacity: 0; filter: blur(7px); }
+}
+
+.vs-demo--transition[data-demo='transition-dip-to-black'] .vs-demo-plate--b { opacity: 0; }
+.vs-demo--transition[data-demo='transition-dip-to-black'] .vs-demo-plate--a { background: #000; }
+.vs-demo--transition[data-demo='transition-dip-to-black'][data-play='1'] .vs-demo-plate--b {
+  animation-name: vs-tr-dip;
+}
+@keyframes vs-tr-dip {
+  0% { opacity: 1; }
+  34%, 48% { opacity: 0; }
+  72%, 88% { opacity: 1; }
+  100% { opacity: 1; }
+}
+
+.vs-demo--transition[data-demo='transition-cut'] .vs-demo-plate--b { opacity: 0; }
+.vs-demo--transition[data-demo='transition-cut'][data-play='1'] .vs-demo-plate--b {
+  animation-name: vs-tr-cut;
+  animation-timing-function: steps(1, end);
+}
+@keyframes vs-tr-cut {
+  0%, 49% { opacity: 0; }
+  50%, 100% { opacity: 1; }
+}
+
+/* ── hook demos ─────────────────────────────────────────────────────────── */
+
+.vs-demo--hook {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  gap: 2px;
+  padding: 8px 9px;
+  font-size: 11px;
+}
+
+.vs-demo-rule {
+  width: 16px;
+  height: 2px;
+  background: var(--demo-accent);
+  flex: none;
+  margin-bottom: 3px;
+  transform-origin: left center;
+}
+
+.vs-demo-line {
+  display: block;
+  line-height: 1.05;
+}
+
+.vs-demo-line--lead {
+  color: var(--demo-accent);
+}
+
+.vs-demo--hook[data-play='1'] .vs-demo-rule {
+  animation: vs-hook-rule 2.4s infinite cubic-bezier(0.2, 0.7, 0.2, 1);
+}
+@keyframes vs-hook-rule {
+  0% { transform: scaleX(0); }
+  22%, 82% { transform: scaleX(1); }
+  100% { transform: scaleX(0); }
+}
+
+.vs-demo--hook[data-demo='hook-kinetic'][data-play='1'] .vs-demo-line {
+  animation: vs-hook-kinetic 2.4s infinite cubic-bezier(0.16, 1, 0.3, 1);
+}
+.vs-demo--hook[data-demo='hook-kinetic'][data-play='1'] .vs-demo-line:nth-of-type(2) {
+  animation-delay: 0.16s;
+}
+@keyframes vs-hook-kinetic {
+  0% { transform: translateY(9px) scale(0.86); opacity: 0; }
+  20%, 80% { transform: translateY(0) scale(1); opacity: 1; }
+  100% { transform: translateY(-5px) scale(1.04); opacity: 0; }
+}
+
+.vs-demo--hook[data-demo='hook-cinematic'] {
+  letter-spacing: 0.06em;
+  font-weight: 600;
+}
+.vs-demo--hook[data-demo='hook-cinematic'][data-play='1'] .vs-demo-line {
+  animation: vs-hook-cinematic 2.4s infinite ease-out;
+}
+.vs-demo--hook[data-demo='hook-cinematic'][data-play='1'] .vs-demo-line:nth-of-type(2) {
+  animation-delay: 0.28s;
+}
+@keyframes vs-hook-cinematic {
+  0% { letter-spacing: 0.24em; opacity: 0; filter: blur(3px); }
+  28%, 78% { letter-spacing: 0.04em; opacity: 1; filter: blur(0); }
+  100% { letter-spacing: 0.02em; opacity: 0; filter: blur(1px); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .vs-demo[data-play='1'] .vs-demo-word,
+  .vs-demo--transition[data-play='1'] .vs-demo-plate--b,
+  .vs-demo--hook[data-play='1'] .vs-demo-line,
+  .vs-demo--hook[data-play='1'] .vs-demo-rule {
+    animation: none !important;
+  }
+}
+
+/* ── lists ──────────────────────────────────────────────────────────────── */
+
+.vs-list {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  min-width: 0;
+}
+
+.vs-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 9px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-inset);
+  padding: 8px 9px;
+  min-width: 0;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.vs-item[data-selected='1'] {
+  border-color: var(--engine);
+  background: var(--engine-soft);
+}
+
+.vs-item-main {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-align: left;
+}
+
+.vs-item-title {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-bright);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.vs-item-sub {
+  font-size: 10px;
+  color: var(--text-dim);
+  line-height: 1.45;
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  align-items: center;
+}
+
+.vs-item-actions {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  flex: none;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.vs-kv {
+  display: grid;
+  grid-template-columns: auto minmax(0, 1fr);
+  gap: 4px 12px;
+  font-size: 10.5px;
+  color: var(--text-dim);
+  align-items: baseline;
+}
+
+.vs-kv > :nth-child(odd) {
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.4px;
+  text-transform: uppercase;
+  color: var(--text-faint);
+  white-space: nowrap;
+}
+
+.vs-mono {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-muted);
+  word-break: break-all;
+}
+
+/* ── status ─────────────────────────────────────────────────────────────── */
+
+.vs-pill {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 1px solid var(--border-3);
+  border-radius: var(--radius-pill);
+  background: var(--bg-inset-2);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  letter-spacing: 0.3px;
+  padding: 2px 8px;
+  white-space: nowrap;
+  flex: none;
+}
+
+.vs-pill--ok { border-color: rgba(54, 201, 142, 0.42); color: var(--ok-2); }
+.vs-pill--warn { border-color: rgba(245, 179, 35, 0.42); color: var(--warn); }
+.vs-pill--err { border-color: rgba(255, 90, 110, 0.42); color: var(--err-2); }
+
+.vs-meter {
+  height: 4px;
+  border-radius: 2px;
+  background: var(--bg-inset-2);
+  overflow: hidden;
+  flex: 1;
+  min-width: 60px;
+}
+
+.vs-meter > span {
+  display: block;
+  height: 100%;
+  background: var(--engine);
+  transition: width 0.25s linear;
+}
+
+.vs-meter[data-tone='ok'] > span { background: var(--ok); }
+.vs-meter[data-tone='err'] > span { background: var(--err); }
+
+.vs-problem {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  border-left: 2px solid var(--border-3);
+  padding: 5px 0 5px 9px;
+  font-size: 11px;
+  line-height: 1.45;
+  color: var(--text-muted);
+}
+
+.vs-problem--error { border-left-color: var(--err); }
+.vs-problem--warning { border-left-color: var(--warn); }
+
+/* ── empty states ───────────────────────────────────────────────────────── */
+
+.vs-empty {
+  border: 1.5px dashed var(--border-2);
+  border-radius: var(--radius-md);
+  padding: 22px 16px;
+  text-align: center;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+}
+
+.vs-empty-title {
+  font-family: var(--font-display);
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--text-bright);
+}
+
+.vs-empty-body {
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.55;
+  max-width: 340px;
+}
+
+/* ── external-AI prompt exchange ────────────────────────────────────────── */
+
+.vs-exchange {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.vs-exchange-steps {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.vs-step {
+  display: flex;
+  gap: 9px;
+  min-width: 0;
+}
+
+.vs-step-index {
+  flex: none;
+  width: 19px;
+  height: 19px;
+  border-radius: 50%;
+  border: 1px solid var(--engine);
+  color: var(--engine);
+  background: var(--engine-soft);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  display: grid;
+  place-items: center;
+  margin-top: 1px;
+}
+
+.vs-step-body {
+  flex: 1;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.vs-step-title {
+  font-size: 11.5px;
+  font-weight: 600;
+  color: var(--text-bright);
+}
+
+.vs-step-hint {
+  font-size: 10.5px;
+  color: var(--text-dim);
+  line-height: 1.5;
+}
+
+.vs-code {
+  margin: 0;
+  max-height: 190px;
+  overflow: auto;
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-inset-2);
+  padding: 9px 10px;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  line-height: 1.55;
+  color: var(--text-muted);
+  white-space: pre-wrap;
+  word-break: break-word;
+}
+
+/* ── media + licensing ──────────────────────────────────────────────────── */
+
+.vs-thumb-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 9px;
+}
+
+.vs-thumb {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  border-radius: 6px;
+  border: 1px solid var(--border);
+  background: var(--bg-inset-2);
+  overflow: hidden;
+  display: grid;
+  place-items: center;
+  font-family: var(--font-mono);
+  font-size: 9.5px;
+  color: var(--text-faint);
+}
+
+.vs-thumb img,
+.vs-thumb video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+/* Licensing is load-bearing, so it is always legible rather than tucked away. */
+.vs-license {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  border-top: 1px solid var(--border-soft);
+  padding-top: 5px;
+  font-size: 9.5px;
+  line-height: 1.45;
+  color: var(--text-faint);
+}
+
+/* ── captions ───────────────────────────────────────────────────────────── */
+
+.vs-cue {
+  display: flex;
+  flex-direction: column;
+  gap: 4px;
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-inset);
+  padding: 6px 8px;
+}
+
+.vs-cue-time {
+  font-family: var(--font-mono);
+  font-size: 9px;
+  color: var(--text-faint);
+  letter-spacing: 0.3px;
+}
+
+.vs-words {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 3px;
+}
+
+.vs-word {
+  appearance: none;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: var(--text-muted);
+  font-family: var(--font-body);
+  font-size: 11px;
+  padding: 2px 5px;
+  cursor: pointer;
+  transition: color 0.12s, background 0.12s, border-color 0.12s;
+}
+
+.vs-word:hover {
+  border-color: var(--border-3);
+  color: var(--text-bright);
+}
+
+.vs-word[data-importance='1'] { color: #67e8f9; border-color: rgba(103, 232, 249, 0.4); }
+.vs-word[data-importance='2'] { color: #ffb928; border-color: rgba(255, 185, 40, 0.45); font-weight: 700; }
+.vs-word[data-importance='3'] {
+  color: #ff5a45;
+  border-color: rgba(255, 90, 69, 0.5);
+  background: rgba(255, 90, 69, 0.1);
+  font-weight: 800;
+}
+
+/* ── grading presets ────────────────────────────────────────────────────── */
+
+.vs-preset-strip {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(150px, 1fr));
+  gap: 7px;
+}
+
+.vs-preset {
+  appearance: none;
+  border: 1px solid var(--border-2);
+  border-radius: var(--radius-sm);
+  background: var(--bg-inset);
+  padding: 8px;
+  cursor: pointer;
+  text-align: left;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--text-bright);
+  font-family: var(--font-body);
+  font-size: 11px;
+  font-weight: 600;
+  transition: border-color 0.15s, background 0.15s;
+}
+
+.vs-preset:hover { border-color: var(--border-3); background: var(--bg-card-2); }
+
+.vs-preset[aria-pressed='true'] {
+  border-color: var(--engine);
+  background: var(--engine-soft);
+}
+
+/* ── preview stage ──────────────────────────────────────────────────────── */
+
+.vs-preview {
+  display: flex;
+  flex-direction: column;
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card-3);
+  overflow: hidden;
+  min-height: 0;
+}
+
+.vs-preview-frame {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  background:
+    linear-gradient(45deg, #0b0d11 25%, transparent 25%) 0 0 / 16px 16px,
+    linear-gradient(-45deg, #0b0d11 25%, transparent 25%) 0 8px / 16px 16px,
+    #090b0e;
+  padding: 12px;
+  overflow: hidden;
+}
+
+.vs-preview-shell {
+  position: relative;
+  max-width: 100%;
+  max-height: 100%;
+  box-shadow: var(--shadow-pop);
+  background: #000;
+  overflow: hidden;
+}
+
+.vs-preview-shell iframe {
+  display: block;
+  border: 0;
+  width: 100%;
+  height: 100%;
+}
+
+.vs-preview-bar {
+  flex: none;
+  border-top: 1px solid var(--border);
+  padding: 7px 10px;
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  background: var(--bg-card);
+}
+
+.vs-scrub {
+  flex: 1;
+  min-width: 80px;
+  accent-color: var(--engine);
+}
+
+.vs-preview-empty {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 9px;
+  text-align: center;
+  color: var(--text-dim);
+  font-size: 11.5px;
+  max-width: 380px;
+  line-height: 1.55;
+}
+
+/* ── timeline ───────────────────────────────────────────────────────────── */
+
+.vs-timeline {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  overflow: hidden;
+  flex: none;
+  display: flex;
+  flex-direction: column;
+}
+
+.vs-tl-head {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 10px;
+  border-bottom: 1px solid var(--border);
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.vs-tl-body {
+  position: relative;
+  display: grid;
+  grid-template-columns: 104px minmax(0, 1fr);
+  max-height: 188px;
+  overflow-y: auto;
+}
+
+.vs-ruler {
+  position: relative;
+  height: 18px;
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-inset-2);
+  cursor: pointer;
+}
+
+.vs-tick {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  border-left: 1px solid var(--border-2);
+  padding-left: 3px;
+  font-family: var(--font-mono);
+  font-size: 8.5px;
+  line-height: 18px;
+  color: var(--text-faint);
+  pointer-events: none;
+  white-space: nowrap;
+}
+
+.vs-track-label {
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  height: 26px;
+  border-bottom: 1px solid var(--border-soft);
+  border-right: 1px solid var(--border);
+  font-size: 10px;
+  color: var(--text-dim);
+  background: var(--bg-card);
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+}
+
+.vs-track-lane {
+  position: relative;
+  height: 26px;
+  border-bottom: 1px solid var(--border-soft);
+  background:
+    repeating-linear-gradient(90deg, transparent 0 39px, var(--border-soft) 39px 40px);
+  cursor: pointer;
+}
+
+.vs-clip {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  border-radius: 3px;
+  border: 1px solid var(--border-3);
+  background: var(--bg-elevated);
+  color: var(--text-bright);
+  font-size: 9px;
+  line-height: 18px;
+  padding: 0 4px;
+  overflow: hidden;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  cursor: pointer;
+  min-width: 3px;
+  transition: border-color 0.12s, filter 0.12s;
+}
+
+.vs-clip:hover { filter: brightness(1.25); }
+
+.vs-clip[data-selected='1'] {
+  border-color: var(--engine);
+  box-shadow: 0 0 0 1px var(--engine);
+}
+
+.vs-clip--audio { background: #1b2a3a; border-color: #24405c; }
+.vs-clip--media { background: #1d2534; }
+.vs-clip--template { background: #2a2340; border-color: #3b3060; }
+.vs-clip--text,
+.vs-clip--solid { background: #23302a; border-color: #2f4438; }
+.vs-clip--caption { background: var(--engine-soft); border-color: var(--engine); color: var(--engine); }
+
+.vs-transition-mark {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: repeating-linear-gradient(45deg, var(--engine-soft) 0 3px, transparent 3px 6px);
+  border-left: 1px solid var(--engine);
+  border-right: 1px solid var(--engine);
+  cursor: pointer;
+  min-width: 2px;
+}
+
+.vs-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: var(--engine);
+  pointer-events: none;
+  z-index: 5;
+}
+
+.vs-playhead::before {
+  content: '';
+  position: absolute;
+  top: 0;
+  left: -3px;
+  width: 7px;
+  height: 7px;
+  background: var(--engine);
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+}
+
+/* ── banner strip in the shell ──────────────────────────────────────────── */
+
+.vs-messages {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  flex: none;
+}

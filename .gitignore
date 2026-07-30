@@ -11,6 +11,12 @@ resources/bin/
 browser-test-out/
 .idea/
 .claude/skills/playwright-cli/
+# Installed agent-skill content (Remotion + remotion-bits). Reproduce it with
+# `npx skills install` — skills-lock.json pins every source + hash and IS tracked.
+# The .claude/skills/* entries are absolute symlinks into this checkout, so they are
+# machine-specific and must never be committed.
+/.agents/skills/
+/.claude/skills/*
 .playwright-cli/
 .playwright-mcp/
 .playwright/
@@ -21,6 +27,7 @@ scratchpad/
 scratchpad-bodies/
 tmp/
 tmp-*/
+/resources/video-engine/remotion-bundle/
 
 # Local user-data snapshot used by scripts/seed-restore.* — may contain the
 # user's real sources/channels/library, so the data files stay local-only.
@@ -29,6 +36,9 @@ tmp-*/
 /seed/snapshot/*.db-wal
 /seed/snapshot/*.db-shm
 /seed/snapshot/*.json
+# Data-level channel + API-key seed written by scripts/seed-channels.cjs. Holds the
+# real channel inventory and the API keys in PLAINTEXT — never commit it.
+/seed/channels-seed.json
 
 # Ad-hoc Playwright a11y snapshot dumps saved at repo root during exploration.
 # (electron-builder.yml is tracked packaging config — do not blanket-ignore *.yml)

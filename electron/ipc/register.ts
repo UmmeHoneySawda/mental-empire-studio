@@ -19,7 +19,9 @@ import { probeGpuEngine } from '../services/engine/gpu/host'
 import { runUploadDetection } from '../services/uploads-detect'
 import { setSentryEnabled, telemetryForcedOff } from '../services/sentry'
 import { registerTalkingPhotosIpc } from './talkingphotos'
+import { registerVideoEngineIpc } from './video-engine'
 import { clearProviderSessionStorage } from '../providers/talkingphotos/partition'
+import { resetVideoEngine } from '../services/video-engine/studio'
 
 // All native capability the renderer can reach is registered here as invoke
 // handlers and exposed through the typed preload bridge (window.api.*).
@@ -41,6 +43,9 @@ export function registerIpc(): void {
     if (patch.background?.startOnSignIn !== undefined) applyLoginItem(next)
     if (patch.autoScrape !== undefined) schedulerStart()
     if (patch.telemetryEnabled !== undefined) setSentryEnabled(!telemetryForcedOff() && next.telemetryEnabled)
+    // Stock-footage keys are read when the video engine is constructed, so a key
+    // change has to rebuild it or the new provider never appears in the studio.
+    if (patch.beta !== undefined) resetVideoEngine()
     return next
   })
   ipcMain.handle('caps:get', (_e, force?: boolean) => probeRenderCapabilities(!!force))
@@ -140,6 +145,9 @@ export function registerIpc(): void {
 
   // ---- TalkingPhotos cloud provider: session, sync, and uploaded-audio Human creation ----
   registerTalkingPhotosIpc()
+
+  // ---- template video engine: Remotion + HyperFrames Compose studio ----
+  registerVideoEngineIpc()
 
   // ---- beta: effect-plan generation via Groq (reuses the transcription key) ----
   ipcMain.handle('effects:generate', async (_e, projectId: string, style: import('../../shared/types').VideoStyle) => {

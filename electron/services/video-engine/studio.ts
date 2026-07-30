@@ -1,0 +1,877 @@
+import { app } from 'electron'
+import { spawnSync } from 'node:child_process'
+import { existsSync, mkdirSync } from 'node:fs'
+import { copyFile, readFile, rm, stat, writeFile } from 'node:fs/promises'
+import { createRequire } from 'node:module'
+import { basename, dirname, extname, join, resolve } from 'node:path'
+import { fileURLToPath, pathToFileURL } from 'node:url'
+import {
+  createCaptionDocument,
+  DEFAULT_VIDEO_GRADING,
+  VideoProjectSchema,
+  VideoSceneSchema,
+  type CaptionWord,
+  type RendererId,
+  type VideoAsset,
+  type VideoAssetKind,
+  type VideoCanvasPatch,
+  type VideoGradingPreset,
+  type VideoProject,
+  type VideoRenderJob,
+  type VideoRendererCapabilities,
+  type VideoStudioBinding
+} from '../../../shared/video-engine'
+import type { Project, ProjectImage, TranscriptWord } from '../../../shared/types'
+import { getRepos } from '../../db'
+import { getSettings } from '../../store/settings'
+import { ffmpegPath, ffprobePath } from '../bin'
+import { cacheDir } from '../storage'
+import { createVideoEngine } from './factory'
+import { VideoEngineError } from './errors'
+import { ensureDirectory, resolveInside } from './paths'
+import type { PreparedRender, RenderJobRecord } from './render/types'
+import type { VideoEngineService } from './service'
+
+/* Main-process glue between the UI-free video engine and the Compose studio.
+ *
+ * The engine itself stays framework-agnostic; everything Electron-specific —
+ * where data lives, which b-roll providers are configured, how a downloaded clip
+ * becomes an engine project, and how a live preview is staged — lives here. */
+
+const BINDING_KEY_PREFIX = 've.binding.'
+
+let enginePromise: Promise<VideoEngineService> | null = null
+let engineOptionsKey = ''
+let engineFailure = ''
+
+export function videoEngineDataRoot(): string {
+  return join(app.getPath('userData'), 'video-engine')
+}
+
+function localBrollDirectories(): string[] {
+  const directories: string[] = []
+  // The classic pipeline already warms a b-roll library on disk; surfacing it as a
+  // local provider means the studio can place clips with no API key at all.
+  const warmed = cacheDir('broll')
+  try {
+    mkdirSync(warmed, { recursive: true })
+    directories.push(warmed)
+  } catch {
+    /* the warmed pool is optional */
+  }
+  return directories
+}
+
+/** Any change here means the engine must be rebuilt so new credentials/providers
+ *  take effect without an app restart. */
+function engineOptionsFingerprint(): string {
+  const beta = getSettings().beta
+  return JSON.stringify({
+    root: videoEngineDataRoot(),
+    pexels: beta.pexelsKey ? 'on' : 'off',
+    pixabay: beta.pixabayKey ? 'on' : 'off',
+    coverr: beta.coverrKey ? 'on' : 'off',
+    local: localBrollDirectories()
+  })
+}
+
+export function resetVideoEngine(): void {
+  const previous = enginePromise
+  enginePromise = null
+  engineOptionsKey = ''
+  engineFailure = ''
+  if (previous) void previous.then((engine) => engine.shutdown()).catch(() => undefined)
+}
+
+export async function shutdownVideoEngine(): Promise<void> {
+  const previous = enginePromise
+  enginePromise = null
+  engineOptionsKey = ''
+  if (!previous) return
+  await previous.then((engine) => engine.shutdown()).catch(() => undefined)
+}
+
+export function getVideoEngine(): Promise<VideoEngineService> {
+  const fingerprint = engineOptionsFingerprint()
+  if (enginePromise && fingerprint === engineOptionsKey) return enginePromise
+  if (enginePromise) resetVideoEngine()
+  engineOptionsKey = fingerprint
+  const beta = getSettings().beta
+  enginePromise = createVideoEngine({
+    dataRoot: videoEngineDataRoot(),
+    renderConcurrency: 1,
+    localBrollDirectories: localBrollDirectories(),
+    brollCredentials: {
+      pexelsApiKey: beta.pexelsKey || undefined,
+      pixabayApiKey: beta.pixabayKey || undefined,
+      coverrApiKey: beta.coverrKey || undefined
+    }
+  }).catch((error: unknown) => {
+    engineFailure = error instanceof Error ? error.message : String(error)
+    enginePromise = null
+    engineOptionsKey = ''
+    throw error
+  })
+  return enginePromise
+}
+
+export function lastVideoEngineFailure(): string {
+  return engineFailure
+}
+
+// ------------------------------------------------------------------- bindings
+
+function bindingKey(downloadId: string): string {
+  return `${BINDING_KEY_PREFIX}${downloadId}`
+}
+
+export function readBinding(downloadId: string): VideoStudioBinding {
+  const raw = getRepos().appMeta(bindingKey(downloadId))
+  if (!raw) return { downloadId }
+  try {
+    const parsed = JSON.parse(raw) as Partial<VideoStudioBinding>
+    return {
+      downloadId,
+      remotionProjectId: typeof parsed.remotionProjectId === 'string' ? parsed.remotionProjectId : undefined,
+      hyperframesProjectId:
+        typeof parsed.hyperframesProjectId === 'string' ? parsed.hyperframesProjectId : undefined
+    }
+  } catch {
+    return { downloadId }
+  }
+}
+
+function writeBinding(binding: VideoStudioBinding): VideoStudioBinding {
+  getRepos().setAppMeta(bindingKey(binding.downloadId), JSON.stringify(binding))
+  return binding
+}
+
+function bindingProjectId(binding: VideoStudioBinding, rendererId: RendererId): string | undefined {
+  return rendererId === 'remotion' ? binding.remotionProjectId : binding.hyperframesProjectId
+}
+
+function withBindingProjectId(
+  binding: VideoStudioBinding,
+  rendererId: RendererId,
+  projectId: string | undefined
+): VideoStudioBinding {
+  return rendererId === 'remotion'
+    ? { ...binding, remotionProjectId: projectId }
+    : { ...binding, hyperframesProjectId: projectId }
+}
+
+// -------------------------------------------------------------------- probing
+
+interface ProbedMedia {
+  width?: number
+  height?: number
+  durationSec?: number
+  hasAudio: boolean
+  hasVideo: boolean
+}
+
+function probeMedia(path: string): ProbedMedia {
+  const empty: ProbedMedia = { hasAudio: false, hasVideo: false }
+  try {
+    const probe = spawnSync(
+      ffprobePath(),
+      [
+        '-v', 'error',
+        '-print_format', 'json',
+        '-show_format',
+        '-show_streams',
+        path
+      ],
+      { encoding: 'utf8', windowsHide: true, timeout: 20_000 }
+    )
+    if (probe.status !== 0 || !probe.stdout) return empty
+    const parsed = JSON.parse(probe.stdout) as {
+      streams?: Array<{ codec_type?: string; width?: number; height?: number; duration?: string }>
+      format?: { duration?: string }
+    }
+    const streams = parsed.streams ?? []
+    const video = streams.find((stream) => stream.codec_type === 'video')
+    const durationRaw = parsed.format?.duration ?? video?.duration
+    const durationSec = durationRaw ? Number(durationRaw) : undefined
+    return {
+      width: video?.width && video.width > 0 ? video.width : undefined,
+      height: video?.height && video.height > 0 ? video.height : undefined,
+      durationSec: Number.isFinite(durationSec) && (durationSec as number) > 0 ? durationSec : undefined,
+      hasAudio: streams.some((stream) => stream.codec_type === 'audio'),
+      hasVideo: !!video
+    }
+  } catch {
+    return empty
+  }
+}
+
+const ASSET_KIND_BY_EXTENSION: Record<string, VideoAssetKind> = {
+  '.mp4': 'video', '.mov': 'video', '.mkv': 'video', '.webm': 'video', '.m4v': 'video', '.avi': 'video',
+  '.mp3': 'audio', '.m4a': 'audio', '.wav': 'audio', '.aac': 'audio', '.flac': 'audio', '.ogg': 'audio', '.opus': 'audio',
+  '.png': 'image', '.jpg': 'image', '.jpeg': 'image', '.webp': 'image', '.gif': 'image', '.bmp': 'image', '.avif': 'image',
+  '.woff2': 'font', '.woff': 'font', '.ttf': 'font', '.otf': 'font',
+  '.cube': 'lut', '.3dl': 'lut'
+}
+
+export function assetKindForPath(path: string): VideoAssetKind {
+  return ASSET_KIND_BY_EXTENSION[extname(path).toLowerCase()] ?? 'other'
+}
+
+/** Asset ids must satisfy `StableIdSchema`; derive one that is stable for a given
+ *  source path so re-importing the same file replaces rather than duplicates. */
+function assetIdFor(kind: VideoAssetKind, path: string): string {
+  const stem = basename(path, extname(path))
+    .normalize('NFKD')
+    .replace(/[^A-Za-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 60)
+  let hash = 0x811c9dc5
+  for (const character of resolve(path).toLowerCase()) {
+    hash = ((hash ^ character.charCodeAt(0)) * 0x01000193) >>> 0
+  }
+  return `${kind}-${stem || 'asset'}-${hash.toString(16).padStart(8, '0')}`
+}
+
+function assetFileName(assetId: string, path: string): string {
+  const extension = extname(path).toLowerCase().replace(/[^.a-z0-9]/g, '') || '.bin'
+  return `${assetId}${extension}`
+}
+
+// ------------------------------------------------------------ asset importing
+
+export interface ImportAssetResult {
+  project: VideoProject
+  skipped: Array<{ path: string; reason: string }>
+}
+
+export async function importProjectAssets(
+  projectId: string,
+  paths: readonly string[]
+): Promise<ImportAssetResult> {
+  const engine = await getVideoEngine()
+  let project = await engine.openProject(projectId)
+  const assetsDirectory = await ensureDirectory(engine.projects.assetsDirectory(projectId))
+  const skipped: Array<{ path: string; reason: string }> = []
+  const imported: VideoAsset[] = []
+
+  for (const raw of paths) {
+    const source = resolve(raw)
+    try {
+      const info = await stat(source)
+      if (!info.isFile()) {
+        skipped.push({ path: source, reason: 'Not a file' })
+        continue
+      }
+      const kind = assetKindForPath(source)
+      if (kind === 'other') {
+        skipped.push({ path: source, reason: `Unsupported file type: ${extname(source) || 'no extension'}` })
+        continue
+      }
+      const id = assetIdFor(kind, source)
+      const destination = resolveInside(assetsDirectory, assetFileName(id, source))
+      await copyFile(source, destination)
+      const probe = kind === 'video' || kind === 'audio' ? probeMedia(destination) : { hasAudio: false, hasVideo: false }
+      imported.push({
+        id,
+        name: basename(source),
+        kind,
+        uri: pathToFileURL(destination).toString(),
+        mimeType: mimeTypeFor(kind, destination),
+        width: probe.width,
+        height: probe.height,
+        durationFrames: probe.durationSec
+          ? Math.max(1, Math.round(probe.durationSec * project.canvas.fps))
+          : undefined,
+        source: { kind: 'local' }
+      })
+    } catch (error) {
+      skipped.push({ path: source, reason: error instanceof Error ? error.message : String(error) })
+    }
+  }
+
+  if (imported.length > 0) {
+    const importedIds = new Set(imported.map((asset) => asset.id))
+    project = await engine.saveProject(
+      VideoProjectSchema.parse({
+        ...project,
+        assets: [...project.assets.filter((asset) => !importedIds.has(asset.id)), ...imported]
+      }),
+      { expectedRevision: project.revision }
+    )
+  }
+  return { project, skipped }
+}
+
+function mimeTypeFor(kind: VideoAssetKind, path: string): string | undefined {
+  const extension = extname(path).toLowerCase()
+  const table: Record<string, string> = {
+    '.mp4': 'video/mp4', '.m4v': 'video/x-m4v', '.mov': 'video/quicktime',
+    '.mkv': 'video/x-matroska', '.webm': 'video/webm', '.avi': 'video/x-msvideo',
+    '.mp3': 'audio/mpeg', '.m4a': 'audio/mp4', '.wav': 'audio/wav', '.aac': 'audio/aac',
+    '.flac': 'audio/flac', '.ogg': 'audio/ogg', '.opus': 'audio/ogg',
+    '.png': 'image/png', '.jpg': 'image/jpeg', '.jpeg': 'image/jpeg', '.webp': 'image/webp',
+    '.gif': 'image/gif', '.bmp': 'image/bmp', '.avif': 'image/avif',
+    '.woff2': 'font/woff2', '.woff': 'font/woff', '.ttf': 'font/ttf', '.otf': 'font/otf'
+  }
+  return table[extension] ?? (kind === 'lut' ? 'text/plain' : undefined)
+}
+
+// --------------------------------------------------------- binding a download
+
+const ASPECT_DIMENSIONS: Record<string, { width: number; height: number }> = {
+  '16:9': { width: 1920, height: 1080 },
+  '9:16': { width: 1080, height: 1920 },
+  '1:1': { width: 1080, height: 1080 },
+  '4:5': { width: 1080, height: 1350 }
+}
+
+export function dimensionsForAspect(aspect: string | undefined): { width: number; height: number } {
+  return ASPECT_DIMENSIONS[aspect ?? '16:9'] ?? ASPECT_DIMENSIONS['16:9']!
+}
+
+export function captionWordsFromTranscript(
+  words: readonly TranscriptWord[],
+  fps: number,
+  durationFrames: number
+): { words: CaptionWord[]; dropped: number } {
+  const output: CaptionWord[] = []
+  let dropped = 0
+  let previousEnd = 0
+  const ordered = [...words].sort((a, b) => a.start - b.start || a.ord - b.ord)
+  for (let index = 0; index < ordered.length; index += 1) {
+    const word = ordered[index]!
+    const text = word.word.trim()
+    if (!text) { dropped += 1; continue }
+    let startFrame = Math.max(previousEnd, Math.round(word.start * fps))
+    let endFrame = Math.max(startFrame + 1, Math.round(word.end * fps))
+    if (startFrame >= durationFrames) { dropped += 1; continue }
+    endFrame = Math.min(endFrame, durationFrames)
+    if (endFrame <= startFrame) {
+      startFrame = Math.max(0, endFrame - 1)
+      if (endFrame <= startFrame) { dropped += 1; continue }
+    }
+    previousEnd = startFrame
+    output.push({
+      id: `word-${String(index + 1).padStart(6, '0')}`,
+      text: text.slice(0, 500),
+      startFrame,
+      endFrame,
+      importance: word.emphasis ? 2 : 0
+    })
+  }
+  return { words: output, dropped }
+}
+
+function classicProjectFor(downloadId: string): { project: Project | null; title: string; durationSec: number; audioPath: string; channel: string } {
+  const repos = getRepos()
+  const project = repos.getProject(`proj-${downloadId}`) ?? null
+  if (project) {
+    return {
+      project,
+      title: project.title,
+      durationSec: project.durationSec,
+      audioPath: project.mp3Path,
+      channel: project.channel
+    }
+  }
+  const download = repos.download(downloadId)
+  if (!download) throw new VideoEngineError('PROJECT_NOT_FOUND', `Unknown download: ${downloadId}`)
+  return {
+    project: null,
+    title: download.title,
+    durationSec: download.durationSec ?? 0,
+    audioPath: download.filePath ?? '',
+    channel: download.channel
+  }
+}
+
+/** Builds (or reopens) the engine project that backs one downloaded clip for one
+ *  renderer, seeded with the clip's audio, image sequence, and transcript so the
+ *  studio opens on something immediately renderable. */
+export async function bindDownload(
+  downloadId: string,
+  rendererId: RendererId,
+  options: { reseed?: boolean } = {}
+): Promise<{ binding: VideoStudioBinding; project: VideoProject }> {
+  const engine = await getVideoEngine()
+  let binding = readBinding(downloadId)
+  const existingId = bindingProjectId(binding, rendererId)
+  if (existingId && !options.reseed) {
+    try {
+      return { binding, project: await engine.openProject(existingId) }
+    } catch {
+      binding = writeBinding(withBindingProjectId(binding, rendererId, undefined))
+    }
+  }
+
+  const classic = classicProjectFor(downloadId)
+  const repos = getRepos()
+  const fps = 30
+  const { width, height } = dimensionsForAspect(classic.project?.captionAspect)
+  const audioProbe = classic.audioPath && existsSync(classic.audioPath) ? probeMedia(classic.audioPath) : undefined
+  const durationSec = classic.durationSec || audioProbe?.durationSec || 30
+  const durationFrames = Math.max(fps, Math.round(durationSec * fps))
+  const projectId = `${rendererId}-${downloadId}`.replace(/[^A-Za-z0-9._-]+/g, '-').slice(0, 120)
+
+  if (existingId) await engine.deleteProject(existingId).catch(() => undefined)
+  await engine.deleteProject(projectId).catch(() => undefined)
+
+  let project = await engine.createProject({
+    id: projectId,
+    name: classic.title.slice(0, 200) || 'Untitled video',
+    rendererId,
+    width,
+    height,
+    fps,
+    durationFrames
+  })
+
+  // Voice-over: the downloaded MP3 becomes the project's audio bed.
+  if (classic.audioPath && existsSync(classic.audioPath)) {
+    const audio = await importProjectAssets(project.id, [classic.audioPath])
+    project = audio.project
+  }
+  // Image sequence: reuse the classic project's ordered stills and their ranges.
+  const images: ProjectImage[] = classic.project ? repos.getProjectImages(classic.project.id) : []
+  const existingPaths = images.map((image) => image.path).filter((path) => existsSync(path))
+  if (existingPaths.length > 0) {
+    const stills = await importProjectAssets(project.id, existingPaths)
+    project = stills.project
+  }
+
+  const audioAsset = project.assets.find((asset) => asset.kind === 'audio')
+  const imageAssets = project.assets.filter((asset) => asset.kind === 'image')
+  const tracks = [
+    { id: 'main-audio', name: 'Voice-over', kind: 'audio' as const, order: -10, muted: false, locked: false },
+    { id: 'main-video', name: 'Visuals', kind: 'video' as const, order: 0, muted: false, locked: false }
+  ]
+  const scenes = []
+  if (audioAsset) {
+    scenes.push(VideoSceneSchema.parse({
+      id: 'main-audio-scene',
+      trackId: 'main-audio',
+      kind: 'audio',
+      startFrame: 0,
+      durationFrames,
+      zIndex: 0,
+      assetId: audioAsset.id,
+      volume: 1
+    }))
+  }
+  for (let index = 0; index < imageAssets.length; index += 1) {
+    const asset = imageAssets[index]!
+    const image = images.find((candidate) => basename(candidate.path) === asset.name)
+    const startFrame = image
+      ? Math.min(durationFrames - 1, Math.max(0, Math.round(image.rangeStart * fps)))
+      : Math.round((index / Math.max(1, imageAssets.length)) * durationFrames)
+    const endFrame = image
+      ? Math.min(durationFrames, Math.max(startFrame + 1, Math.round(image.rangeEnd * fps)))
+      : Math.min(durationFrames, Math.round(((index + 1) / Math.max(1, imageAssets.length)) * durationFrames))
+    scenes.push(VideoSceneSchema.parse({
+      id: `still-${String(index + 1).padStart(4, '0')}`,
+      trackId: 'main-video',
+      kind: 'media',
+      startFrame,
+      durationFrames: Math.max(1, endFrame - startFrame),
+      zIndex: 0,
+      assetId: asset.id,
+      fit: 'cover',
+      opacity: 1
+    }))
+  }
+
+  project = await engine.saveProject(
+    VideoProjectSchema.parse({ ...project, tracks, scenes }),
+    { expectedRevision: project.revision }
+  )
+
+  // Captions: the existing Groq transcript already has word timings.
+  const transcript: TranscriptWord[] = classic.project ? repos.getTranscript(classic.project.id) : []
+  if (transcript.length > 0) {
+    const converted = captionWordsFromTranscript(transcript, fps, durationFrames)
+    if (converted.words.length > 0) {
+      project = await engine.setCaptions({
+        projectId: project.id,
+        language: 'en',
+        templateId: `${rendererId}-caption-highlight`,
+        words: converted.words
+      })
+    }
+  }
+
+  binding = writeBinding(withBindingProjectId(binding, rendererId, project.id))
+  return { binding, project }
+}
+
+export async function unbindDownload(
+  downloadId: string,
+  rendererId: RendererId
+): Promise<VideoStudioBinding> {
+  const binding = readBinding(downloadId)
+  const projectId = bindingProjectId(binding, rendererId)
+  if (projectId) {
+    const engine = await getVideoEngine().catch(() => null)
+    if (engine) await engine.deleteProject(projectId).catch(() => undefined)
+  }
+  return writeBinding(withBindingProjectId(binding, rendererId, undefined))
+}
+
+// ------------------------------------------------------------------- canvas
+
+export async function patchCanvas(projectId: string, patch: VideoCanvasPatch): Promise<VideoProject> {
+  const engine = await getVideoEngine()
+  const project = await engine.openProject(projectId)
+  const fps = patch.fps === undefined ? project.canvas.fps : Math.round(patch.fps)
+  // Every timing in the project is a frame count, so changing the frame rate has to
+  // rescale all of them or the edit silently retimes. Duration is rescaled first, then
+  // the explicit duration in the patch (already expressed at the new rate) wins.
+  const scale = fps / project.canvas.fps
+  const rescale = (frames: number): number => Math.max(0, Math.round(frames * scale))
+  const scaledDuration = Math.max(1, rescale(project.canvas.durationFrames))
+  const canvas = {
+    ...project.canvas,
+    fps,
+    durationFrames:
+      patch.durationFrames === undefined ? scaledDuration : Math.max(1, Math.round(patch.durationFrames)),
+    ...(patch.width === undefined ? {} : { width: Math.round(patch.width) }),
+    ...(patch.height === undefined ? {} : { height: Math.round(patch.height) }),
+    ...(patch.backgroundColor === undefined ? {} : { backgroundColor: patch.backgroundColor })
+  }
+
+  // Shrinking the canvas would orphan scenes/captions past the new end; clamp both so
+  // a duration change can never produce an unparseable project.
+  const scenes = project.scenes
+    .map((scene) => ({
+      ...scene,
+      startFrame: rescale(scene.startFrame),
+      durationFrames: Math.max(1, rescale(scene.durationFrames)),
+      sourceRange: scene.sourceRange
+        ? {
+            startFrame: rescale(scene.sourceRange.startFrame),
+            durationFrames: Math.max(1, rescale(scene.sourceRange.durationFrames))
+          }
+        : undefined
+    }))
+    .filter((scene) => scene.startFrame < canvas.durationFrames)
+    .map((scene) => VideoSceneSchema.parse({
+      ...scene,
+      // A caption scene always spans the whole video, so it follows the new duration
+      // rather than being clipped to a stale length.
+      durationFrames: scene.kind === 'caption'
+        ? canvas.durationFrames - scene.startFrame
+        : Math.max(1, Math.min(scene.durationFrames, canvas.durationFrames - scene.startFrame))
+    }))
+  const keptScenes = new Map(scenes.map((scene) => [scene.id, scene]))
+
+  const captions = project.captions
+    ? (() => {
+        const words = project.captions.words
+          .map((word) => ({
+            ...word,
+            startFrame: rescale(word.startFrame),
+            endFrame: Math.max(rescale(word.startFrame) + 1, rescale(word.endFrame))
+          }))
+          .filter((word) => word.startFrame < canvas.durationFrames)
+          .map((word) => ({ ...word, endFrame: Math.min(word.endFrame, canvas.durationFrames) }))
+          .filter((word) => word.endFrame > word.startFrame)
+        return words.length > 0
+          ? createCaptionDocument({
+              id: project.captions.id,
+              language: project.captions.language,
+              templateId: project.captions.templateId,
+              words
+            })
+          : undefined
+      })()
+    : undefined
+
+  const transitions = project.transitions
+    .map((transition) => ({
+      ...transition,
+      startFrame: rescale(transition.startFrame),
+      durationFrames: transition.type === 'cut' ? 0 : Math.max(1, rescale(transition.durationFrames))
+    }))
+    .filter((transition) => {
+      const from = keptScenes.get(transition.fromSceneId)
+      const to = keptScenes.get(transition.toSceneId)
+      if (!from || !to) return false
+      // The schema rejects a transition longer than either scene it joins.
+      return transition.durationFrames <= Math.min(from.durationFrames, to.durationFrames)
+    })
+
+  return engine.saveProject(
+    VideoProjectSchema.parse({ ...project, canvas, scenes, captions, transitions }),
+    { expectedRevision: project.revision }
+  )
+}
+
+// ------------------------------------------------------------------ previewing
+
+/* Assets live outside the renderer's origin, and `file:` is not reachable under the
+ * app CSP. `mestudio://` (registered in main.ts) serves anything inside the engine's
+ * own data root, so the preview sees the real media. Two hosts:
+ *
+ *   mestudio://asset/<base64url absolute path>   one file, no relative resolution
+ *   mestudio://hf/<projectId>/<relative path>    a staged HyperFrames workspace,
+ *                                                where `./vendor/gsap.min.js` and
+ *                                                `./assets/*` must keep resolving */
+export const PREVIEW_PROTOCOL = 'mestudio'
+
+export function encodePreviewPath(absolutePath: string): string {
+  return Buffer.from(resolve(absolutePath), 'utf8').toString('base64url')
+}
+
+export function decodePreviewPath(token: string): string {
+  return Buffer.from(token, 'base64url').toString('utf8')
+}
+
+export function previewUrlForPath(absolutePath: string): string {
+  return `${PREVIEW_PROTOCOL}://asset/${encodePreviewPath(absolutePath)}`
+}
+
+export function hyperframesPreviewUrl(projectId: string): string {
+  const entry = stagedPreviews.get(projectId)?.entryFile ?? PREVIEW_ENTRY_FILE
+  return `${PREVIEW_PROTOCOL}://hf/${encodeURIComponent(projectId)}/${entry}`
+}
+
+/** Resolves a `mestudio://` request to a real file, or throws. Both hosts are
+ *  confined: `asset` to the engine data root, `hf` to that project's staged
+ *  workspace, so a crafted URL cannot read arbitrary disk. */
+export function resolvePreviewRequest(url: string): string {
+  const parsed = new URL(url)
+  const segments = parsed.pathname.split('/').filter(Boolean).map((part) => decodeURIComponent(part))
+  if (parsed.hostname === 'asset') {
+    const token = segments[0]
+    if (!token) throw new VideoEngineError('PATH_OUTSIDE_WORKSPACE', 'Empty preview path')
+    return resolveInside(videoEngineDataRoot(), resolve(decodePreviewPath(token)))
+  }
+  if (parsed.hostname === 'hf') {
+    const [projectId, ...rest] = segments
+    if (!projectId) throw new VideoEngineError('PATH_OUTSIDE_WORKSPACE', 'Missing preview project')
+    const staged = stagedPreviews.get(projectId)
+    if (!staged) throw new VideoEngineError('PROJECT_NOT_FOUND', `No staged preview for ${projectId}`)
+    return resolveInside(staged.workspacePath, ...(rest.length > 0 ? rest : [staged.entryFile]))
+  }
+  throw new VideoEngineError('PATH_OUTSIDE_WORKSPACE', `Unknown preview host: ${parsed.hostname}`)
+}
+
+export function projectForPreview(project: VideoProject): VideoProject {
+  return VideoProjectSchema.parse({
+    ...project,
+    assets: project.assets.map((asset) => {
+      if (!asset.uri.startsWith('file:')) return asset
+      try {
+        const absolute = fileURLToPath(new URL(asset.uri))
+        return { ...asset, uri: previewUrlForPath(absolute) }
+      } catch {
+        return asset
+      }
+    })
+  })
+}
+
+interface StagedPreview {
+  workspacePath: string
+  prepared: PreparedRender
+  warnings: string[]
+  /** The entry the player loads — `preview.html`, never the render entry. */
+  entryFile: string
+}
+
+const stagedPreviews = new Map<string, StagedPreview>()
+
+const PREVIEW_ENTRY_FILE = 'preview.html'
+const PREVIEW_RUNTIME_FILE = 'hyperframe.runtime.iife.js'
+
+/**
+ * A compiled composition ships its DOM, GSAP, and a paused timeline — but every
+ * `.clip` starts `visibility: hidden`, and it is HyperFrames' browser runtime that
+ * reveals them according to `data-start`/`data-duration`. The renderer injects that
+ * runtime itself, so `index.html` does not carry it and would paint black on its own.
+ *
+ * Rather than change what gets rendered, this writes a second entry beside it with
+ * the runtime appended. `index.html` stays byte-identical to what the renderer sees.
+ */
+async function writePreviewEntry(workspacePath: string): Promise<void> {
+  const requireFromHere = createRequire(import.meta.url)
+  const coreRoot = dirname(requireFromHere.resolve('@hyperframes/core/package.json'))
+  const runtimeSource = join(coreRoot, 'dist', PREVIEW_RUNTIME_FILE)
+  const vendorTarget = resolveInside(workspacePath, 'vendor', PREVIEW_RUNTIME_FILE)
+  await ensureDirectory(join(workspacePath, 'vendor'))
+  await copyFile(runtimeSource, vendorTarget)
+
+  const entry = resolveInside(workspacePath, 'index.html')
+  const html = await readFile(entry, 'utf8')
+  const runtimeTag = `<script src="./vendor/${PREVIEW_RUNTIME_FILE}"></script>`
+  // After the timeline script, so `window.__timelines` is populated before the
+  // runtime bootstraps on DOMContentLoaded.
+  const withRuntime = html.includes('</body>')
+    ? html.replace('</body>', `  ${runtimeTag}\n</body>`)
+    : `${html}\n${runtimeTag}`
+  await writeFile(resolveInside(workspacePath, PREVIEW_ENTRY_FILE), withRuntime, 'utf8')
+}
+
+export async function stageHyperframesPreview(projectId: string): Promise<StagedPreview> {
+  const engine = await getVideoEngine()
+  const project = await engine.openProject(projectId)
+  if (project.rendererId !== 'hyperframes') {
+    throw new VideoEngineError('INVALID_PROJECT', 'Only HyperFrames projects have a staged preview')
+  }
+  const adapter = engine.rendererAdapter('hyperframes')
+  if (!adapter) throw new VideoEngineError('RENDERER_UNAVAILABLE', 'HyperFrames renderer is not registered')
+
+  const previous = stagedPreviews.get(projectId)
+  if (previous) {
+    stagedPreviews.delete(projectId)
+    if (adapter.cleanup) await adapter.cleanup(previous.prepared).catch(() => undefined)
+  }
+  const workDirectory = await ensureDirectory(join(engine.projects.workDirectory(projectId), 'preview'))
+  const controller = new AbortController()
+  const prepared = await adapter.prepare(project, {
+    workDirectory,
+    signal: controller.signal,
+    onProgress: () => undefined
+  })
+  const payload = prepared.payload as { workspacePath?: string; lintWarnings?: string[] }
+  if (!payload?.workspacePath) {
+    throw new VideoEngineError('RENDER_FAILED', 'HyperFrames preview did not produce a workspace')
+  }
+  await writePreviewEntry(payload.workspacePath)
+  const staged: StagedPreview = {
+    workspacePath: payload.workspacePath,
+    prepared,
+    warnings: payload.lintWarnings ?? [],
+    entryFile: PREVIEW_ENTRY_FILE
+  }
+  stagedPreviews.set(projectId, staged)
+  return staged
+}
+
+export async function discardStagedPreviews(): Promise<void> {
+  const engine = await getVideoEngine().catch(() => null)
+  const adapter = engine?.rendererAdapter('hyperframes')
+  for (const [projectId, staged] of stagedPreviews) {
+    stagedPreviews.delete(projectId)
+    if (adapter?.cleanup) await adapter.cleanup(staged.prepared).catch(() => undefined)
+    else await rm(staged.workspacePath, { recursive: true, force: true }).catch(() => undefined)
+  }
+}
+
+// --------------------------------------------------------------- render jobs
+
+export function toRenderJobDto(job: RenderJobRecord): VideoRenderJob {
+  return {
+    id: job.id,
+    projectId: job.projectId,
+    projectName: job.projectSnapshot.name,
+    projectRevision: job.projectRevision,
+    rendererId: job.rendererId,
+    outputPath: job.outputPath,
+    stage: job.stage,
+    progress: job.progress,
+    attempt: job.attempt,
+    createdAt: job.createdAt,
+    updatedAt: job.updatedAt,
+    startedAt: job.startedAt,
+    completedAt: job.completedAt,
+    errorCode: job.errorCode,
+    errorMessage: job.errorMessage,
+    artifact: job.artifact,
+    canvas: {
+      width: job.projectSnapshot.canvas.width,
+      height: job.projectSnapshot.canvas.height,
+      fps: job.projectSnapshot.canvas.fps,
+      durationFrames: job.projectSnapshot.canvas.durationFrames
+    }
+  }
+}
+
+/** `assertSafeId` rejects spaces and punctuation in output file names, so titles
+ *  have to be slugged before they reach the queue. */
+export function renderFileName(project: VideoProject, extension = '.mp4'): string {
+  const stem = project.name
+    .normalize('NFKD')
+    .replace(/[^A-Za-z0-9]+/g, '-')
+    .replace(/^-+|-+$/g, '')
+    .slice(0, 80)
+  return `${stem || 'render'}-r${project.revision}${extension}`
+}
+
+// ------------------------------------------------------------------- grading
+
+export const VIDEO_GRADING_PRESETS: readonly VideoGradingPreset[] = Object.freeze([
+  {
+    id: 'off',
+    name: 'None',
+    description: 'Pass the renderer output through untouched.',
+    grading: { ...DEFAULT_VIDEO_GRADING }
+  },
+  {
+    id: 'teal-orange',
+    name: 'Teal & Orange',
+    description: 'The blockbuster split-tone: cool shadows, warm skin, firm contrast.',
+    grading: {
+      enabled: true, lutIntensity: 1, exposure: 0.03, contrast: 0.16,
+      saturation: 1.12, temperature: 0.12, tint: -0.05, vignette: 0.2, grain: 0.03
+    }
+  },
+  {
+    id: 'bleach-noir',
+    name: 'Bleach Noir',
+    description: 'Desaturated, high-contrast monochrome lean for tension segments.',
+    grading: {
+      enabled: true, lutIntensity: 1, exposure: -0.04, contrast: 0.3,
+      saturation: 0.42, temperature: -0.06, tint: 0.02, vignette: 0.34, grain: 0.08
+    }
+  },
+  {
+    id: 'warm-doc',
+    name: 'Warm Documentary',
+    description: 'Gentle warmth and lifted mids — reads honest, not stylized.',
+    grading: {
+      enabled: true, lutIntensity: 1, exposure: 0.07, contrast: 0.06,
+      saturation: 1.04, temperature: 0.16, tint: 0.03, vignette: 0.12, grain: 0.02
+    }
+  },
+  {
+    id: 'cold-clinical',
+    name: 'Cold Clinical',
+    description: 'Blue-shifted and clean, for data and explainer segments.',
+    grading: {
+      enabled: true, lutIntensity: 1, exposure: 0.02, contrast: 0.12,
+      saturation: 0.94, temperature: -0.18, tint: -0.04, vignette: 0.08, grain: 0
+    }
+  },
+  {
+    id: 'retro-film',
+    name: 'Retro Film',
+    description: 'Faded blacks, heavier grain, and a warm cast for archival texture.',
+    grading: {
+      enabled: true, lutIntensity: 1, exposure: 0.05, contrast: -0.08,
+      saturation: 0.88, temperature: 0.22, tint: 0.06, vignette: 0.28, grain: 0.14
+    }
+  }
+])
+
+// -------------------------------------------------------------------- status
+
+export async function videoEngineCapabilities(): Promise<VideoRendererCapabilities[]> {
+  const engine = await getVideoEngine()
+  return engine
+    .listRendererIds()
+    .map((id) => engine.rendererAdapter(id)?.capabilities())
+    .filter((capabilities): capabilities is VideoRendererCapabilities => !!capabilities)
+}
+
+export function missingBrollCredentials(): string[] {
+  const beta = getSettings().beta
+  const missing: string[] = []
+  if (!beta.pexelsKey) missing.push('pexels')
+  if (!beta.pixabayKey) missing.push('pixabay')
+  if (!beta.coverrKey) missing.push('coverr')
+  return missing
+}
+
+export function engineBinaryPaths(): { ffmpegPath: string; ffprobePath: string } {
+  return { ffmpegPath: ffmpegPath(), ffprobePath: ffprobePath() }
+}

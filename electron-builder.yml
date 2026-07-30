@@ -21,6 +21,8 @@ files:
 # uses Electron's built-in Crashpad crash reporter.)
 asarUnpack:
   - "**/node_modules/better-sqlite3/**"
+  # Remotion invokes the platform compositor as a child process.
+  - "**/node_modules/@remotion/compositor-*/**"
 
 # Bundled sidecars (yt-dlp, ffmpeg, ffprobe) + the tray icon, copied into
 # the app's resources/ dir so resolveBinDir()/trayIconPath() find them.
@@ -36,6 +38,11 @@ extraResources:
     filter: ["**/*"]
   - from: resources/fonts
     to: fonts
+    filter: ["**/*"]
+  # Approved, versioned HyperFrames registry sources and future prebuilt
+  # Remotion bundles. Runtime rendering never fetches a mutable template registry.
+  - from: resources/video-engine
+    to: video-engine
     filter: ["**/*"]
 
 # Publish to GitHub Releases (consumed by electron-updater).
