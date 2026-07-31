@@ -271,7 +271,11 @@ export interface ApplyVideoTransitionInput {
   id?: string
   fromSceneId: string
   toSceneId: string
-  startFrame: number
+  /** Optional. For an animated transition the engine derives this from the overlap it
+   *  creates between the two clips, so a caller does not have to do frame arithmetic —
+   *  getting it wrong was what made every crossfade fail preflight. Only `cut` uses the
+   *  supplied value. */
+  startFrame?: number
   durationFrames?: number
   direction?: TransitionDirection
   easing?: TransitionEasing

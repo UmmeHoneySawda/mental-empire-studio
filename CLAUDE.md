@@ -61,10 +61,16 @@ headlessly under `xvfb-run`:
 profile (`ME_USERDATA_DIR`, set in `electron/main.ts` — a plain relocation, no reset). It
 catches wiring bugs unit tests and a green build cannot see: a preload method with no
 `ipcMain.handle` behind it, a panel that throws on mount, a renderer that fails to report.
-Requires `npm run build` first. `--keep` leaves the scratch profile for inspection.
+Requires `npm run build` first. `--keep` leaves the scratch profile; `--engine remotion`
+drives the other renderer (HyperFrames is the default — it compiles far faster).
 
-It does not yet edit a real clip — that needs a downloaded video seeded into the scratch
-database, which is the natural next extension.
+`ME_E2E_SEED_AUDIO` (with `ME_E2E_SEED_ID` / `ME_E2E_SEED_TITLE`) puts one downloaded clip
+in the database at startup — a fixture seam like `ME_YTDLP_FIXTURE`, and it hard-exits
+unless userData has been relocated. That is what gives the run something to edit: it binds
+a project, imports stills, cycles them across the timeline, crossfades two, renames,
+rebuilds the preview twice and preflights, all through real IPC.
+
+It does not render a file — that needs NVENC and minutes; the milestone smokes cover it.
 
 ## Build trap: `Unterminated string literal` in `out/main/main.js`
 

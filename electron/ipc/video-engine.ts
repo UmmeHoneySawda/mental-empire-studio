@@ -969,7 +969,9 @@ export function registerVideoEngineIpc(): void {
         id: input.id,
         fromSceneId: reqString(input.fromSceneId, 'fromSceneId'),
         toSceneId: reqString(input.toSceneId, 'toSceneId'),
-        startFrame: Math.max(0, reqInt(input.startFrame, 'startFrame')),
+        // Only meaningful for a cut; applyTransitionTemplate overwrites it with the
+        // overlap start for anything animated.
+        startFrame: input.startFrame === undefined ? 0 : Math.max(0, reqInt(input.startFrame, 'startFrame')),
         durationFrames: input.durationFrames === undefined ? undefined : Math.max(0, reqInt(input.durationFrames, 'durationFrames')),
         direction: input.direction,
         easing: input.easing

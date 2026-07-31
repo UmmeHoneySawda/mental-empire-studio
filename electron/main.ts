@@ -15,7 +15,7 @@ import { startDownloads, resume as resumeDownload } from './ipc/download'
 import { createProject, setImages, runTranscribe, sendToRender } from './ipc/compose'
 import { firedNotifications } from './services/notify'
 import { channelUrl, orderVideos } from './services/scraper'
-import { splitRanges } from './services/audio'
+import { probeDuration, splitRanges } from './services/audio'
 import { autoArrangeText } from '../shared/thumbnail'
 import { THUMB_W, THUMB_H, DEFAULT_BETA_OPTS, type AutomationJobDraft, type Project, type TextLayer, type ThumbnailTemplate, type TranscriptWord } from '../shared/types'
 import { buildAss } from './services/captions'
@@ -285,6 +285,50 @@ function initPersistence(): void {
   }
   // The most valuable lines in a bug report: versions + whether the sidecars exist.
   logStartupDiagnostics({ ytdlp: resolveYtdlpPath(), ffmpeg: ffmpegPath(), ffprobe: ffprobePath(), dbPath })
+}
+
+/**
+ * Puts one downloaded clip in the database so an E2E run has something to edit.
+ *
+ * A fixture seam in the same spirit as ME_YTDLP_FIXTURE / ME_WHISPER_FIXTURE: the test
+ * cannot reach YouTube, and inserting the row from outside the app would mean
+ * reimplementing the schema. Writing it through the app's own repository keeps it correct
+ * across migrations.
+ *
+ * Refuses to run outside a relocated userData directory, so it can never add rows to the
+ * real library. Idempotent — upsert, and the row is only written when it is missing.
+ */
+async function seedE2EClip(): Promise<void> {
+  const audioPath = process.env['ME_E2E_SEED_AUDIO']
+  if (!audioPath) return
+  if (!process.env['ME_USERDATA_DIR'] && !process.env['ME_SMOKE_USERDATA_DIR']) {
+    L.error('FATAL: ME_E2E_SEED_AUDIO requires ME_USERDATA_DIR — refusing to seed the real library.')
+    process.exit(1)
+  }
+  const resolved = resolve(audioPath)
+  if (!existsSync(resolved)) {
+    L.error(`ME_E2E_SEED_AUDIO does not exist: ${resolved}`)
+    process.exit(1)
+  }
+  const repos = getRepos()
+  const id = process.env['ME_E2E_SEED_ID'] || 'e2e-clip'
+  if (repos.download(id)) return
+  const durationSec = await probeDuration(resolved).catch(() => 0)
+  repos.upsertDownload({
+    id,
+    sourceId: 'e2e-source',
+    title: process.env['ME_E2E_SEED_TITLE'] || 'E2E fixture clip',
+    channel: '@e2e',
+    size: `${Math.round(statSync(resolved).size / 1024)} KB`,
+    when: 'just now',
+    stage: 'Downloaded only',
+    pct: '100',
+    action: 'Open',
+    thumb: '',
+    filePath: resolved,
+    durationSec: durationSec || 12
+  })
+  L.info(`E2E seed: download ${id} -> ${resolved} (${durationSec || 12}s)`)
 }
 
 function hasUsableOutput(p?: string): p is string {
@@ -1789,8 +1833,11 @@ function studioPreviewMimeType(filePath: string): string | undefined {
   return dot < 0 ? undefined : table[filePath.slice(dot).toLowerCase()]
 }
 
-app.whenReady().then(() => {
+app.whenReady().then(async () => {
   initPersistence()
+  // Awaited, not fired off: the renderer asks for downloads as soon as IPC is up, and a
+  // seed that lands after that read leaves the E2E looking at an empty library.
+  await seedE2EClip()
   registerIpc()
   registerStudioPreviewProtocol()
   sweepTempArtifacts()

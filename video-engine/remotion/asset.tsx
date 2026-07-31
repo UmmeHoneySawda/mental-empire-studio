@@ -1,7 +1,34 @@
 import type { CSSProperties } from 'react'
-import { Audio, Video } from '@remotion/media'
-import { AbsoluteFill, Img } from 'remotion'
+import {
+  Audio as WebCodecsAudio,
+  Video as WebCodecsVideo,
+} from '@remotion/media'
+import {
+  AbsoluteFill,
+  Audio as ElementAudio,
+  Img,
+  Video as ElementVideo,
+} from 'remotion'
 import type { VideoAsset, VideoScene } from '../../shared/video-engine'
+
+/**
+ * `@remotion/media` reads media by `fetch`ing the URL. That is fine while rendering —
+ * the composition is served over http from Remotion's own bundle server — but the studio
+ * preview renders this same component inside the app window, whose document origin is
+ * `file://`, and Chromium refuses to fetch a custom scheme from a file origin no matter
+ * what `registerSchemesAsPrivileged` declares. Project media is served over `mestudio://`,
+ * so in the preview every fetch fails and the video plays silently with no audio.
+ *
+ * An HTML media element loads the exact same URL without complaint, so the preview uses
+ * Remotion's element-based Audio/Video and the render keeps the WebCodecs ones. Detected
+ * from the origin rather than threaded through as a prop, because the distinction IS the
+ * origin — anything else would let the two drift apart.
+ */
+const PREFER_ELEMENT_MEDIA =
+  typeof window !== 'undefined' && window.location?.protocol === 'file:'
+
+const Audio = PREFER_ELEMENT_MEDIA ? ElementAudio : WebCodecsAudio
+const Video = PREFER_ELEMENT_MEDIA ? ElementVideo : WebCodecsVideo
 
 function sourceTrim(scene: VideoScene): {
   trimBefore: number | undefined

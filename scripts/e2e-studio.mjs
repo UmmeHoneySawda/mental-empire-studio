@@ -14,11 +14,13 @@
  *   node scripts/e2e-studio.mjs --keep     # leave the scratch profile for inspection
  *
  * WHAT IT COVERS: boot, no renderer console errors, the Compose screen, both renderer
- * engines reporting status, the whole videoEngine IPC surface being callable (every
- * declared method has a handler behind it), and userData isolation.
+ * engines, the videoEngine IPC surface being callable (every declared method has a
+ * handler behind it), userData isolation, and the full edit loop against a seeded clip —
+ * bind, import stills, cycle them across the timeline, crossfade two of them, rename,
+ * rebuild the preview twice, preflight.
  *
- * WHAT IT DOES NOT COVER: editing a real clip. That needs a downloaded video in the
- * scratch database; seeding one is the natural next step for this harness.
+ * WHAT IT DOES NOT COVER: rendering a file. That needs NVENC and several minutes; the
+ * render path is covered by the milestone smokes instead.
  */
 import { _electron as electron } from 'playwright'
 import { existsSync, mkdirSync, rmSync } from 'node:fs'
@@ -28,7 +30,17 @@ import { tmpdir } from 'node:os'
 
 const ROOT = fileURLToPath(new URL('..', import.meta.url))
 const MAIN = join(ROOT, 'out', 'main', 'main.js')
+const FIXTURE_AUDIO = join(ROOT, 'test', 'fixtures', 'audio', 'sample.mp3')
+const FIXTURE_IMAGES = ['img1.png', 'img2.png', 'img3.png']
+  .map((name) => join(ROOT, 'test', 'fixtures', 'images', name))
+const CLIP_ID = 'e2e-clip'
+const CLIP_TITLE = 'E2E fixture clip'
 const KEEP = process.argv.includes('--keep')
+/** Engine to drive the edit loop against. HyperFrames compiles far faster than Remotion
+ *  bundles, so it is the default; `--engine remotion` covers the other one. */
+const ENGINE = process.argv.includes('--engine')
+  ? process.argv[process.argv.indexOf('--engine') + 1]
+  : 'hyperframes'
 
 const failures = []
 function check(ok, label, detail = '') {
@@ -57,6 +69,12 @@ try {
     env: {
       ...process.env,
       ME_USERDATA_DIR: scratch,
+      // One downloaded clip in the scratch database, so there is something to edit.
+      // ~12s of real audio: long enough for several clips and a hook, short enough that
+      // a HyperFrames compile finishes in seconds.
+      ME_E2E_SEED_AUDIO: FIXTURE_AUDIO,
+      ME_E2E_SEED_ID: CLIP_ID,
+      ME_E2E_SEED_TITLE: CLIP_TITLE,
       // Keep the run offline and quiet: no telemetry, no auto-scrape, no updater.
       ME_TELEMETRY_OFF: '1',
       ME_E2E: '1'
@@ -181,6 +199,255 @@ try {
     } else {
       console.log(`  skip  ${engine} switch (engine unavailable in this environment)`)
     }
+  }
+
+  // --- the edit loop --------------------------------------------------------------
+  // Everything below runs through the real IPC surface against the seeded clip. This is
+  // the part unit tests cannot reach: bind a project, mutate it, and confirm the engine
+  // persisted what was asked and produced a preview that actually changed.
+  console.log(`\nedit loop (${ENGINE})`)
+
+  const bound = await page.evaluate(async ([engine, clipId]) => {
+    try {
+      const result = await window.api.videoEngine.bindDownload(clipId, engine)
+      const p = result.project
+      return {
+        ok: true,
+        id: p.id,
+        revision: p.revision,
+        durationFrames: p.canvas.durationFrames,
+        fps: p.canvas.fps,
+        assets: p.assets.length,
+        scenes: p.scenes.length
+      }
+    } catch (error) {
+      return { ok: false, message: String(error?.message ?? error) }
+    }
+  }, [ENGINE, CLIP_ID])
+
+  check(bound.ok, 'bindDownload builds a project from the seeded clip', bound.message)
+  if (!bound.ok) throw new Error(`cannot continue without a project: ${bound.message}`)
+  check(bound.durationFrames > 0, `canvas is ${bound.durationFrames}f at ${bound.fps}fps`)
+  check(bound.assets > 0, `the clip's audio was imported (${bound.assets} asset(s))`)
+
+  const projectId = bound.id
+
+  /** Runs one studio mutation and reports the revision it produced. Every engine write
+   *  bumps the revision, so an unchanged revision means the edit did not land. */
+  const mutate = async (label, fn, args) => {
+    const result = await page.evaluate(
+      async ([id, body, argv]) => {
+        // eslint-disable-next-line no-new-func
+        const run = new Function('api', 'projectId', 'args', `return (${body})(api, projectId, args)`)
+        try {
+          const project = await run(window.api.videoEngine, id, argv)
+          return { ok: true, revision: project?.revision ?? null, scenes: project?.scenes?.length ?? null }
+        } catch (error) {
+          return { ok: false, message: String(error?.message ?? error) }
+        }
+      },
+      [projectId, fn.toString(), args ?? null]
+    )
+    check(result.ok, label, result.message?.slice(0, 160))
+    return result
+  }
+
+  // 1. Captions. No Groq key in a scratch profile, so this is expected to fail — what
+  //    matters is that it fails with the actionable message rather than the old
+  //    "run Transcribe on the Compose tab first", and that the wrapper is stripped.
+  const captions = await page.evaluate(async ([id, clipId]) => {
+    try {
+      const result = await window.api.videoEngine.setCaptionsFromTranscript(id, clipId)
+      return { ok: true, words: result.wordCount }
+    } catch (error) {
+      return { ok: false, message: String(error?.message ?? error) }
+    }
+  }, [projectId, CLIP_ID])
+  if (captions.ok) {
+    check(captions.words > 0, `captions imported (${captions.words} words)`)
+  } else {
+    check(
+      /Groq API key/i.test(captions.message),
+      'captions ask for a Groq key instead of sending the user to another tab',
+      captions.message.slice(0, 160)
+    )
+    // Raw bridge calls legitimately carry Electron's "invoking remote method" envelope;
+    // the studio store strips it before display. Assert the actionable sentence survives
+    // whatever wrapping is around it, which is what the user actually reads.
+    check(
+      captions.message.includes('Settings > Integrations > Transcription'),
+      'the message tells the user exactly where to add the key'
+    )
+  }
+
+  // 2. Import stills, then cover the timeline with them. This is the user's case: a
+  //    handful of images over a long voiceover.
+  const imported = await page.evaluate(async ([id, paths]) => {
+    try {
+      const result = await window.api.videoEngine.importAssets(id, paths)
+      return {
+        ok: true,
+        skipped: result.skipped.length,
+        images: result.project.assets.filter((a) => a.kind === 'image').map((a) => a.id)
+      }
+    } catch (error) {
+      return { ok: false, message: String(error?.message ?? error) }
+    }
+  }, [projectId, FIXTURE_IMAGES])
+  check(imported.ok && imported.images?.length === FIXTURE_IMAGES.length,
+    `imported ${imported.images?.length ?? 0} stills`, imported.message ?? `skipped ${imported.skipped}`)
+
+  if (imported.ok && imported.images.length > 0) {
+    const filled = await page.evaluate(async ([id, ids]) => {
+      try {
+        const result = await window.api.videoEngine.fillWithMedia(id, {
+          assetIds: ids, mode: 'cycle', segmentSeconds: 2, shuffle: true, replaceExisting: true
+        })
+        const onTrack = result.project.scenes
+          .filter((s) => s.trackId === 'main-video')
+          .sort((a, b) => a.startFrame - b.startFrame)
+        return {
+          ok: true,
+          placed: result.placed,
+          coveredFrames: result.coveredFrames,
+          duration: result.project.canvas.durationFrames,
+          // Tiling must be exact: a gap renders as background, an overlap as a stack.
+          contiguous: onTrack.every((s, i) => i === 0 || s.startFrame === onTrack[i - 1].startFrame + onTrack[i - 1].durationFrames),
+          adjacentRepeat: onTrack.some((s, i) => i > 0 && s.assetId === onTrack[i - 1].assetId),
+          distinct: new Set(onTrack.map((s) => s.assetId)).size
+        }
+      } catch (error) {
+        return { ok: false, message: String(error?.message ?? error) }
+      }
+    }, [projectId, imported.images])
+
+    check(filled.ok && filled.placed > 1, `cycling placed ${filled.placed ?? 0} clips at ~2s each`, filled.message)
+    if (filled.ok) {
+      check(filled.contiguous, 'the clips tile the timeline with no gap or overlap')
+      check(!filled.adjacentRepeat, 'shuffling never shows the same still twice in a row')
+      check(filled.distinct === FIXTURE_IMAGES.length, `all ${filled.distinct} stills are used`)
+      check(filled.coveredFrames > filled.duration * 0.9,
+        `covered ${filled.coveredFrames}f of ${filled.duration}f`)
+    }
+
+    // 2b. A crossfade between two of those clips. Every animated transition added from
+    //     the UI used to fail preflight, because the renderers require the destination
+    //     scene to OVERLAP the source and the panel emitted adjacent scenes.
+    const transition = await page.evaluate(async (id) => {
+      try {
+        const project = await window.api.videoEngine.project(id)
+        const templates = await window.api.videoEngine.templates({ rendererId: project.rendererId, kind: 'transition' })
+        const fade = templates.find((t) => /fade|cross/i.test(t.id)) ?? templates[0]
+        if (!fade) return { ok: false, message: 'no transition template installed' }
+        const clips = project.scenes
+          .filter((s) => s.trackId === 'main-video')
+          .sort((a, b) => a.startFrame - b.startFrame)
+        if (clips.length < 2) return { ok: false, message: 'need two clips' }
+        const saved = await window.api.videoEngine.applyTransition(id, {
+          templateId: fade.id,
+          templateVersion: fade.version,
+          fromSceneId: clips[0].id,
+          toSceneId: clips[1].id,
+          durationFrames: 8
+        })
+        const from = saved.scenes.find((s) => s.id === clips[0].id)
+        const to = saved.scenes.find((s) => s.id === clips[1].id)
+        const applied = saved.transitions[saved.transitions.length - 1]
+        return {
+          ok: true,
+          type: applied.type,
+          // The contract the renderers check: destination starts exactly one transition
+          // length before the source ends, and the transition starts there too.
+          overlaps: to.startFrame === from.startFrame + from.durationFrames - applied.durationFrames,
+          startsAtOverlap: applied.startFrame === to.startFrame
+        }
+      } catch (error) {
+        return { ok: false, message: String(error?.message ?? error) }
+      }
+    }, projectId)
+
+    check(transition.ok, `applied a ${transition.type ?? '?'} transition`, transition.message?.slice(0, 160))
+    if (transition.ok) {
+      check(transition.overlaps, 'the destination clip was pulled back to create the overlap')
+      check(transition.startsAtOverlap, 'the transition starts where the overlap starts')
+
+      const after = await page.evaluate(async (id) => {
+        const found = await window.api.videoEngine.preflight(id)
+        return found.filter((p) => p.severity === 'error').map((p) => p.code)
+      }, projectId)
+      check(after.length === 0, 'the crossfade passes preflight', after.join(', '))
+    }
+  }
+
+  // 3. Canvas edit — the simplest mutation that must persist and bump the revision.
+  const renamed = await mutate(
+    'renameProject persists',
+    (api, id) => api.renameProject(id, 'E2E renamed'),
+    null
+  )
+  check(
+    renamed.ok && renamed.revision > bound.revision,
+    `revision advanced ${bound.revision} -> ${renamed.revision}`
+  )
+  const nameStuck = await page.evaluate(async (id) => (await window.api.videoEngine.project(id)).name, projectId)
+  check(nameStuck === 'E2E renamed', 'the new name is what the engine read back', nameStuck)
+
+  // 4. Preview — the bug the user hit hardest. A preview built after an edit must carry
+  //    the new revision, and a rebuild must produce a DIFFERENT url, or the iframe never
+  //    navigates and the change is invisible.
+  const first = await page.evaluate(async (id) => {
+    try {
+      const payload = await window.api.videoEngine.preview(id)
+      return { ok: true, kind: payload.kind, revision: payload.revision, url: payload.url ?? '' }
+    } catch (error) {
+      return { ok: false, message: String(error?.message ?? error) }
+    }
+  }, projectId)
+  check(first.ok, 'preview builds', first.message?.slice(0, 200))
+
+  if (first.ok) {
+    check(first.revision === renamed.revision, `preview carries revision ${first.revision}`)
+
+    await page.evaluate(async (id) => window.api.videoEngine.renameProject(id, 'E2E renamed again'), projectId)
+    const second = await page.evaluate(async (id) => {
+      const payload = await window.api.videoEngine.preview(id)
+      return { revision: payload.revision, url: payload.url ?? '' }
+    }, projectId)
+
+    check(second.revision > first.revision, `rebuilt preview advanced to revision ${second.revision}`)
+    if (first.kind === 'hyperframes') {
+      check(
+        second.url !== first.url && second.url.length > 0,
+        'a rebuild produces a new preview URL, so the iframe reloads'
+      )
+      // The old stage must still serve — that is what stops the outgoing document from
+      // 404ing mid-playback while the replacement loads. Fetched from the main process:
+      // the renderer's document origin is file://, and Chromium will not fetch a custom
+      // scheme from there (see PREFER_ELEMENT_MEDIA in video-engine/remotion/asset.tsx).
+      const oldStageAlive = await app.evaluate(async ({ net }, url) => {
+        try {
+          return (await net.fetch(url)).status
+        } catch {
+          return 0
+        }
+      }, first.url)
+      check(oldStageAlive === 200, 'the previous stage still serves while the new one loads', `status ${oldStageAlive}`)
+    }
+  }
+
+  // 5. Preflight — must be reachable and return a real verdict.
+  const problems = await page.evaluate(async (id) => {
+    try {
+      return { ok: true, problems: await window.api.videoEngine.preflight(id) }
+    } catch (error) {
+      return { ok: false, message: String(error?.message ?? error) }
+    }
+  }, projectId)
+  check(problems.ok, 'preflight runs', problems.message?.slice(0, 200))
+  if (problems.ok) {
+    const errors = problems.problems.filter((p) => p.severity === 'error')
+    console.log(`        ${problems.problems.length} problem(s), ${errors.length} blocking`)
+    for (const problem of errors.slice(0, 4)) console.log(`        - ${problem.code}: ${problem.message}`)
   }
 
   await page.screenshot({ path: join(ROOT, 'browser-test-out', 'e2e-studio.png') }).catch(() => undefined)
