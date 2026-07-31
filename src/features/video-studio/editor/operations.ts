@@ -1,0 +1,364 @@
+import type { VideoProject, VideoScene, VideoTrack } from '@shared/video-engine'
+import { MIN_CLIP_FRAMES } from './constants'
+
+/* Pure timeline edits: project in, project out, no IPC and no React.
+ *
+ * These exist so a drag can update the on-screen timeline and the Player immediately and
+ * commit to the engine once, on release. The old studio round-tripped every mutation
+ * through `ipcMain` and replaced the whole project from the response, which is why one
+ * dragged clip meant a dozen writes, a dozen revision bumps, and a dozen full re-renders.
+ *
+ * The engine's zod schema is still the authority — everything here respects the same
+ * invariants (clips inside the canvas, positive durations, transitions no longer than
+ * either neighbour) so a local edit never produces a project the engine will reject. */
+
+const uid = (prefix: string): string =>
+  `${prefix}-${crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)}`
+
+/** The frames a clip may occupy: inside the canvas, at least MIN_CLIP_FRAMES long. */
+function clampSpan(
+  project: VideoProject,
+  startFrame: number,
+  durationFrames: number
+): { startFrame: number; durationFrames: number } {
+  const total = project.canvas.durationFrames
+  const start = Math.max(0, Math.min(Math.round(startFrame), total - MIN_CLIP_FRAMES))
+  const room = total - start
+  const duration = Math.max(MIN_CLIP_FRAMES, Math.min(Math.round(durationFrames), room))
+  return { startFrame: start, durationFrames: duration }
+}
+
+function mapScene(
+  project: VideoProject,
+  sceneId: string,
+  fn: (scene: VideoScene) => VideoScene
+): VideoProject {
+  let touched = false
+  const scenes = project.scenes.map((scene) => {
+    if (scene.id !== sceneId) return scene
+    touched = true
+    return fn(scene)
+  })
+  return touched ? { ...project, scenes } : project
+}
+
+/** Whether a lane can hold this clip. Audio belongs on audio lanes and everything visual
+ *  on visual lanes — dragging a still onto the voice-over lane produced a clip that simply
+ *  never rendered, with nothing on screen to say why. */
+export function trackAcceptsScene(track: VideoTrack, scene: VideoScene): boolean {
+  const wantsAudio = scene.kind === 'audio'
+  if (wantsAudio) return track.kind === 'audio'
+  if (scene.kind === 'caption') return track.kind === 'caption' || track.kind === 'overlay'
+  return track.kind === 'video' || track.kind === 'overlay'
+}
+
+/** Moves a clip, optionally to another track. Position is clamped into the canvas and the
+ *  target lane must be able to hold the clip, so a drag can never leave the timeline in a
+ *  state the renderer will silently drop. */
+export function moveClip(
+  project: VideoProject,
+  sceneId: string,
+  startFrame: number,
+  trackId?: string
+): VideoProject {
+  const scene = project.scenes.find((candidate) => candidate.id === sceneId)
+  if (!scene) return project
+  const span = clampSpan(project, startFrame, scene.durationFrames)
+  const target = trackId ? project.tracks.find((track) => track.id === trackId) : undefined
+  const nextTrack = target && !target.locked && trackAcceptsScene(target, scene) ? target.id : scene.trackId
+  if (
+    span.startFrame === scene.startFrame &&
+    span.durationFrames === scene.durationFrames &&
+    nextTrack === scene.trackId
+  ) {
+    return project
+  }
+  return mapScene(project, sceneId, (current) => ({
+    ...current,
+    startFrame: span.startFrame,
+    durationFrames: span.durationFrames,
+    trackId: nextTrack
+  }))
+}
+
+/** Trims one edge. Dragging the left edge moves the start and shortens by the same
+ *  amount, so the clip's right edge stays put — the behaviour every NLE has. When the clip
+ *  is backed by media, `sourceRange` follows so trimming reveals different footage rather
+ *  than restretching the same frames. */
+export function trimClip(
+  project: VideoProject,
+  sceneId: string,
+  edge: 'start' | 'end',
+  frameDelta: number
+): VideoProject {
+  const scene = project.scenes.find((candidate) => candidate.id === sceneId)
+  if (!scene || frameDelta === 0) return project
+
+  if (edge === 'end') {
+    const duration = Math.max(MIN_CLIP_FRAMES, scene.durationFrames + Math.round(frameDelta))
+    const span = clampSpan(project, scene.startFrame, duration)
+    if (span.durationFrames === scene.durationFrames) return project
+    return mapScene(project, sceneId, (current) => ({
+      ...current,
+      durationFrames: span.durationFrames,
+      ...(current.sourceRange
+        ? { sourceRange: { ...current.sourceRange, durationFrames: span.durationFrames } }
+        : {})
+    }))
+  }
+
+  // Leading edge: clamp so the clip cannot invert or slide out of the canvas.
+  const right = scene.startFrame + scene.durationFrames
+  const start = Math.max(0, Math.min(scene.startFrame + Math.round(frameDelta), right - MIN_CLIP_FRAMES))
+  const consumed = start - scene.startFrame
+  if (consumed === 0) return project
+  return mapScene(project, sceneId, (current) => ({
+    ...current,
+    startFrame: start,
+    durationFrames: right - start,
+    ...(current.sourceRange
+      ? {
+          sourceRange: {
+            startFrame: Math.max(0, current.sourceRange.startFrame + consumed),
+            durationFrames: Math.max(MIN_CLIP_FRAMES, current.sourceRange.durationFrames - consumed)
+          }
+        }
+      : {})
+  }))
+}
+
+/** Splits a clip at an absolute frame, giving the right-hand half its own id and, for
+ *  media, the source offset that keeps the footage continuous across the cut. */
+export function splitClip(project: VideoProject, sceneId: string, atFrame: number): VideoProject {
+  const scene = project.scenes.find((candidate) => candidate.id === sceneId)
+  if (!scene) return project
+  const offset = Math.round(atFrame) - scene.startFrame
+  if (offset < MIN_CLIP_FRAMES || offset > scene.durationFrames - MIN_CLIP_FRAMES) return project
+
+  const left: VideoScene = {
+    ...scene,
+    durationFrames: offset,
+    ...(scene.sourceRange ? { sourceRange: { ...scene.sourceRange, durationFrames: offset } } : {})
+  }
+  const right: VideoScene = {
+    ...scene,
+    id: uid('scene'),
+    startFrame: scene.startFrame + offset,
+    durationFrames: scene.durationFrames - offset,
+    ...(scene.sourceRange
+      ? {
+          sourceRange: {
+            startFrame: scene.sourceRange.startFrame + offset,
+            durationFrames: scene.sourceRange.durationFrames - offset
+          }
+        }
+      : {})
+  }
+  const scenes = project.scenes.flatMap((candidate) =>
+    candidate.id === sceneId ? [left, right] : [candidate]
+  )
+  return { ...project, scenes }
+}
+
+/** Removes a clip and any transition that referenced it — a dangling transition fails
+ *  the engine's schema, so this can never be left to the caller. */
+export function removeClip(project: VideoProject, sceneId: string): VideoProject {
+  if (!project.scenes.some((scene) => scene.id === sceneId)) return project
+  return {
+    ...project,
+    scenes: project.scenes.filter((scene) => scene.id !== sceneId),
+    transitions: project.transitions.filter(
+      (transition) => transition.fromSceneId !== sceneId && transition.toSceneId !== sceneId
+    )
+  }
+}
+
+/** Copies a clip immediately after itself, or at the first gap that fits. */
+export function duplicateClip(project: VideoProject, sceneId: string): VideoProject {
+  const scene = project.scenes.find((candidate) => candidate.id === sceneId)
+  if (!scene) return project
+  const span = clampSpan(project, scene.startFrame + scene.durationFrames, scene.durationFrames)
+  const copy: VideoScene = { ...scene, id: uid('scene'), ...span }
+  return { ...project, scenes: [...project.scenes, copy] }
+}
+
+/** Adds a clip. `kind` and its required companion field are the caller's business; this
+ *  only owns placement and the id. */
+export function addClip(
+  project: VideoProject,
+  scene: Omit<VideoScene, 'id' | 'startFrame' | 'durationFrames' | 'zIndex'> & {
+    startFrame: number
+    durationFrames: number
+    zIndex?: number
+  }
+): VideoProject {
+  const span = clampSpan(project, scene.startFrame, scene.durationFrames)
+  const next: VideoScene = {
+    ...(scene as VideoScene),
+    id: uid('scene'),
+    zIndex: scene.zIndex ?? 0,
+    ...span
+  }
+  return { ...project, scenes: [...project.scenes, next] }
+}
+
+/** Sets a per-clip field the inspector owns (opacity, volume, fit, transform, text…). */
+export function patchClip(
+  project: VideoProject,
+  sceneId: string,
+  patch: Partial<VideoScene>
+): VideoProject {
+  return mapScene(project, sceneId, (current) => ({ ...current, ...patch, id: current.id }))
+}
+
+/** Appends a lane. Order runs low-to-high the way the engine already reads it, with audio
+ *  negative so voice-over sits above the visual lanes in the UI. */
+export function addTrack(
+  project: VideoProject,
+  kind: VideoTrack['kind'],
+  name?: string
+): VideoProject {
+  const sameKind = project.tracks.filter((track) => track.kind === kind).length
+  const track: VideoTrack = {
+    id: uid(`track-${kind}`),
+    name: name ?? `${kind === 'audio' ? 'Audio' : kind === 'overlay' ? 'Overlay' : 'Video'} ${sameKind + 1}`,
+    kind,
+    order: Math.max(0, ...project.tracks.map((existing) => existing.order + 1)),
+    muted: false,
+    locked: false
+  }
+  return { ...project, tracks: [...project.tracks, track] }
+}
+
+/** Drops a lane and everything on it. */
+export function removeTrack(project: VideoProject, trackId: string): VideoProject {
+  const doomed = new Set(
+    project.scenes.filter((scene) => scene.trackId === trackId).map((scene) => scene.id)
+  )
+  return {
+    ...project,
+    tracks: project.tracks.filter((track) => track.id !== trackId),
+    scenes: project.scenes.filter((scene) => scene.trackId !== trackId),
+    transitions: project.transitions.filter(
+      (transition) => !doomed.has(transition.fromSceneId) && !doomed.has(transition.toSceneId)
+    )
+  }
+}
+
+export function patchTrack(
+  project: VideoProject,
+  trackId: string,
+  patch: Partial<VideoTrack>
+): VideoProject {
+  let touched = false
+  const tracks = project.tracks.map((track) => {
+    if (track.id !== trackId) return track
+    touched = true
+    return { ...track, ...patch, id: track.id }
+  })
+  return touched ? { ...project, tracks } : project
+}
+
+/** The last frame any clip occupies. Used to keep the canvas length honest as clips move
+ *  past the current end. */
+export function contentEndFrame(project: VideoProject): number {
+  return project.scenes.reduce(
+    (end, scene) => Math.max(end, scene.startFrame + scene.durationFrames),
+    0
+  )
+}
+
+/** Clips on one track, in play order — what the composition and the ripple both need. */
+export function clipsOnTrack(project: VideoProject, trackId: string): VideoScene[] {
+  return project.scenes
+    .filter((scene) => scene.trackId === trackId)
+    .sort((left, right) => left.startFrame - right.startFrame)
+}
+
+/** Where a new clip of `durationFrames` should land on a track: `preferredFrame` when
+ *  that span is free, otherwise the first gap that fits, otherwise straight after the last
+ *  clip.
+ *
+ *  This exists because dropping every added clip at the playhead stacked them into one
+ *  spot — click three stills and you got three clips at frame 0, perfectly overlapping and
+ *  individually unclickable. Appending is what someone adding three images means. */
+export function placementFrame(
+  project: VideoProject,
+  trackId: string,
+  durationFrames: number,
+  preferredFrame: number
+): number {
+  const occupied = clipsOnTrack(project, trackId).map((scene) => ({
+    start: scene.startFrame,
+    end: scene.startFrame + scene.durationFrames
+  }))
+  const fits = (start: number): boolean =>
+    start + durationFrames <= project.canvas.durationFrames &&
+    occupied.every((span) => start + durationFrames <= span.start || start >= span.end)
+
+  if (fits(preferredFrame)) return preferredFrame
+  // Try each clip's end as a candidate start, in order — that is the first real gap.
+  for (const span of occupied) {
+    if (span.end >= preferredFrame && fits(span.end)) return span.end
+  }
+  for (const span of occupied) {
+    if (fits(span.end)) return span.end
+  }
+  // Nothing fits cleanly; append at the end of the lane and let clampSpan trim it.
+  return occupied.reduce((end, span) => Math.max(end, span.end), 0)
+}
+
+/** Closes every gap on a track, butting each clip against the previous one. */
+export function rippleTrack(project: VideoProject, trackId: string): VideoProject {
+  const ordered = clipsOnTrack(project, trackId)
+  if (ordered.length === 0) return project
+  const moved = new Map<string, number>()
+  let cursor = 0
+  for (const scene of ordered) {
+    moved.set(scene.id, cursor)
+    cursor += scene.durationFrames
+  }
+  return {
+    ...project,
+    scenes: project.scenes.map((scene) => {
+      const start = moved.get(scene.id)
+      return start === undefined || start === scene.startFrame ? scene : { ...scene, startFrame: start }
+    })
+  }
+}
+
+/** Candidate frames a dragged edge should snap to: the playhead, every other clip's
+ *  edges, and each whole second. Screen-space thresholding happens at the call site,
+ *  where zoom is known. */
+export function snapCandidates(
+  project: VideoProject,
+  excludeSceneId: string | null,
+  playheadFrame: number
+): number[] {
+  const frames = new Set<number>([0, playheadFrame, project.canvas.durationFrames])
+  for (const scene of project.scenes) {
+    if (scene.id === excludeSceneId) continue
+    frames.add(scene.startFrame)
+    frames.add(scene.startFrame + scene.durationFrames)
+  }
+  const fps = Math.max(1, project.canvas.fps)
+  for (let second = 0; second * fps <= project.canvas.durationFrames; second += 1) {
+    frames.add(second * fps)
+  }
+  return [...frames].sort((left, right) => left - right)
+}
+
+/** Snaps `frame` to the nearest candidate within `toleranceFrames`, else returns it
+ *  unchanged. */
+export function snapFrame(frame: number, candidates: number[], toleranceFrames: number): number {
+  let best = frame
+  let bestDistance = toleranceFrames + 1
+  for (const candidate of candidates) {
+    const distance = Math.abs(candidate - frame)
+    if (distance < bestDistance) {
+      bestDistance = distance
+      best = candidate
+    }
+  }
+  return bestDistance <= toleranceFrames ? best : frame
+}

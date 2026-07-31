@@ -20,7 +20,59 @@ function stringProp(value: JsonValue | undefined): string | undefined {
   return typeof value === 'string' ? value : undefined
 }
 
+function numberProp(value: JsonValue | undefined): number | undefined {
+  return typeof value === 'number' && Number.isFinite(value) ? value : undefined
+}
+
+/** Entrance motion for a text scene, by the `animation` prop its style template carries.
+ *  Every curve is a pure function of the frame, so a seek lands on exactly the same
+ *  picture a sequential render would produce. */
+function textEntrance(
+  animation: string,
+  frame: number,
+  fps: number,
+): { opacity: number; transform: string; filter?: string } {
+  // Roughly a third of a second: long enough to read as motion, short enough that a
+  // three-second title is not still animating when it should be legible.
+  const runway = Math.max(1, Math.round(fps * 0.35))
+  const t = interpolate(frame, [0, runway], [0, 1], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+  })
+  switch (animation) {
+    case 'none':
+      return { opacity: 1, transform: 'none' }
+    case 'fade':
+      return { opacity: t, transform: 'none' }
+    case 'drop':
+      return { opacity: t, transform: `translateY(${interpolate(t, [0, 1], [-60, 0])}px)` }
+    case 'scale':
+      return { opacity: t, transform: `scale(${interpolate(t, [0, 1], [0.9, 1])})` }
+    case 'blur-in':
+      return {
+        opacity: t,
+        transform: 'none',
+        filter: `blur(${interpolate(t, [0, 1], [14, 0])}px)`,
+      }
+    case 'slide-left':
+      return { opacity: t, transform: `translateX(${interpolate(t, [0, 1], [80, 0])}px)` }
+    case 'rise':
+    default:
+      return { opacity: t, transform: `translateY(${interpolate(t, [0, 1], [28, 0])}px)` }
+  }
+}
+
+/** A text clip. Style comes from the `remotion-text-*` template the editor attaches; with
+ *  no template it falls back to the heading look this scene has always used, so projects
+ *  written before the styles existed keep rendering identically. */
 function TextScene({ scene }: { readonly scene: VideoScene }) {
+  const frame = useCurrentFrame()
+  const { fps } = useVideoConfig()
+  const props = scene.template?.props
+  const animation = stringProp(props?.['animation']) ?? 'none'
+  const fontSize = numberProp(props?.['fontSize'])
+  const entrance = textEntrance(animation, frame, fps)
+
   return (
     <AbsoluteFill
       style={{
@@ -33,15 +85,24 @@ function TextScene({ scene }: { readonly scene: VideoScene }) {
       <div
         style={{
           maxWidth: '92%',
-          color: scene.color ?? '#FFFFFF',
-          fontFamily: '"Space Grotesk", "Arial Black", Arial, sans-serif',
-          fontSize: '7vw',
-          fontWeight: 800,
-          lineHeight: 0.98,
-          letterSpacing: '-0.05em',
-          textAlign: 'center',
+          color: stringProp(props?.['color']) ?? scene.color ?? '#FFFFFF',
+          fontFamily: `"${stringProp(props?.['fontFamily']) ?? 'Space Grotesk'}", "Arial Black", Arial, sans-serif`,
+          // An explicit size is in composition pixels; without one keep the viewport-
+          // relative default so the text scales with the canvas.
+          fontSize: fontSize === undefined ? '7vw' : `${fontSize}px`,
+          fontWeight: numberProp(props?.['fontWeight']) ?? 800,
+          fontStyle: stringProp(props?.['fontStyle']) ?? 'normal',
+          lineHeight: numberProp(props?.['lineHeight']) ?? 0.98,
+          letterSpacing:
+            props?.['letterSpacing'] === undefined
+              ? '-0.05em'
+              : `${numberProp(props['letterSpacing']) ?? 0}px`,
+          textAlign: (stringProp(props?.['align']) ?? 'center') as CSSProperties['textAlign'],
           whiteSpace: 'pre-wrap',
           textShadow: '0 10px 45px rgba(0,0,0,.55)',
+          opacity: entrance.opacity,
+          transform: entrance.transform,
+          ...(entrance.filter ? { filter: entrance.filter } : {}),
         }}
       >
         {scene.text}

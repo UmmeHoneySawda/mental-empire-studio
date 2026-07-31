@@ -18,6 +18,8 @@ import { composeRenderPreflight, editorSelectionLabel, fmt } from '../features/c
 import { EngineSwitch } from '../features/video-studio/EngineSwitch'
 import { VideoStudio } from '../features/video-studio/VideoStudio'
 import { useVideoStudio } from '../features/video-studio/store/useVideoStudio'
+import { EditorShell } from '../features/video-studio/editor/EditorShell'
+import '../features/video-studio/editor/editor.css'
 
 /* Compose — the video editor. The render head at the top picks which engine builds
    the file: Classic (the original GPU pipeline, below) or one of the two template
@@ -190,6 +192,11 @@ export function Compose(): JSX.Element {
             onSources={() => setActive('sources')}
           />
         </div>
+      ) : engine === 'remotion' ? (
+        // The Remotion engine now opens the rewritten timeline editor: renderer-owned
+        // state, a live <Player>, and no staged-preview step. HyperFrames keeps the
+        // original studio below until it gets the same treatment.
+        <EditorShell downloadId={project.downloadId} />
       ) : isRendererEngine(engine) ? (
         <VideoStudio downloadId={project.downloadId} engine={engine} />
       ) : (

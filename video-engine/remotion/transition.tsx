@@ -125,11 +125,22 @@ function dipToBlack(): TransitionPresentation<NoProps> {
   return { component: DipToBlackPresentation, props: {} as NoProps }
 }
 
-export function RemotionTransition({
-  transition,
-}: {
-  readonly transition: VideoTransition
-}) {
+/* A FACTORY, not a component — and that distinction is load-bearing.
+ *
+ * `TransitionSeries` validates its children by type identity: each one must literally be
+ * `TransitionSeries.Sequence`, `TransitionSeries.Transition` or `TransitionSeries.Overlay`.
+ * While this was a component (`<RemotionTransition transition={…} />`) the child's type was
+ * `RemotionTransition`, so the series threw "only accepts a list of
+ * <TransitionSeries.Sequence /> … but got [object Object]" and the whole composition
+ * rendered nothing — for every project containing a transition, in the on-screen player and
+ * in a headless render alike. Returning the element from a plain call keeps the type the
+ * series expects.
+ *
+ * Call it: `{remotionTransition(transition)}` — never `<remotionTransition … />`. */
+export function remotionTransition(
+  transition: VideoTransition,
+  key?: string,
+): JSX.Element | null {
   if (transition.durationFrames < 1) return null
   const timing = linearTiming({
     durationInFrames: transition.durationFrames,
@@ -140,6 +151,7 @@ export function RemotionTransition({
     case 'fade':
       return (
         <TransitionSeries.Transition
+          key={key}
           timing={timing}
           presentation={fade({ shouldFadeOutExitingScene: true })}
         />
@@ -147,6 +159,7 @@ export function RemotionTransition({
     case 'slide':
       return (
         <TransitionSeries.Transition
+          key={key}
           timing={timing}
           presentation={slide({ direction: slideDirection(transition.direction) })}
         />
@@ -154,6 +167,7 @@ export function RemotionTransition({
     case 'wipe':
       return (
         <TransitionSeries.Transition
+          key={key}
           timing={timing}
           presentation={wipe({ direction: wipeDirection(transition.direction) })}
         />
@@ -161,15 +175,16 @@ export function RemotionTransition({
     case 'zoom':
       return (
         <TransitionSeries.Transition
+          key={key}
           timing={timing}
           // `down`/`right` read as pulling away from the frame; the rest push into it.
           presentation={zoom(transition.direction === 'down' || transition.direction === 'right')}
         />
       )
     case 'blur':
-      return <TransitionSeries.Transition timing={timing} presentation={blur(18)} />
+      return <TransitionSeries.Transition key={key} timing={timing} presentation={blur(18)} />
     case 'dip-to-black':
-      return <TransitionSeries.Transition timing={timing} presentation={dipToBlack()} />
+      return <TransitionSeries.Transition key={key} timing={timing} presentation={dipToBlack()} />
     default:
       return null
   }

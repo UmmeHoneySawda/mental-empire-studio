@@ -55,6 +55,19 @@ headlessly under `xvfb-run`:
 - Always run `npm run typecheck` + `npm run build` + the smokes after a change. CI (`.github/workflows/
   ci.yml`) runs them all.
 
+## Compose → Remotion is the new timeline editor
+
+`src/features/video-studio/editor/` is a from-scratch timeline editor (kimu-style layout,
+renderer-owned state, live `<Player>`, no staged preview). Compose mounts it for the
+**Remotion** engine only; Classic and HyperFrames still use the older
+`src/features/video-studio/` studio. Read `skills/video-studio-editor/SKILL.md` before
+touching it — it documents the one architectural rule (an edit is local and synchronous;
+persistence is a debounced `videoEngine.saveProject`) and the traps, notably that
+`TransitionSeries` rejects any child that is not literally one of its own components.
+
+Test it live, not with smokes: `node scripts/studio-live.mjs --port 9222` then
+`playwright-cli -s=mes attach --cdp=http://localhost:9222`, from **PowerShell**.
+
 ## Video Studio E2E
 
 `npm run e2e:studio` drives the real Electron app with Playwright against a throwaway

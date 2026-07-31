@@ -41,6 +41,7 @@ import type {
   VideoBrollSearchInput,
   VideoCanvasPatch,
   VideoGrading,
+  VideoProject,
   VideoRenderJob,
   VideoScenePatch,
   VideoTemplateFilter
@@ -283,6 +284,8 @@ const api: NativeApi = {
     deleteProject: (projectId: string) => ipcRenderer.invoke('videoEngine:deleteProject', projectId),
     renameProject: (projectId: string, name: string) => ipcRenderer.invoke('videoEngine:renameProject', projectId, name),
     setCanvas: (projectId: string, patch: VideoCanvasPatch) => ipcRenderer.invoke('videoEngine:setCanvas', projectId, patch),
+    saveProject: (projectId: string, project: VideoProject) =>
+      ipcRenderer.invoke('videoEngine:saveProject', projectId, project),
 
     binding: (downloadId: string) => ipcRenderer.invoke('videoEngine:binding', downloadId),
     bindDownload: (downloadId: string, rendererId: RendererId, reseed?: boolean) =>

@@ -1,0 +1,559 @@
+/* The timeline editor's surface.
+ *
+ * Structure, spacing and the timeline specs follow trykimu/videoeditor: a media rail, a
+ * centred player with its transport under it, an inspector, and a full-width timeline with
+ * a 200px label column, 52px lanes and a 40px ruler. Their neutral dark scale is adopted
+ * wholesale; their neon-lime accent is not — this editor lives inside Studio, so it uses
+ * Studio's amber so the two do not read as different products.
+ *
+ * Tokens are scoped to `.ve` rather than `:root` so nothing here can leak into the rest of
+ * the app. */
+
+.ve {
+  /* kimu's dark neutral scale (app.css `.dark`), as RGB triplets so any rule can take an
+     alpha the way their Tailwind utilities do. */
+  --ve-bg: 9 9 11;
+  --ve-card: 18 18 20;
+  --ve-muted: 39 39 42;
+  --ve-border: 39 39 42;
+  --ve-fg: 250 250 250;
+  --ve-fg-dim: 161 161 170;
+
+  /* Studio's accent, not kimu's lime. */
+  --ve-accent: 240 180 41;
+  --ve-accent-fg: 20 16 4;
+  --ve-danger: 239 68 68;
+  --ve-ok: 74 222 128;
+
+  /* Video-editor specifics, same roles kimu declares. */
+  --ve-timeline-bg: 9 9 11;
+  --ve-lane: 24 24 27;
+  --ve-ruler: 24 24 27;
+  --ve-playhead: 239 68 68;
+
+  --ve-radius: 6px;
+  --ve-gap: 10px;
+
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  height: 100%;
+  color: rgb(var(--ve-fg));
+  background: rgb(var(--ve-bg));
+}
+
+.ve-mono {
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-variant-numeric: tabular-nums;
+  font-size: 11px;
+}
+.ve-dim { color: rgb(var(--ve-fg-dim)); }
+.ve-spacer { flex: 1; }
+
+/* ------------------------------------------------------------------- primitives */
+
+.ve-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 11px;
+  border: 1px solid rgb(var(--ve-border));
+  border-radius: var(--ve-radius);
+  background: rgb(var(--ve-card));
+  color: rgb(var(--ve-fg));
+  font: inherit;
+  font-size: 12px;
+  line-height: 1.2;
+  cursor: pointer;
+  white-space: nowrap;
+  transition: background 120ms ease, border-color 120ms ease, opacity 120ms ease;
+}
+.ve-btn:hover:not(:disabled) { background: rgb(var(--ve-muted)); }
+.ve-btn:disabled { opacity: 0.45; cursor: not-allowed; }
+.ve-btn--primary {
+  background: rgb(var(--ve-accent));
+  border-color: rgb(var(--ve-accent));
+  color: rgb(var(--ve-accent-fg));
+  font-weight: 600;
+}
+.ve-btn--primary:hover:not(:disabled) { background: rgb(var(--ve-accent) / 0.88); }
+.ve-btn--soft {
+  background: rgb(var(--ve-accent) / 0.14);
+  border-color: rgb(var(--ve-accent) / 0.4);
+  color: rgb(var(--ve-accent));
+}
+.ve-btn--ghost { background: transparent; }
+
+.ve-chip {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 20px;
+  height: 20px;
+  padding: 0 5px;
+  border: 1px solid rgb(var(--ve-border));
+  border-radius: 4px;
+  background: transparent;
+  color: rgb(var(--ve-fg-dim));
+  font-size: 10px;
+  line-height: 1;
+  cursor: pointer;
+}
+.ve-chip:hover { background: rgb(var(--ve-muted)); color: rgb(var(--ve-fg)); }
+.ve-chip.is-on {
+  background: rgb(var(--ve-accent) / 0.18);
+  border-color: rgb(var(--ve-accent) / 0.5);
+  color: rgb(var(--ve-accent));
+}
+
+.ve-input {
+  width: 100%;
+  padding: 6px 8px;
+  border: 1px solid rgb(var(--ve-border));
+  border-radius: var(--ve-radius);
+  background: rgb(var(--ve-bg));
+  color: rgb(var(--ve-fg));
+  font: inherit;
+  font-size: 12px;
+}
+.ve-input:focus-visible { outline: 2px solid rgb(var(--ve-accent) / 0.6); outline-offset: 1px; }
+textarea.ve-input { resize: vertical; min-height: 52px; }
+
+.ve-eyebrow {
+  font-size: 10px;
+  font-weight: 600;
+  letter-spacing: 0.09em;
+  text-transform: uppercase;
+  color: rgb(var(--ve-fg-dim));
+}
+.ve-hint { margin: 0; font-size: 11px; line-height: 1.5; color: rgb(var(--ve-fg-dim)); }
+
+/* ------------------------------------------------------------------------ header */
+
+.ve-head {
+  display: flex;
+  align-items: center;
+  gap: var(--ve-gap);
+  padding: 10px 14px;
+  border-bottom: 1px solid rgb(var(--ve-border));
+}
+.ve-head-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; flex: 1; }
+.ve-head-title > span:first-child { font-size: 14px; font-weight: 600; }
+.ve-head-spec { color: rgb(var(--ve-fg-dim)); }
+.ve-head-actions { display: flex; align-items: center; gap: 6px; flex: none; }
+
+.ve-messages { padding: 8px 14px 0; display: grid; gap: 6px; }
+
+/* -------------------------------------------------------------------------- body */
+
+.ve-body {
+  display: grid;
+  /* Media rail · player · inspector — kimu's three-column editor. */
+  grid-template-columns: 240px minmax(0, 1fr) 320px;
+  gap: 1px;
+  flex: 1;
+  min-height: 0;
+  background: rgb(var(--ve-border));
+}
+
+.ve-rail,
+.ve-inspector { background: rgb(var(--ve-bg)); min-height: 0; display: flex; flex-direction: column; }
+.ve-rail { padding: 12px; overflow-y: auto; }
+
+/* ---------------------------------------------------------------------- media bin */
+
+.ve-bin { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
+.ve-bin.is-dropping { outline: 2px dashed rgb(var(--ve-accent) / 0.6); outline-offset: 4px; border-radius: var(--ve-radius); }
+.ve-bin-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ve-bin-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
+.ve-bin-item { position: relative; }
+.ve-bin-card {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 6px;
+  border: 1px solid rgb(var(--ve-border));
+  border-radius: var(--ve-radius);
+  background: rgb(var(--ve-card));
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ve-bin-card:hover { border-color: rgb(var(--ve-accent) / 0.5); }
+.ve-bin-thumb {
+  display: grid;
+  place-items: center;
+  flex: none;
+  width: 44px;
+  height: 30px;
+  overflow: hidden;
+  border-radius: 4px;
+  background: rgb(var(--ve-muted));
+}
+.ve-bin-thumb img { width: 100%; height: 100%; object-fit: cover; }
+.ve-bin-glyph { font-size: 13px; color: rgb(var(--ve-fg-dim)); }
+.ve-bin-meta { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.ve-bin-name { font-size: 11px; font-weight: 500; }
+.ve-bin-kind { font-size: 10px; color: rgb(var(--ve-fg-dim)); }
+.ve-bin-remove { position: absolute; top: 3px; right: 3px; opacity: 0; }
+.ve-bin-item:hover .ve-bin-remove { opacity: 1; }
+
+/* ----------------------------------------------------------------------- preview */
+
+.ve-preview {
+  display: flex;
+  flex-direction: column;
+  min-width: 0;
+  min-height: 0;
+  background: rgb(var(--ve-bg));
+}
+.ve-stage {
+  flex: 1;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  padding: 14px;
+  /* A checker under the frame, so a transparent composition is obviously transparent
+     rather than looking like a black one. */
+  background:
+    repeating-conic-gradient(rgb(var(--ve-card)) 0% 25%, rgb(var(--ve-bg)) 0% 50%) 50% / 18px 18px;
+}
+.ve-stage-frame {
+  position: relative;
+  overflow: hidden;
+  border-radius: 4px;
+  background: #000;
+  box-shadow: 0 6px 28px rgb(0 0 0 / 0.55);
+}
+/* A composition that throws must say so. Remotion's own fallback is a bare warning glyph,
+   which reads as "the preview is just black" rather than as an error with a cause. */
+.ve-player-error {
+  display: grid;
+  gap: 8px;
+  align-content: center;
+  justify-items: center;
+  width: 100%;
+  height: 100%;
+  padding: 18px;
+  background: rgb(20 8 8);
+  color: rgb(252 205 205);
+  text-align: center;
+}
+.ve-player-error strong { font-size: 12px; }
+.ve-player-error span {
+  max-width: 46ch;
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 10px;
+  line-height: 1.5;
+  color: rgb(248 160 160);
+  overflow-wrap: anywhere;
+}
+
+.ve-stage-empty {
+  display: grid;
+  gap: 8px;
+  place-items: center;
+  padding: 20px;
+  font-size: 12px;
+  color: rgb(var(--ve-fg-dim));
+  text-align: center;
+}
+
+.ve-transport {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 8px 14px;
+  border-top: 1px solid rgb(var(--ve-border));
+}
+.ve-transport-clock { flex: none; color: rgb(var(--ve-fg-dim)); }
+.ve-scrub { flex: 1; min-width: 60px; accent-color: rgb(var(--ve-accent)); }
+.ve-save { flex: none; font-size: 10px; color: rgb(var(--ve-fg-dim)); }
+.ve-save.is-dirty { color: rgb(var(--ve-accent)); }
+.ve-save.is-saving { color: rgb(var(--ve-ok)); }
+
+/* --------------------------------------------------------------------- inspector */
+
+.ve-tabs {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 2px;
+  padding: 8px 8px 0;
+  border-bottom: 1px solid rgb(var(--ve-border));
+}
+.ve-tab {
+  padding: 5px 9px;
+  border: 0;
+  border-bottom: 2px solid transparent;
+  background: transparent;
+  color: rgb(var(--ve-fg-dim));
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.ve-tab:hover { color: rgb(var(--ve-fg)); }
+.ve-tab[aria-selected='true'] {
+  color: rgb(var(--ve-accent));
+  border-bottom-color: rgb(var(--ve-accent));
+  font-weight: 600;
+}
+
+.ve-panel { flex: 1; min-height: 0; overflow-y: auto; padding: 12px; display: grid; gap: 16px; align-content: start; }
+.ve-section { display: grid; gap: 8px; }
+.ve-foot {
+  display: flex;
+  gap: 8px;
+  justify-content: space-between;
+  padding: 6px 12px;
+  border-top: 1px solid rgb(var(--ve-border));
+  font-size: 10px;
+  color: rgb(var(--ve-fg-dim));
+}
+
+.ve-row { display: grid; gap: 4px; }
+.ve-row-label { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 11px; }
+.ve-row-hint { font-size: 10px; color: rgb(var(--ve-fg-dim)); }
+.ve-row input[type='range'] { width: 100%; accent-color: rgb(var(--ve-accent)); }
+.ve-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+
+.ve-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.ve-card {
+  display: grid;
+  gap: 2px;
+  padding: 8px;
+  border: 1px solid rgb(var(--ve-border));
+  border-radius: var(--ve-radius);
+  background: rgb(var(--ve-card));
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ve-card:hover:not(:disabled) { border-color: rgb(var(--ve-accent) / 0.5); }
+.ve-card.is-on { border-color: rgb(var(--ve-accent)); background: rgb(var(--ve-accent) / 0.12); }
+.ve-card:disabled { opacity: 0.5; cursor: not-allowed; }
+.ve-card-title { font-size: 12px; font-weight: 600; }
+.ve-card-sub { font-size: 10px; color: rgb(var(--ve-fg-dim)); line-height: 1.35; }
+
+.ve-list { display: grid; gap: 4px; }
+.ve-listitem {
+  display: grid;
+  gap: 2px;
+  padding: 7px 8px;
+  border: 1px solid rgb(var(--ve-border));
+  border-radius: var(--ve-radius);
+  background: rgb(var(--ve-card));
+  color: inherit;
+  font: inherit;
+  text-align: left;
+  cursor: pointer;
+}
+.ve-listitem:hover:not(:disabled):not(.is-static) { border-color: rgb(var(--ve-accent) / 0.5); }
+.ve-listitem.is-on { border-color: rgb(var(--ve-accent)); background: rgb(var(--ve-accent) / 0.12); }
+.ve-listitem.is-static { cursor: default; grid-template-columns: 1fr auto; align-items: center; }
+.ve-listitem:disabled { opacity: 0.5; cursor: not-allowed; }
+.ve-listitem-title { font-size: 12px; font-weight: 500; }
+.ve-listitem-sub { font-size: 10px; color: rgb(var(--ve-fg-dim)); line-height: 1.35; }
+
+.ve-swatches { display: flex; flex-wrap: wrap; gap: 6px; }
+.ve-swatch {
+  width: 26px;
+  height: 26px;
+  border: 1px solid rgb(var(--ve-border));
+  border-radius: 5px;
+  cursor: pointer;
+}
+.ve-swatch:hover { outline: 2px solid rgb(var(--ve-accent) / 0.6); outline-offset: 1px; }
+.ve-swatch--wide { width: 46px; }
+
+.ve-words { display: flex; flex-wrap: wrap; gap: 3px; }
+.ve-word {
+  padding: 2px 5px;
+  border: 1px solid rgb(var(--ve-border));
+  border-radius: 4px;
+  background: rgb(var(--ve-card));
+  color: rgb(var(--ve-fg-dim));
+  font: inherit;
+  font-size: 11px;
+  cursor: pointer;
+}
+.ve-word.is-i1 { color: rgb(var(--ve-fg)); border-color: rgb(var(--ve-accent) / 0.35); }
+.ve-word.is-i2 { color: rgb(var(--ve-accent)); border-color: rgb(var(--ve-accent) / 0.6); font-weight: 600; }
+.ve-word.is-i3 { background: rgb(var(--ve-accent)); border-color: rgb(var(--ve-accent)); color: rgb(var(--ve-accent-fg)); font-weight: 700; }
+
+.ve-problems { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
+.ve-problem { font-size: 11px; line-height: 1.45; padding: 5px 7px; border-radius: 4px; background: rgb(var(--ve-card)); }
+.ve-problem.is-error { border-left: 2px solid rgb(var(--ve-danger)); }
+.ve-problem.is-warning { border-left: 2px solid rgb(var(--ve-accent)); }
+.ve-problem b { text-transform: uppercase; font-size: 9px; letter-spacing: 0.06em; margin-right: 4px; }
+
+.ve-specs { display: grid; grid-template-columns: auto 1fr; gap: 3px 10px; margin: 0; font-size: 11px; }
+.ve-specs dt { color: rgb(var(--ve-fg-dim)); text-transform: uppercase; font-size: 9px; letter-spacing: 0.06em; padding-top: 2px; }
+.ve-specs dd { margin: 0; line-height: 1.45; }
+
+.ve-empty { display: grid; gap: 10px; place-content: center; justify-items: center; padding: 48px 20px; text-align: center; }
+.ve-empty h3 { margin: 0; font-size: 15px; }
+.ve-empty p { margin: 0; max-width: 44ch; font-size: 12px; line-height: 1.6; color: rgb(var(--ve-fg-dim)); }
+
+/* ---------------------------------------------------------------------- timeline */
+
+.ve-timeline {
+  display: flex;
+  flex-direction: column;
+  flex: none;
+  /* Tall enough for the ruler plus four lanes before it starts scrolling. */
+  height: 268px;
+  border-top: 1px solid rgb(var(--ve-border));
+  background: rgb(var(--ve-timeline-bg));
+}
+
+.ve-timeline-bar {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 6px 12px;
+  border-bottom: 1px solid rgb(var(--ve-border));
+}
+.ve-timeline-clock { color: rgb(var(--ve-accent)); font-size: 12px; }
+.ve-zoom { display: flex; align-items: center; gap: 3px; }
+.ve-zoom-value { min-width: 30px; text-align: center; color: rgb(var(--ve-fg-dim)); }
+
+.ve-timeline-body { display: flex; flex: 1; min-height: 0; }
+
+.ve-labels {
+  flex: none;
+  border-right: 1px solid rgb(var(--ve-border));
+  overflow: hidden;
+}
+.ve-labels-spacer { border-bottom: 1px solid rgb(var(--ve-border)); }
+.ve-label {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  padding: 0 8px;
+  border-left: 2px solid transparent;
+  background: rgb(var(--ve-lane));
+  cursor: pointer;
+}
+.ve-label:hover { background: rgb(var(--ve-muted)); }
+.ve-label.is-selected { border-left-color: rgb(var(--ve-accent)); }
+.ve-label-name { flex: 1; min-width: 0; font-size: 11px; font-weight: 500; }
+.ve-label-actions { display: flex; gap: 3px; flex: none; }
+
+.ve-lanes { flex: 1; min-width: 0; overflow: auto; }
+.ve-lanes-inner { position: relative; }
+
+.ve-ruler {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+  border-bottom: 1px solid rgb(var(--ve-border));
+  background: rgb(var(--ve-ruler));
+  cursor: text;
+}
+.ve-tick {
+  position: absolute;
+  bottom: 3px;
+  padding-left: 3px;
+  border-left: 1px solid rgb(var(--ve-border));
+  font-family: 'JetBrains Mono', ui-monospace, monospace;
+  font-size: 9px;
+  color: rgb(var(--ve-fg-dim));
+  /* The tick line runs the full ruler height; the label sits at its base. */
+  height: 100%;
+  display: flex;
+  align-items: flex-end;
+  pointer-events: none;
+  user-select: none;
+}
+
+.ve-lane {
+  position: relative;
+  background: rgb(var(--ve-lane));
+  border-radius: 3px;
+}
+.ve-lane--muted { opacity: 0.45; }
+
+.ve-clip {
+  position: absolute;
+  top: 3px;
+  bottom: 3px;
+  display: flex;
+  align-items: center;
+  overflow: hidden;
+  border: 1px solid rgb(255 255 255 / 0.14);
+  border-radius: 4px;
+  cursor: grab;
+  user-select: none;
+  /* Only the box-shadow animates; `left`/`width` are set per render from frames and must
+     not tween, or a drag visibly lags the pointer. */
+  transition: box-shadow 120ms ease;
+}
+.ve-clip.is-selected {
+  border-color: rgb(var(--ve-accent));
+  box-shadow: 0 0 0 1px rgb(var(--ve-accent)), 0 2px 10px rgb(var(--ve-accent) / 0.25);
+  z-index: 2;
+}
+.ve-clip.is-dragging { cursor: grabbing; z-index: 4; }
+
+/* Clip tone by content — a glance at the lanes shows the shape of the video. */
+.ve-clip--video { background: linear-gradient(180deg, #2b4c6f, #1e3550); }
+.ve-clip--image { background: linear-gradient(180deg, #3d5a44, #273a2c); }
+.ve-clip--audio { background: linear-gradient(180deg, #2f4858, #22333e); }
+.ve-clip--text { background: linear-gradient(180deg, #5a4a2a, #3d321c); }
+.ve-clip--template { background: linear-gradient(180deg, #4a3a63, #322745); }
+.ve-clip--caption { background: linear-gradient(180deg, #3f3f46, #27272a); }
+.ve-clip--solid { background: linear-gradient(180deg, #52525b, #3f3f46); }
+
+.ve-clip-label {
+  flex: 1;
+  min-width: 0;
+  padding: 0 8px;
+  overflow: hidden;
+  font-size: 10px;
+  font-weight: 500;
+  white-space: nowrap;
+  text-overflow: ellipsis;
+  color: rgb(255 255 255 / 0.92);
+  pointer-events: none;
+}
+
+.ve-clip-handle {
+  flex: none;
+  align-self: stretch;
+  cursor: ew-resize;
+  background: rgb(255 255 255 / 0.08);
+}
+.ve-clip-handle:hover { background: rgb(var(--ve-accent) / 0.65); }
+.ve-clip-handle--start { border-radius: 3px 0 0 3px; }
+.ve-clip-handle--end { border-radius: 0 3px 3px 0; }
+
+.ve-playhead {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: rgb(var(--ve-playhead));
+  pointer-events: none;
+  z-index: 5;
+}
+.ve-playhead-grip {
+  position: absolute;
+  top: 0;
+  left: -5px;
+  width: 11px;
+  height: 9px;
+  background: rgb(var(--ve-playhead));
+  clip-path: polygon(0 0, 100% 0, 50% 100%);
+}
+
+/* Keep the editor usable on a narrow window: the rails collapse before the player does. */
+@media (max-width: 1180px) {
+  .ve-body { grid-template-columns: 200px minmax(0, 1fr) 270px; }
+}
+@media (max-width: 980px) {
+  .ve-body { grid-template-columns: minmax(0, 1fr) 260px; }
+  .ve-rail { display: none; }
+}

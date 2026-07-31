@@ -1497,6 +1497,11 @@ export interface NativeApi {
     renameProject(projectId: string, name: string): Promise<VideoProject>
     /** resize/retime the canvas; scenes and captions are clamped, never orphaned */
     setCanvas(projectId: string, patch: VideoCanvasPatch): Promise<VideoProject>
+    /** Commit a whole project document. The timeline editor edits its own copy and saves
+     *  once per gesture, so a multi-clip drag is one write instead of one per clip.
+     *  `id`, `rendererId`, `revision` and `createdAt` are taken from disk, so a stale
+     *  renderer copy cannot rewind the file. */
+    saveProject(projectId: string, project: VideoProject): Promise<VideoProject>
 
     /** which engine project backs a downloaded clip, per renderer */
     binding(downloadId: string): Promise<VideoStudioBinding>

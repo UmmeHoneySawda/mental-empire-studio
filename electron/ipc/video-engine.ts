@@ -807,6 +807,29 @@ export function registerVideoEngineIpc(): void {
     }))
   ipcMain.handle('videoEngine:setCanvas', (_e, projectId: string, patch: VideoCanvasPatch) =>
     guard('setCanvas', () => patchCanvas(reqString(projectId, 'projectId'), patch ?? {})))
+  // The timeline editor owns its project in the renderer and commits whole documents:
+  // a drag that moves a clip across four lanes is one save, not four round trips each
+  // bumping the revision. `revision`/`createdAt` are taken from disk rather than the
+  // payload so a renderer that has been sitting on a stale copy cannot roll the file
+  // backwards, and the schema still validates every field before anything is written.
+  ipcMain.handle('videoEngine:saveProject', (_e, projectId: string, next: unknown) =>
+    guard('saveProject', async () => {
+      const engine = await getVideoEngine()
+      const id = reqString(projectId, 'projectId')
+      const current = await engine.openProject(id)
+      const incoming = VideoProjectSchema.parse(next)
+      if (incoming.id !== id) throw new Error('Project id mismatch')
+      return engine.saveProject(
+        VideoProjectSchema.parse({
+          ...incoming,
+          id: current.id,
+          rendererId: current.rendererId,
+          revision: current.revision,
+          createdAt: current.createdAt
+        }),
+        { expectedRevision: current.revision }
+      )
+    }))
 
   // ---- binding a downloaded clip to a per-renderer engine project ----
   ipcMain.handle('videoEngine:binding', (_e, downloadId: string): VideoStudioBinding =>

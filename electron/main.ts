@@ -216,7 +216,13 @@ function createWindow(showOnReady = true): void {
       preload: join(__dirname, '../preload/preload.cjs'),
       sandbox: false,
       contextIsolation: true,
-      nodeIntegration: false
+      nodeIntegration: false,
+      // Chromium backgrounds a window it considers occluded: the renderer reports
+      // `document.visibilityState === 'hidden'` and requestAnimationFrame stops firing
+      // altogether — verified over CDP with the OS window still plainly visible. The
+      // Compose Remotion player drives playback off rAF, so the preview simply goes
+      // black and every CSS transition freezes. A video editor cannot be throttled.
+      backgroundThrottling: false
     }
   })
 
