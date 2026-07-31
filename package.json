@@ -1,5 +1,7 @@
 {
   "name": "mental-empire-studio",
+  "//productName": "Electron derives the userData directory from productName, falling back to name. electron-builder.yml's productName only names the exe/installer — it is NOT copied into the asar manifest, so without this key a packaged build resolves userData to %APPDATA%\\mental-empire-studio while the dev build (redirected by app.setName in electron/main.ts) uses %APPDATA%\\Mental Empire Studio. Two profiles, and the user's channels and API keys appear to have been reset. app.setName is also only effective before anything reads app.getPath('userData'), which module-init code can do first; this key does not depend on that ordering.",
+  "productName": "Mental Empire Studio",
   "version": "0.1.5",
   "description": "Creator-grade automation studio for faceless YouTube channels",
   "main": "out/main/main.js",
@@ -24,6 +26,9 @@
     "preview:browser": "vite preview --config vite.renderer.config.ts --outDir out/renderer --port 4173",
     "test": "vitest run",
     "test:watch": "vitest",
+    "userdata:backup": "powershell -ExecutionPolicy Bypass -File scripts/backup-userdata.ps1",
+    "userdata:restore": "powershell -ExecutionPolicy Bypass -File scripts/restore-userdata.ps1",
+    "userdata:list": "powershell -ExecutionPolicy Bypass -File scripts/restore-userdata.ps1 -List",
     "seed:channels:export": "electron scripts/seed-channels.cjs export",
     "seed:channels:apply": "electron scripts/seed-channels.cjs apply",
     "video-engine:setup": "tsx scripts/video-engine-setup.ts",

@@ -1,9 +1,11 @@
 import { ipcMain, shell } from 'electron'
 import { existsSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
-import { dirname } from 'node:path'
+import { basename, dirname, join } from 'node:path'
 import {
   createCaptionDocument,
+  emptySpans,
+  planMediaFill,
   groupCaptionCues,
   safeParseHookPlan,
   VideoGradingSchema,
@@ -13,7 +15,12 @@ import {
   type ApplyVideoTransitionInput,
   type CaptionCueList,
   type CaptionImportSummary,
+  type BrollBatch,
   type CreateVideoProjectInput,
+  type FetchBrollBatchInput,
+  type FetchBrollBatchResult,
+  type FillWithMediaInput,
+  type FillWithMediaResult,
   type ImportantWordsPromptInput,
   type ImportedHookPlan,
   type ImportedVideoAssets,
@@ -39,13 +46,23 @@ import {
   type VideoTemplateFilter
 } from '../../shared/video-engine'
 import { getRepos } from '../db'
+import { getSettings } from '../store/settings'
+import { sentryLog } from '../services/sentry'
 import { errorMessage, VideoEngineError } from '../services/video-engine/errors'
+import {
+  appendBrollBatch,
+  buildBrollKeywordsPrompt,
+  deleteBrollBatch,
+  newBatchId,
+  parseBrollRequest,
+  readBrollBatches
+} from '../services/video-engine/broll/batches'
+import { ensureTranscript } from './compose'
 import {
   bindDownload,
   captionWordsFromTranscript,
   engineBinaryPaths,
   getVideoEngine,
-  hyperframesPreviewUrl,
   importProjectAssets,
   lastVideoEngineFailure,
   missingBrollCredentials,
@@ -94,13 +111,31 @@ async function guard<T>(operation: string, run: () => Promise<T>): Promise<T> {
   }
 }
 
-let jobBridgeAttached = false
+/* Which engine instance the job bridge is attached to.
+ *
+ * This used to be a plain `attached` boolean. Saving anything under Settings > beta
+ * rebuilds the engine (resetVideoEngine), and the new RenderQueue owns a brand-new
+ * EventEmitter — but the boolean was still true, so the bridge was never re-subscribed
+ * and `videoEngine:job` stopped being emitted until the app restarted. Render progress
+ * simply froze. Tracking the instance makes re-attaching automatic.
+ *
+ * Holding the promise (not the resolved service) also closes a double-subscribe race:
+ * two concurrent first calls — which React StrictMode's double-invoked mount effect
+ * reliably produces — used to both pass the check while the first was still awaiting. */
+let bridgedEngine: Promise<unknown> | null = null
 
 async function attachJobBridge(): Promise<void> {
-  if (jobBridgeAttached) return
-  const engine = await getVideoEngine()
-  jobBridgeAttached = true
-  engine.onJobChanged((job) => emit('videoEngine:job', toRenderJobDto(job)))
+  const pending = getVideoEngine()
+  if (bridgedEngine === pending) return
+  bridgedEngine = pending
+  try {
+    const engine = await pending
+    engine.onJobChanged((job) => emit('videoEngine:job', toRenderJobDto(job)))
+  } catch (error) {
+    // Leave it unattached so the next call retries rather than latching onto a failure.
+    if (bridgedEngine === pending) bridgedEngine = null
+    throw error
+  }
 }
 
 async function status(): Promise<VideoEngineStatus> {
@@ -235,6 +270,181 @@ async function addScene(projectId: string, patch: AddVideoScenePatch): Promise<V
   )
 }
 
+/**
+ * Covers the empty stretches of a visual track with the chosen media.
+ *
+ * This is the "unlike a real editor I can't make an image cover the video" gap: importing
+ * a still used to drop a fixed four-second clip at the playhead and nothing else. The
+ * planning is a pure function (shared/video-engine/fill.ts) so the arithmetic is unit
+ * tested; this handler only resolves the track, works out the gaps, and saves.
+ */
+async function fillWithMedia(projectId: string, input: FillWithMediaInput): Promise<FillWithMediaResult> {
+  const engine = await getVideoEngine()
+  const project = await engine.openProject(projectId)
+
+  const assetIds = input.assetIds.filter((id) => project.assets.some((asset) => asset.id === id))
+  if (assetIds.length === 0) {
+    throw new VideoEngineError('INVALID_PROJECT', 'Pick at least one imported image or video to fill with.')
+  }
+  const trackId = input.trackId ?? 'main-video'
+  const tracks = project.tracks.some((track) => track.id === trackId)
+    ? project.tracks
+    : [...project.tracks, { id: trackId, name: 'Visuals', kind: 'video' as const, order: 0, muted: false, locked: false }]
+
+  // Captions and audio live on their own tracks and must not be treated as occupying
+  // visual space, or a captioned project would report no room at all.
+  const kept = input.replaceExisting
+    ? project.scenes.filter((scene) => scene.trackId !== trackId)
+    : project.scenes
+  const occupied = kept.filter((scene) => scene.trackId === trackId)
+  const spans = emptySpans(occupied, project.canvas.durationFrames)
+
+  const planned = planMediaFill({
+    assetIds,
+    spans,
+    fps: project.canvas.fps,
+    segmentSeconds: input.mode === 'cycle' ? input.segmentSeconds ?? 8 : 0,
+    shuffle: input.shuffle ?? false,
+    // Derived from the project so a re-run reproduces the same arrangement.
+    seed: project.revision * 2654435761 % 2147483647
+  })
+  if (planned.length === 0) {
+    throw new VideoEngineError('INVALID_PROJECT', 'There is no empty space on this track to fill.')
+  }
+
+  const scenes = planned.map((slot) => VideoSceneSchema.parse({
+    id: `scene-${randomUUID()}`,
+    trackId,
+    kind: 'media',
+    startFrame: slot.startFrame,
+    durationFrames: slot.durationFrames,
+    zIndex: 0,
+    assetId: slot.assetId,
+    fit: input.fit ?? 'cover'
+  }))
+
+  const saved = await engine.saveProject(
+    VideoProjectSchema.parse({ ...project, tracks, scenes: [...kept, ...scenes] }),
+    { expectedRevision: project.revision }
+  )
+  const coveredFrames = planned.reduce((sum, slot) => sum + slot.durationFrames, 0)
+  sentryLog.info('Studio media fill', {
+    project_id: projectId,
+    renderer: project.rendererId,
+    mode: input.mode,
+    asset_count: assetIds.length,
+    placed: scenes.length,
+    covered_frames: coveredFrames,
+    segment_seconds: input.mode === 'cycle' ? input.segmentSeconds ?? 8 : 0,
+    shuffled: input.shuffle ?? false,
+    operation: 'video_media_fill'
+  })
+  return { project: saved, placed: scenes.length, coveredFrames }
+}
+
+function brollBatchRoot(): string {
+  return join(videoEngineDataRoot(), 'broll-batches')
+}
+
+/** Prompt for the copy → paste-back keyword flow, mirroring the hook-plan and
+ *  important-words exchanges the studio already uses. */
+async function brollKeywordsPrompt(projectId: string, downloadId: string, keywordCount?: number): Promise<string> {
+  const engine = await getVideoEngine()
+  const project = await engine.openProject(projectId)
+  // Prefer the caption words already on the project; fall back to the classic transcript
+  // rows so this works before captions have been applied.
+  const fromCaptions = (project.captions?.words ?? []).map((word) => word.text).join(' ')
+  const transcript = fromCaptions
+    || getRepos().getTranscript(`proj-${downloadId}`).map((word) => word.word).join(' ')
+  return buildBrollKeywordsPrompt({
+    title: project.name,
+    transcript,
+    keywordCount: Math.min(40, Math.max(3, Math.round(keywordCount ?? 12)))
+  })
+}
+
+/**
+ * Takes the model's keyword list, downloads footage for each keyword, imports the clips
+ * as project assets, and records the whole thing as a named batch.
+ *
+ * A keyword that finds nothing is reported rather than dropped — with several providers
+ * behind one search, silence is the difference between "no match" and "your API key is
+ * wrong", and the user needs to be able to tell those apart.
+ */
+async function fetchBrollBatch(
+  projectId: string,
+  downloadId: string,
+  input: FetchBrollBatchInput
+): Promise<FetchBrollBatchResult> {
+  const engine = await getVideoEngine()
+  const project = await engine.openProject(projectId)
+  const request = parseBrollRequest(input.response)
+  const perKeyword = Math.min(5, Math.max(1, Math.round(input.perKeyword ?? 1)))
+
+  const clips: BrollBatch['clips'] = []
+  const emptyKeywords: string[] = []
+  const paths: string[] = []
+
+  for (const keyword of request.keywords) {
+    const candidates = await engine.searchBroll({ query: keyword, perPage: perKeyword })
+      .catch(() => [])
+    if (candidates.length === 0) {
+      emptyKeywords.push(keyword)
+      continue
+    }
+    for (const candidate of candidates.slice(0, perKeyword)) {
+      try {
+        const cached = await engine.cacheBroll(candidate)
+        paths.push(cached.absolutePath)
+        clips.push({
+          keyword,
+          provider: candidate.provider,
+          title: candidate.title,
+          path: cached.absolutePath
+        })
+      } catch {
+        // One bad download should not abandon the rest of the batch.
+        emptyKeywords.push(keyword)
+      }
+    }
+  }
+
+  if (paths.length === 0) {
+    throw new VideoEngineError(
+      'BROLL_PROVIDER_ERROR',
+      `Nothing downloaded for ${request.keywords.length} keyword${request.keywords.length === 1 ? '' : 's'}. `
+        + 'Check the stock-footage API keys in Settings, or try broader keywords.'
+    )
+  }
+
+  const imported = await importProjectAssets(projectId, paths)
+  // Match each clip to the asset it became so a batch can be selected later.
+  for (const clip of clips) {
+    const asset = imported.project.assets.find((candidate) => candidate.name === basename(clip.path))
+    if (asset) clip.assetId = asset.id
+  }
+
+  const batch: BrollBatch = {
+    id: newBatchId(),
+    name: request.name,
+    createdAt: new Date().toISOString(),
+    keywords: request.keywords,
+    clips,
+    emptyKeywords: [...new Set(emptyKeywords)]
+  }
+  await appendBrollBatch(brollBatchRoot(), projectId, batch)
+  sentryLog.info('Studio b-roll batch fetched', {
+    project_id: projectId,
+    download_id: downloadId,
+    renderer: project.rendererId,
+    keyword_count: request.keywords.length,
+    clip_count: clips.length,
+    empty_keyword_count: batch.emptyKeywords.length,
+    operation: 'broll_batch'
+  })
+  return { project: imported.project, batch }
+}
+
 async function updateScene(
   projectId: string,
   sceneId: string,
@@ -336,12 +546,23 @@ async function captionsFromTranscript(
 ): Promise<CaptionImportSummary> {
   const engine = await getVideoEngine()
   const project = await engine.openProject(projectId)
-  const transcript = getRepos().getTranscript(`proj-${downloadId}`)
+  const hadTranscript = getRepos().getTranscript(`proj-${downloadId}`).length > 0
+  // The studio used to be a pure reader of the classic tab's transcript rows and threw
+  // "Run Transcribe on the Compose tab first" when they were absent. It now transcribes
+  // on demand through the same Groq path the classic tab uses, so captions arrive
+  // without the user having to visit another screen.
+  if (!hadTranscript) {
+    const apiKey = getSettings().transcription.apiKey.trim() || process.env['GROQ_API_KEY'] || ''
+    if (!apiKey) {
+      throw new VideoEngineError(
+        'INVALID_IMPORT',
+        'No Groq API key set. Add one in Settings > Integrations > Transcription, then try again.'
+      )
+    }
+  }
+  const transcript = await ensureTranscript(downloadId)
   if (transcript.length === 0) {
-    throw new VideoEngineError(
-      'INVALID_IMPORT',
-      'This clip has no transcript yet. Run Transcribe on the Compose tab first.'
-    )
+    throw new VideoEngineError('INVALID_IMPORT', 'Transcription returned no words for this clip.')
   }
   const converted = captionWordsFromTranscript(transcript, project.canvas.fps, project.canvas.durationFrames)
   if (converted.words.length === 0) {
@@ -353,6 +574,19 @@ async function captionsFromTranscript(
     templateId: templateId ?? project.captions?.templateId ?? `${project.rendererId}-caption-highlight`,
     templateProps,
     words: converted.words
+  })
+  // Careful with the wording: electron-vite's CJS-shim plugin scans the built bundle with
+  // a regex for `import <…> '<specifier>'`, and a literal ending in the word "import"
+  // right before its closing quote matches it — the shim then gets spliced into the
+  // middle of this call and the bundle fails to parse. Keep "import" away from a quote.
+  sentryLog.info('Studio captions applied', {
+    download_id: downloadId,
+    project_id: projectId,
+    renderer: project.rendererId,
+    word_count: converted.words.length,
+    dropped_count: converted.dropped,
+    transcribed_now: !hadTranscript,
+    operation: 'video_caption_import'
   })
   return { project: saved, wordCount: converted.words.length, droppedCount: converted.dropped }
 }
@@ -445,6 +679,7 @@ async function preview(projectId: string): Promise<VideoPreviewPayload> {
   if (project.rendererId === 'remotion') {
     return {
       kind: 'remotion',
+      revision: project.revision,
       project: projectForPreview(project),
       durationInFrames: project.canvas.durationFrames
     }
@@ -452,7 +687,10 @@ async function preview(projectId: string): Promise<VideoPreviewPayload> {
   const staged = await stageHyperframesPreview(projectId)
   return {
     kind: 'hyperframes',
-    url: hyperframesPreviewUrl(projectId),
+    revision: project.revision,
+    // Taken off the stage that was just published rather than looked up again — a second
+    // lookup would race a concurrent restage and could hand back the other stage's URL.
+    url: staged.url,
     width: project.canvas.width,
     height: project.canvas.height,
     fps: project.canvas.fps,
@@ -543,6 +781,21 @@ export function registerVideoEngineIpc(): void {
   ipcMain.handle('videoEngine:setTrackMuted', (_e, projectId: string, trackId: string, muted: boolean) =>
     guard('setTrackMuted', () =>
       setMuted(reqString(projectId, 'projectId'), reqString(trackId, 'trackId'), !!muted)))
+  ipcMain.handle('videoEngine:fillWithMedia', (_e, projectId: string, input: FillWithMediaInput) =>
+    guard('fillWithMedia', () => fillWithMedia(reqString(projectId, 'projectId'), input)))
+
+  // ---- b-roll batches ----
+  ipcMain.handle('videoEngine:brollKeywordsPrompt', (_e, projectId: string, downloadId: string, count?: number) =>
+    guard('brollKeywordsPrompt', () =>
+      brollKeywordsPrompt(reqString(projectId, 'projectId'), reqString(downloadId, 'downloadId'), count)))
+  ipcMain.handle('videoEngine:fetchBrollBatch', (_e, projectId: string, downloadId: string, input: FetchBrollBatchInput) =>
+    guard('fetchBrollBatch', () =>
+      fetchBrollBatch(reqString(projectId, 'projectId'), reqString(downloadId, 'downloadId'), input)))
+  ipcMain.handle('videoEngine:brollBatches', (_e, projectId: string) =>
+    guard('brollBatches', () => readBrollBatches(brollBatchRoot(), reqString(projectId, 'projectId'))))
+  ipcMain.handle('videoEngine:deleteBrollBatch', (_e, projectId: string, batchId: string) =>
+    guard('deleteBrollBatch', () =>
+      deleteBrollBatch(brollBatchRoot(), reqString(projectId, 'projectId'), reqString(batchId, 'batchId'))))
 
   // ---- templates ----
   ipcMain.handle('videoEngine:instantiateTemplate', (_e, projectId: string, input: InstantiateVideoTemplateInput) =>

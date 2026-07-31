@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useEffect, useState } from 'react'
 import type { KeyboardEvent } from 'react'
 import type { VideoBrollCandidate } from '@shared/video-engine'
 import { useVideoStudio } from '../store/useVideoStudio'
@@ -10,6 +10,7 @@ import {
   NumberField,
   SelectField,
   EmptyHint,
+  PromptExchange,
   useTimecode
 } from '../ui/kit'
 import { Btn, Chip, ToggleRow } from '../../../components/ui/kit'
@@ -52,7 +53,14 @@ export function BrollPanel(): JSX.Element {
   const placeBroll = useVideoStudio((state) => state.placeBroll)
   const resolveHookBroll = useVideoStudio((state) => state.resolveHookBroll)
   const refreshBrollProviders = useVideoStudio((state) => state.refreshBrollProviders)
+  const brollBatches = useVideoStudio((state) => state.brollBatches)
+  const refreshBrollBatches = useVideoStudio((state) => state.refreshBrollBatches)
+  const brollKeywordsPrompt = useVideoStudio((state) => state.brollKeywordsPrompt)
+  const fetchBrollBatch = useVideoStudio((state) => state.fetchBrollBatch)
+  const deleteBrollBatch = useVideoStudio((state) => state.deleteBrollBatch)
 
+  const [keywordCount, setKeywordCount] = useState(12)
+  const [perKeyword, setPerKeyword] = useState(1)
   const [query, setQuery] = useState('')
   const [chosen, setChosen] = useState<string[]>([])
   const [orientation, setOrientation] = useState<Orientation>('auto')
@@ -69,6 +77,12 @@ export function BrollPanel(): JSX.Element {
 
   const fps = project?.canvas.fps ?? 30
   const timecode = useTimecode(fps)
+
+  // Saved batches live on disk per project, so they have to be read once the panel opens.
+  const projectId = project?.id
+  useEffect(() => {
+    if (projectId) void refreshBrollBatches()
+  }, [projectId, refreshBrollBatches])
 
   const start = async (key: string, task: () => Promise<void>): Promise<void> => {
     setPending(key)
@@ -186,6 +200,65 @@ export function BrollPanel(): JSX.Element {
           </p>
         )}
       </StudioSection>
+
+      <StudioSection
+        label="Fetch a batch"
+        hint="Copy the prompt into any chat model, paste its answer back, and the studio downloads footage for every keyword at once and saves it under a name."
+      >
+        <Row>
+          <Labeled label="Keywords to ask for" hint="How many search terms the model should return.">
+            <NumberField value={keywordCount} min={3} max={40} onCommit={setKeywordCount} />
+          </Labeled>
+          <Labeled label="Clips per keyword" hint="More clips means more to choose from, and a longer download.">
+            <NumberField value={perKeyword} min={1} max={5} onCommit={setPerKeyword} />
+          </Labeled>
+        </Row>
+        <PromptExchange
+          buildPrompt={() => brollKeywordsPrompt(keywordCount)}
+          onApply={(json) => fetchBrollBatch(json, perKeyword)}
+          applyLabel="Download this batch"
+          pasteLabel="Paste the keyword list the model returned"
+          busy={Boolean(busy)}
+        />
+        <p className="vs-hint">
+          The clips land in Media, so you can then use “Cover the timeline” there to spread or cycle them.
+        </p>
+      </StudioSection>
+
+      {brollBatches.length > 0 && (
+        <StudioSection label="Saved batches" headerRight={<span className="vs-pill">{brollBatches.length}</span>}>
+          <div className="vs-list">
+            {[...brollBatches].reverse().map((batch) => (
+              <div key={batch.id} className="vs-item">
+                <div className="vs-item-main">
+                  <span className="vs-item-title" title={batch.keywords.join(', ')}>{batch.name}</span>
+                  <span className="vs-item-sub">
+                    <span className="vs-pill">{batch.clips.length} clips</span>
+                    <span>{batch.keywords.length} keywords</span>
+                    <span className="vs-mono">{batch.createdAt.slice(0, 16).replace('T', ' ')}</span>
+                    {batch.emptyKeywords.length > 0 && (
+                      <span className="vs-pill vs-pill--warn" title={batch.emptyKeywords.join(', ')}>
+                        {batch.emptyKeywords.length} found nothing
+                      </span>
+                    )}
+                  </span>
+                </div>
+                <div className="vs-item-actions">
+                  <Btn
+                    variant="ghost"
+                    size="sm"
+                    disabled={Boolean(busy)}
+                    title="Forget this batch. The downloaded clips stay in Media."
+                    onClick={() => void deleteBrollBatch(batch.id)}
+                  >
+                    Forget
+                  </Btn>
+                </div>
+              </div>
+            ))}
+          </div>
+        </StudioSection>
+      )}
 
       <StudioSection label="Search" hint="Describe the shot, not the edit — providers match on subject words.">
         <Row>

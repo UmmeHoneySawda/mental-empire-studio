@@ -49,21 +49,85 @@ function useFittedSize(width: number, height: number): { ref: (node: HTMLDivElem
   return { ref, size }
 }
 
+/** Trailing debounce for the auto-rebuild. Long enough that dragging a slider or typing a
+ *  headline does not queue a compile per keystroke, short enough to feel immediate. */
+const AUTO_REFRESH_DELAY_MS = 400
+
+/** How often playback is allowed to write the playhead into the store. The players report
+ *  every frame; at 60fps that re-rendered the whole studio — timeline, panels and all —
+ *  sixty times a second just to move a marker. Ten updates a second still reads as smooth
+ *  for a timecode and a playhead line. */
+const PLAYHEAD_THROTTLE_MS = 100
+
+/** Throttled setter for the players' per-frame callback. The trailing call matters: it is
+ *  what leaves the playhead on the real final frame when playback stops. */
+function useThrottledPlayhead(setPlayhead: (frame: number) => void): (frame: number) => void {
+  const lastSent = useRef(0)
+  const pending = useRef<number | null>(null)
+  const timer = useRef<ReturnType<typeof setTimeout>>()
+
+  useEffect(() => () => clearTimeout(timer.current), [])
+
+  return useCallback((frame: number) => {
+    const now = performance.now()
+    const wait = PLAYHEAD_THROTTLE_MS - (now - lastSent.current)
+    pending.current = frame
+    if (wait <= 0) {
+      lastSent.current = now
+      pending.current = null
+      setPlayhead(frame)
+      return
+    }
+    if (timer.current) return
+    timer.current = setTimeout(() => {
+      timer.current = undefined
+      lastSent.current = performance.now()
+      if (pending.current !== null) {
+        const next = pending.current
+        pending.current = null
+        setPlayhead(next)
+      }
+    }, wait)
+  }, [setPlayhead])
+}
+
 export function PreviewStage(): JSX.Element {
   const project = useVideoStudio((state) => state.project)
   const preview = useVideoStudio((state) => state.preview)
   const previewStale = useVideoStudio((state) => state.previewStale)
+  const previewBusy = useVideoStudio((state) => state.previewBusy)
+  const previewError = useVideoStudio((state) => state.previewError)
+  const previewAuto = useVideoStudio((state) => state.previewAuto)
+  const setPreviewAuto = useVideoStudio((state) => state.setPreviewAuto)
   const playheadFrame = useVideoStudio((state) => state.playheadFrame)
   const playing = useVideoStudio((state) => state.playing)
-  const busy = useVideoStudio((state) => state.busy)
   const loadPreview = useVideoStudio((state) => state.loadPreview)
   const setPlayhead = useVideoStudio((state) => state.setPlayhead)
   const setPlaying = useVideoStudio((state) => state.setPlaying)
 
   const fps = project?.canvas.fps ?? 30
-  const total = project?.canvas.durationFrames ?? 1
+  // The scrubber has to track the STAGED composition, not the live project: the player
+  // only knows about frames the current preview was compiled with, so scrubbing past its
+  // end moved the readout while the picture sat still.
+  const stagedTotal = preview
+    ? preview.kind === 'remotion' ? preview.durationInFrames : preview.durationFrames
+    : project?.canvas.durationFrames ?? 1
+  const total = Math.max(1, stagedTotal)
+  const liveTotal = project?.canvas.durationFrames ?? total
   const timecode = useTimecode(fps)
   const { ref, size } = useFittedSize(project?.canvas.width ?? 16, project?.canvas.height ?? 9)
+  // Only playback goes through the throttle; scrubbing still sets the playhead directly
+  // so dragging the bar stays exact.
+  const onPlayerFrame = useThrottledPlayhead(setPlayhead)
+
+  // An edit should show up on its own. Without this the user had to notice the preview
+  // was stale and click a button — and when that button misbehaved there was no way back.
+  const revision = project?.revision
+  useEffect(() => {
+    if (!previewAuto || !project || !previewStale || previewBusy) return
+    const timer = setTimeout(() => { void loadPreview() }, AUTO_REFRESH_DELAY_MS)
+    return () => clearTimeout(timer)
+  }, [previewAuto, project, revision, previewStale, previewBusy, loadPreview])
 
   return (
     <div className="vs-preview">
@@ -73,8 +137,9 @@ export function PreviewStage(): JSX.Element {
         ) : !preview ? (
           <div className="vs-preview-empty">
             <span>Nothing is staged yet. Building a preview runs the real composition, so it takes a moment on the first pass.</span>
-            <Btn variant="soft" size="sm" disabled={!!busy} onClick={() => void loadPreview()}>
-              {busy === 'Building the preview' ? 'Building the preview…' : 'Build preview'}
+            {previewError && <span style={{ color: 'var(--danger, #e5484d)' }}>{previewError}</span>}
+            <Btn variant="soft" size="sm" disabled={previewBusy} onClick={() => void loadPreview()}>
+              {previewBusy ? 'Building the preview…' : 'Build preview'}
             </Btn>
           </div>
         ) : (
@@ -95,15 +160,19 @@ export function PreviewStage(): JSX.Element {
                   durationInFrames={preview.durationInFrames}
                   frame={playheadFrame}
                   playing={playing}
-                  onFrame={setPlayhead}
+                  onFrame={onPlayerFrame}
                   onPlayingChange={setPlaying}
                 />
               ) : (
+                // Keyed on the stamped URL so a rebuild remounts the iframe outright.
+                // Relying on React to diff `src` did not work: the old URL carried no
+                // revision, so the attribute never changed and the frame never navigated.
                 <HyperframesPreview
+                  key={preview.url}
                   payload={preview}
                   frame={playheadFrame}
                   playing={playing}
-                  onFrame={setPlayhead}
+                  onFrame={onPlayerFrame}
                   onPlayingChange={setPlaying}
                 />
               )}
@@ -135,11 +204,35 @@ export function PreviewStage(): JSX.Element {
         />
         <span className="vs-mono" style={{ flex: 'none' }}>
           {timecode(playheadFrame)} · {playheadFrame}/{total}f
+          {liveTotal !== total && <span title="The project is longer or shorter than the staged preview"> (project {liveTotal}f)</span>}
         </span>
-        {preview && previewStale && (
-          <Btn variant="soft" size="sm" disabled={!!busy} onClick={() => void loadPreview()}>
-            {busy === 'Building the preview' ? 'Refreshing…' : 'Refresh preview'}
+        {/* Always rendered once there is a preview. Gating this on `previewStale` meant a
+            race that cleared the flag left the user with no way to rebuild at all. */}
+        {preview && (
+          <Btn
+            variant={previewStale ? 'soft' : 'ghost'}
+            size="sm"
+            disabled={previewBusy}
+            title={previewStale ? 'This preview is behind your edits' : 'Rebuild the preview'}
+            onClick={() => void loadPreview()}
+          >
+            {previewBusy ? 'Refreshing…' : previewStale ? '● Refresh preview' : 'Refresh preview'}
           </Btn>
+        )}
+        <Btn
+          variant={previewAuto ? 'soft' : 'ghost'}
+          size="sm"
+          title={
+            previewAuto
+              ? 'Rebuilding the preview automatically after each edit. Turn off if compiles are slow on this project.'
+              : 'Automatic rebuilds are off — use Refresh preview to see your edits.'
+          }
+          onClick={() => setPreviewAuto(!previewAuto)}
+        >
+          Auto {previewAuto ? 'on' : 'off'}
+        </Btn>
+        {previewError && (
+          <span className="vs-pill vs-pill--warn" title={previewError}>preview failed</span>
         )}
         {preview?.kind === 'hyperframes' && preview.warnings.length > 0 && (
           <span className="vs-pill vs-pill--warn" title={preview.warnings.join('\n')}>

@@ -28,6 +28,24 @@ foreach ($f in $files) {
   if (Test-Path $p) { Copy-Item -LiteralPath $p -Destination $dest -Force; Say "backed up $f" 'DarkGray' }
 }
 
+# Older packaged builds resolved userData from the package.json `name` instead of
+# `productName`, leaving a second populated profile at the lowercase path. Capture it too
+# — on a case-insensitive filesystem Get-ChildItem cannot distinguish the two, so compare
+# the literal string.
+$LegacyDir = Join-Path $AppData 'mental-empire-studio'
+if ((Test-Path $LegacyDir) -and ($LegacyDir -cne $SourceDir)) {
+  $legacyDest = Join-Path $dest '_legacy-lowercase-profile'
+  $sawLegacy = $false
+  foreach ($f in $files) {
+    $p = Join-Path $LegacyDir $f
+    if (Test-Path $p) {
+      if (-not $sawLegacy) { New-Item -ItemType Directory -Path $legacyDest -Force | Out-Null; $sawLegacy = $true }
+      Copy-Item -LiteralPath $p -Destination $legacyDest -Force
+    }
+  }
+  if ($sawLegacy) { Say "backed up the legacy lowercase profile too" 'DarkGray' }
+}
+
 Get-ChildItem -LiteralPath $dest -File |
   Where-Object { $_.Name -in @('mental-empire.db','mental-empire-settings.json') } |
   Get-FileHash -Algorithm SHA256 |

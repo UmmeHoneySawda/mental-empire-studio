@@ -45,7 +45,10 @@ export function HyperframesPreview({
 
   const send = useCallback((action: ControlAction, extra: Record<string, unknown> = {}) => {
     const target = iframe.current?.contentWindow
-    if (!target) return
+    // Nothing may be posted before the runtime has announced itself. A message sent into
+    // a document that is still navigating is silently dropped, and the studio would then
+    // sit waiting for a state report that never comes.
+    if (!target || !ready.current) return
     target.postMessage({ source: 'hf-parent', type: 'control', action, ...extra }, '*')
   }, [])
 
@@ -89,9 +92,10 @@ export function HyperframesPreview({
     send(playing ? 'play' : 'pause')
   }, [playing, send])
 
-  useEffect(() => {
-    ready.current = false
-  }, [payload.url])
+  // No reset effect for `ready`/`requested`: PreviewStage keys this component on
+  // payload.url, so a restaged preview remounts it and both refs start fresh. The reset
+  // effect that used to live here could not work — it was declared after the seek and
+  // play effects, which therefore ran first and still saw the dead document as ready.
 
   return (
     <iframe

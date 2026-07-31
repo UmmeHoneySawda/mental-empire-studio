@@ -44,6 +44,8 @@ export function VideoStudio({ downloadId, engine }: { downloadId: string; engine
   const applyJob = useVideoStudio((state) => state.applyJob)
   const enqueueRender = useVideoStudio((state) => state.enqueueRender)
   const reseed = useVideoStudio((state) => state.reseed)
+  const transcribeMessage = useVideoStudio((state) => state.transcribeMessage)
+  const setTranscribeMessage = useVideoStudio((state) => state.setTranscribeMessage)
 
   const timecode = useTimecode(project?.canvas.fps ?? 30)
 
@@ -57,6 +59,19 @@ export function VideoStudio({ downloadId, engine }: { downloadId: string; engine
     if (typeof window === 'undefined' || !window.api?.onVideoEngineJob) return
     return window.api.onVideoEngineJob(applyJob)
   }, [applyJob])
+
+  // Groq transcription reports its phase on the classic project's channel. Mirroring it
+  // here is what turns a multi-minute "Importing captions" freeze into visible progress.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.api?.onTranscribeProgress) return
+    const mine = `proj-${downloadId}`
+    return window.api.onTranscribeProgress((progress) => {
+      if (progress.projectId !== mine) return
+      setTranscribeMessage(
+        progress.phase === 'done' || progress.phase === 'error' ? '' : progress.message
+      )
+    })
+  }, [downloadId, setTranscribeMessage])
 
   // Editor keys, but only when focus is not in a field — otherwise space would stop
   // typing a headline and start playback instead.
@@ -226,7 +241,7 @@ export function VideoStudio({ downloadId, engine }: { downloadId: string; engine
 
           <div className="vs-foot">
             <span className="me-ellipsis" style={{ flex: 1 }} title={project.id}>{project.id}</span>
-            <span>{busy || `${project.scenes.length} clips`}</span>
+            <span>{transcribeMessage || busy || `${project.scenes.length} clips`}</span>
           </div>
         </div>
       </div>

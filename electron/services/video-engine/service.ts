@@ -411,18 +411,60 @@ export class VideoEngineService {
       throw new VideoEngineError('INVALID_TEMPLATE', 'Transition template is not compatible with this project')
     }
     const type = template.implementationId.replace(/^transition-/u, '')
+    const durationFrames = input.durationFrames ?? template.duration.defaultFrames
+
+    // An animated transition is an OVERLAP: the renderers require the destination scene
+    // to start exactly `durationFrames` before the source ends
+    // (isTransitionTimelineAligned in video-engine/remotion/timeline.ts). Scenes laid out
+    // end-to-end do not satisfy that, so every crossfade added from the UI used to fail
+    // preflight with `transition.timeline-mismatch` and take the HyperFrames preview
+    // build down with it. Create the overlap here instead of asking the user to do frame
+    // arithmetic: pull the destination — and everything after it on the same track —
+    // back by the transition length.
+    let scenes = project.scenes
+    let startFrame = input.startFrame
+    if (type !== 'cut') {
+      const from = project.scenes.find((scene) => scene.id === input.fromSceneId)
+      const to = project.scenes.find((scene) => scene.id === input.toSceneId)
+      if (!from || !to) {
+        throw new VideoEngineError('INVALID_PROJECT', 'Transition references a scene that is not on the timeline')
+      }
+      if (from.trackId !== to.trackId) {
+        throw new VideoEngineError('INVALID_PROJECT', 'A transition can only join two clips on the same track')
+      }
+      if (durationFrames >= from.durationFrames || durationFrames >= to.durationFrames) {
+        throw new VideoEngineError(
+          'INVALID_PROJECT',
+          `A ${durationFrames}-frame transition does not fit: both clips must be longer than the transition.`
+        )
+      }
+      const overlapStart = from.startFrame + from.durationFrames - durationFrames
+      const shift = overlapStart - to.startFrame
+      if (shift !== 0) {
+        // Everything at or after the destination moves together, so the rest of the
+        // track keeps its spacing instead of leaving a hole where the overlap was taken.
+        scenes = project.scenes.map((scene) =>
+          scene.trackId === to.trackId && scene.startFrame >= to.startFrame
+            ? { ...scene, startFrame: Math.max(0, scene.startFrame + shift) }
+            : scene
+        )
+      }
+      startFrame = overlapStart
+    }
+
     const transition = VideoTransitionSchema.parse({
       id: input.id ?? `transition:${randomUUID()}`,
       fromSceneId: input.fromSceneId,
       toSceneId: input.toSceneId,
-      startFrame: input.startFrame,
-      durationFrames: input.durationFrames ?? template.duration.defaultFrames,
+      startFrame,
+      durationFrames,
       type,
       direction: input.direction,
       easing: input.easing
     })
     return this.projects.save(VideoProjectSchema.parse({
       ...project,
+      scenes,
       transitions: [
         ...project.transitions.filter((item) => item.id !== transition.id),
         transition

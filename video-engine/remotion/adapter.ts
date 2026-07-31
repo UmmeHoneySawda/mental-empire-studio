@@ -328,20 +328,43 @@ function preparedPayload(prepared: PreparedRender): RemotionPreparedPayload {
   return payload as RemotionPreparedPayload
 }
 
+/**
+ * Only H.264 and H.265 have an NVENC path in @remotion/renderer
+ * (`get-codec-name.js` maps them to `h264_nvenc` / `hevc_nvenc` on win32 and linux);
+ * VP9 and ProRes are always software-encoded. This app is GPU-only by policy, so those
+ * two containers are refused outright rather than quietly costing the user a CPU encode.
+ */
 function outputSettings(outputPath: string): {
-  codec: 'h264' | 'vp9' | 'prores'
+  codec: 'h264' | 'h265'
   mimeType: RenderArtifact['mimeType']
 } {
   switch (path.extname(outputPath).toLowerCase()) {
     case '.mp4':
       return { codec: 'h264', mimeType: 'video/mp4' }
     case '.webm':
-      return { codec: 'vp9', mimeType: 'video/webm' }
+      throw new Error(
+        'WebM renders as VP9, which has no NVENC encoder — render MP4 to stay on the GPU.',
+      )
     case '.mov':
-      return { codec: 'prores', mimeType: 'video/quicktime' }
+      throw new Error(
+        'MOV renders as ProRes, which has no NVENC encoder on Windows — render MP4 to stay on the GPU.',
+      )
     default:
-      throw new Error('Remotion output must use .mp4, .webm, or .mov')
+      throw new Error('Remotion output must use .mp4')
   }
+}
+
+/**
+ * NVENC ignores CRF, so quality is set as a bitrate target. This ladder mirrors the
+ * classic pipeline's (`electron/services/engine/render-config.ts` gpuBitrateMbpsFor),
+ * keyed off the composition's own height rather than the global quality setting because
+ * a studio canvas is arbitrary.
+ */
+function videoBitrateFor(height: number): string {
+  if (height >= 1440) return '24M'
+  if (height >= 1080) return '14M'
+  if (height >= 720) return '8M'
+  return '5M'
 }
 
 export function clearRemotionRuntimeCaches(): void {
@@ -744,6 +767,14 @@ export class RemotionRendererAdapter implements RendererAdapter {
         // This is deliberately the exact object used by selectComposition().
         inputProps: payload.inputProps,
         codec: settings.codec,
+        // Chrome rasterizes the frames — that part is inherent to Remotion — but the
+        // ENCODE must run on the NVIDIA card. 'required' makes Remotion resolve
+        // h264_nvenc and throw if it cannot, which is what this project wants: a GPU
+        // failure is a visible failure, never a silent fall back to libx264.
+        hardwareAcceleration: 'required',
+        // crf/encodingMaxRate/encodingBufferSize are rejected outright alongside
+        // hardwareAcceleration: 'required', so quality is a bitrate target instead.
+        videoBitrate: videoBitrateFor(prepared.height),
         outputLocation: absoluteOutputPath,
         overwrite: true,
         cancelSignal,

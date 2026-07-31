@@ -1,6 +1,6 @@
 import { useRef, useState } from 'react'
 import type { DragEvent } from 'react'
-import type { VideoAsset, VideoScene } from '@shared/video-engine'
+import { emptySpans, type VideoAsset, type VideoScene } from '@shared/video-engine'
 import { Btn, IconBtn, Seg, Switch } from '../../../components/ui/kit'
 import { useVideoStudio } from '../store/useVideoStudio'
 import {
@@ -49,8 +49,17 @@ export function MediaPanel(): JSX.Element {
   const setSelection = useVideoStudio((state) => state.setSelection)
   const reseed = useVideoStudio((state) => state.reseed)
 
+  const fillWithMedia = useVideoStudio((state) => state.fillWithMedia)
+
   const picker = useRef<HTMLInputElement>(null)
   const [dropping, setDropping] = useState(false)
+  // Which media take part in "cover the timeline". Kept local: it is a staging choice,
+  // not project state.
+  const [chosen, setChosen] = useState<string[]>([])
+  const [cycle, setCycle] = useState(true)
+  const [segmentSeconds, setSegmentSeconds] = useState(8)
+  const [shuffle, setShuffle] = useState(true)
+  const [replaceExisting, setReplaceExisting] = useState(false)
 
   const fps = project?.canvas.fps ?? 30
   const timecode = useTimecode(fps)
@@ -92,6 +101,16 @@ export function MediaPanel(): JSX.Element {
     .filter((scene) => scene.kind !== 'caption')
     .sort((left, right) => left.startFrame - right.startFrame)
   const tracks = [...project.tracks].sort((left, right) => left.order - right.order)
+
+  // Only stills and video can cover the frame; audio, fonts, and LUTs cannot.
+  const fillable = project.assets.filter((asset) => asset.kind === 'image' || asset.kind === 'video')
+  const visualTrackId = 'main-video'
+  const freeFrames = emptySpans(
+    replaceExisting ? [] : project.scenes.filter((scene) => scene.trackId === visualTrackId),
+    canvas.durationFrames
+  ).reduce((sum, span) => sum + (span.endFrame - span.startFrame), 0)
+  const freeSeconds = Math.round(freeFrames / fps)
+  const cycleCount = segmentSeconds > 0 ? Math.max(1, Math.round(freeSeconds / segmentSeconds)) : 0
 
   return (
     <>
@@ -176,6 +195,98 @@ export function MediaPanel(): JSX.Element {
             if (paths.length > 0) void importAssets(paths)
           }}
         />
+      </StudioSection>
+
+      <StudioSection
+        label="Cover the timeline"
+        hint="Tick the stills or clips to use, then let them fill whatever the timeline is not already showing. Cycling swaps between them every few seconds so a long stretch does not sit on one photo."
+      >
+        {fillable.length === 0 ? (
+          <p className="vs-hint">Import some images or video first.</p>
+        ) : (
+          <>
+            <div className="vs-list">
+              {fillable.map((asset) => (
+                <label key={asset.id} className="vs-item" style={{ cursor: 'pointer', gap: 8 }}>
+                  <input
+                    type="checkbox"
+                    checked={chosen.includes(asset.id)}
+                    onChange={(event) => setChosen((current) => (
+                      event.target.checked
+                        ? [...current, asset.id]
+                        : current.filter((id) => id !== asset.id)
+                    ))}
+                  />
+                  <span className="vs-item-main">
+                    <span className="vs-item-title" title={asset.name}>{asset.name}</span>
+                    <span className="vs-item-sub"><span className="vs-pill">{asset.kind}</span></span>
+                  </span>
+                </label>
+              ))}
+            </div>
+
+            <Row>
+              <Btn variant="ghost" size="sm" onClick={() => setChosen(fillable.map((asset) => asset.id))}>
+                Select all
+              </Btn>
+              <Btn variant="ghost" size="sm" disabled={chosen.length === 0} onClick={() => setChosen([])}>
+                Clear
+              </Btn>
+              <span className="vs-hint" style={{ flex: 1 }}>{chosen.length} selected · {freeSeconds}s free</span>
+            </Row>
+
+            <Row>
+              <span className="vs-field-label" style={{ flex: 1 }}>Cycle between them</span>
+              <Switch on={cycle} label="Cycle between the selected media" onToggle={() => setCycle(!cycle)} />
+            </Row>
+            {cycle ? (
+              <>
+                <div className="vs-split">
+                  <Labeled label="Swap every" hint="Five to ten seconds reads as motion rather than a slideshow.">
+                    <NumberField value={segmentSeconds} min={1} max={120} step={1} suffix="s" onCommit={setSegmentSeconds} />
+                  </Labeled>
+                </div>
+                <Row>
+                  <span className="vs-field-label" style={{ flex: 1 }}>Shuffle the order</span>
+                  <Switch on={shuffle} label="Shuffle the order" onToggle={() => setShuffle(!shuffle)} />
+                </Row>
+                <p className="vs-hint">
+                  About {cycleCount} clip{cycleCount === 1 ? '' : 's'} at {segmentSeconds}s each. The same still is never
+                  shown twice in a row, and the arrangement is reproducible so a re-render matches the preview.
+                </p>
+              </>
+            ) : (
+              <p className="vs-hint">
+                Each one gets an equal share of the free space — {chosen.length > 0 ? `about ${Math.round(freeSeconds / chosen.length)}s each` : 'pick some media to see the split'}.
+              </p>
+            )}
+
+            <Row>
+              <span className="vs-field-label" style={{ flex: 1 }}>Replace what is on the visual track</span>
+              <Switch
+                on={replaceExisting}
+                label="Replace the existing clips on the visual track"
+                onToggle={() => setReplaceExisting(!replaceExisting)}
+              />
+            </Row>
+
+            <Row>
+              <Btn
+                variant="primary"
+                disabled={!!busy || chosen.length === 0 || (freeSeconds <= 0 && !replaceExisting)}
+                onClick={() => void fillWithMedia({
+                  assetIds: chosen,
+                  mode: cycle ? 'cycle' : 'fill',
+                  segmentSeconds,
+                  shuffle,
+                  replaceExisting
+                })}
+              >
+                {busy === 'Filling the timeline' ? 'Filling the timeline…' : cycle ? 'Cycle across the timeline' : 'Fill the timeline'}
+              </Btn>
+            </Row>
+          </>
+        )}
       </StudioSection>
 
       <StudioSection

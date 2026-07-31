@@ -1065,6 +1065,12 @@
   border-radius: var(--radius-sm);
   background: var(--bg-inset);
   padding: 6px 8px;
+  /* A ten-minute clip is a couple of thousand caption words, and every one is its own
+     button. Without this the browser lays out and paints all of them on each change,
+     which is what made the whole studio stutter as soon as captions were imported.
+     Off-screen cues are skipped; contain-intrinsic-size keeps the scrollbar honest. */
+  content-visibility: auto;
+  contain-intrinsic-size: auto 52px;
 }
 
 .vs-cue-time {
@@ -1311,6 +1317,37 @@
 .vs-clip[data-selected='1'] {
   border-color: var(--engine);
   box-shadow: 0 0 0 1px var(--engine);
+}
+
+/* Trim grips. Drawn as inset edges rather than child nodes so a clip stays a single
+   element — the pointer handler decides move-vs-trim from the offset within the clip. */
+.vs-clip::before,
+.vs-clip::after {
+  content: '';
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  width: 7px;
+  opacity: 0;
+  background: var(--engine);
+  transition: opacity 0.12s;
+  pointer-events: none;
+}
+
+.vs-clip::before { left: 0; }
+.vs-clip::after { right: 0; }
+
+.vs-clip:hover::before,
+.vs-clip:hover::after,
+.vs-clip[data-dragging='1']::before,
+.vs-clip[data-dragging='1']::after {
+  opacity: 0.55;
+}
+
+.vs-clip[data-dragging='1'] {
+  border-color: var(--engine);
+  filter: brightness(1.35);
+  z-index: 3;
 }
 
 .vs-clip--audio { background: #1b2a3a; border-color: #24405c; }

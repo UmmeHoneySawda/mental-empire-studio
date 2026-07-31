@@ -1,6 +1,6 @@
 import { app, BrowserWindow, ipcMain, protocol, shell, Tray, Menu, nativeImage } from 'electron'
 import { fileURLToPath, pathToFileURL } from 'node:url'
-import { dirname, join } from 'node:path'
+import { dirname, join, resolve } from 'node:path'
 import { copyFileSync, createReadStream, existsSync, mkdirSync, statSync, writeFileSync, readFileSync, rmSync, unlinkSync } from 'node:fs'
 import { Readable } from 'node:stream'
 import { execFileSync, spawnSync } from 'node:child_process'
@@ -61,7 +61,7 @@ app.setAppUserModelId('com.mentalempire.studio')
 // smoke harnesses call repos.resetAll() + seedDemoForSmoke(), which wipes and
 // reseeds whatever DB they're pointed at — fine on a disposable CI runner, but
 // catastrophic against a real local install. ME_SMOKE_USERDATA_DIR is required
-// whenever ME_SMOKE/ME_SHOOT is set, must resolve to somewhere other than the
+// whenever ME_SMOKE/ME_SHOOT/ME_DEMO is set, must resolve to somewhere other than the
 // real default userData path, and is applied via app.setPath BEFORE anything else
 // (initSettings/getRepos/initDatabase) touches userData. This must run first,
 // synchronously, with a hard process.exit — not app.exit, which only schedules an
@@ -74,10 +74,17 @@ app.setAppUserModelId('com.mentalempire.studio')
 // harnesses, so the code that actually runs the destructive work is permanently
 // required to re-verify disposability, not just something checked once here at
 // startup — a future refactor of this block can't silently reopen the hole.
-if (process.env['ME_SMOKE'] || process.env['ME_SHOOT']) {
+if (process.env['ME_SMOKE'] || process.env['ME_SHOOT'] || process.env['ME_DEMO']) {
   const resolvedOverride = prepareSmokeUserDataDir(process.env['ME_SMOKE_USERDATA_DIR'], app.getPath('userData'))
   if (!resolvedOverride) process.exit(1) // prepareSmokeUserDataDir's default `fail` already exits; this is belt-and-suspenders.
   app.setPath('userData', resolvedOverride)
+} else if (process.env['ME_USERDATA_DIR']) {
+  // Plain relocation for an E2E run (scripts/e2e-studio.mjs drives the real app through
+  // Playwright). Unlike ME_SMOKE this triggers no reset and no reseed — it only points the
+  // DB, settings, and video-engine data root at a scratch directory so a test can never
+  // read or corrupt the user's real library. Deliberately mutually exclusive with the
+  // smoke branch so neither path can weaken the other's guarantee.
+  app.setPath('userData', resolve(process.env['ME_USERDATA_DIR']))
 }
 
 // Wrap ipcMain.handle app-wide BEFORE any handler registers, so every renderer→main
@@ -1810,6 +1817,11 @@ app.whenReady().then(() => {
   }
 
   if (process.env['ME_DEMO']) {
+    // runDemoRender() overwrites settings — including blanking the four stock-footage /
+    // Groq keys — and writes demo rows into whatever database it is pointed at. It was
+    // the one harness left outside the isolated-profile guard, so running it against a
+    // normal launch destroyed real user state.
+    assertDisposableSmokeProfile(app.getPath('userData'))
     void runDemoRender()
     return
   }

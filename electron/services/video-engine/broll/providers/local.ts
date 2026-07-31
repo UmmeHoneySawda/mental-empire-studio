@@ -1,5 +1,5 @@
 import { readdir, stat } from 'node:fs/promises'
-import { basename, extname, resolve } from 'node:path'
+import { basename, extname, relative, resolve } from 'node:path'
 import { pathToFileURL } from 'node:url'
 import type { BrollCandidate, BrollProvider, BrollSearchQuery } from '../types'
 
@@ -34,8 +34,16 @@ export class LocalBrollProvider implements BrollProvider {
     const files = await walk(this.root, signal)
     const ranked = files
       .map((path) => {
-        const name = basename(path, extname(path)).toLocaleLowerCase()
-        return { path, score: tokens.reduce((score, token) => score + (name.includes(token) ? 1 : 0), 0) }
+        // Scored on the path relative to the root, not just the filename. The warmed
+        // library stores clips as <sourceKey>/<keyword>/<provider>-<id>.mp4, so the only
+        // place the searchable word appears is the directory — matching the basename
+        // alone meant every query scored zero and the provider looked empty.
+        const relativePath = relative(this.root, path)
+        const haystack = relativePath
+          .slice(0, relativePath.length - extname(relativePath).length)
+          .toLocaleLowerCase()
+          .replace(/[\\/_-]+/gu, ' ')
+        return { path, score: tokens.reduce((score, token) => score + (haystack.includes(token) ? 1 : 0), 0) }
       })
       .filter(({ score }) => tokens.length === 0 || score > 0)
       .sort((a, b) => b.score - a.score || a.path.localeCompare(b.path))

@@ -1,12 +1,38 @@
-import { useMemo, useRef } from 'react'
+import { useCallback, useMemo, useRef, useState } from 'react'
+import type { PointerEvent as ReactPointerEvent } from 'react'
 import type { VideoProject, VideoScene, VideoTrack } from '@shared/video-engine'
-import { IconBtn } from '../../../components/ui/kit'
+import { Btn, IconBtn } from '../../../components/ui/kit'
 import { useVideoStudio } from '../store/useVideoStudio'
 import { useTimecode } from '../ui/kit'
 
 /* The timeline is frame-addressed: every position is `frame / canvas.durationFrames`,
-   never a second, because that is the unit the engine renders in. Clicking a lane
-   moves the playhead; clicking a clip selects it. */
+   never a second, because that is the unit the engine renders in.
+
+   Clips can be dragged along their lane and trimmed from either edge. The drag runs
+   entirely on local state and only commits to the engine on release — a project save
+   bumps the revision and restages the preview, so committing per pointermove would
+   recompile the composition dozens of times for one gesture. */
+
+/** Grab zone at each end of a clip, in pixels. Below this the pointer moves the clip. */
+const TRIM_HANDLE_PX = 7
+/** A clip narrower than this has no room for two handles, so it only moves. */
+const MIN_TRIMMABLE_PX = 22
+const MIN_CLIP_FRAMES = 1
+const TRACK_LABEL_PX = 104
+
+type DragMode = 'move' | 'trim-start' | 'trim-end'
+
+interface Drag {
+  sceneId: string
+  mode: DragMode
+  /** Where the gesture started, in frames. */
+  originFrame: number
+  startFrame: number
+  durationFrames: number
+  /** Live values, updated on pointermove. */
+  nextStart: number
+  nextDuration: number
+}
 
 function sceneLabel(project: VideoProject, scene: VideoScene): string {
   if (scene.template) return scene.template.id.replace(/^(remotion|hyperframes)-/, '')
@@ -33,6 +59,8 @@ function tickSeconds(durationFrames: number, fps: number, laneWidth: number): nu
   return ticks
 }
 
+const ZOOMS = [1, 2, 4, 8, 16]
+
 export function StudioTimeline(): JSX.Element | null {
   const project = useVideoStudio((state) => state.project)
   const selection = useVideoStudio((state) => state.selection)
@@ -40,8 +68,13 @@ export function StudioTimeline(): JSX.Element | null {
   const setPlayhead = useVideoStudio((state) => state.setPlayhead)
   const setSelection = useVideoStudio((state) => state.setSelection)
   const setTrackMuted = useVideoStudio((state) => state.setTrackMuted)
+  const updateScene = useVideoStudio((state) => state.updateScene)
   const busy = useVideoStudio((state) => state.busy)
-  const ruler = useRef<HTMLDivElement>(null)
+
+  const [zoom, setZoom] = useState(1)
+  const [drag, setDrag] = useState<Drag | null>(null)
+  // Read inside pointer handlers only, so a move does not re-subscribe anything.
+  const dragRef = useRef<Drag | null>(null)
 
   const fps = project?.canvas.fps ?? 30
   const total = Math.max(1, project?.canvas.durationFrames ?? 1)
@@ -59,17 +92,121 @@ export function StudioTimeline(): JSX.Element | null {
     return map
   }, [project])
 
+  /** Frames per pixel for the lane the pointer is over. Measured from the live element
+   *  rather than cached, so it stays correct across zoom and window resizes. */
+  const framesPerPixel = useCallback((lane: HTMLElement): number => {
+    const width = lane.getBoundingClientRect().width
+    return width > 0 ? total / width : 0
+  }, [total])
+
+  const onClipPointerDown = useCallback((
+    event: ReactPointerEvent<HTMLDivElement>,
+    scene: VideoScene
+  ): void => {
+    if (event.button !== 0 || busy) return
+    const element = event.currentTarget
+    const rect = element.getBoundingClientRect()
+    const offset = event.clientX - rect.left
+    const trimmable = rect.width >= MIN_TRIMMABLE_PX
+    const mode: DragMode = !trimmable
+      ? 'move'
+      : offset <= TRIM_HANDLE_PX ? 'trim-start'
+        : offset >= rect.width - TRIM_HANDLE_PX ? 'trim-end'
+          : 'move'
+
+    const lane = element.parentElement
+    if (!lane) return
+    const perPixel = framesPerPixel(lane)
+    if (perPixel <= 0) return
+
+    event.preventDefault()
+    event.stopPropagation()
+    setSelection({ kind: 'scene', id: scene.id })
+
+    const originFrame = (event.clientX - lane.getBoundingClientRect().left) * perPixel
+    const started: Drag = {
+      sceneId: scene.id,
+      mode,
+      originFrame,
+      startFrame: scene.startFrame,
+      durationFrames: scene.durationFrames,
+      nextStart: scene.startFrame,
+      nextDuration: scene.durationFrames
+    }
+    dragRef.current = started
+    setDrag(started)
+    element.setPointerCapture(event.pointerId)
+  }, [busy, framesPerPixel, setSelection])
+
+  const onClipPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>): void => {
+    const current = dragRef.current
+    if (!current) return
+    const lane = event.currentTarget.parentElement
+    if (!lane) return
+    const perPixel = framesPerPixel(lane)
+    if (perPixel <= 0) return
+
+    const frameNow = (event.clientX - lane.getBoundingClientRect().left) * perPixel
+    const delta = Math.round(frameNow - current.originFrame)
+
+    let nextStart = current.startFrame
+    let nextDuration = current.durationFrames
+    if (current.mode === 'move') {
+      // Clamped so a clip can never be dragged off either end of the canvas.
+      nextStart = Math.max(0, Math.min(total - current.durationFrames, current.startFrame + delta))
+    } else if (current.mode === 'trim-start') {
+      const limit = current.startFrame + current.durationFrames - MIN_CLIP_FRAMES
+      nextStart = Math.max(0, Math.min(limit, current.startFrame + delta))
+      nextDuration = current.startFrame + current.durationFrames - nextStart
+    } else {
+      nextDuration = Math.max(
+        MIN_CLIP_FRAMES,
+        Math.min(total - current.startFrame, current.durationFrames + delta)
+      )
+    }
+    if (nextStart === current.nextStart && nextDuration === current.nextDuration) return
+    const updated = { ...current, nextStart, nextDuration }
+    dragRef.current = updated
+    setDrag(updated)
+  }, [framesPerPixel, total])
+
+  const onClipPointerUp = useCallback((event: ReactPointerEvent<HTMLDivElement>): void => {
+    const current = dragRef.current
+    dragRef.current = null
+    setDrag(null)
+    if (event.currentTarget.hasPointerCapture(event.pointerId)) {
+      event.currentTarget.releasePointerCapture(event.pointerId)
+    }
+    if (!current) return
+    // Only save when the gesture actually changed something — a plain click on a clip
+    // is a selection, and should not bump the project revision.
+    if (current.nextStart === current.startFrame && current.nextDuration === current.durationFrames) return
+    void updateScene(current.sceneId, {
+      startFrame: current.nextStart,
+      durationFrames: current.nextDuration
+    })
+  }, [updateScene])
+
   if (!project) return null
 
   const percent = (frame: number): string => `${(Math.max(0, frame) / total) * 100}%`
-  const laneWidth = ruler.current?.clientWidth ?? 640
 
-  const seekFromEvent = (event: React.MouseEvent<HTMLElement>): void => {
+  const seekFromEvent = (event: ReactPointerEvent<HTMLElement>): void => {
+    if (dragRef.current) return
     const rect = event.currentTarget.getBoundingClientRect()
     if (rect.width <= 0) return
     const ratio = Math.min(1, Math.max(0, (event.clientX - rect.left) / rect.width))
     setPlayhead(Math.round(ratio * (total - 1)))
   }
+
+  /** The clip's live geometry — the dragged one follows the pointer, everything else
+   *  reads straight from the project. */
+  const geometryFor = (scene: VideoScene): { startFrame: number; durationFrames: number } =>
+    drag && drag.sceneId === scene.id
+      ? { startFrame: drag.nextStart, durationFrames: drag.nextDuration }
+      : { startFrame: scene.startFrame, durationFrames: scene.durationFrames }
+
+  const laneWidth = 640 * zoom
 
   return (
     <div className="vs-timeline">
@@ -77,91 +214,134 @@ export function StudioTimeline(): JSX.Element | null {
         <span>TIMELINE</span>
         <span style={{ color: 'var(--text-muted)' }}>{timecode(playheadFrame)}</span>
         <span>{playheadFrame} / {total}f · {fps}fps</span>
+        {drag && (
+          <span style={{ color: 'var(--engine)' }}>
+            {drag.mode === 'move' ? 'moving' : 'trimming'} · {drag.nextStart}–{drag.nextStart + drag.nextDuration}f
+          </span>
+        )}
         <span style={{ flex: 1 }} />
         <span>{project.scenes.length} clip{project.scenes.length === 1 ? '' : 's'}</span>
         <span>{project.transitions.length} transition{project.transitions.length === 1 ? '' : 's'}</span>
+        <Btn
+          variant="ghost"
+          size="sm"
+          title="Zoom out"
+          disabled={zoom === ZOOMS[0]}
+          onClick={() => setZoom((current) => ZOOMS[Math.max(0, ZOOMS.indexOf(current) - 1)]!)}
+        >
+          −
+        </Btn>
+        <span className="vs-mono" style={{ minWidth: 28, textAlign: 'center' }}>{zoom}×</span>
+        <Btn
+          variant="ghost"
+          size="sm"
+          title="Zoom in — makes short clips wide enough to grab and trim"
+          disabled={zoom === ZOOMS[ZOOMS.length - 1]}
+          onClick={() => setZoom((current) => ZOOMS[Math.min(ZOOMS.length - 1, ZOOMS.indexOf(current) + 1)]!)}
+        >
+          +
+        </Btn>
       </div>
 
-      <div className="vs-tl-body">
-        <div className="vs-track-label" style={{ height: 18, fontFamily: 'var(--font-mono)', fontSize: 9 }}>
-          {project.canvas.width}×{project.canvas.height}
-        </div>
-        <div className="vs-ruler" ref={ruler} onClick={seekFromEvent} role="presentation">
-          {tickSeconds(total, fps, laneWidth).map((second) => (
-            <span key={second} className="vs-tick" style={{ left: percent(second * fps) }}>
-              {second}s
-            </span>
-          ))}
-        </div>
+      {/* At >1× the lanes are wider than the panel, so the whole grid scrolls sideways
+          as one unit and the label column scrolls with it. */}
+      <div className="ed-scroll" style={{ overflowX: zoom > 1 ? 'auto' : 'hidden', overflowY: 'hidden' }}>
+        <div className="vs-tl-body" style={{ minWidth: zoom > 1 ? `calc(${TRACK_LABEL_PX}px + ${zoom * 100}%)` : undefined }}>
+          <div className="vs-track-label" style={{ height: 18, fontFamily: 'var(--font-mono)', fontSize: 9 }}>
+            {project.canvas.width}×{project.canvas.height}
+          </div>
+          <div className="vs-ruler" onPointerDown={seekFromEvent} role="presentation">
+            {tickSeconds(total, fps, laneWidth).map((second) => (
+              <span key={second} className="vs-tick" style={{ left: percent(second * fps) }}>
+                {second}s
+              </span>
+            ))}
+          </div>
 
-        {tracks.map((track) => {
-          const scenes = scenesByTrack.get(track.id) ?? []
-          return (
-            <div key={track.id} style={{ display: 'contents' }}>
-              <div className="vs-track-label" title={`${track.name} — ${track.kind}`}>
-                <IconBtn
-                  title={track.muted ? `Include ${track.name} in the render` : `Leave ${track.name} out of the render`}
-                  size={16}
-                  active={!track.muted}
-                  disabled={!!busy}
-                  onClick={() => void setTrackMuted(track.id, !track.muted)}
-                >
-                  {track.muted ? '○' : '●'}
-                </IconBtn>
-                <span className="me-ellipsis">{track.name}</span>
+          {tracks.map((track) => {
+            const scenes = scenesByTrack.get(track.id) ?? []
+            return (
+              <div key={track.id} style={{ display: 'contents' }}>
+                <div className="vs-track-label" title={`${track.name} — ${track.kind}`}>
+                  <IconBtn
+                    title={track.muted ? `Include ${track.name} in the render` : `Leave ${track.name} out of the render`}
+                    size={16}
+                    active={!track.muted}
+                    disabled={!!busy}
+                    onClick={() => void setTrackMuted(track.id, !track.muted)}
+                  >
+                    {track.muted ? '○' : '●'}
+                  </IconBtn>
+                  <span className="me-ellipsis">{track.name}</span>
+                </div>
+                <div className="vs-track-lane" onPointerDown={seekFromEvent} role="presentation">
+                  {scenes.map((scene) => {
+                    const selected = selection.kind === 'scene' && selection.id === scene.id
+                    const geometry = geometryFor(scene)
+                    const dragging = drag?.sceneId === scene.id
+                    return (
+                      <div
+                        key={scene.id}
+                        role="button"
+                        tabIndex={0}
+                        className={`vs-clip vs-clip--${scene.kind} ed-focus`}
+                        data-selected={selected ? '1' : '0'}
+                        data-dragging={dragging ? '1' : '0'}
+                        style={{
+                          left: percent(geometry.startFrame),
+                          width: `max(3px, ${(geometry.durationFrames / total) * 100}%)`,
+                          cursor: dragging ? (drag.mode === 'move' ? 'grabbing' : 'ew-resize') : 'grab',
+                          touchAction: 'none'
+                        }}
+                        title={`${sceneLabel(project, scene)} · ${geometry.startFrame}–${geometry.startFrame + geometry.durationFrames}f\nDrag to move, drag an edge to trim`}
+                        onPointerDown={(event) => onClipPointerDown(event, scene)}
+                        onPointerMove={onClipPointerMove}
+                        onPointerUp={onClipPointerUp}
+                        onPointerCancel={onClipPointerUp}
+                        onKeyDown={(event) => {
+                          if (event.key === 'Enter' || event.key === ' ') {
+                            event.preventDefault()
+                            setSelection({ kind: 'scene', id: scene.id })
+                          }
+                        }}
+                      >
+                        {sceneLabel(project, scene)}
+                      </div>
+                    )
+                  })}
+                  {project.transitions
+                    .filter((transition) => {
+                      const to = project.scenes.find((scene) => scene.id === transition.toSceneId)
+                      return to?.trackId === track.id
+                    })
+                    .map((transition) => (
+                      <button
+                        key={transition.id}
+                        type="button"
+                        className="vs-transition-mark ed-focus"
+                        style={{
+                          left: percent(transition.startFrame),
+                          width: `max(2px, ${(Math.max(1, transition.durationFrames) / total) * 100}%)`
+                        }}
+                        title={`${transition.type} · ${transition.durationFrames}f`}
+                        onClick={(event) => {
+                          event.stopPropagation()
+                          setSelection({ kind: 'transition', id: transition.id })
+                        }}
+                      />
+                    ))}
+                </div>
               </div>
-              <div className="vs-track-lane" onClick={seekFromEvent} role="presentation">
-                {scenes.map((scene) => {
-                  const selected = selection.kind === 'scene' && selection.id === scene.id
-                  return (
-                    <button
-                      key={scene.id}
-                      type="button"
-                      className={`vs-clip vs-clip--${scene.kind} ed-focus`}
-                      data-selected={selected ? '1' : '0'}
-                      style={{ left: percent(scene.startFrame), width: `max(3px, ${(scene.durationFrames / total) * 100}%)` }}
-                      title={`${sceneLabel(project, scene)} · ${scene.startFrame}–${scene.startFrame + scene.durationFrames}f`}
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        setSelection({ kind: 'scene', id: scene.id })
-                      }}
-                    >
-                      {sceneLabel(project, scene)}
-                    </button>
-                  )
-                })}
-                {project.transitions
-                  .filter((transition) => {
-                    const to = project.scenes.find((scene) => scene.id === transition.toSceneId)
-                    return to?.trackId === track.id
-                  })
-                  .map((transition) => (
-                    <button
-                      key={transition.id}
-                      type="button"
-                      className="vs-transition-mark ed-focus"
-                      style={{
-                        left: percent(transition.startFrame),
-                        width: `max(2px, ${(Math.max(1, transition.durationFrames) / total) * 100}%)`
-                      }}
-                      title={`${transition.type} · ${transition.durationFrames}f`}
-                      onClick={(event) => {
-                        event.stopPropagation()
-                        setSelection({ kind: 'transition', id: transition.id })
-                      }}
-                    />
-                  ))}
-              </div>
-            </div>
-          )
-        })}
+            )
+          })}
 
-        {/* One playhead spanning every lane: the label column is a fixed 104px, so the
-            offset is that gutter plus a fraction of the remaining width. */}
-        <div
-          className="vs-playhead"
-          style={{ left: `calc(104px + (100% - 104px) * ${Math.min(1, playheadFrame / total)})` }}
-        />
+          {/* One playhead spanning every lane: the label column is a fixed 104px, so the
+              offset is that gutter plus a fraction of the remaining width. */}
+          <div
+            className="vs-playhead"
+            style={{ left: `calc(${TRACK_LABEL_PX}px + (100% - ${TRACK_LABEL_PX}px) * ${Math.min(1, playheadFrame / total)})` }}
+          />
+        </div>
       </div>
     </div>
   )

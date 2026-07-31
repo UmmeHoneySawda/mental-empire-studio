@@ -511,6 +511,10 @@ export class HyperframesRendererAdapter implements RendererAdapter {
         variables: { ...payload.variables },
         videoFrameFormat: 'png',
         hdrMode: 'force-sdr',
+        // @hyperframes/producer defaults this to false and then emits
+        // `-c:v libx264`. This app encodes on the NVIDIA card, so ask for the GPU
+        // encoder explicitly — the producer resolves it to h264_nvenc.
+        useGpu: true,
       })
       await executeRenderJob(
         job,

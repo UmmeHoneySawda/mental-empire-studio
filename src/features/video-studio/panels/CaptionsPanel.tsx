@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { memo, useCallback, useMemo, useState } from 'react'
 import type { JsonObject, VideoTemplate } from '@shared/video-engine'
 import { useVideoStudio } from '../store/useVideoStudio'
 import {
@@ -30,6 +30,35 @@ function nextImportance(current: number): 0 | 2 | 3 {
   return 2
 }
 
+/** Memoised because the word list is the largest thing in the studio — thousands of
+ *  nodes — and it re-renders whenever any part of the project changes. Only the words
+ *  whose own emphasis actually moved do any work. */
+const CaptionWord = memo(function CaptionWord({
+  wordId,
+  text,
+  importance,
+  title,
+  onCycle
+}: {
+  wordId: string
+  text: string
+  importance: number
+  title: string
+  onCycle: (wordId: string, importance: number) => void
+}): JSX.Element {
+  return (
+    <button
+      type="button"
+      className="vs-word ed-focus"
+      data-importance={String(importance)}
+      title={title}
+      onClick={() => onCycle(wordId, importance)}
+    >
+      {text}
+    </button>
+  )
+})
+
 function numberProp(props: JsonObject, key: string, fallback: number): number {
   const value = props[key]
   return typeof value === 'number' ? value : fallback
@@ -46,6 +75,7 @@ export function CaptionsPanel(): JSX.Element {
   const cues = useVideoStudio((state) => state.cues)
   const downloadId = useVideoStudio((state) => state.downloadId)
   const busy = useVideoStudio((state) => state.busy)
+  const transcribeMessage = useVideoStudio((state) => state.transcribeMessage)
   const captionsFromTranscript = useVideoStudio((state) => state.captionsFromTranscript)
   const captionsFromSrt = useVideoStudio((state) => state.captionsFromSrt)
   const setCaptionTemplate = useVideoStudio((state) => state.setCaptionTemplate)
@@ -65,6 +95,12 @@ export function CaptionsPanel(): JSX.Element {
   const fps = project?.canvas.fps ?? 30
   const timecode = useTimecode(fps)
 
+  // Stable identity, so memoised word buttons are not invalidated on every render.
+  // Declared above the early return to keep the hook order fixed.
+  const cycleWord = useCallback((wordId: string, importance: number): void => {
+    void setWordImportance([wordId], nextImportance(importance))
+  }, [setWordImportance])
+
   if (!project) {
     return (
       <StudioSection label="Captions">
@@ -77,6 +113,7 @@ export function CaptionsPanel(): JSX.Element {
   }
 
   const captions = project.captions
+  const hasWords = (captions?.words.length ?? 0) > 0
   const sceneTemplate = project.scenes.find((scene) => scene.kind === 'caption')?.template
   const selectedId = draft?.id ?? captions?.templateId ?? ''
   const selected = styles.find((template) => template.id === selectedId)
@@ -125,13 +162,18 @@ export function CaptionsPanel(): JSX.Element {
           disabled={Boolean(busy) || !downloadId}
           onClick={() => void start('transcript', () => captionsFromTranscript())}
         >
-          {pending === 'transcript' && busy ? busy : 'Use this clip’s transcript'}
+          {pending === 'transcript' && busy
+            ? transcribeMessage || busy
+            : hasWords ? '↻ Re-transcribe this clip' : 'Transcribe this clip'}
         </Btn>
+        {pending === 'transcript' && transcribeMessage && (
+          <span className="vs-hint" style={{ flex: 1 }}>{transcribeMessage}</span>
+        )}
       </Row>
       <p className="vs-hint">
         {downloadId
-          ? 'The transcript already carries a start and end frame for every word, so this is the accurate source.'
-          : 'This project is not bound to a downloaded clip, so there is no transcript to read. Paste an SRT instead.'}
+          ? 'Runs Groq Whisper on the clip’s audio if it has not been transcribed yet, then imports the word timings. Captions are fetched automatically when you open a clip; this is for redoing them.'
+          : 'This project is not bound to a downloaded clip, so there is no audio to transcribe. Paste an SRT instead.'}
       </p>
 
       <Labeled
@@ -327,7 +369,14 @@ export function CaptionsPanel(): JSX.Element {
             </Row>
           }
         >
-          <div className="vs-list vs-scroll" style={{ maxHeight: 320 }}>
+          {/* One fieldset instead of a `disabled` prop on every word: with thousands of
+              buttons, flipping that prop per word rewrote the whole list on each
+              mutation. */}
+          <fieldset
+            disabled={Boolean(busy)}
+            className="vs-list vs-scroll"
+            style={{ maxHeight: 320, border: 0, margin: 0, padding: 0, minWidth: 0 }}
+          >
             {cues.cues.map((cue) => (
               <div key={cue.id} className="vs-cue">
                 <span className="vs-cue-time">
@@ -337,25 +386,21 @@ export function CaptionsPanel(): JSX.Element {
                   {cue.wordIds.map((wordId) => {
                     const word = wordById.get(wordId)
                     if (!word) return null
-                    const importance = word.importance ?? 0
                     return (
-                      <button
+                      <CaptionWord
                         key={wordId}
-                        type="button"
-                        className="vs-word ed-focus"
-                        data-importance={String(importance)}
-                        disabled={Boolean(busy)}
+                        wordId={wordId}
+                        text={word.text}
+                        importance={word.importance ?? 0}
                         title={`${word.startFrame}–${word.endFrame}f · ${timecode(word.startFrame)}`}
-                        onClick={() => void setWordImportance([wordId], nextImportance(importance))}
-                      >
-                        {word.text}
-                      </button>
+                        onCycle={cycleWord}
+                      />
                     )
                   })}
                 </div>
               </div>
             ))}
-          </div>
+          </fieldset>
         </StudioSection>
       )}
 

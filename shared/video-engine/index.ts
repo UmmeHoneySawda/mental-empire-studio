@@ -1,6 +1,7 @@
 export * from './broll'
 export * from './captions'
 export * from './common'
+export * from './fill'
 export * from './grading'
 export * from './hook-plan'
 export * from './ipc'

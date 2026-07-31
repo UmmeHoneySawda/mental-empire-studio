@@ -19,6 +19,18 @@ const NOOP_GRADE_TELEMETRY: GradeTelemetry = Object.freeze({
   captureException: () => undefined
 })
 
+/**
+ * Grading re-encodes the finished render, so it is a second full encode and has to run
+ * on the GPU like the first one — this used to be hardcoded to libx264, quietly putting
+ * every graded render back on the CPU. Callers pass the encoder the user actually
+ * selected (`selectEncoder` in electron/services/engine/encoder.ts); this NVENC default
+ * only applies to the plain-Node smoke harness, which has no settings store to read.
+ * There is deliberately no CPU fallback: a GPU failure must be visible.
+ */
+export const DEFAULT_GRADE_ENCODER_ARGS: readonly string[] = Object.freeze([
+  '-c:v', 'h264_nvenc', '-preset', 'medium', '-rc', 'vbr', '-cq', '19', '-b:v', '0', '-pix_fmt', 'yuv420p'
+])
+
 export interface CinematicGrade {
   enabled?: boolean
   lutPath?: string
@@ -118,6 +130,8 @@ export async function applyCinematicGrade(options: {
   signal?: AbortSignal
   onProgress?: (progress: GradeProgress) => void
   ffmpegExecutable?: string
+  /** Video codec args for the re-encode. See DEFAULT_GRADE_ENCODER_ARGS. */
+  videoEncoderArgs?: readonly string[]
   telemetry?: GradeTelemetry
 }): Promise<void> {
   await ensureParent(options.outputPath)
@@ -135,10 +149,7 @@ export async function applyCinematicGrade(options: {
     '-map', '0:v:0',
     '-map', '0:a?',
     '-vf', filter,
-    '-c:v', 'libx264',
-    '-preset', 'medium',
-    '-crf', '18',
-    '-pix_fmt', 'yuv420p',
+    ...(options.videoEncoderArgs ?? DEFAULT_GRADE_ENCODER_ARGS),
     '-c:a', 'copy',
     '-movflags', '+faststart',
     '-progress', 'pipe:1',

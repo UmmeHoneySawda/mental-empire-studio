@@ -26,6 +26,8 @@ import type {
   AddVideoScenePatch,
   ApplyVideoTransitionInput,
   CreateVideoProjectInput,
+  FetchBrollBatchInput,
+  FillWithMediaInput,
   HookPromptInput,
   ImportantWordsPromptInput,
   InstantiateVideoTemplateInput,
@@ -294,6 +296,15 @@ const api: NativeApi = {
     updateScene: (projectId: string, sceneId: string, patch: VideoScenePatch) =>
       ipcRenderer.invoke('videoEngine:updateScene', projectId, sceneId, patch),
     removeScene: (projectId: string, sceneId: string) => ipcRenderer.invoke('videoEngine:removeScene', projectId, sceneId),
+    fillWithMedia: (projectId: string, input: FillWithMediaInput) =>
+      ipcRenderer.invoke('videoEngine:fillWithMedia', projectId, input),
+    brollKeywordsPrompt: (projectId: string, downloadId: string, keywordCount?: number) =>
+      ipcRenderer.invoke('videoEngine:brollKeywordsPrompt', projectId, downloadId, keywordCount),
+    fetchBrollBatch: (projectId: string, downloadId: string, input: FetchBrollBatchInput) =>
+      ipcRenderer.invoke('videoEngine:fetchBrollBatch', projectId, downloadId, input),
+    brollBatches: (projectId: string) => ipcRenderer.invoke('videoEngine:brollBatches', projectId),
+    deleteBrollBatch: (projectId: string, batchId: string) =>
+      ipcRenderer.invoke('videoEngine:deleteBrollBatch', projectId, batchId),
     setTrackMuted: (projectId: string, trackId: string, muted: boolean) =>
       ipcRenderer.invoke('videoEngine:setTrackMuted', projectId, trackId, muted),
 

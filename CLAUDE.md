@@ -55,6 +55,46 @@ headlessly under `xvfb-run`:
 - Always run `npm run typecheck` + `npm run build` + the smokes after a change. CI (`.github/workflows/
   ci.yml`) runs them all.
 
+## Build trap: `Unterminated string literal` in `out/main/main.js`
+
+If `npm run build` fails with `main.js:<line>:<col>: ERROR: Unterminated string literal`
+pointing at innocent-looking code, the source is fine — electron-vite's `esmShimPlugin`
+injected its CommonJS shim in the wrong place. It picks the spot by regex-scanning the
+built chunk for the *last* `import … '…'` and appending after it, so **a string literal
+whose final word is `import`** (e.g. `sentryLog.info('Studio caption import', …)`) emits as
+`… import"` and is mistaken for a static import. The shim then lands mid-expression.
+
+Fix: reword the literal so `import` is not the last word before the closing quote. To
+confirm, add a `renderChunk: { order: 'pre' }` plugin to `main.plugins` in
+`electron.vite.config.ts` that dumps `code` to a file, then look at the reported line.
+
+## User data is sacred — snapshot before, verify after (REQUIRED)
+
+The user's channels, sources, automations, downloads, and API keys live in
+`%APPDATA%\Mental Empire Studio\` (`mental-empire.db` + `mental-empire-settings.json`). Agents have
+wiped them before. **Before touching anything that runs the app, migrates the DB, or writes
+settings:**
+
+```bash
+npm run userdata:backup
+```
+
+That writes `%APPDATA%\Mental Empire Studio - CLAUDE-BACKUP-<stamp>\` with a `SHA256SUMS.txt`.
+When the task is done, confirm the user's data survived — and if it did not, put it back:
+
+```bash
+npm run userdata:list
+npm run userdata:restore
+```
+
+`userdata:restore` snapshots the current state first (so a restore is reversible), refuses to run
+while the app is open (a live WAL would overwrite the restored DB), clears stale WAL/SHM, and
+verifies against `SHA256SUMS.txt`. Pass `-From <stamp>` to pick a specific point.
+
+Never run a destructive smoke (`ME_SMOKE`, `ME_SHOOT`) without `ME_SMOKE_USERDATA_DIR` pointing at a
+throwaway directory — `electron/services/smokeSafety.ts` hard-exits otherwise, and that guard exists
+because the harness calls `resetAll()`. Do not weaken it.
+
 ## Git / push
 
 Branch: `build/mental-empire-studio`. `git push origin build/mental-empire-studio` works directly

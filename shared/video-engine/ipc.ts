@@ -144,6 +144,60 @@ export interface AddVideoScenePatch {
   volume?: number
 }
 
+/** One saved b-roll fetch: the keywords that produced it and the clips it brought in. */
+export interface BrollBatch {
+  id: string
+  name: string
+  createdAt: string
+  keywords: string[]
+  clips: Array<{
+    keyword: string
+    provider: string
+    title: string
+    /** Project asset the clip was imported as, when the import succeeded. */
+    assetId?: string
+    path: string
+  }>
+  /** Keywords that returned nothing, so the UI can say so instead of silently dropping them. */
+  emptyKeywords: string[]
+}
+
+export interface FetchBrollBatchInput {
+  /** JSON the model returned: { "batchName": "...", "keywords": ["a", "b"] }. */
+  response: string
+  /** Clips to download per keyword. */
+  perKeyword?: number
+}
+
+export interface FetchBrollBatchResult {
+  project: VideoProject
+  batch: BrollBatch
+}
+
+/** Spread chosen media over the empty parts of the timeline. See shared/video-engine/fill.ts. */
+export interface FillWithMediaInput {
+  assetIds: string[]
+  /** 'fill' gives each asset one long slot; 'cycle' chops the gaps into short segments. */
+  mode: 'fill' | 'cycle'
+  /** Segment length for 'cycle', in seconds. Ignored by 'fill'. */
+  segmentSeconds?: number
+  /** Rotate in a shuffled order instead of the order the assets were picked. */
+  shuffle?: boolean
+  /** Visual track to fill. Defaults to the project's main video track. */
+  trackId?: string
+  /** Drop the track's existing clips first and cover the whole timeline. */
+  replaceExisting?: boolean
+  fit?: 'cover' | 'contain' | 'fill'
+}
+
+export interface FillWithMediaResult {
+  project: VideoProject
+  /** How many clips were created — the studio reports this back to the user. */
+  placed: number
+  /** Frames of timeline that were empty and are now covered. */
+  coveredFrames: number
+}
+
 // ---------------------------------------------------------------------- assets
 
 export type VideoAssetKind = VideoAsset['kind']
@@ -355,6 +409,10 @@ export interface VideoRenderJob {
  *  `mestudio://` protocol (`file:` is not reachable under the renderer CSP). */
 export interface RemotionPreviewPayload {
   kind: 'remotion'
+  /** Project revision this payload was compiled from. The studio compares it against the
+   *  live project to know whether what is on screen is still current, and keys the player
+   *  on it so a rebuild genuinely remounts. */
+  revision: number
   project: VideoProject
   durationInFrames: number
 }
@@ -363,6 +421,9 @@ export interface RemotionPreviewPayload {
  *  vendored GSAP/fonts and served through `mestudio://` for `<hyperframes-player>`. */
 export interface HyperframesPreviewPayload {
   kind: 'hyperframes'
+  /** See RemotionPreviewPayload.revision. */
+  revision: number
+  /** Stamped per stage, so a rebuild yields a URL the iframe actually navigates to. */
   url: string
   width: number
   height: number

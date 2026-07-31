@@ -22,8 +22,13 @@ import type {
   AddVideoScenePatch,
   ApplyVideoTransitionInput,
   CaptionCueList,
+  BrollBatch,
   CaptionImportSummary,
   CreateVideoProjectInput,
+  FetchBrollBatchInput,
+  FetchBrollBatchResult,
+  FillWithMediaInput,
+  FillWithMediaResult,
   HookPromptInput,
   ImportantWordsPromptInput,
   ImportedHookPlan,
@@ -1509,6 +1514,14 @@ export interface NativeApi {
     updateScene(projectId: string, sceneId: string, patch: VideoScenePatch): Promise<VideoProject>
     removeScene(projectId: string, sceneId: string): Promise<VideoProject>
     setTrackMuted(projectId: string, trackId: string, muted: boolean): Promise<VideoProject>
+    /** Spread the chosen media across the empty parts of a visual track. */
+    fillWithMedia(projectId: string, input: FillWithMediaInput): Promise<FillWithMediaResult>
+
+    /** Copy-prompt → paste-keywords → download a named batch of b-roll. */
+    brollKeywordsPrompt(projectId: string, downloadId: string, keywordCount?: number): Promise<string>
+    fetchBrollBatch(projectId: string, downloadId: string, input: FetchBrollBatchInput): Promise<FetchBrollBatchResult>
+    brollBatches(projectId: string): Promise<BrollBatch[]>
+    deleteBrollBatch(projectId: string, batchId: string): Promise<BrollBatch[]>
 
     instantiateTemplate(projectId: string, input: InstantiateVideoTemplateInput): Promise<VideoProject>
 

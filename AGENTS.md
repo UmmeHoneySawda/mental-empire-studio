@@ -67,6 +67,14 @@ headlessly in this environment.
 
 ## Change safety
 
+- **Snapshot user data before you start.** `npm run userdata:backup` copies the live
+  `mental-empire.db` and `mental-empire-settings.json` (channels, sources, automations, encrypted
+  API keys) to a timestamped `CLAUDE-BACKUP-*` folder with checksums. Restore with
+  `npm run userdata:restore` (`npm run userdata:list` to see the points). Do this before any task
+  that launches the app, migrates the database, or writes settings — agents have wiped this data
+  before.
+- Never run `ME_SMOKE`/`ME_SHOOT` without `ME_SMOKE_USERDATA_DIR` set to a throwaway directory; the
+  harness calls `resetAll()`. `electron/services/smokeSafety.ts` enforces this — do not weaken it.
 - Keep changes scoped; do not overwrite unrelated work in a dirty tree.
 - Avoid editing generated output (`out/`, `dist/`, and build artifacts) unless explicitly asked.
 - Do not commit or push unless the user requests it.

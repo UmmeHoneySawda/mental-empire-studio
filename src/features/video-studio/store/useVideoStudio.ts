@@ -3,7 +3,9 @@ import type {
   AddVideoScenePatch,
   ApplyVideoTransitionInput,
   CaptionCueList,
+  BrollBatch,
   ComposeEngine,
+  FillWithMediaInput,
   HookPlan,
   ImportantWordsPromptInput,
   ImportedHookPlan,
@@ -52,9 +54,15 @@ const api = (): typeof window.api | undefined => (typeof window !== 'undefined' 
 
 function message(error: unknown): string {
   const raw = error instanceof Error ? error.message : String(error)
-  // Handlers prefix errors with the engine's machine code; keep the code visible but
-  // drop the trailing "(operation)" breadcrumb that only helps in logs.
-  return raw.replace(/\s*\([a-zA-Z]+\)$/, '')
+  return raw
+    // Electron wraps every ipcMain.handle rejection as
+    // `Error invoking remote method 'channel': Error: <message>`. Without stripping it,
+    // carefully worded copy arrives behind ~60 characters of plumbing.
+    .replace(/^Error invoking remote method '[^']*':\s*/u, '')
+    .replace(/^Error:\s*/u, '')
+    // Handlers prefix errors with the engine's machine code; keep the code visible but
+    // drop the trailing "(operation)" breadcrumb that only helps in logs.
+    .replace(/\s*\([a-zA-Z]+\)$/, '')
 }
 
 interface VideoStudioState {
@@ -75,6 +83,18 @@ interface VideoStudioState {
   preview: VideoPreviewPayload | null
   /** true once an edit lands; the preview reloads on demand rather than per keystroke */
   previewStale: boolean
+  /** Tracked separately from `busy` so an unrelated background call cannot disable — or
+   *  mislabel — the preview controls while a build is genuinely in flight. */
+  previewBusy: boolean
+  /** Set when a preview build fails, and kept until the next build starts. `error` is a
+   *  shared channel that the next call clears, which made a failed refresh look like a
+   *  no-op: the banner vanished before it could be read. */
+  previewError: string
+  /** Rebuild the preview automatically after an edit. On by default — that is what makes
+   *  an added hook or caption simply appear. Turn it off for a long composition where
+   *  each compile is slow and you would rather batch a run of edits. */
+  previewAuto: boolean
+  setPreviewAuto: (previewAuto: boolean) => void
 
   brollProviders: string[]
   brollResults: VideoBrollCandidate[]
@@ -85,6 +105,10 @@ interface VideoStudioState {
 
   /** label of the in-flight operation; '' when idle */
   busy: string
+  /** Live phase text from a Groq transcription. A long clip is chunked and uploaded, so
+   *  a static "Importing captions" label looked like a hang. */
+  transcribeMessage: string
+  setTranscribeMessage: (message: string) => void
   error: string
   notice: string
   loading: boolean
@@ -120,6 +144,7 @@ interface VideoStudioState {
   updateScene: (sceneId: string, patch: VideoScenePatch) => Promise<void>
   removeScene: (sceneId: string) => Promise<void>
   setTrackMuted: (trackId: string, muted: boolean) => Promise<void>
+  fillWithMedia: (input: FillWithMediaInput) => Promise<void>
 
   instantiateTemplate: (input: InstantiateVideoTemplateInput) => Promise<void>
 
@@ -139,6 +164,12 @@ interface VideoStudioState {
   removeTransition: (transitionId: string) => Promise<void>
 
   setGrading: (grading: VideoGrading) => Promise<void>
+
+  brollBatches: BrollBatch[]
+  refreshBrollBatches: () => Promise<void>
+  brollKeywordsPrompt: (keywordCount?: number) => Promise<string>
+  fetchBrollBatch: (response: string, perKeyword?: number) => Promise<void>
+  deleteBrollBatch: (batchId: string) => Promise<void>
 
   refreshBrollProviders: () => Promise<void>
   searchBroll: (input: VideoBrollSearchInput) => Promise<void>
@@ -167,23 +198,44 @@ const EMPTY: Pick<
   brollResults: []
 }
 
+/** Monotonic id for preview builds. A build that is no longer the newest discards its
+ *  result instead of overwriting a fresher one — the same guard the classic compose tab
+ *  uses for its preview spec (`src/store/useData.ts`, previewSpecRequestSeq). */
+let previewSeq = 0
+
 export const useVideoStudio = create<VideoStudioState>((set, get) => {
   /** Runs one backend call with shared busy/error handling. Returns undefined when
    *  the call failed, so callers can early-out without try/catch noise. */
+  // Reference-counted, because several actions are label-less background refreshes
+  // (status, jobs, cues, b-roll providers). Writing `busy` unconditionally meant those
+  // blanked the label of a long operation that was still running, which in turn
+  // re-enabled buttons that should have stayed disabled.
+  let busyDepth = 0
+  const labels: string[] = []
+
   async function run<T>(label: string, task: (native: NonNullable<ReturnType<typeof api>>) => Promise<T>): Promise<T | undefined> {
     const native = api()
     if (!native) {
       set({ error: 'The desktop bridge is not available in this window.' })
       return undefined
     }
-    set({ busy: label, error: '' })
+    busyDepth += 1
+    if (label) labels.push(label)
+    // Only a labelled (user-initiated) call clears the previous error; a background
+    // refresh must not wipe a banner the user has not read yet.
+    set({ busy: labels[labels.length - 1] ?? '', ...(label ? { error: '' } : {}) })
     try {
       return await task(native)
     } catch (error) {
       set({ error: message(error) })
       return undefined
     } finally {
-      set({ busy: '' })
+      busyDepth -= 1
+      if (label) {
+        const at = labels.lastIndexOf(label)
+        if (at >= 0) labels.splice(at, 1)
+      }
+      set({ busy: busyDepth > 0 ? labels[labels.length - 1] ?? '' : '' })
     }
   }
 
@@ -202,9 +254,14 @@ export const useVideoStudio = create<VideoStudioState>((set, get) => {
     gradingPresets: [],
     jobs: [],
     previewStale: true,
+    previewBusy: false,
+    previewError: '',
+    previewAuto: true,
     brollProviders: [],
+    brollBatches: [],
     brollSearching: false,
     busy: '',
+    transcribeMessage: '',
     error: '',
     notice: '',
     loading: false,
@@ -214,6 +271,8 @@ export const useVideoStudio = create<VideoStudioState>((set, get) => {
     tab: 'templates',
 
     setTab: (tab) => set({ tab }),
+    setTranscribeMessage: (transcribeMessage) => set({ transcribeMessage }),
+    setPreviewAuto: (previewAuto) => set({ previewAuto }),
     setSelection: (selection) => set({ selection }),
     setPlayhead: (playheadFrame) => set({ playheadFrame: Math.max(0, Math.round(playheadFrame)) }),
     setPlaying: (playing) => set({ playing }),
@@ -266,6 +325,12 @@ export const useVideoStudio = create<VideoStudioState>((set, get) => {
           brollProviders,
           loading: false
         })
+        // Captions should just be there. If this clip has never been transcribed the
+        // backend runs Groq now; a failure (no API key, network) only surfaces a banner
+        // and must not stop the studio from opening.
+        if ((bound.project.captions?.words.length ?? 0) === 0) {
+          await get().captionsFromTranscript()
+        }
         await get().refreshCues()
         await get().loadPreview()
       } catch (error) {
@@ -314,8 +379,21 @@ export const useVideoStudio = create<VideoStudioState>((set, get) => {
     loadPreview: async () => {
       const { projectId, engine } = get()
       if (!projectId || engine === 'classic') return
+      const seq = (previewSeq += 1)
+      // The revision the build starts from. If an edit lands while the engine is
+      // compiling, the finished preview is already out of date and must stay flagged
+      // stale — otherwise the studio claims to be current while showing the old frame.
+      const startedRevision = get().project?.revision
+      set({ previewBusy: true, previewError: '' })
       const preview = await run('Building the preview', (native) => native.videoEngine.preview(projectId))
-      if (preview) set({ preview, previewStale: false })
+      // A newer build superseded this one; its result is stale by definition.
+      if (seq !== previewSeq) return
+      set({ previewBusy: false })
+      if (!preview) {
+        set({ previewError: get().error || 'The preview could not be built.' })
+        return
+      }
+      set({ preview, previewStale: get().project?.revision !== startedRevision })
     },
 
     setCanvas: async (patch) => {
@@ -389,6 +467,15 @@ export const useVideoStudio = create<VideoStudioState>((set, get) => {
       if (!projectId) return
       const project = await run('Updating the track', (native) => native.videoEngine.setTrackMuted(projectId, trackId, muted))
       if (project) commit(project)
+    },
+
+    fillWithMedia: async (input) => {
+      const { projectId } = get()
+      if (!projectId) return
+      const result = await run('Filling the timeline', (native) => native.videoEngine.fillWithMedia(projectId, input))
+      if (!result) return
+      const seconds = (result.coveredFrames / Math.max(1, result.project.canvas.fps)).toFixed(1)
+      commit(result.project, `Placed ${result.placed} clip${result.placed === 1 ? '' : 's'} over ${seconds}s of empty timeline.`)
     },
 
     instantiateTemplate: async (input) => {
@@ -524,6 +611,43 @@ export const useVideoStudio = create<VideoStudioState>((set, get) => {
       if (project) commit(project)
     },
 
+    refreshBrollBatches: async () => {
+      const { projectId } = get()
+      if (!projectId) return
+      const batches = await run('', (native) => native.videoEngine.brollBatches(projectId))
+      if (batches) set({ brollBatches: batches })
+    },
+
+    brollKeywordsPrompt: async (keywordCount) => {
+      const { projectId, downloadId } = get()
+      if (!projectId || !downloadId) return ''
+      const prompt = await run('Building the prompt', (native) =>
+        native.videoEngine.brollKeywordsPrompt(projectId, downloadId, keywordCount))
+      return prompt ?? ''
+    },
+
+    fetchBrollBatch: async (response, perKeyword) => {
+      const { projectId, downloadId } = get()
+      if (!projectId || !downloadId) return
+      const result = await run('Downloading footage', (native) =>
+        native.videoEngine.fetchBrollBatch(projectId, downloadId, { response, perKeyword }))
+      if (!result) return
+      const { batch } = result
+      const missed = batch.emptyKeywords.length > 0
+        ? ` ${batch.emptyKeywords.length} keyword${batch.emptyKeywords.length === 1 ? '' : 's'} found nothing.`
+        : ''
+      commit(result.project, `“${batch.name}” — ${batch.clips.length} clip${batch.clips.length === 1 ? '' : 's'} downloaded.${missed}`)
+      await get().refreshBrollBatches()
+    },
+
+    deleteBrollBatch: async (batchId) => {
+      const { projectId } = get()
+      if (!projectId) return
+      const batches = await run('Removing the batch', (native) =>
+        native.videoEngine.deleteBrollBatch(projectId, batchId))
+      if (batches) set({ brollBatches: batches })
+    },
+
     refreshBrollProviders: async () => {
       const brollProviders = await run('', (native) => native.videoEngine.brollProviders())
       if (brollProviders) set({ brollProviders })
@@ -552,8 +676,20 @@ export const useVideoStudio = create<VideoStudioState>((set, get) => {
       const { projectId } = get()
       if (!projectId) return []
       const problems = await run('Checking the project', (native) => native.videoEngine.preflight(projectId))
-      set({ problems: problems ?? [] })
-      return problems ?? []
+      if (!problems) {
+        // `run` answers undefined when the call itself failed. Collapsing that to an
+        // empty list read as "nothing wrong" and let the render queue anyway — report the
+        // failure as the blocking problem it is.
+        const failure: VideoRenderProblem = {
+          severity: 'error',
+          code: 'preflight.unavailable',
+          message: get().error || 'The project could not be checked.'
+        }
+        set({ problems: [failure] })
+        return [failure]
+      }
+      set({ problems })
+      return problems
     },
 
     enqueueRender: async (container) => {
@@ -561,6 +697,8 @@ export const useVideoStudio = create<VideoStudioState>((set, get) => {
       if (!projectId) return
       const problems = await get().preflight()
       if (problems.some((problem) => problem.severity === 'error')) {
+        // Set after preflight, not before: a labelled `run` clears `error` on entry, so
+        // writing this first would have it wiped by the very next call.
         set({ error: 'Fix the errors below before rendering.', tab: 'render' })
         return
       }

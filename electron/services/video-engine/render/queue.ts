@@ -5,12 +5,20 @@ import { extname, join } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import type { RendererId, VideoProject } from '../../../../shared/video-engine'
 import { captureException, sentryLog } from '../../sentry'
+import { probeRenderCapabilities } from '../../engine/caps'
+import { selectEncoder } from '../../engine/encoder'
+import { getSettings } from '../../../store/settings'
 import { errorMessage, VideoEngineError } from '../errors'
 import { sha256Json } from '../hash'
 import { ensureDirectory } from '../paths'
 import { RenderJobStore } from '../storage/job-store'
 import { VideoTemplateRegistry } from '../templates/registry'
-import { applyCinematicGrade, type CinematicGrade } from './postprocess/ffmpeg-grade'
+import {
+  applyCinematicGrade,
+  DEFAULT_GRADE_ENCODER_ARGS,
+  isIdentityGrade,
+  type CinematicGrade
+} from './postprocess/ffmpeg-grade'
 import { preflightProject } from './preflight'
 import type {
   EnqueueRenderRequest,
@@ -34,6 +42,20 @@ function projectIdentity(project: VideoProject): { id: string; revision: number;
     throw new VideoEngineError('INVALID_PROJECT', 'Project must have id, integer revision, and rendererId')
   }
   return { id: value.id, revision: value.revision!, rendererId: value.rendererId }
+}
+
+/**
+ * Codec args for the grading re-encode.
+ *
+ * `settings.encoder` defaults to `'cpu'` (shared/types.ts DEFAULT_SETTINGS), so simply
+ * inheriting it would put the second pass on libx264 for every user who never opened
+ * Settings — the exact silent CPU encode this pipeline is supposed to make impossible.
+ * A GPU choice is honoured; anything else falls through to NVENC, which fails loudly if
+ * the card cannot do it rather than quietly costing an hour of CPU time.
+ */
+function gradeEncoderArgs(): readonly string[] {
+  const selected = selectEncoder(getSettings(), probeRenderCapabilities(), '19')
+  return selected.device === 'gpu' ? selected.args : DEFAULT_GRADE_ENCODER_ARGS
 }
 
 function gradeFromProject(project: VideoProject): CinematicGrade {
@@ -309,6 +331,11 @@ export class RenderQueue {
         inputPath: artifact.path,
         outputPath: job.outputPath,
         grade,
+        // Same encoder the classic pipeline uses, so a graded studio render stays on the
+        // GPU instead of silently dropping to libx264 for its second pass. Resolved only
+        // when there is really something to grade — an identity grade is a file copy, and
+        // probing ffmpeg's encoders for it would spawn a subprocess on every render.
+        videoEncoderArgs: isIdentityGrade(grade) ? undefined : gradeEncoderArgs(),
         durationMs: Math.round(artifact.durationFrames / job.projectSnapshot.canvas.fps * 1000),
         signal: controller.signal,
         onProgress: ({ progress }) => {

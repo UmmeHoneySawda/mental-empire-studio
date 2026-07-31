@@ -26,10 +26,11 @@ import { getRepos } from '../../db'
 import { getSettings } from '../../store/settings'
 import { ffmpegPath, ffprobePath } from '../bin'
 import { cacheDir } from '../storage'
+import { brollLibraryDir } from '../broll'
 import { createVideoEngine } from './factory'
 import { VideoEngineError } from './errors'
 import { ensureDirectory, resolveInside } from './paths'
-import type { PreparedRender, RenderJobRecord } from './render/types'
+import type { PreparedRender, RendererAdapter, RenderJobRecord } from './render/types'
 import type { VideoEngineService } from './service'
 
 /* Main-process glue between the UI-free video engine and the Compose studio.
@@ -52,12 +53,20 @@ function localBrollDirectories(): string[] {
   const directories: string[] = []
   // The classic pipeline already warms a b-roll library on disk; surfacing it as a
   // local provider means the studio can place clips with no API key at all.
-  const warmed = cacheDir('broll')
-  try {
-    mkdirSync(warmed, { recursive: true })
-    directories.push(warmed)
-  } catch {
-    /* the warmed pool is optional */
+  //
+  // Both roots matter. `broll-library` is the real warmed pool the classic downloader
+  // fills, organised as <sourceKey>/<keyword>/<file>; the studio used to point only at
+  // the per-render scratch cache, which is normally empty, so the always-registered
+  // local provider returned zero results for every query — and because "no matches" is
+  // a success, it also masked genuine Pexels/Pixabay failures behind the misleading
+  // "No footage matched that search."
+  for (const root of [brollLibraryDir(), cacheDir('broll')]) {
+    try {
+      mkdirSync(root, { recursive: true })
+      directories.push(root)
+    } catch {
+      /* an unavailable pool is optional */
+    }
   }
   return directories
 }
@@ -629,9 +638,12 @@ export function previewUrlForPath(absolutePath: string): string {
   return `${PREVIEW_PROTOCOL}://asset/${encodePreviewPath(absolutePath)}`
 }
 
-export function hyperframesPreviewUrl(projectId: string): string {
-  const entry = stagedPreviews.get(projectId)?.entryFile ?? PREVIEW_ENTRY_FILE
-  return `${PREVIEW_PROTOCOL}://hf/${encodeURIComponent(projectId)}/${entry}`
+/** The URL a stage is served from. The stamp is a real path segment, not a query, so the
+ *  document's own relative `./assets/x` and `./vendor/y` resolve back into the exact
+ *  workspace it was compiled against — a `?v=` buster would change the entry URL while
+ *  leaving every asset request pointed at whatever workspace is current. */
+export function hyperframesPreviewUrl(projectId: string, stamp: string): string {
+  return `${PREVIEW_PROTOCOL}://hf/${encodeURIComponent(projectId)}/${encodeURIComponent(stamp)}/${PREVIEW_ENTRY_FILE}`
 }
 
 /** Resolves a `mestudio://` request to a real file, or throws. Both hosts are
@@ -646,10 +658,13 @@ export function resolvePreviewRequest(url: string): string {
     return resolveInside(videoEngineDataRoot(), resolve(decodePreviewPath(token)))
   }
   if (parsed.hostname === 'hf') {
-    const [projectId, ...rest] = segments
+    const [projectId, stamp, ...rest] = segments
     if (!projectId) throw new VideoEngineError('PATH_OUTSIDE_WORKSPACE', 'Missing preview project')
-    const staged = stagedPreviews.get(projectId)
-    if (!staged) throw new VideoEngineError('PROJECT_NOT_FOUND', `No staged preview for ${projectId}`)
+    if (!stamp) throw new VideoEngineError('PATH_OUTSIDE_WORKSPACE', 'Missing preview stamp')
+    // Looked up by stamp, so a document keeps reading the workspace it was compiled
+    // against even after a newer stage has been published for the same project.
+    const staged = stagedPreviews.get(stageKey(projectId, stamp))
+    if (!staged) throw new VideoEngineError('PROJECT_NOT_FOUND', `No staged preview ${projectId}/${stamp}`)
     return resolveInside(staged.workspacePath, ...(rest.length > 0 ? rest : [staged.entryFile]))
   }
   throw new VideoEngineError('PATH_OUTSIDE_WORKSPACE', `Unknown preview host: ${parsed.hostname}`)
@@ -676,9 +691,30 @@ interface StagedPreview {
   warnings: string[]
   /** The entry the player loads — `preview.html`, never the render entry. */
   entryFile: string
+  /** Unique per stage. Appears in the URL, so a rebuild produces a URL the iframe
+   *  actually navigates to instead of one React sees as unchanged. */
+  stamp: string
+  url: string
 }
 
+/** Keyed `projectId/stamp`, not `projectId`: several stages of one project can be alive
+ *  at once, which is what lets the outgoing document keep serving its own assets while
+ *  the replacement loads. */
 const stagedPreviews = new Map<string, StagedPreview>()
+
+/** In-flight stages, so two concurrent refreshes of one project share a single compile
+ *  instead of racing each other through the same work directory. */
+const stagingInFlight = new Map<string, Promise<StagedPreview>>()
+
+/** How many stages of a single project stay resolvable. Two is enough to cover the
+ *  hand-off; more just leaks disk. */
+const PREVIEW_STAGE_RETENTION = 2
+
+let previewStageCounter = 0
+
+function stageKey(projectId: string, stamp: string): string {
+  return `${projectId}/${stamp}`
+}
 
 const PREVIEW_ENTRY_FILE = 'preview.html'
 const PREVIEW_RUNTIME_FILE = 'hyperframe.runtime.iife.js'
@@ -711,7 +747,32 @@ async function writePreviewEntry(workspacePath: string): Promise<void> {
   await writeFile(resolveInside(workspacePath, PREVIEW_ENTRY_FILE), withRuntime, 'utf8')
 }
 
+/** Drops every stage of this project except the newest `PREVIEW_STAGE_RETENTION`. Runs
+ *  only after a replacement has been published, so a failed rebuild never takes the
+ *  working preview down with it. */
+async function evictOldStages(projectId: string, adapter: RendererAdapter): Promise<void> {
+  const mine = [...stagedPreviews.entries()].filter(([key]) => key.startsWith(`${projectId}/`))
+  if (mine.length <= PREVIEW_STAGE_RETENTION) return
+  for (const [key, staged] of mine.slice(0, mine.length - PREVIEW_STAGE_RETENTION)) {
+    stagedPreviews.delete(key)
+    if (adapter.cleanup) await adapter.cleanup(staged.prepared).catch(() => undefined)
+    else await rm(staged.workspacePath, { recursive: true, force: true }).catch(() => undefined)
+  }
+}
+
 export async function stageHyperframesPreview(projectId: string): Promise<StagedPreview> {
+  const running = stagingInFlight.get(projectId)
+  if (running) return running
+  const task = stageHyperframesPreviewOnce(projectId)
+  stagingInFlight.set(projectId, task)
+  try {
+    return await task
+  } finally {
+    if (stagingInFlight.get(projectId) === task) stagingInFlight.delete(projectId)
+  }
+}
+
+async function stageHyperframesPreviewOnce(projectId: string): Promise<StagedPreview> {
   const engine = await getVideoEngine()
   const project = await engine.openProject(projectId)
   if (project.rendererId !== 'hyperframes') {
@@ -720,12 +781,12 @@ export async function stageHyperframesPreview(projectId: string): Promise<Staged
   const adapter = engine.rendererAdapter('hyperframes')
   if (!adapter) throw new VideoEngineError('RENDERER_UNAVAILABLE', 'HyperFrames renderer is not registered')
 
-  const previous = stagedPreviews.get(projectId)
-  if (previous) {
-    stagedPreviews.delete(projectId)
-    if (adapter.cleanup) await adapter.cleanup(previous.prepared).catch(() => undefined)
-  }
-  const workDirectory = await ensureDirectory(join(engine.projects.workDirectory(projectId), 'preview'))
+  const stamp = `r${project.revision}-${(previewStageCounter += 1).toString(36)}`
+  // Each stage compiles into its own directory. Sharing one `preview` directory is what
+  // let a rebuild overwrite the files the live document was still fetching.
+  const workDirectory = await ensureDirectory(
+    join(engine.projects.workDirectory(projectId), 'preview', stamp)
+  )
   const controller = new AbortController()
   const prepared = await adapter.prepare(project, {
     workDirectory,
@@ -741,17 +802,20 @@ export async function stageHyperframesPreview(projectId: string): Promise<Staged
     workspacePath: payload.workspacePath,
     prepared,
     warnings: payload.lintWarnings ?? [],
-    entryFile: PREVIEW_ENTRY_FILE
+    entryFile: PREVIEW_ENTRY_FILE,
+    stamp,
+    url: hyperframesPreviewUrl(projectId, stamp)
   }
-  stagedPreviews.set(projectId, staged)
+  stagedPreviews.set(stageKey(projectId, stamp), staged)
+  await evictOldStages(projectId, adapter)
   return staged
 }
 
 export async function discardStagedPreviews(): Promise<void> {
   const engine = await getVideoEngine().catch(() => null)
   const adapter = engine?.rendererAdapter('hyperframes')
-  for (const [projectId, staged] of stagedPreviews) {
-    stagedPreviews.delete(projectId)
+  for (const [key, staged] of stagedPreviews) {
+    stagedPreviews.delete(key)
     if (adapter?.cleanup) await adapter.cleanup(staged.prepared).catch(() => undefined)
     else await rm(staged.workspacePath, { recursive: true, force: true }).catch(() => undefined)
   }

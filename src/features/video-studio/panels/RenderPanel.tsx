@@ -1,10 +1,9 @@
 import { useMemo, useState } from 'react'
 import type { VideoRenderJob } from '@shared/video-engine'
-import { Banner, Btn, Seg, StatusPill } from '../../../components/ui/kit'
+import { Banner, Btn, StatusPill } from '../../../components/ui/kit'
 import { useVideoStudio } from '../store/useVideoStudio'
 import { EmptyHint, Meter, Row, StudioSection, useTimecode } from '../ui/kit'
 
-type Container = '.mp4' | '.mov' | '.webm'
 
 const TERMINAL = new Set(['completed', 'failed', 'canceled'])
 
@@ -43,7 +42,6 @@ export function RenderPanel(): JSX.Element {
   const openRender = useVideoStudio((state) => state.openRender)
   const refreshStatus = useVideoStudio((state) => state.refreshStatus)
 
-  const [container, setContainer] = useState<Container>('.mp4')
   const [checked, setChecked] = useState(false)
 
   const fps = project?.canvas.fps ?? 30
@@ -152,17 +150,27 @@ export function RenderPanel(): JSX.Element {
         label="Render"
         hint="The queue snapshots the project as it is now, so edits you make afterwards do not change a job already running."
       >
-        <Seg
-          grow
-          value={container}
-          options={[
-            { value: '.mp4' as Container, label: 'MP4' },
-            { value: '.mov' as Container, label: 'MOV' },
-            { value: '.webm' as Container, label: 'WebM' }
-          ]}
-          onChange={setContainer}
-        />
         <div className="vs-kv">
+          <span>Format</span>
+          <span>
+            <span className="vs-mono">MP4 · H.264</span>{' '}
+            <span className="vs-hint">
+              — the only container with an NVENC encoder. MOV (ProRes) and WebM (VP9) would fall back to CPU.
+            </span>
+          </span>
+          <span>Encoder</span>
+          <span>
+            <span className="vs-mono">h264_nvenc</span>{' '}
+            <span className="vs-hint">
+              {project.rendererId === 'remotion'
+                ? '— requested as required, so the render fails rather than dropping to libx264.'
+                : '— requested from the HyperFrames producer; it falls back to libx264 if the card cannot be probed.'}
+            </span>
+          </span>
+          <span>Frames</span>
+          <span className="vs-hint">
+            Rasterized in headless Chrome by both engines — that part is CPU. Only the encode runs on the GPU.
+          </span>
           <span>Size</span>
           <span className="vs-mono">{project.canvas.width}×{project.canvas.height}</span>
           <span>Rate</span>
@@ -177,7 +185,7 @@ export function RenderPanel(): JSX.Element {
           <span>{project.grading.enabled ? 'On — applied after the render' : 'Off'}</span>
         </div>
         <Row>
-          <Btn variant="primary" disabled={!!busy} onClick={() => void enqueueRender(container)}>
+          <Btn variant="primary" disabled={!!busy} onClick={() => void enqueueRender('.mp4')}>
             {busy === 'Queueing the render' || busy === 'Checking the project' ? busy : 'Render video'}
           </Btn>
         </Row>

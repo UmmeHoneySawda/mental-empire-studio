@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react'
+import { useMemo, type CSSProperties } from 'react'
 import {
   AbsoluteFill,
   interpolate,
@@ -247,24 +247,44 @@ export function CaptionLayer({ project }: { readonly project: VideoProject }) {
   const frame = useCurrentFrame()
   const { fps, width } = useVideoConfig()
   const document = project.captions
+
+  // Everything below the hooks used to run per frame, including groupCaptionCues —
+  // which starts with a full CaptionDocumentSchema.parse whose refinement hashes every
+  // word. On a 2500-word transcript that is ~16 ms of work 30 times a second, and it is
+  // what made the studio crawl as soon as captions were imported. Neither the cue
+  // grouping nor the id index depends on the frame, so both are computed once.
+  //
+  // Hooks stay above every early return so their order is fixed; the guards that used to
+  // sit here now gate the render below instead.
+  const scene = document && document.words.length > 0 ? activeCaptionScene(project, frame) : null
+  const theme = scene ? captionTheme(scene) : null
+  const maxWordsPerCue = theme?.maxWordsPerCue ?? 0
+
+  const cues = useMemo(
+    () =>
+      document && maxWordsPerCue > 0
+        ? groupCaptionCues(document, {
+            maxWordsPerCue,
+            maxCharactersPerCue: 56,
+            maxDurationFrames: Math.max(1, Math.round(fps * 3.2)),
+            maxGapFrames: Math.max(0, Math.round(fps * 0.55)),
+          })
+        : [],
+    [document, maxWordsPerCue, fps],
+  )
+  const wordById = useMemo(
+    () => new Map((document?.words ?? []).map((word) => [word.id, word])),
+    [document],
+  )
+
   if (!document || document.words.length === 0) return null
+  if (scene === null || theme === null) return null
 
-  const scene = activeCaptionScene(project, frame)
-  if (scene === null) return null
-  const theme = captionTheme(scene)
-
-  const cues = groupCaptionCues(document, {
-    maxWordsPerCue: theme.maxWordsPerCue,
-    maxCharactersPerCue: 56,
-    maxDurationFrames: Math.max(1, Math.round(fps * 3.2)),
-    maxGapFrames: Math.max(0, Math.round(fps * 0.55)),
-  })
   const cue = cues.find(
     (candidate) => frame >= candidate.startFrame && frame < candidate.endFrame,
   )
   if (!cue) return null
 
-  const wordById = new Map(document.words.map((word) => [word.id, word]))
   const words = cue.wordIds
     .map((id) => wordById.get(id))
     .filter((word): word is CaptionWord => Boolean(word))

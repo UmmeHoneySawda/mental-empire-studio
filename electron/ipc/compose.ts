@@ -447,5 +447,38 @@ export function registerComposeIpc(): void {
   ipcMain.handle('transcribe:setEmphasis', (_e, wordIds: string[], emphasis: boolean) => repos().setEmphasis(wordIds, emphasis))
 }
 
+/** Transcriptions in flight, keyed by classic project id. `runTranscribe` has no lock of
+ *  its own — the classic tab guards it in the renderer — so without this the Video Studio
+ *  and the Compose tab could start two Groq jobs for one clip and both call
+ *  `replaceTranscript`. Callers here share the single job instead. */
+const transcriptionsInFlight = new Map<string, Promise<TranscriptWord[]>>()
+
+/**
+ * The word timings for a downloaded clip, transcribing with Groq only if they are
+ * missing. This is the one entry point the Video Studio uses, so the studio never has to
+ * know about classic project rows or about Groq: it asks for a transcript and gets one.
+ *
+ * Idempotent and safe to call on every studio open — an existing transcript is returned
+ * without touching the network.
+ */
+export async function ensureTranscript(downloadId: string): Promise<TranscriptWord[]> {
+  const repos = getRepos()
+  // A clip opened straight into the Video Studio may never have had a classic project
+  // row; `runTranscribe` needs one because that is where mp3Path and duration live.
+  const project = createProject(downloadId)
+  const existing = repos.getTranscript(project.id)
+  if (existing.length > 0) return existing
+
+  const running = transcriptionsInFlight.get(project.id)
+  if (running) return running
+  const task = runTranscribe(project.id)
+  transcriptionsInFlight.set(project.id, task)
+  try {
+    return await task
+  } finally {
+    if (transcriptionsInFlight.get(project.id) === task) transcriptionsInFlight.delete(project.id)
+  }
+}
+
 // Exported for the headless M4 smoke harness.
 export { createProject, setImages, sendToRender, runTranscribe }

@@ -2,9 +2,16 @@
   seed-restore.ps1 - restore Mental Empire Studio user data (settings, API configs,
   sources, channels, automations, and library) from the local pristine snapshot.
 
-  What it does (safe + idempotent):
+  DESTRUCTIVE. This REPLACES the live profile with the committed snapshot. It is not a
+  general recovery tool: the snapshot's settings file has all four API keys (Groq,
+  Pexels, Pixabay, Coverr) EMPTY, so a run blanks them. To recover the user's own data,
+  use scripts\restore-userdata.ps1 (npm run userdata:restore) instead.
+
+  What it does:
     1. Confirms the app is not running (SQLite must be closed for a clean restore).
-    2. Removes the live DB + its WAL/SHM sidecars and the live settings file
+    2. Snapshots the CURRENT profile to a CLAUDE-BACKUP-*-preseed folder, so this is
+       reversible.
+    3. Removes the live DB + its WAL/SHM sidecars and the live settings file
        (this "removes unrelated data first" so nothing extra lingers).
     3. Copies the snapshot DB + settings into place (a wholesale replace, so there
        can be no duplicated rows).
@@ -67,6 +74,22 @@ if (-not (Test-Path $TargetDir)) {
   Say 'Target profile does not exist yet - creating it (clean profile).' 'Yellow'
   New-Item -ItemType Directory -Path $TargetDir -Force | Out-Null
 }
+
+# --- Snapshot what is there now, so this is reversible -----------------------
+# Overwriting a live profile with the committed seed used to be a one-way trip: the
+# snapshot ships with every API key blank, so a run silently cost the user their keys
+# with nothing to restore from.
+$preStamp   = Get-Date -Format 'yyyyMMdd-HHmmss'
+$preRestore = Join-Path ([Environment]::GetFolderPath('ApplicationData')) "Mental Empire Studio - CLAUDE-BACKUP-$preStamp-preseed"
+$savedAny   = $false
+foreach ($f in @($dbName, "$dbName-wal", "$dbName-shm", $settingsName)) {
+  $p = Join-Path $TargetDir $f
+  if (Test-Path $p) {
+    if (-not $savedAny) { New-Item -ItemType Directory -Path $preRestore -Force | Out-Null; $savedAny = $true }
+    Copy-Item -LiteralPath $p -Destination $preRestore -Force
+  }
+}
+if ($savedAny) { Say "current profile saved -> $preRestore" 'Cyan' }
 
 # --- Remove live data first (no leftovers, no duplicates) --------------------
 foreach ($f in @($dbName, "$dbName-wal", "$dbName-shm", $settingsName)) {

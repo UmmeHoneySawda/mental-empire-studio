@@ -471,7 +471,10 @@ export function readBrollManifestClipIds(jobId: string): string[] {
   } catch { return [] }
 }
 
-function brollLibraryDir(): string {
+/** Where the classic pipeline warms its keyword-organised clip library. Exported so the
+ *  Video Studio's local b-roll provider can search the same pool instead of an empty
+ *  scratch directory. */
+export function brollLibraryDir(): string {
   const d = join(app.getPath('userData'), 'broll-library')
   mkdirSync(d, { recursive: true })
   return d
