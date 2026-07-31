@@ -99,6 +99,10 @@ export function PreviewStage(): JSX.Element {
   const previewError = useVideoStudio((state) => state.previewError)
   const previewAuto = useVideoStudio((state) => state.previewAuto)
   const setPreviewAuto = useVideoStudio((state) => state.setPreviewAuto)
+  const previewRange = useVideoStudio((state) => state.previewRange)
+  const setPreviewRange = useVideoStudio((state) => state.setPreviewRange)
+  const soloSelection = useVideoStudio((state) => state.soloSelection)
+  const canSolo = useVideoStudio((state) => state.selection.kind === 'scene' || state.selection.kind === 'transition')
   const playheadFrame = useVideoStudio((state) => state.playheadFrame)
   const playing = useVideoStudio((state) => state.playing)
   const loadPreview = useVideoStudio((state) => state.loadPreview)
@@ -114,11 +118,26 @@ export function PreviewStage(): JSX.Element {
     : project?.canvas.durationFrames ?? 1
   const total = Math.max(1, stagedTotal)
   const liveTotal = project?.canvas.durationFrames ?? total
+  // A solo range narrows the scrubber and loops playback; without one the bounds are the
+  // whole staged composition. Clamped to the staged length so a range set before a
+  // shortening edit cannot point past the end of what the player knows about.
+  const rangeStart = previewRange ? Math.max(0, Math.min(previewRange.startFrame, total - 1)) : 0
+  const rangeEnd = previewRange ? Math.max(rangeStart + 1, Math.min(previewRange.endFrame, total)) : total
   const timecode = useTimecode(fps)
   const { ref, size } = useFittedSize(project?.canvas.width ?? 16, project?.canvas.height ?? 9)
   // Only playback goes through the throttle; scrubbing still sets the playhead directly
   // so dragging the bar stays exact.
-  const onPlayerFrame = useThrottledPlayhead(setPlayhead)
+  const throttledPlayhead = useThrottledPlayhead(setPlayhead)
+
+  // Inside a solo range, playback loops back to the start instead of running on into the
+  // rest of the video — that is what makes checking one hook or one caption quick.
+  const onPlayerFrame = useCallback((frame: number) => {
+    if (previewRange && frame >= rangeEnd - 1) {
+      setPlayhead(rangeStart)
+      return
+    }
+    throttledPlayhead(frame)
+  }, [previewRange, rangeEnd, rangeStart, setPlayhead, throttledPlayhead])
 
   // An edit should show up on its own. Without this the user had to notice the preview
   // was stale and click a button — and when that button misbehaved there was no way back.
@@ -194,10 +213,10 @@ export function PreviewStage(): JSX.Element {
         <input
           className="vs-scrub"
           type="range"
-          min={0}
-          max={Math.max(0, total - 1)}
+          min={rangeStart}
+          max={Math.max(rangeStart, rangeEnd - 1)}
           step={1}
-          value={Math.min(playheadFrame, Math.max(0, total - 1))}
+          value={Math.min(Math.max(playheadFrame, rangeStart), Math.max(rangeStart, rangeEnd - 1))}
           disabled={!project}
           aria-label="Playhead"
           onChange={(event) => setPlayhead(Number(event.target.value))}
@@ -219,6 +238,29 @@ export function PreviewStage(): JSX.Element {
             {previewBusy ? 'Refreshing…' : previewStale ? '● Refresh preview' : 'Refresh preview'}
           </Btn>
         )}
+        {previewRange && (
+          <Btn
+            variant="soft"
+            size="sm"
+            title={`Playing ${rangeStart}–${rangeEnd}f on a loop. Click to play the whole video again.`}
+            onClick={() => setPreviewRange(null)}
+          >
+            ⟲ Solo {((rangeEnd - rangeStart) / fps).toFixed(1)}s ✕
+          </Btn>
+        )}
+        <Btn
+          variant="ghost"
+          size="sm"
+          disabled={!canSolo}
+          title={
+            canSolo
+              ? 'Play only the selected clip, on a loop'
+              : 'Select a clip or a transition on the timeline to preview it on its own'
+          }
+          onClick={soloSelection}
+        >
+          Solo selection
+        </Btn>
         <Btn
           variant={previewAuto ? 'soft' : 'ghost'}
           size="sm"

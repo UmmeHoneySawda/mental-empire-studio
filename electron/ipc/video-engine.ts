@@ -21,6 +21,7 @@ import {
   type FetchBrollBatchResult,
   type FillWithMediaInput,
   type FillWithMediaResult,
+  type HookBeatPatch,
   type ImportantWordsPromptInput,
   type ImportedHookPlan,
   type ImportedVideoAssets,
@@ -57,6 +58,7 @@ import {
   parseBrollRequest,
   readBrollBatches
 } from '../services/video-engine/broll/batches'
+import { generateHookPlan } from '../services/video-engine/hook-generator'
 import { ensureTranscript } from './compose'
 import {
   bindDownload,
@@ -642,6 +644,30 @@ async function hookPrompt(projectId: string, input: HookPromptInput): Promise<st
   })
 }
 
+/** Writes the hook with Groq instead of making the user round-trip through a chat model,
+ *  then imports it through exactly the same path a pasted plan takes. */
+async function generateHookPlanFor(projectId: string, input: HookPromptInput): Promise<ImportedHookPlan> {
+  const engine = await getVideoEngine()
+  const project = await engine.openProject(projectId)
+  const durationSeconds = Math.min(30, Math.max(1, input.durationSeconds ?? 30))
+  const plan = await generateHookPlan({
+    apiKey: getSettings().transcription.apiKey.trim() || process.env['GROQ_API_KEY'] || '',
+    prompt: await hookPrompt(projectId, input),
+    fps: project.canvas.fps,
+    durationFrames: Math.max(1, Math.round(durationSeconds * project.canvas.fps))
+  })
+  sentryLog.info('Studio hook plan generated', {
+    project_id: projectId,
+    renderer: project.rendererId,
+    template_id: input.templateId,
+    beat_count: plan.beats.length,
+    duration_frames: plan.durationFrames,
+    operation: 'video_hook_generate'
+  })
+  // JSON round trip so generated and pasted plans go through one code path.
+  return importHookPlan(projectId, JSON.stringify(plan))
+}
+
 async function importHookPlan(projectId: string, json: string): Promise<ImportedHookPlan> {
   const engine = await getVideoEngine()
   // Parse first so a malformed paste reports the schema problem instead of a save error.
@@ -657,6 +683,35 @@ async function importHookPlan(projectId: string, json: string): Promise<Imported
   }
   const compiled = await engine.importHookPlan(projectId, parsed.data)
   return { project: compiled.project, plan: parsed.data, brollRequests: compiled.brollRequests }
+}
+
+/** Reads the compiled plan back off a project, so the studio can rehydrate the beats list
+ *  instead of holding it only in renderer memory (where a reload lost it). */
+export function hookPlanFromProject(project: VideoProject): ImportedHookPlan | null {
+  const scene = project.scenes.find((candidate) => candidate.id === 'video-engine-hook-plan')
+  const parsed = safeParseHookPlan(scene?.template?.props?.['hookPlan'])
+  if (!parsed.success) return null
+  const brollRequests = parsed.data.beats
+    .filter((beat) => beat.visual.kind === 'broll' && beat.visual.searchQuery)
+    .map((beat) => ({
+      beatId: beat.id,
+      query: beat.visual.searchQuery!,
+      startFrame: beat.startFrame,
+      durationFrames: beat.durationFrames
+    }))
+  return { project, plan: parsed.data, brollRequests }
+}
+
+async function updateHookBeat(
+  projectId: string,
+  beatId: string,
+  patch: HookBeatPatch
+): Promise<ImportedHookPlan> {
+  const engine = await getVideoEngine()
+  const project = await engine.updateHookBeat({ projectId, beatId, patch })
+  const hydrated = hookPlanFromProject(project)
+  if (!hydrated) throw new VideoEngineError('INVALID_HOOK_PLAN', 'The edited hook plan could not be read back')
+  return hydrated
 }
 
 async function preflight(projectId: string): Promise<VideoRenderProblem[]> {
@@ -806,6 +861,11 @@ export function registerVideoEngineIpc(): void {
     guard('hookPrompt', () => hookPrompt(reqString(projectId, 'projectId'), input)))
   ipcMain.handle('videoEngine:importHookPlan', (_e, projectId: string, json: string) =>
     guard('importHookPlan', () => importHookPlan(reqString(projectId, 'projectId'), reqString(json, 'json'))))
+  ipcMain.handle('videoEngine:generateHookPlan', (_e, projectId: string, input: HookPromptInput) =>
+    guard('generateHookPlan', () => generateHookPlanFor(reqString(projectId, 'projectId'), input)))
+  ipcMain.handle('videoEngine:updateHookBeat', (_e, projectId: string, beatId: string, patch: HookBeatPatch) =>
+    guard('updateHookBeat', () =>
+      updateHookBeat(reqString(projectId, 'projectId'), reqString(beatId, 'beatId'), patch ?? {})))
   ipcMain.handle('videoEngine:resolveHookBroll', (
     _e,
     projectId: string,

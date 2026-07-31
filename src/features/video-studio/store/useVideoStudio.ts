@@ -1,4 +1,5 @@
 import { create } from 'zustand'
+import { safeParseHookPlan } from '@shared/video-engine'
 import type {
   AddVideoScenePatch,
   ApplyVideoTransitionInput,
@@ -6,6 +7,7 @@ import type {
   BrollBatch,
   ComposeEngine,
   FillWithMediaInput,
+  HookBeatPatch,
   HookPlan,
   ImportantWordsPromptInput,
   ImportedHookPlan,
@@ -95,6 +97,15 @@ interface VideoStudioState {
    *  each compile is slow and you would rather batch a run of edits. */
   previewAuto: boolean
   setPreviewAuto: (previewAuto: boolean) => void
+  /** Limits playback and the scrubber to one stretch of the timeline, so a hook or a
+   *  single caption can be checked without scrubbing through a 15-minute composition.
+   *  null plays the whole thing. Purely a viewing state — it never touches the project
+   *  or the render. */
+  previewRange: { startFrame: number; endFrame: number } | null
+  setPreviewRange: (range: { startFrame: number; endFrame: number } | null) => void
+  /** Solo whatever is selected: a scene becomes its own range, a transition the frames
+   *  around it. Falls back to clearing the range when nothing rangeable is selected. */
+  soloSelection: () => void
 
   brollProviders: string[]
   brollResults: VideoBrollCandidate[]
@@ -149,6 +160,8 @@ interface VideoStudioState {
   instantiateTemplate: (input: InstantiateVideoTemplateInput) => Promise<void>
 
   hookPrompt: (templateId: string, title: string, durationSeconds: number, transcript?: string) => Promise<string>
+  generateHookPlan: (templateId: string, title: string, durationSeconds: number, transcript?: string) => Promise<void>
+  updateHookBeat: (beatId: string, patch: HookBeatPatch) => Promise<void>
   importHookPlan: (json: string) => Promise<void>
   resolveHookBroll: (beatId: string, candidate: VideoBrollCandidate) => Promise<void>
 
@@ -203,6 +216,29 @@ const EMPTY: Pick<
  *  uses for its preview spec (`src/store/useData.ts`, previewSpecRequestSeq). */
 let previewSeq = 0
 
+/** Reads the compiled hook plan back out of the project it is stored in. The plan lives
+ *  in the `video-engine-hook-plan` scene's template props, so it survives a reload —
+ *  the studio just never looked. */
+function hookStateFromProject(project: VideoProject | null): {
+  hookPlan: HookPlan | null
+  hookBrollRequests: ImportedHookPlan['brollRequests']
+} {
+  const scene = project?.scenes.find((candidate) => candidate.id === 'video-engine-hook-plan')
+  const parsed = safeParseHookPlan(scene?.template?.props?.['hookPlan'])
+  if (!parsed.success) return { hookPlan: null, hookBrollRequests: [] }
+  return {
+    hookPlan: parsed.data,
+    hookBrollRequests: parsed.data.beats
+      .filter((beat) => beat.visual.kind === 'broll' && beat.visual.searchQuery)
+      .map((beat) => ({
+        beatId: beat.id,
+        query: beat.visual.searchQuery!,
+        startFrame: beat.startFrame,
+        durationFrames: beat.durationFrames
+      }))
+  }
+}
+
 export const useVideoStudio = create<VideoStudioState>((set, get) => {
   /** Runs one backend call with shared busy/error handling. Returns undefined when
    *  the call failed, so callers can early-out without try/catch noise. */
@@ -240,9 +276,20 @@ export const useVideoStudio = create<VideoStudioState>((set, get) => {
   }
 
   /** Every mutation funnels through here: replace the project with what the engine
-   *  saved, invalidate the preview, and keep the cue list in sync. */
+   *  saved, invalidate the preview, and keep the cue list in sync.
+   *
+   *  The hook plan is re-read from the project on every commit. It used to live only in
+   *  renderer memory, written once by importHookPlan — so the Beats list vanished on any
+   *  reload or engine switch even though the plan was safely persisted in the scene's
+   *  template props, and attaching b-roll left the beat still reading "Stock footage". */
   function commit(project: VideoProject, notice = ''): void {
-    set({ project, projectId: project.id, previewStale: true, ...(notice ? { notice } : {}) })
+    set({
+      project,
+      projectId: project.id,
+      previewStale: true,
+      ...hookStateFromProject(project),
+      ...(notice ? { notice } : {})
+    })
   }
 
   return {
@@ -257,6 +304,7 @@ export const useVideoStudio = create<VideoStudioState>((set, get) => {
     previewBusy: false,
     previewError: '',
     previewAuto: true,
+    previewRange: null,
     brollProviders: [],
     brollBatches: [],
     brollSearching: false,
@@ -273,6 +321,49 @@ export const useVideoStudio = create<VideoStudioState>((set, get) => {
     setTab: (tab) => set({ tab }),
     setTranscribeMessage: (transcribeMessage) => set({ transcribeMessage }),
     setPreviewAuto: (previewAuto) => set({ previewAuto }),
+
+    setPreviewRange: (previewRange) => {
+      set({ previewRange })
+      // Drop the playhead inside the new range, or the player sits on a frame the range
+      // no longer covers and looks frozen.
+      if (previewRange) {
+        const { playheadFrame } = get()
+        if (playheadFrame < previewRange.startFrame || playheadFrame >= previewRange.endFrame) {
+          set({ playheadFrame: previewRange.startFrame })
+        }
+      }
+    },
+
+    soloSelection: () => {
+      const { project, selection } = get()
+      if (!project) return
+      if (selection.kind === 'scene') {
+        const scene = project.scenes.find((candidate) => candidate.id === selection.id)
+        if (scene) {
+          get().setPreviewRange({
+            startFrame: scene.startFrame,
+            endFrame: Math.min(project.canvas.durationFrames, scene.startFrame + scene.durationFrames)
+          })
+          return
+        }
+      }
+      if (selection.kind === 'transition') {
+        const transition = project.transitions.find((candidate) => candidate.id === selection.id)
+        if (transition) {
+          // A little air on each side, so the cut is visible rather than starting mid-way.
+          const pad = Math.round(project.canvas.fps * 0.5)
+          get().setPreviewRange({
+            startFrame: Math.max(0, transition.startFrame - pad),
+            endFrame: Math.min(
+              project.canvas.durationFrames,
+              transition.startFrame + transition.durationFrames + pad
+            )
+          })
+          return
+        }
+      }
+      get().setPreviewRange(null)
+    },
     setSelection: (selection) => set({ selection }),
     setPlayhead: (playheadFrame) => set({ playheadFrame: Math.max(0, Math.round(playheadFrame)) }),
     setPlaying: (playing) => set({ playing }),
@@ -323,6 +414,7 @@ export const useVideoStudio = create<VideoStudioState>((set, get) => {
           gradingPresets,
           jobs,
           brollProviders,
+          ...hookStateFromProject(bound.project),
           loading: false
         })
         // Captions should just be there. If this clip has never been transcribed the
@@ -491,6 +583,31 @@ export const useVideoStudio = create<VideoStudioState>((set, get) => {
       const prompt = await run('Building the prompt', (native) =>
         native.videoEngine.hookPrompt(projectId, { templateId, title, durationSeconds, transcript }))
       return prompt ?? ''
+    },
+
+    generateHookPlan: async (templateId, title, durationSeconds, transcript) => {
+      const { projectId } = get()
+      if (!projectId) return
+      const result = await run('Writing the hook', (native) =>
+        native.videoEngine.generateHookPlan(projectId, { templateId, title, durationSeconds, transcript }))
+      if (!result) return
+      set({ hookPlan: result.plan, hookBrollRequests: result.brollRequests })
+      commit(
+        result.project,
+        result.brollRequests.length > 0
+          ? `Hook written. ${result.brollRequests.length} beat${result.brollRequests.length === 1 ? '' : 's'} still need footage.`
+          : 'Hook written.'
+      )
+    },
+
+    updateHookBeat: async (beatId, patch) => {
+      const { projectId } = get()
+      if (!projectId) return
+      const result = await run('Updating the beat', (native) =>
+        native.videoEngine.updateHookBeat(projectId, beatId, patch))
+      if (!result) return
+      set({ hookPlan: result.plan, hookBrollRequests: result.brollRequests })
+      commit(result.project)
     },
 
     importHookPlan: async (json) => {

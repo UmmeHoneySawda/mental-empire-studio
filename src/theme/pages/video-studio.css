@@ -1397,3 +1397,13 @@
   gap: 6px;
   flex: none;
 }
+
+/* Solo range — the parts of the timeline the preview is NOT playing. */
+.vs-solo-mask {
+  position: absolute;
+  top: 0;
+  bottom: 0;
+  background: color-mix(in srgb, var(--bg-base) 62%, transparent);
+  pointer-events: none;
+  z-index: 2;
+}

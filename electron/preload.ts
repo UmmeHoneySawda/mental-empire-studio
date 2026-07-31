@@ -28,6 +28,7 @@ import type {
   CreateVideoProjectInput,
   FetchBrollBatchInput,
   FillWithMediaInput,
+  HookBeatPatch,
   HookPromptInput,
   ImportantWordsPromptInput,
   InstantiateVideoTemplateInput,
@@ -312,6 +313,10 @@ const api: NativeApi = {
       ipcRenderer.invoke('videoEngine:instantiateTemplate', projectId, input),
 
     hookPrompt: (projectId: string, input: HookPromptInput) => ipcRenderer.invoke('videoEngine:hookPrompt', projectId, input),
+    generateHookPlan: (projectId: string, input: HookPromptInput) =>
+      ipcRenderer.invoke('videoEngine:generateHookPlan', projectId, input),
+    updateHookBeat: (projectId: string, beatId: string, patch: HookBeatPatch) =>
+      ipcRenderer.invoke('videoEngine:updateHookBeat', projectId, beatId, patch),
     importHookPlan: (projectId: string, json: string) => ipcRenderer.invoke('videoEngine:importHookPlan', projectId, json),
     resolveHookBroll: (projectId: string, beatId: string, candidate: VideoBrollCandidate) =>
       ipcRenderer.invoke('videoEngine:resolveHookBroll', projectId, beatId, candidate),

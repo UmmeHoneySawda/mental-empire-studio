@@ -83,6 +83,66 @@ export function TextField({
 
 /** Numbers in this studio are frame counts and pixel dimensions — always integers,
  *  always committed on blur so a half-typed value never reaches the engine. */
+/** A text field that saves on blur or Enter rather than on every keystroke.
+ *
+ *  Use this wherever a change round-trips to the engine: every save rewrites the whole
+ *  project and bumps its revision, so a per-keystroke `TextField` would fire one write
+ *  and one preview rebuild per character typed. Escape abandons the edit. */
+export function CommitField({
+  value,
+  onCommit,
+  placeholder,
+  maxLength,
+  multiline
+}: {
+  value: string
+  onCommit: (value: string) => void
+  placeholder?: string
+  maxLength?: number
+  multiline?: boolean
+}): JSX.Element {
+  const [draft, setDraft] = useState(value)
+  // Follow the saved value when it changes underneath — another beat's edit can ripple
+  // into this one — but never while the user is mid-edit in this field.
+  const [editing, setEditing] = useState(false)
+  useEffect(() => { if (!editing) setDraft(value) }, [value, editing])
+
+  const commit = (): void => {
+    setEditing(false)
+    if (draft !== value) onCommit(draft)
+  }
+  const shared = {
+    className: 'ed-input vs-input',
+    value: draft,
+    placeholder,
+    maxLength,
+    onFocus: () => setEditing(true),
+    onChange: (event: { target: { value: string } }) => setDraft(event.target.value),
+    onBlur: commit
+  }
+  if (multiline) {
+    return (
+      <textarea
+        {...shared}
+        className="ed-input vs-textarea"
+        rows={2}
+        onKeyDown={(event) => {
+          if (event.key === 'Escape') { setDraft(value); setEditing(false); event.currentTarget.blur() }
+        }}
+      />
+    )
+  }
+  return (
+    <input
+      {...shared}
+      onKeyDown={(event) => {
+        if (event.key === 'Enter') { event.preventDefault(); event.currentTarget.blur() }
+        if (event.key === 'Escape') { setDraft(value); setEditing(false); event.currentTarget.blur() }
+      }}
+    />
+  )
+}
+
 export function NumberField({
   value,
   onCommit,

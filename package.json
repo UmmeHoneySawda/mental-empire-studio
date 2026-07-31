@@ -26,6 +26,7 @@
     "preview:browser": "vite preview --config vite.renderer.config.ts --outDir out/renderer --port 4173",
     "test": "vitest run",
     "test:watch": "vitest",
+    "e2e:studio": "node scripts/e2e-studio.mjs",
     "userdata:backup": "powershell -ExecutionPolicy Bypass -File scripts/backup-userdata.ps1",
     "userdata:restore": "powershell -ExecutionPolicy Bypass -File scripts/restore-userdata.ps1",
     "userdata:list": "powershell -ExecutionPolicy Bypass -File scripts/restore-userdata.ps1 -List",

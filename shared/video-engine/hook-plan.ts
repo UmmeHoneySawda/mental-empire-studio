@@ -178,7 +178,12 @@ export function buildHookPlanPrompt(options: HookPlanPromptOptions): string {
     'For asset visuals, use only an assetId from the supplied list. Otherwise use a short broll searchQuery or kind "none".',
     'For importantWordIds, split headline/body on whitespace and use IDs in the form "<beat-id>:headline:<zero-based-index>" or "<beat-id>:body:<zero-based-index>".',
     'Required JSON shape:',
-    '{"schemaVersion":1,"rendererId":"remotion|hyperframes","templateId":"ID","templateVersion":"1.0.0","fps":30,"title":"TITLE","durationFrames":900,"props":{},"beats":[{"id":"beat-1","startFrame":0,"durationFrames":90,"headline":"TEXT","body":"TEXT","variant":"VARIANT","importantWordIds":[],"visual":{"kind":"none|asset|broll","assetId":"ASSET_ID","searchQuery":"QUERY"},"transitionOut":{"type":"cut|fade|slide|wipe|zoom|dip-to-black","durationFrames":0,"direction":"left|right|up|down","easing":"linear|ease-in|ease-out|ease-in-out"}}]}',
+    // The example interpolates this project's real fps and frame budget. It used to be a
+    // literal 30 / 900, and models copy an example verbatim — on a 24 or 60 fps project
+    // that produced a plan the compiler rejects outright for fps mismatch, which reads to
+    // the user as "the AI hook never works".
+    `{"schemaVersion":1,"rendererId":"remotion|hyperframes","templateId":"ID","templateVersion":"1.0.0","fps":${fps},"title":"TITLE","durationFrames":${durationFrames},"props":{},"beats":[{"id":"beat-1","startFrame":0,"durationFrames":${Math.max(1, Math.round(fps * 1.5))},"headline":"TEXT","body":"TEXT","variant":"VARIANT","importantWordIds":[],"visual":{"kind":"none|asset|broll","assetId":"ASSET_ID","searchQuery":"QUERY"},"transitionOut":{"type":"cut|fade|slide|wipe|zoom|dip-to-black","durationFrames":0,"direction":"left|right|up|down","easing":"linear|ease-in|ease-out|ease-in-out"}}]}`,
+    `fps MUST be exactly ${fps} and durationFrames MUST NOT exceed ${durationFrames}.`,
     `Renderer: ${RendererIdSchema.parse(options.rendererId)}`,
     `Template: ${StableIdSchema.parse(options.templateId)}`,
     options.templateVersion ? `Template version: ${options.templateVersion}` : '',
@@ -190,4 +195,119 @@ export function buildHookPlanPrompt(options: HookPlanPromptOptions): string {
   ]
     .filter(Boolean)
     .join('\n')
+}
+
+// ---------------------------------------------------------------- beat editing
+
+/** What the UI is allowed to change on one beat. Everything else about a plan — beat
+ *  order, ids, the overall duration — is derived, not edited. */
+export const HookBeatPatchSchema = z.strictObject({
+  headline: z.string().max(500).optional(),
+  body: z.string().max(2000).optional(),
+  variant: StableIdSchema.optional(),
+  durationFrames: z.number().int().positive().optional(),
+})
+export type HookBeatPatch = z.infer<typeof HookBeatPatchSchema>
+
+/** Emphasis ids are positional — `<beatId>:<field>:<tokenIndex>` against the text split
+ *  on whitespace. Rewriting the text moves or removes those tokens, so ids that no longer
+ *  point at a word are dropped rather than left to highlight something unrelated. */
+export function remapImportantWordIds(
+  ids: readonly string[] | undefined,
+  beatId: string,
+  field: 'headline' | 'body',
+  nextText: string | undefined,
+): string[] | undefined {
+  if (!ids || ids.length === 0) return ids ? [...ids] : undefined
+  const tokenCount = nextText ? nextText.trim().split(/\s+/u).filter(Boolean).length : 0
+  const prefix = `${beatId}:${field}:`
+  const kept = ids.filter((id) => {
+    if (!id.startsWith(prefix)) return true // belongs to the other field
+    const index = Number(id.slice(prefix.length))
+    return Number.isInteger(index) && index >= 0 && index < tokenCount
+  })
+  return kept.length > 0 ? kept : undefined
+}
+
+/**
+ * Applies an edit to one beat and repairs the plan around it.
+ *
+ * Changing a beat's length has to move every later beat, or the schema's
+ * ordered-and-non-overlapping rule rejects the save. The plan's own duration grows or
+ * shrinks with it, capped at the 30-second ceiling the schema enforces. An emptied
+ * headline or body deletes the key — the schema requires a non-empty string when the
+ * field is present, so writing '' would fail validation.
+ *
+ * Returns a parsed plan, so an edit that cannot produce a valid plan throws here rather
+ * than being written to disk and surfacing later as a preflight error.
+ */
+export function applyHookBeatPatch(plan: HookPlan, beatId: string, patch: HookBeatPatch): HookPlan {
+  const index = plan.beats.findIndex((beat) => beat.id === beatId)
+  if (index < 0) throw new Error(`Unknown hook beat: ${beatId}`)
+  const current = plan.beats[index]!
+
+  const nextHeadline = patch.headline === undefined ? current.headline : patch.headline.trim() || undefined
+  const nextBody = patch.body === undefined ? current.body : patch.body.trim() || undefined
+  const nextDuration = patch.durationFrames ?? current.durationFrames
+  const delta = nextDuration - current.durationFrames
+
+  let importantWordIds = current.importantWordIds
+  if (patch.headline !== undefined) {
+    importantWordIds = remapImportantWordIds(importantWordIds, beatId, 'headline', nextHeadline)
+  }
+  if (patch.body !== undefined) {
+    importantWordIds = remapImportantWordIds(importantWordIds, beatId, 'body', nextBody)
+  }
+
+  const edited: HookBeat = {
+    ...current,
+    ...(nextHeadline === undefined ? {} : { headline: nextHeadline }),
+    ...(nextBody === undefined ? {} : { body: nextBody }),
+    ...(patch.variant === undefined ? {} : { variant: patch.variant }),
+    durationFrames: nextDuration,
+    ...(importantWordIds === undefined ? {} : { importantWordIds }),
+  }
+  if (nextHeadline === undefined) delete (edited as { headline?: string }).headline
+  if (nextBody === undefined) delete (edited as { body?: string }).body
+  if (importantWordIds === undefined) delete (edited as { importantWordIds?: string[] }).importantWordIds
+  // A transition can never outlast the beat it ends.
+  if (edited.transitionOut && edited.transitionOut.durationFrames > nextDuration) {
+    edited.transitionOut = { ...edited.transitionOut, durationFrames: nextDuration }
+  }
+
+  const beats = plan.beats.map((beat, position) =>
+    position < index ? beat
+      : position === index ? edited
+        : { ...beat, startFrame: Math.max(0, beat.startFrame + delta) })
+
+  const lastEnd = beats.reduce((end, beat) => Math.max(end, beat.startFrame + beat.durationFrames), 0)
+  const ceiling = plan.fps * 30
+  if (lastEnd > ceiling) {
+    throw new Error(`That length would push the hook past the ${ceiling}-frame (30s) limit.`)
+  }
+  return HookPlanSchema.parse({ ...plan, beats, durationFrames: Math.max(lastEnd, 1) })
+}
+
+/**
+ * Retimes an embedded plan when the project's frame rate changes. `patchCanvas` already
+ * rescales scenes, captions and transitions; without this the plan kept its old fps and
+ * every render failed preflight with `hook-plan.fps-mismatch`.
+ */
+export function rescaleHookPlan(plan: HookPlan, fps: number, scale: number): HookPlan {
+  const frames = (value: number): number => Math.max(0, Math.round(value * scale))
+  const beats = plan.beats.map((beat) => ({
+    ...beat,
+    startFrame: frames(beat.startFrame),
+    durationFrames: Math.max(1, frames(beat.durationFrames)),
+    ...(beat.transitionOut
+      ? { transitionOut: { ...beat.transitionOut, durationFrames: frames(beat.transitionOut.durationFrames) } }
+      : {}),
+  }))
+  const lastEnd = beats.reduce((end, beat) => Math.max(end, beat.startFrame + beat.durationFrames), 0)
+  return HookPlanSchema.parse({
+    ...plan,
+    fps,
+    beats,
+    durationFrames: Math.max(1, Math.min(lastEnd || frames(plan.durationFrames), fps * 30)),
+  })
 }

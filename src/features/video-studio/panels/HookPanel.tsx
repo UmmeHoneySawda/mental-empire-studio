@@ -5,6 +5,8 @@ import {
   StudioSection,
   Row,
   Labeled,
+  CommitField,
+  NumberField,
   TextField,
   EmptyHint,
   PromptExchange,
@@ -40,6 +42,8 @@ export function HookPanel(): JSX.Element {
   const instantiateTemplate = useVideoStudio((state) => state.instantiateTemplate)
   const hookPrompt = useVideoStudio((state) => state.hookPrompt)
   const importHookPlan = useVideoStudio((state) => state.importHookPlan)
+  const generateHookPlan = useVideoStudio((state) => state.generateHookPlan)
+  const updateHookBeat = useVideoStudio((state) => state.updateHookBeat)
   const setTab = useVideoStudio((state) => state.setTab)
 
   const [selectedId, setSelectedId] = useState('')
@@ -214,14 +218,36 @@ export function HookPanel(): JSX.Element {
           </p>
         )}
 
-        <PromptExchange
-          buildPrompt={buildPrompt}
-          onApply={importHookPlan}
-          applyLabel="Import hook plan"
-          pasteLabel="Paste the JSON the model returned"
-          emptyPrompt="The prompt asks for data only — no code, JSX, HTML, or commands. The import rejects the paste if the model sends any of that."
-          busy={!selected || Boolean(busy)}
-        />
+        <Row>
+          <Btn
+            variant="primary"
+            disabled={!selected || Boolean(busy)}
+            title="Writes the hook with Groq, using the same key as transcription."
+            onClick={() => {
+              if (!selected) return
+              void generateHookPlan(selected.id, title, durationSeconds, transcript.trim() || undefined)
+            }}
+          >
+            {busy === 'Writing the hook' ? 'Writing the hook…' : '✦ Write the hook for me'}
+          </Btn>
+          <span className="vs-hint" style={{ flex: 1 }}>
+            Uses the Groq key from Settings → Integrations.
+          </span>
+        </Row>
+
+        <details>
+          <summary className="vs-hint" style={{ cursor: 'pointer', padding: '4px 0' }}>
+            Or write it with another model
+          </summary>
+          <PromptExchange
+            buildPrompt={buildPrompt}
+            onApply={importHookPlan}
+            applyLabel="Import hook plan"
+            pasteLabel="Paste the JSON the model returned"
+            emptyPrompt="The prompt asks for data only — no code, JSX, HTML, or commands. The import rejects the paste if the model sends any of that."
+            busy={!selected || Boolean(busy)}
+          />
+        </details>
       </StudioSection>
 
       {hookPlan && (
@@ -243,12 +269,10 @@ export function HookPanel(): JSX.Element {
               const request = hookBrollRequests.find((entry) => entry.beatId === beat.id)
               const endFrame = beat.startFrame + beat.durationFrames
               return (
-                <li key={beat.id} className="vs-item">
+                <li key={beat.id} className="vs-item" style={{ flexWrap: 'wrap' }}>
                   <div className="vs-item-main">
-                    <div className="vs-item-title me-ellipsis">
-                      <span className="vs-mono">{index + 1}</span> {beat.headline ?? beat.body ?? beat.id}
-                    </div>
                     <div className="vs-item-sub">
+                      <span className="vs-mono">{index + 1}</span>
                       <span className="vs-mono">
                         {beat.startFrame}–{endFrame}f
                       </span>{' '}
@@ -275,6 +299,37 @@ export function HookPanel(): JSX.Element {
                       </Btn>
                     </div>
                   )}
+                  {/* The generated wording is a starting point, so every beat is editable
+                      in place. Each field commits on blur/Enter; changing a length ripples
+                      the later beats so the plan stays ordered and non-overlapping. */}
+                  <div className="vs-split" style={{ flexBasis: '100%' }}>
+                    <Labeled label="Headline" wide>
+                      <CommitField
+                        value={beat.headline ?? ''}
+                        placeholder="Leave empty for no headline"
+                        maxLength={500}
+                        onCommit={(value) => void updateHookBeat(beat.id, { headline: value })}
+                      />
+                    </Labeled>
+                    <Labeled label="Body" wide>
+                      <CommitField
+                        multiline
+                        value={beat.body ?? ''}
+                        placeholder="Leave empty for no body"
+                        maxLength={2000}
+                        onCommit={(value) => void updateHookBeat(beat.id, { body: value })}
+                      />
+                    </Labeled>
+                    <Labeled label="Length" hint={`${(beat.durationFrames / fps).toFixed(2)}s`}>
+                      <NumberField
+                        value={beat.durationFrames}
+                        min={1}
+                        max={fps * 30}
+                        suffix="f"
+                        onCommit={(durationFrames) => void updateHookBeat(beat.id, { durationFrames })}
+                      />
+                    </Labeled>
+                  </div>
                 </li>
               )
             })}

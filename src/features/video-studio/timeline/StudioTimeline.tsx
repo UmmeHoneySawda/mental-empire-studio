@@ -69,6 +69,8 @@ export function StudioTimeline(): JSX.Element | null {
   const setSelection = useVideoStudio((state) => state.setSelection)
   const setTrackMuted = useVideoStudio((state) => state.setTrackMuted)
   const updateScene = useVideoStudio((state) => state.updateScene)
+  const setPreviewRange = useVideoStudio((state) => state.setPreviewRange)
+  const previewRange = useVideoStudio((state) => state.previewRange)
   const busy = useVideoStudio((state) => state.busy)
 
   const [zoom, setZoom] = useState(1)
@@ -251,6 +253,17 @@ export function StudioTimeline(): JSX.Element | null {
             {project.canvas.width}×{project.canvas.height}
           </div>
           <div className="vs-ruler" onPointerDown={seekFromEvent} role="presentation">
+            {/* Shades everything outside a solo range, so it is obvious the preview is
+                showing a slice rather than the whole video. */}
+            {previewRange && (
+              <>
+                <span className="vs-solo-mask" style={{ left: 0, width: percent(previewRange.startFrame) }} />
+                <span
+                  className="vs-solo-mask"
+                  style={{ left: percent(previewRange.endFrame), right: 0 }}
+                />
+              </>
+            )}
             {tickSeconds(total, fps, laneWidth).map((second) => (
               <span key={second} className="vs-tick" style={{ left: percent(second * fps) }}>
                 {second}s
@@ -298,6 +311,16 @@ export function StudioTimeline(): JSX.Element | null {
                         onPointerMove={onClipPointerMove}
                         onPointerUp={onClipPointerUp}
                         onPointerCancel={onClipPointerUp}
+                        // Double-click plays just this clip, on a loop — the quickest way
+                        // to check one hook or one caption in a long composition.
+                        onDoubleClick={(event) => {
+                          event.stopPropagation()
+                          setSelection({ kind: 'scene', id: scene.id })
+                          setPreviewRange({
+                            startFrame: scene.startFrame,
+                            endFrame: Math.min(total, scene.startFrame + scene.durationFrames)
+                          })
+                        }}
                         onKeyDown={(event) => {
                           if (event.key === 'Enter' || event.key === ' ') {
                             event.preventDefault()

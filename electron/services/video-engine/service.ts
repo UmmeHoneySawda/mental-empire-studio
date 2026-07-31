@@ -8,7 +8,10 @@ import {
   groupCaptionCues,
   importImportantWords,
   parseHookPlan,
+  applyHookBeatPatch,
+  HookBeatPatchSchema,
   HookPlanSchema,
+  type HookBeatPatch,
   resolveTemplateProps,
   safeParseVideoProject,
   VideoGradingSchema,
@@ -587,6 +590,47 @@ export class VideoEngineService {
       assets: [...project.assets.filter((item) => item.id !== asset.id), asset],
       scenes
     }), { expectedRevision: project.revision })
+  }
+
+  /**
+   * Edits one beat of the compiled hook plan.
+   *
+   * Deliberately not routed through `updateScene`'s templateProps merge: that validates
+   * only against VideoSceneSchema, whose `props` is an untyped JsonObject, so a plan with
+   * overlapping beats or a beat past the end would save happily and only surface later as
+   * a preflight failure. `applyHookBeatPatch` enforces the plan's own invariants and the
+   * result is parsed before it is written.
+   */
+  async updateHookBeat(input: {
+    projectId: string
+    beatId: string
+    patch: HookBeatPatch
+  }): Promise<VideoProject> {
+    const project = await this.projects.open(input.projectId)
+    const hookScene = project.scenes.find((scene) => scene.id === 'video-engine-hook-plan')
+    const planResult = HookPlanSchema.safeParse(hookScene?.template?.props['hookPlan'])
+    if (!hookScene?.template || !planResult.success) {
+      throw new VideoEngineError('INVALID_HOOK_PLAN', 'Project does not contain a compiled hook plan')
+    }
+    let hookPlan
+    try {
+      hookPlan = applyHookBeatPatch(planResult.data, input.beatId, HookBeatPatchSchema.parse(input.patch))
+    } catch (error) {
+      throw new VideoEngineError('INVALID_HOOK_PLAN', error instanceof Error ? error.message : String(error))
+    }
+    // The hook scene has to stay at least as long as the plan it carries, or preflight
+    // rejects it with hook-plan.too-long.
+    const durationFrames = Math.max(hookScene.durationFrames, hookPlan.durationFrames)
+    const scenes = project.scenes.map((scene) => scene.id === hookScene.id
+      ? VideoSceneSchema.parse({
+          ...scene,
+          durationFrames,
+          template: { ...scene.template!, props: { ...scene.template!.props, hookPlan } }
+        })
+      : scene)
+    return this.projects.save(VideoProjectSchema.parse({ ...project, scenes }), {
+      expectedRevision: project.revision
+    })
   }
 
   unresolvedHookBroll(compiled: CompiledHook): readonly HookBrollRequest[] {

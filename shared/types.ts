@@ -29,6 +29,7 @@ import type {
   FetchBrollBatchResult,
   FillWithMediaInput,
   FillWithMediaResult,
+  HookBeatPatch,
   HookPromptInput,
   ImportantWordsPromptInput,
   ImportedHookPlan,
@@ -1529,6 +1530,10 @@ export interface NativeApi {
     hookPrompt(projectId: string, input: HookPromptInput): Promise<string>
     /** validate + compile a pasted hook plan; rejects anything executable-shaped */
     importHookPlan(projectId: string, json: string): Promise<ImportedHookPlan>
+    /** Write the hook with Groq instead of round-tripping through a chat model. */
+    generateHookPlan(projectId: string, input: HookPromptInput): Promise<ImportedHookPlan>
+    /** Edit one beat's text, variant, or length. */
+    updateHookBeat(projectId: string, beatId: string, patch: HookBeatPatch): Promise<ImportedHookPlan>
     /** cache and attach a stock clip to one hook beat that asked for b-roll */
     resolveHookBroll(projectId: string, beatId: string, candidate: VideoBrollCandidate): Promise<VideoProject>
 
