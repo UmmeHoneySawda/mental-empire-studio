@@ -55,6 +55,17 @@ headlessly under `xvfb-run`:
 - Always run `npm run typecheck` + `npm run build` + the smokes after a change. CI (`.github/workflows/
   ci.yml`) runs them all.
 
+## Video Studio E2E
+
+`npm run e2e:studio` drives the real Electron app with Playwright against a throwaway
+profile (`ME_USERDATA_DIR`, set in `electron/main.ts` — a plain relocation, no reset). It
+catches wiring bugs unit tests and a green build cannot see: a preload method with no
+`ipcMain.handle` behind it, a panel that throws on mount, a renderer that fails to report.
+Requires `npm run build` first. `--keep` leaves the scratch profile for inspection.
+
+It does not yet edit a real clip — that needs a downloaded video seeded into the scratch
+database, which is the natural next extension.
+
 ## Build trap: `Unterminated string literal` in `out/main/main.js`
 
 If `npm run build` fails with `main.js:<line>:<col>: ERROR: Unterminated string literal`
