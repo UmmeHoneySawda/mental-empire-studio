@@ -1,4 +1,5 @@
 import type { JsonObject } from '@shared/video-engine'
+import type { TextMotionId } from '../../../../video-engine/remotion/textMotion'
 
 /* Preset tables for the editor's panels.
  *
@@ -129,9 +130,19 @@ export const TEXT_PRESETS: readonly TextPreset[] = [
   { id: 'code', label: 'Mono', hint: '28px JetBrains Mono.', props: { fontSize: 28, fontFamily: 'JetBrains Mono', fontWeight: 400, lineHeight: 1.6, color: '#ffffff' } }
 ] as const
 
-/** Named entrance/exit motions. The composition reads `animation` off a text scene's
- *  template props; each maps to a curve the Remotion side already knows. */
-export const TEXT_ANIMATIONS = [
+/** Named entrance motions. The composition reads `animation` off a text scene's template
+ *  props and `textMotion.ts` resolves it to a curve.
+ *
+ *  The ids are typed as `TextMotionId`, so this table cannot offer a motion the renderer
+ *  does not implement — which is exactly how `typewriter`, `word-by-word` and `stagger`
+ *  came to be dead: they were listed here, saved onto the scene and accepted by preflight,
+ *  while the composition had no case for them and drew `rise` instead. A regression test
+ *  asserts this table and `TEXT_MOTION_IDS` still describe the same set. */
+export const TEXT_ANIMATIONS: ReadonlyArray<{
+  id: TextMotionId
+  label: string
+  hint: string
+}> = [
   { id: 'none', label: 'None', hint: 'Appears on its first frame.' },
   { id: 'fade', label: 'Fade', hint: 'Opacity 0 → 1.' },
   { id: 'rise', label: 'Rise', hint: 'Fades while sliding up. The safe default.' },
@@ -141,7 +152,7 @@ export const TEXT_ANIMATIONS = [
   { id: 'word-by-word', label: 'Word by word', hint: 'Each word pops in turn.' },
   { id: 'blur-in', label: 'Blur in', hint: 'Resolves out of a blur.' },
   { id: 'slide-left', label: 'Slide left', hint: 'Enters from the right edge.' },
-  { id: 'stagger', label: 'Stagger', hint: 'Characters cascade in.' }
+  { id: 'stagger', label: 'Stagger', hint: 'Words cascade in, each rising.' }
 ] as const
 
 // ------------------------------------------------------------------ canvas presets

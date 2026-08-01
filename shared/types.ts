@@ -21,6 +21,9 @@ import type {
 import type {
   AddVideoScenePatch,
   ApplyVideoTransitionInput,
+  AutoBrollOptions,
+  AutoBrollProgress,
+  AutoBrollResult,
   CaptionCueList,
   BrollBatch,
   CaptionImportSummary,
@@ -1096,8 +1099,11 @@ export interface AppSettings {
   autoScrape: { enabled: boolean; frequency: string; delaySec: number; retries: number; proxy: string; cookiesPath: string }
   background: { tray: boolean; startOnSignIn: boolean; notifications: boolean; webhook: string }
   transcription: { apiKey: string; model: string }
-  /** experimental features + stock-footage API keys (gated; default off) */
-  beta: { enabled: boolean; pexelsKey: string; pixabayKey: string; coverrKey: string }
+  /** experimental features + stock-footage API keys (gated; default off).
+   *  `geminiKey` is the Auto B-roll fallback model: a free Groq key's daily token budget
+   *  does not cover a long video twice, and Gemini's does. Optional — Groq alone still
+   *  works, it just runs out sooner. */
+  beta: { enabled: boolean; pexelsKey: string; pixabayKey: string; coverrKey: string; geminiKey?: string }
   /** additive redesign flags, so each shipped slice remains rollback-friendly */
   features: { workflowP1: boolean; videoEditorV2: boolean; thumbEditorV2: boolean }
   /** upload detection automation + pending/high confidence band */
@@ -1144,7 +1150,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoScrape: { enabled: true, frequency: 'Every 6 hours', delaySec: 1.5, retries: 3, proxy: '', cookiesPath: '' },
   background: { tray: true, startOnSignIn: false, notifications: true, webhook: '' },
   transcription: { apiKey: '', model: 'whisper-large-v3-turbo' },
-  beta: { enabled: false, pexelsKey: '', pixabayKey: '', coverrKey: '' },
+  beta: { enabled: false, pexelsKey: '', pixabayKey: '', coverrKey: '', geminiKey: '' },
   features: { workflowP1: true, videoEditorV2: true, thumbEditorV2: true },
   detection: { auto: true, confirmBand: [0.6, 0.82] },
   dedup: { allowReupload: false },
@@ -1567,6 +1573,14 @@ export interface NativeApi {
     searchBroll(projectId: string, input: VideoBrollSearchInput): Promise<VideoBrollCandidate[]>
     /** cache the clip, then place it on the b-roll track with its license sidecar */
     placeBroll(projectId: string, input: PlaceVideoBrollInput): Promise<VideoProject>
+    /**
+     * Reads the whole timestamped transcript, asks Groq for timestamped visual queries in
+     * bounded windows, searches every enabled provider and downloads the picks.
+     *
+     * Returns placements, NOT a saved project: the renderer splices them in as one local
+     * edit, which is what makes a whole run a single undo entry.
+     */
+    autoBroll(projectId: string, downloadId: string, options?: Partial<AutoBrollOptions>): Promise<AutoBrollResult>
 
     preflight(projectId: string): Promise<VideoRenderProblem[]>
     enqueueRender(projectId: string, container?: '.mp4' | '.mov' | '.webm'): Promise<VideoRenderJob>
@@ -1602,6 +1616,9 @@ export interface NativeApi {
   onProviderJob(cb: (job: ProviderJob) => void): () => void
   /** subscribe to template-engine render-job changes (Remotion / HyperFrames queue) */
   onVideoEngineJob(cb: (job: VideoRenderJob) => void): () => void
+  /** subscribe to Auto B-roll progress; a run is eleven model calls plus downloads, so a
+   *  static label on it reads as a hang */
+  onAutoBrollProgress(cb: (p: AutoBrollProgress) => void): () => void
   /** subscribe to TalkingPhotos connection-status changes; this is the only source of
    *  progress/outcome once talkingPhotos.connect()'s login window is open — the
    *  connect() promise itself resolves as soon as the window opens. */

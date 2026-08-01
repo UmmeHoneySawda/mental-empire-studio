@@ -1,5 +1,11 @@
 import { useState } from 'react'
-import type { VideoGrading } from '@shared/video-engine'
+import {
+  AUTO_BROLL_DENSITY_PER_MINUTE,
+  type AutoBrollDensity,
+  type AutoBrollSkipReason,
+  type VideoGrading,
+  type VideoScene
+} from '@shared/video-engine'
 import {
   CANVAS_PRESETS,
   FPS_PRESETS,
@@ -380,6 +386,27 @@ function TemplatesPanel(): JSX.Element {
 
 // ---------------------------------------------------------------------------- text
 
+/** The motion a text clip currently carries. Absent means it predates the Text panel and
+ *  has always rendered statically, which is `none`. */
+function clipMotion(clip: VideoScene): string {
+  const value = clip.template?.props?.['animation']
+  return typeof value === 'string' ? value : 'none'
+}
+
+/* Motion has to live on a template reference, because that is where the composition reads
+ * it from. A text clip added before the Text panel existed has no template, so one is
+ * attached carrying ONLY the motion: every other property in `TextScene` falls back to the
+ * same default it already used, so picking a motion never silently restyles the clip. */
+function withMotion(clip: VideoScene, animation: string): VideoScene['template'] {
+  const base = clip.template ?? {
+    id: 'remotion-text-heading',
+    version: '1.0.0',
+    rendererId: 'remotion' as const,
+    props: {}
+  }
+  return { ...base, props: { ...base.props, animation } }
+}
+
 function TextPanel(): JSX.Element {
   const playheadFrame = useEditor((state) => state.playheadFrame)
   const fps = useEditor((state) => state.project?.canvas.fps ?? 30)
@@ -456,6 +483,21 @@ function TextPanel(): JSX.Element {
           ))}
         </div>
       </Section>
+      {clip?.kind === 'text' && (
+        <Section title="Motion" blurb="Changes the selected clip. The preview updates as you pick.">
+          <Row label="Motion" hint="How it enters">
+            <select
+              className="ve-input"
+              value={clipMotion(clip)}
+              onChange={(event) => patchClip(clip.id, { template: withMotion(clip, event.target.value) })}
+            >
+              {TEXT_ANIMATIONS.map((entry) => (
+                <option key={entry.id} value={entry.id} title={entry.hint}>{entry.label}</option>
+              ))}
+            </select>
+          </Row>
+        </Section>
+      )}
       {clip?.kind === 'text' && (
         <Section title="Colour" blurb="Applies to the selected text clip.">
           <div className="ve-swatches">
@@ -1183,6 +1225,147 @@ function EffectsPanel(): JSX.Element {
 
 // -------------------------------------------------------------------------- b-roll
 
+const SKIP_LABELS: Readonly<Record<AutoBrollSkipReason, string>> = {
+  'no-results': 'no footage matched',
+  'download-failed': 'download failed',
+  duplicate: 'clip already on the timeline',
+  'model-invalid': 'query too vague to search',
+  'rate-limited': 'Groq rate limit — wait a minute and run it again',
+  'too-short': 'no room on the timeline',
+  occupied: 'too close to another clip'
+}
+
+/** Auto B-roll: one button over the whole transcript.
+ *
+ *  The manual search below it is unchanged and still the right tool for "I want THIS shot
+ *  HERE". This covers the other job — footage across a 22-minute video — which nobody is
+ *  going to do twenty-five queries at a time. */
+function AutoBrollSection(): JSX.Element {
+  const autoBroll = useEditor((state) => state.autoBroll)
+  const result = useEditor((state) => state.autoBrollResult)
+  const providers = useEditor((state) => state.brollProviders)
+  const busy = useEditor((state) => state.busy)
+  const progressNote = useEditor((state) => state.progressNote)
+  const project = useEditor((state) => state.project)
+  const [density, setDensity] = useState<AutoBrollDensity>('balanced')
+  const [minSeconds, setMinSeconds] = useState(3)
+  const [maxSeconds, setMaxSeconds] = useState(6)
+  const [orientation, setOrientation] = useState<'auto' | 'landscape' | 'portrait'>('auto')
+
+  const running = busy === 'Finding B-roll'
+  const wordCount = project?.captions?.words.length ?? 0
+  const minutes = project ? project.canvas.durationFrames / Math.max(1, project.canvas.fps) / 60 : 0
+  const perMinute = AUTO_BROLL_DENSITY_PER_MINUTE[density]
+  const onlyLocal = providers.length > 0 && providers.every((provider) => provider === 'local')
+
+  const run = (): void => {
+    void autoBroll({
+      density,
+      minClipSeconds: minSeconds,
+      maxClipSeconds: Math.max(minSeconds, maxSeconds),
+      ...(orientation === 'auto' ? {} : { orientation })
+    })
+  }
+
+  return (
+    <Section
+      title="Auto B-roll"
+      blurb="Reads the whole transcript, writes a search query for each moment worth a cutaway, and places the footage on its own lane. One undo reverses the entire run."
+    >
+      {wordCount === 0 ? (
+        <p className="ve-hint">
+          This clip has no transcript yet, and Auto B-roll places footage by timestamp.
+          Transcribe it from the Captions panel first.
+        </p>
+      ) : (
+        <>
+          <Row label="Density" hint={`≈ ${Math.max(1, Math.round(minutes * perMinute))} clips`}>
+            <select
+              className="ve-input"
+              value={density}
+              onChange={(event) => setDensity(event.target.value as AutoBrollDensity)}
+            >
+              <option value="sparse">Sparse — one every two minutes</option>
+              <option value="balanced">Balanced — one a minute</option>
+              <option value="dense">Dense — three every two minutes</option>
+            </select>
+          </Row>
+          <Row label="Shortest clip" hint={`${minSeconds}s`}>
+            <input
+              type="range"
+              min={1}
+              max={10}
+              step={1}
+              value={minSeconds}
+              onChange={(event) => setMinSeconds(Number(event.target.value))}
+            />
+          </Row>
+          <Row label="Longest clip" hint={`${Math.max(minSeconds, maxSeconds)}s`}>
+            <input
+              type="range"
+              min={2}
+              max={15}
+              step={1}
+              value={maxSeconds}
+              onChange={(event) => setMaxSeconds(Number(event.target.value))}
+            />
+          </Row>
+          <Row label="Orientation">
+            <select
+              className="ve-input"
+              value={orientation}
+              onChange={(event) => setOrientation(event.target.value as 'auto' | 'landscape' | 'portrait')}
+            >
+              <option value="auto">Match the canvas</option>
+              <option value="landscape">Landscape</option>
+              <option value="portrait">Portrait</option>
+            </select>
+          </Row>
+          {onlyLocal && (
+            <p className="ve-hint">
+              Only the local library is available. Add a Pexels, Pixabay or Coverr key in
+              Settings → Integrations for real coverage.
+            </p>
+          )}
+          <div className="ve-actions">
+            <button type="button" className="ve-btn ve-btn--primary" disabled={!!busy} onClick={run}>
+              {running ? (progressNote || 'Finding B-roll…') : 'Auto B-roll this video'}
+            </button>
+          </div>
+        </>
+      )}
+
+      {result && (
+        <dl className="ve-specs">
+          <dt>Placed</dt><dd>{result.placements.length} clips</dd>
+          <dt>Read</dt>
+          <dd>
+            {result.stats.chunks} section{result.stats.chunks === 1 ? '' : 's'} of transcript
+            {result.stats.chunksFailed > 0 && ` · ${result.stats.chunksFailed} unreadable`}
+          </dd>
+          <dt>Searched</dt>
+          <dd>
+            {result.stats.searched} quer{result.stats.searched === 1 ? 'y' : 'ies'}
+            {result.stats.providerFailures > 0 && ` · ${result.stats.providerFailures} failed`}
+          </dd>
+          {result.skipped.length > 0 && (
+            <>
+              <dt>Skipped</dt>
+              <dd>
+                {/* "no footage matched (2)" rather than "2 no footage matched", so a
+                    count never has to agree with the noun in the label. */}
+                {[...new Set(result.skipped.map((skip) => skip.reason))]
+                  .map((reason) => `${SKIP_LABELS[reason]} (${result.skipped.filter((skip) => skip.reason === reason).length})`)
+                  .join(' · ')}
+              </dd>
+            </>
+          )}
+        </dl>
+      )}
+    </Section>
+  )
+}
+
 function BrollPanel(): JSX.Element {
   const providers = useEditor((state) => state.brollProviders)
   const results = useEditor((state) => state.brollResults)
@@ -1201,6 +1384,8 @@ function BrollPanel(): JSX.Element {
       <Section title="Providers" blurb={providers.length > 0 ? providers.join(', ') : 'None configured.'}>
         <p className="ve-hint">Pexels, Pixabay and Coverr need an API key. Add keys in Settings → Integrations.</p>
       </Section>
+
+      <AutoBrollSection />
 
       <Section title="Search footage">
         <Row label="Query">

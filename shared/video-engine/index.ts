@@ -1,3 +1,4 @@
+export * from './auto-broll'
 export * from './broll'
 export * from './captions'
 export * from './common'

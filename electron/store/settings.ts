@@ -15,7 +15,7 @@ type Schema = { settings: AppSettings }
 let store: Store<Schema> | null = null
 
 // Field names (anywhere in the settings tree) whose string values are secrets.
-const SECRET_FIELDS = new Set(['apiKey', 'pexelsKey', 'pixabayKey', 'coverrKey'])
+const SECRET_FIELDS = new Set(['apiKey', 'pexelsKey', 'pixabayKey', 'coverrKey', 'geminiKey'])
 const ENC_PREFIX = 'enc:v1:'
 
 function canEncrypt(): boolean {
@@ -126,17 +126,30 @@ export function initSettings(): AppSettings {
   return reconciled
 }
 
+// Env-var fallbacks for secret fields left blank in the Settings UI — lets any locally
+// installed agent/tool share one set of API keys via the OS environment instead of every
+// user re-pasting them. Never persisted: applied only on read, after decoding.
+function applyEnvFallback(settings: AppSettings): AppSettings {
+  const out = { ...settings, transcription: { ...settings.transcription }, beta: { ...settings.beta } }
+  if (!out.transcription.apiKey) out.transcription.apiKey = process.env.GROQ_API_KEY ?? ''
+  if (!out.beta.pexelsKey) out.beta.pexelsKey = process.env.PEXELS_API_KEY ?? ''
+  if (!out.beta.pixabayKey) out.beta.pixabayKey = process.env.PIXABAY_API_KEY ?? ''
+  if (!out.beta.coverrKey) out.beta.coverrKey = process.env.COVERR_API_KEY ?? ''
+  if (!out.beta.geminiKey) out.beta.geminiKey = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY ?? ''
+  return out
+}
+
 export function getSettings(): AppSettings {
   if (!store) return initSettings()
-  return decodeSecrets(store.get('settings'))
+  return applyEnvFallback(decodeSecrets(store.get('settings')))
 }
 
 /** Apply a deep patch, persist, and return the full merged settings. */
 export function setSettings(patch: DeepPartial<AppSettings>): AppSettings {
   if (!store) initSettings()
-  const next = mergeDeep(getSettings(), patch)
+  const next = mergeDeep(decodeSecrets(store!.get('settings')), patch)
   persist(next)
-  return next
+  return applyEnvFallback(next)
 }
 
 /** Restore every setting to its factory default and persist. */

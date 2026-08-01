@@ -52,7 +52,9 @@ export class PixabayBrollProvider implements BrollProvider {
       return [{
         id: String(hit.id),
         provider: this.id,
-        title: hit.tags || query.query,
+        // Never the query: a candidate that repeats what was asked for matches it perfectly
+        // no matter what it shows, which is how a provider earns relevance it never proved.
+        title: hit.tags || `Pixabay video ${hit.id}`,
         sourceUrl: hit.pageURL,
         downloadUrl: rendition.url,
         thumbnailUrl: rendition.thumbnail,

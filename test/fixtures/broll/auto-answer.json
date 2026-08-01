@@ -1,0 +1,28 @@
+{
+  "moments": [
+    {
+      "startSec": 2,
+      "endSec": 5,
+      "text": "the opening line of the narration",
+      "query": "kettle boiling quiet kitchen",
+      "category": "object",
+      "reason": "a concrete object to cut away to while the point lands"
+    },
+    {
+      "startSec": 14,
+      "endSec": 18,
+      "text": "the middle of the section",
+      "query": "cyclist crossing empty bridge",
+      "category": "activity",
+      "reason": "movement under a stretch of narration with nothing on screen"
+    },
+    {
+      "startSec": 26,
+      "endSec": 30,
+      "text": "the closing line of the section",
+      "query": "harbour crane at dawn",
+      "category": "location",
+      "reason": "a wide establishing shot to close the section on"
+    }
+  ]
+}

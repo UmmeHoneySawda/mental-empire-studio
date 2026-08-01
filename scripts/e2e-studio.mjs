@@ -23,7 +23,7 @@
  * render path is covered by the milestone smokes instead.
  */
 import { _electron as electron } from 'playwright'
-import { existsSync, mkdirSync, rmSync } from 'node:fs'
+import { copyFileSync, existsSync, mkdirSync, rmSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
@@ -33,6 +33,14 @@ const MAIN = join(ROOT, 'out', 'main', 'main.js')
 const FIXTURE_AUDIO = join(ROOT, 'test', 'fixtures', 'audio', 'sample.mp3')
 const FIXTURE_IMAGES = ['img1.png', 'img2.png', 'img3.png']
   .map((name) => join(ROOT, 'test', 'fixtures', 'images', name))
+/** A recorded Groq answer, so Auto B-roll runs with no API key and no quota. */
+const FIXTURE_AUTO_ANSWER = join(ROOT, 'test', 'fixtures', 'broll', 'auto-answer.json')
+/** Local clips seeded into the scratch profile's warmed b-roll library, named so the
+ *  recorded answer's queries actually match them. */
+const FIXTURE_BROLL = [
+  ['clip2.mp4', 'kettle-boiling-kitchen'],
+  ['clip3.mp4', 'cyclist-crossing-bridge']
+]
 const CLIP_ID = 'e2e-clip'
 const CLIP_TITLE = 'E2E fixture clip'
 const KEEP = process.argv.includes('--keep')
@@ -75,6 +83,9 @@ try {
       ME_E2E_SEED_AUDIO: FIXTURE_AUDIO,
       ME_E2E_SEED_ID: CLIP_ID,
       ME_E2E_SEED_TITLE: CLIP_TITLE,
+      // Auto B-roll asks Groq once per two minutes of narration. A recorded answer keeps
+      // the run offline and free, exactly like ME_WHISPER_FIXTURE does for transcription.
+      ME_AUTO_BROLL_FIXTURE: FIXTURE_AUTO_ANSWER,
       // Keep the run offline and quiet: no telemetry, no auto-scrape, no updater.
       ME_TELEMETRY_OFF: '1',
       ME_E2E: '1'
@@ -160,7 +171,7 @@ try {
   // A method that needs a project must still REACH its handler. A rejection mentioning
   // "No handler registered" is a wiring bug; a rejection about a missing project is the
   // handler doing its job.
-  const wired = ['fillWithMedia', 'brollBatches', 'generateHookPlan', 'updateHookBeat', 'fetchBrollBatch']
+  const wired = ['fillWithMedia', 'brollBatches', 'generateHookPlan', 'updateHookBeat', 'fetchBrollBatch', 'autoBroll']
   for (const method of wired) {
     const result = await page.evaluate(async (name) => {
       try {
@@ -376,6 +387,155 @@ try {
         return found.filter((p) => p.severity === 'error').map((p) => p.code)
       }, projectId)
       check(after.length === 0, 'the crossfade passes preflight', after.join(', '))
+    }
+  }
+
+  // 2c. Auto B-roll, end to end through the real IPC path: a recorded Groq answer, the
+  //     scratch profile's own warmed b-roll library as the provider, a real download into
+  //     the cache, and a real asset. This is the check that catches the wiring — a preload
+  //     method with no handler, a transcript the analyzer cannot read, an asset the engine
+  //     will not accept. Coverage across a 22-minute video is unit-tested; this is plumbing.
+  console.log('\nauto b-roll')
+
+  // Without a transcript the button must refuse with something the user can act on,
+  // rather than quietly returning nothing.
+  const noTranscript = await page.evaluate(async ([id, clipId]) => {
+    try {
+      const result = await window.api.videoEngine.autoBroll(id, clipId, {})
+      return { refused: false, placements: result.placements.length }
+    } catch (error) {
+      return { refused: true, message: String(error?.message ?? error) }
+    }
+  }, [projectId, CLIP_ID])
+  check(
+    !noTranscript.refused || /transcri/i.test(noTranscript.message ?? ''),
+    'a project with no transcript is refused with an actionable message',
+    (noTranscript.message ?? '').slice(0, 160)
+  )
+
+  // Captions from an SRT need no API key, so the analyzer gets a real timestamped
+  // transcript in an offline scratch profile.
+  const clipSeconds = Math.floor(bound.durationFrames / bound.fps)
+  const srt = Array.from({ length: Math.max(1, Math.floor(clipSeconds / 2)) }, (_unused, index) => {
+    const stamp = (seconds) =>
+      `00:00:${String(Math.floor(seconds)).padStart(2, '0')},${String(Math.round((seconds % 1) * 1000)).padStart(3, '0')}`
+    return `${index + 1}\n${stamp(index * 2)} --> ${stamp(index * 2 + 1.9)}\n`
+      + `A kettle boiling in a quiet kitchen while a cyclist crosses the empty bridge outside.\n`
+  }).join('\n')
+  const captioned = await page.evaluate(async ([id, text]) => {
+    try {
+      const project = await window.api.videoEngine.setCaptionsFromSrt(id, { srt: text })
+      return { ok: true, words: project.captions?.words.length ?? 0 }
+    } catch (error) {
+      return { ok: false, message: String(error?.message ?? error) }
+    }
+  }, [projectId, srt])
+  check(captioned.ok && captioned.words > 0, `seeded a ${captioned.words ?? 0}-word transcript from SRT`, captioned.message)
+
+  // Seed the warmed local library the scratch profile ships empty, named so the recorded
+  // answer's queries match. This is the provider Auto B-roll fans out to with no API key.
+  for (const [file, keyword] of FIXTURE_BROLL) {
+    const source = join(ROOT, 'test', 'fixtures', 'broll', 'local', file)
+    const target = join(userDataPath, 'broll-library', 'e2e', keyword)
+    if (!existsSync(source)) continue
+    mkdirSync(target, { recursive: true })
+    copyFileSync(source, join(target, file))
+  }
+
+  if (captioned.ok && captioned.words > 0) {
+    const auto = await page.evaluate(async ([id, clipId]) => {
+      try {
+        const result = await window.api.videoEngine.autoBroll(id, clipId, {
+          density: 'dense', minClipSeconds: 2, maxClipSeconds: 4
+        })
+        return {
+          ok: true,
+          placements: result.placements.map((placement) => ({
+            startFrame: placement.startFrame,
+            durationFrames: placement.durationFrames,
+            assetId: placement.asset.id,
+            uri: placement.asset.uri,
+            provider: placement.candidate.provider,
+            query: placement.moment.query
+          })),
+          skipped: result.skipped.map((skip) => skip.reason),
+          stats: result.stats
+        }
+      } catch (error) {
+        return { ok: false, message: String(error?.message ?? error) }
+      }
+    }, [projectId, CLIP_ID])
+
+    check(auto.ok, 'autoBroll runs against the recorded answer and the local library', auto.message?.slice(0, 200))
+    if (auto.ok) {
+      console.log(`        ${auto.stats.chunks} chunk(s), ${auto.stats.moments} moment(s), `
+        + `${auto.placements.length} placed, skipped: ${auto.skipped.join(', ') || 'none'}`)
+      check(auto.stats.chunks > 0, `read ${auto.stats.chunks} transcript window(s)`)
+      check(auto.stats.chunksFailed === 0, 'every window produced a usable answer')
+      check(auto.placements.length > 0, 'at least one clip was found, downloaded and planned')
+
+      for (const placement of auto.placements) {
+        check(
+          Number.isInteger(placement.startFrame) && placement.durationFrames > 0 &&
+            placement.startFrame + placement.durationFrames <= bound.durationFrames,
+          `placement at ${placement.startFrame}f fits the canvas (${placement.durationFrames}f)`
+        )
+      }
+      const onDisk = auto.placements.every((placement) =>
+        placement.uri.startsWith('file:') && existsSync(fileURLToPath(placement.uri)))
+      check(onDisk, 'every planned clip is really on disk in the cache')
+
+      // The engine has to accept what the renderer will splice in, or the debounced save
+      // after the run would be rejected and the user would lose the whole thing. The
+      // renderer's `applyAutoBroll` owns the real splice (and is unit-tested); this asserts
+      // the ENGINE end of that contract against a live project.
+      const saved = await page.evaluate(async ([id, placements]) => {
+        try {
+          const project = await window.api.videoEngine.project(id)
+          const known = new Set(project.assets.map((asset) => asset.id))
+          const next = {
+            ...project,
+            tracks: [...project.tracks, { id: 'auto-broll', name: 'Auto B-roll', kind: 'video', order: 10, muted: false, locked: false }],
+            assets: [...project.assets],
+            scenes: [...project.scenes]
+          }
+          for (const [index, placement] of placements.entries()) {
+            if (!known.has(placement.assetId)) {
+              known.add(placement.assetId)
+              next.assets.push({ id: placement.assetId, name: placement.query, kind: 'video', uri: placement.uri })
+            }
+            next.scenes.push({
+              id: `auto-broll-scene-${index}`,
+              trackId: 'auto-broll',
+              kind: 'media',
+              startFrame: placement.startFrame,
+              durationFrames: placement.durationFrames,
+              zIndex: 1,
+              assetId: placement.assetId,
+              fit: 'cover',
+              opacity: 1,
+              volume: 0
+            })
+          }
+          const written = await window.api.videoEngine.saveProject(id, next)
+          const problems = await window.api.videoEngine.preflight(id)
+          return {
+            ok: true,
+            onLane: written.scenes.filter((scene) => scene.trackId === 'auto-broll').length,
+            muted: written.scenes.filter((scene) => scene.trackId === 'auto-broll').every((scene) => scene.volume === 0),
+            errors: problems.filter((problem) => problem.severity === 'error').map((problem) => problem.code)
+          }
+        } catch (error) {
+          return { ok: false, message: String(error?.message ?? error) }
+        }
+      }, [projectId, auto.placements])
+
+      check(saved.ok, 'the engine accepts a project carrying the generated clips', saved.message?.slice(0, 200))
+      if (saved.ok) {
+        check(saved.onLane === auto.placements.length, `${saved.onLane} clips persisted on the auto-broll lane`)
+        check(saved.muted, 'every persisted clip is muted so the narration keeps the audio tags')
+        check(saved.errors.length === 0, 'the run passes preflight', saved.errors.join(', '))
+      }
     }
   }
 

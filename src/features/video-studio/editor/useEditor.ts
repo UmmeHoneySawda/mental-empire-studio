@@ -1,6 +1,8 @@
 import { create } from 'zustand'
 import { HookPlanSchema } from '@shared/video-engine'
 import type {
+  AutoBrollOptions,
+  AutoBrollResult,
   CaptionCueList,
   HookBeatPatch,
   HookPlan,
@@ -77,6 +79,9 @@ interface EditorState {
   brollProviders: string[]
   brollResults: VideoBrollCandidate[]
   brollSearching: boolean
+  /** The last Auto B-roll run, kept so the panel can report what was skipped and why.
+   *  Silence has to be distinguishable from "your API key is wrong". */
+  autoBrollResult: AutoBrollResult | null
 
   loading: boolean
   busy: string
@@ -165,6 +170,9 @@ interface EditorActions {
   setGrading: (grading: VideoGrading) => Promise<void>
   searchBroll: (query: string) => Promise<void>
   placeBroll: (candidate: VideoBrollCandidate, startFrame: number, durationFrames: number) => Promise<void>
+  /** Reads the whole transcript, plans and downloads footage engine-side, then splices the
+   *  entire run in with ONE local edit — so it repaints instantly and one undo reverses it. */
+  autoBroll: (options?: Partial<AutoBrollOptions>) => Promise<void>
   clearBroll: () => void
   preflight: () => Promise<VideoRenderProblem[]>
   enqueueRender: () => Promise<void>
@@ -177,14 +185,45 @@ export type EditorStore = EditorState & EditorActions
 
 const HISTORY_LIMIT = 60
 
-const EMPTY: Pick<EditorState, 'project' | 'projectId' | 'problems' | 'cues' | 'brollResults' | 'past' | 'future'> = {
+const EMPTY: Pick<
+  EditorState,
+  'project' | 'projectId' | 'problems' | 'cues' | 'brollResults' | 'autoBrollResult' | 'past' | 'future'
+> = {
   project: null,
   projectId: '',
   problems: [],
   cues: null,
   brollResults: [],
+  autoBrollResult: null,
   past: [],
   future: []
+}
+
+/** One line the user can act on: how many clips landed, and why the rest did not. */
+function summariseAutoBroll(result: AutoBrollResult): string {
+  const placed = result.placements.length
+  const counts = new Map<string, number>()
+  for (const skip of result.skipped) counts.set(skip.reason, (counts.get(skip.reason) ?? 0) + 1)
+  const label: Record<string, string> = {
+    'no-results': 'no footage found',
+    'download-failed': 'download failed',
+    duplicate: 'already used',
+    'model-invalid': 'unusable query',
+    'rate-limited': 'hit the Groq rate limit',
+    'too-short': 'no room',
+    occupied: 'too close to another clip'
+  }
+  const detail = [...counts.entries()]
+    .sort((left, right) => right[1] - left[1])
+    .slice(0, 3)
+    .map(([reason, count]) => `${count} ${label[reason] ?? reason}`)
+    .join(', ')
+  if (placed === 0) {
+    return detail
+      ? `No footage placed — ${detail}.`
+      : 'No footage placed. Check the stock-footage API keys in Settings.'
+  }
+  return `Placed ${placed} clip${placed === 1 ? '' : 's'} across the timeline${detail ? ` · skipped: ${detail}` : ''}.`
 }
 
 export const useEditor = create<EditorStore>((set, get) => {
@@ -654,6 +693,25 @@ export const useEditor = create<EditorStore>((set, get) => {
       const project = await runEngine('Downloading and placing footage', (native) =>
         native.videoEngine.placeBroll(projectId, { candidate, startFrame, durationFrames }))
       if (project) adopt(project, `Placed “${candidate.title}”.`)
+    },
+
+    /* The whole run is planned and downloaded engine-side and comes back as DATA, then
+     * lands in one `edit()`. That is what makes it a single undo entry and what lets the
+     * Player repaint on the same tick — an engine-saved project would have replaced local
+     * state instead, discarding whatever the user did while it ran. */
+    autoBroll: async (options) => {
+      const { projectId, downloadId } = get()
+      if (!projectId || !downloadId) return
+      await get().flush()
+      const result = await runEngine('Finding B-roll', (native) =>
+        native.videoEngine.autoBroll(projectId, downloadId, options))
+      set({ progressNote: '' })
+      if (!result) return
+      set({ autoBrollResult: result })
+      if (result.placements.length > 0) {
+        get().edit((project) => ops.applyAutoBroll(project, result.placements))
+      }
+      set({ notice: summariseAutoBroll(result) })
     },
 
     clearBroll: () => set({ brollResults: [] }),

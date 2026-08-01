@@ -123,7 +123,10 @@ function applyCaptionTemplateToProject(
   })
 }
 
-function brollAssetForProject(
+/** Exported for Auto B-roll, which builds assets outside `placeBroll` (it returns
+ *  placements for the renderer to splice in rather than saving the project itself).
+ *  Duplicating the licence mapping is how the two paths would drift apart. */
+export function brollAssetForProject(
   project: VideoProject,
   candidate: BrollCandidate,
   cached: CachedBrollAsset

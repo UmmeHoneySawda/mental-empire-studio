@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest'
-import type { VideoProject, VideoScene } from '../../../shared/video-engine'
+import type { AutoBrollPlacement, VideoProject, VideoScene } from '../../../shared/video-engine'
 import {
+  applyAutoBroll,
   contentEndFrame,
   duplicateClip,
   moveClip,
@@ -12,7 +13,7 @@ import {
 } from '../../../src/features/video-studio/editor/operations'
 import { clipWidthPx, framesToPx } from '../../../src/features/video-studio/editor/constants'
 import { defaultHookPlan } from '../../../src/features/video-studio/editor/hookPlan'
-import { HookPlanSchema } from '../../../shared/video-engine'
+import { createEmptyVideoProject, HookPlanSchema, VideoProjectSchema } from '../../../shared/video-engine'
 
 /* Regression cover for the three timeline bugs and the premade-hook plan.
  *
@@ -282,5 +283,139 @@ describe('the premade hook plan is valid on its own terms', () => {
         expect(beat.transitionOut.durationFrames).toBeLessThanOrEqual(beat.durationFrames)
       }
     }
+  })
+})
+
+describe('splicing an Auto B-roll run into the timeline', () => {
+  function placement(over: Partial<AutoBrollPlacement> = {}): AutoBrollPlacement {
+    const id = 'aaaaaaaa'
+    return {
+      moment: {
+        startSec: 10,
+        endSec: 14,
+        text: 'narration',
+        query: 'kettle boiling quiet kitchen',
+        category: 'object',
+        reason: 'covers the beat'
+      },
+      candidate: {
+        id,
+        provider: 'pexels',
+        title: 'Kettle boiling',
+        sourceUrl: 'https://example.test/1',
+        downloadUrl: 'https://example.test/1.mp4',
+        width: 1920,
+        height: 1080,
+        durationMs: 12_000,
+        license: { name: 'Pexels', url: 'https://example.test/l', attributionRequired: false, commercialUseAllowed: true },
+        tags: []
+      },
+      asset: {
+        id: `broll:${id}`,
+        name: 'Kettle boiling',
+        kind: 'video',
+        uri: `file:///cache/${id}.mp4`,
+        durationFrames: 360
+      },
+      startFrame: 300,
+      durationFrames: 120,
+      score: 30,
+      ...over
+    }
+  }
+
+  /** A project the engine would actually accept, so the assertions below are about the
+   *  operation rather than about a hand-rolled stub. */
+  function realProject(): VideoProject {
+    return VideoProjectSchema.parse({
+      ...createEmptyVideoProject({
+        id: 'remotion-p1',
+        name: 'A clip',
+        rendererId: 'remotion',
+        width: 1920,
+        height: 1080,
+        fps,
+        durationFrames: 3600,
+        now: '2026-01-01T00:00:00.000Z'
+      }),
+      assets: [{ id: 'manual-asset', name: 'manual.mp4', kind: 'video', uri: 'file:///manual.mp4', durationFrames: 600 }],
+      tracks: [
+        { id: 'main-video', name: 'Visuals', kind: 'video', order: 0, muted: false, locked: false },
+        { id: 'video-engine-broll', name: 'B-roll', kind: 'video', order: 0, muted: false, locked: false }
+      ],
+      scenes: [
+        { id: 'manual-broll', trackId: 'video-engine-broll', kind: 'media', startFrame: 60, durationFrames: 90, zIndex: 1, assetId: 'manual-asset', fit: 'cover', opacity: 1 }
+      ]
+    })
+  }
+
+  it('puts every clip on its own lane above the base video', () => {
+    const next = applyAutoBroll(realProject(), [placement()])
+    const track = next.tracks.find((candidate) => candidate.id === 'auto-broll')!
+    expect(track.order).toBe(10)
+    expect(track.kind).toBe('video')
+    expect(track.order).toBeGreaterThan(next.tracks.find((candidate) => candidate.id === 'main-video')!.order)
+    const scene = next.scenes.find((candidate) => candidate.trackId === 'auto-broll')!
+    expect(scene.kind).toBe('media')
+    expect(scene.startFrame).toBe(300)
+    expect(scene.durationFrames).toBe(120)
+    expect(scene.fit).toBe('cover')
+  })
+
+  it('mutes every generated clip so the narration keeps the shared audio tags', () => {
+    const next = applyAutoBroll(realProject(), [placement(), placement({ startFrame: 900 })])
+    const generated = next.scenes.filter((scene) => scene.trackId === 'auto-broll')
+    expect(generated).toHaveLength(2)
+    expect(generated.every((scene) => scene.volume === 0)).toBe(true)
+  })
+
+  it('leaves manually placed b-roll exactly where it was', () => {
+    const before = realProject()
+    const next = applyAutoBroll(before, [placement()])
+    expect(next.scenes.filter((scene) => scene.trackId === 'video-engine-broll'))
+      .toEqual(before.scenes.filter((scene) => scene.trackId === 'video-engine-broll'))
+    expect(next.tracks.some((track) => track.id === 'video-engine-broll')).toBe(true)
+    expect(next.assets.some((asset) => asset.id === 'manual-asset')).toBe(true)
+    // The input project is untouched, which is what makes one undo restore it whole.
+    expect(before.scenes).toHaveLength(1)
+    expect(before.tracks).toHaveLength(2)
+  })
+
+  it('adds to the lane on a second run instead of creating another one', () => {
+    const first = applyAutoBroll(realProject(), [placement()])
+    const second = applyAutoBroll(first, [placement({ startFrame: 1200, asset: { id: 'broll:bbbbbbbb', name: 'Other', kind: 'video', uri: 'file:///b.mp4', durationFrames: 360 } })])
+    expect(second.tracks.filter((track) => track.id === 'auto-broll')).toHaveLength(1)
+    expect(second.scenes.filter((scene) => scene.trackId === 'auto-broll')).toHaveLength(2)
+    expect(second.assets.filter((asset) => asset.id.startsWith('broll:'))).toHaveLength(2)
+  })
+
+  it('never adds the same asset twice', () => {
+    const next = applyAutoBroll(realProject(), [placement(), placement({ startFrame: 900 })])
+    expect(next.assets.filter((asset) => asset.id === 'broll:aaaaaaaa')).toHaveLength(1)
+  })
+
+  it('clamps a clip and its source range to the asset the engine will validate against', () => {
+    const next = applyAutoBroll(realProject(), [
+      placement({
+        durationFrames: 900,
+        sourceRange: { startFrame: 0, durationFrames: 900 },
+        asset: { id: 'broll:cccccccc', name: 'Short', kind: 'video', uri: 'file:///c.mp4', durationFrames: 200 }
+      })
+    ])
+    const scene = next.scenes.find((candidate) => candidate.trackId === 'auto-broll')!
+    expect(scene.durationFrames).toBe(200)
+    expect(scene.sourceRange).toEqual({ startFrame: 0, durationFrames: 200 })
+  })
+
+  it('produces a project the engine accepts, canvas grown to cover the run', () => {
+    const spliced = applyAutoBroll(realProject(), [placement({ startFrame: 3550, durationFrames: 120 })])
+    const grown = withCanvasCoveringContent(spliced)
+    expect(grown.canvas.durationFrames).toBe(3670)
+    expect(() => VideoProjectSchema.parse(grown)).not.toThrow()
+  })
+
+  it('declines an empty run so it never lands in the undo stack', () => {
+    const before = realProject()
+    expect(applyAutoBroll(before, [])).toBe(before)
   })
 })

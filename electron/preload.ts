@@ -25,6 +25,8 @@ import type { ProviderConnection, ProviderJob, ProviderMotionQuery, TalkingPhoto
 import type {
   AddVideoScenePatch,
   ApplyVideoTransitionInput,
+  AutoBrollOptions,
+  AutoBrollProgress,
   CreateVideoProjectInput,
   FetchBrollBatchInput,
   FillWithMediaInput,
@@ -351,6 +353,8 @@ const api: NativeApi = {
     searchBroll: (projectId: string, input: VideoBrollSearchInput) =>
       ipcRenderer.invoke('videoEngine:searchBroll', projectId, input),
     placeBroll: (projectId: string, input: PlaceVideoBrollInput) => ipcRenderer.invoke('videoEngine:placeBroll', projectId, input),
+    autoBroll: (projectId: string, downloadId: string, options?: Partial<AutoBrollOptions>) =>
+      ipcRenderer.invoke('videoEngine:autoBroll', projectId, downloadId, options),
 
     preflight: (projectId: string) => ipcRenderer.invoke('videoEngine:preflight', projectId),
     enqueueRender: (projectId: string, container?: '.mp4' | '.mov' | '.webm') =>
@@ -385,6 +389,7 @@ const api: NativeApi = {
   onAutomationJob: (cb: (job: AutomationJob) => void) => subscribe('automation:job', cb),
   onProviderJob: (cb: (job: ProviderJob) => void) => subscribe('talkingphotos:job', cb),
   onVideoEngineJob: (cb: (job: VideoRenderJob) => void) => subscribe('videoEngine:job', cb),
+  onAutoBrollProgress: (cb: (p: AutoBrollProgress) => void) => subscribe('videoEngine:autoBroll', cb),
   onConnectionStatusChanged: (cb: (connection: ProviderConnection) => void) => subscribe('talkingphotos:connectionStatus', cb)
 }
 

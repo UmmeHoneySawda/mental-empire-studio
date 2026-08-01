@@ -3,6 +3,8 @@ import { existsSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { basename, dirname, join } from 'node:path'
 import {
+  AUTO_BROLL_DEFAULT_OPTIONS,
+  AUTO_BROLL_TRACK_ID,
   createCaptionDocument,
   emptySpans,
   planMediaFill,
@@ -13,6 +15,9 @@ import {
   VideoSceneSchema,
   type AddVideoScenePatch,
   type ApplyVideoTransitionInput,
+  type AutoBrollOptions,
+  type AutoBrollProgress,
+  type AutoBrollResult,
   type CaptionCueList,
   type CaptionImportSummary,
   type BrollBatch,
@@ -58,6 +63,10 @@ import {
   parseBrollRequest,
   readBrollBatches
 } from '../services/video-engine/broll/batches'
+import type { TimedWord } from '../services/video-engine/broll/auto'
+import { createAutoBrollModel } from '../services/video-engine/broll/auto-model'
+import { planAutoBroll } from '../services/video-engine/broll/auto-plan'
+import { brollAssetForProject } from '../services/video-engine/service'
 import { generateHookPlan } from '../services/video-engine/hook-generator'
 import { ensureTranscript } from './compose'
 import {
@@ -445,6 +454,164 @@ async function fetchBrollBatch(
     operation: 'broll_batch'
   })
   return { project: imported.project, batch }
+}
+
+/** The timestamped transcript in seconds, from wherever this project actually has one.
+ *
+ *  Caption words are preferred because they are what the timeline already shows; the
+ *  classic transcript rows are the fallback for a project bound before captions were
+ *  applied. Both are normalised to one shape so the analyzer has a single code path. */
+function autoBrollWords(project: VideoProject, downloadId: string): TimedWord[] {
+  const fps = Math.max(1, project.canvas.fps)
+  const captionWords = project.captions?.words ?? []
+  if (captionWords.length > 0) {
+    return captionWords.map((word) => ({
+      text: word.text,
+      startSec: word.startFrame / fps,
+      endSec: word.endFrame / fps
+    }))
+  }
+  return getRepos()
+    .getTranscript(`proj-${downloadId}`)
+    .map((word) => ({ text: word.word, startSec: word.start, endSec: word.end }))
+    .filter((word) => word.text.trim() && word.endSec > word.startSec)
+}
+
+function clampSeconds(value: number, low: number, high: number): number {
+  if (!Number.isFinite(value)) return low
+  return Math.min(high, Math.max(low, value))
+}
+
+/**
+ * Auto B-roll for a whole video.
+ *
+ * Returns placements rather than a saved project. That is the load-bearing decision: the
+ * renderer splices them in with one local `edit()`, so the Player repaints on the same tick
+ * and the entire run collapses into a single undo entry. Saving here instead would give the
+ * user twenty-five separate writes and no way back.
+ */
+async function autoBroll(
+  projectId: string,
+  downloadId: string,
+  options?: Partial<AutoBrollOptions>
+): Promise<AutoBrollResult> {
+  const engine = await getVideoEngine()
+  const project = await engine.openProject(projectId)
+  const words = autoBrollWords(project, downloadId)
+  if (words.length === 0) {
+    throw new VideoEngineError(
+      'INVALID_PROJECT',
+      'This clip has no transcript yet, and Auto B-roll places footage by timestamp. '
+        + 'Transcribe it from the Captions panel first.'
+    )
+  }
+
+  const landscape = project.canvas.width >= project.canvas.height
+  const minClipSeconds = clampSeconds(options?.minClipSeconds ?? AUTO_BROLL_DEFAULT_OPTIONS.minClipSeconds, 1, 30)
+  const resolved: AutoBrollOptions = {
+    density: options?.density ?? AUTO_BROLL_DEFAULT_OPTIONS.density,
+    minClipSeconds,
+    maxClipSeconds: clampSeconds(
+      options?.maxClipSeconds ?? AUTO_BROLL_DEFAULT_OPTIONS.maxClipSeconds,
+      minClipSeconds,
+      30
+    ),
+    orientation: options?.orientation ?? (landscape ? 'landscape' : 'portrait'),
+    ...(options?.providers && options.providers.length > 0 ? { providers: options.providers } : {}),
+    ...(options?.startSec === undefined ? {} : { startSec: Math.max(0, options.startSec) }),
+    ...(options?.endSec === undefined ? {} : { endSec: Math.max(0, options.endSec) })
+  }
+
+  // A second run adds to the lane rather than stacking a duplicate on the first run's work.
+  const occupied = project.scenes
+    .filter((scene) => scene.trackId === AUTO_BROLL_TRACK_ID)
+    .map((scene) => ({ startFrame: scene.startFrame, durationFrames: scene.durationFrames }))
+
+  const emitProgress = (progress: AutoBrollProgress): void => emit('videoEngine:autoBroll', progress)
+  const settings = getSettings()
+  // Two keys, tried in order. A free Groq key's DAILY token budget does not cover a
+  // 22-minute video twice over, and when it runs out no amount of waiting brings it back —
+  // so the run continues on Gemini rather than ending with half a timeline.
+  const modelKeys = {
+    groqApiKey: settings.transcription.apiKey.trim() || process.env['GROQ_API_KEY'] || '',
+    geminiApiKey: settings.beta.geminiKey?.trim()
+      || process.env['GEMINI_API_KEY']
+      || process.env['GOOGLE_API_KEY']
+      || ''
+  }
+
+  sentryLog.info('Studio auto b-roll started', {
+    project_id: projectId,
+    download_id: downloadId,
+    renderer: project.rendererId,
+    word_count: words.length,
+    density: resolved.density,
+    orientation: resolved.orientation,
+    existing_auto_clips: occupied.length,
+    operation: 'auto_broll'
+  })
+
+  try {
+    const result = await planAutoBroll(
+      {
+        words,
+        title: project.name,
+        fps: project.canvas.fps,
+        canvasDurationFrames: project.canvas.durationFrames,
+        landscape,
+        options: resolved,
+        occupied
+      },
+      {
+        askModel: createAutoBrollModel(modelKeys, {
+          // A tokens-per-minute wait can be half a minute. Saying so beats a frozen counter.
+          onWait: (seconds) => emitProgress({
+            projectId,
+            phase: 'reading',
+            message: `Rate limit — waiting ${seconds}s`
+          }),
+          // Switching provider mid-run looks exactly like a stall from the outside.
+          onFailover: (from, to) => emitProgress({
+            projectId,
+            phase: 'reading',
+            message: `${from} quota spent — continuing on ${to}`
+          })
+        }),
+        // One query, every enabled provider — `BrollService.search` already fans out with
+        // `allSettled`, so a dead Pexels key cannot take the run down with it.
+        searchBroll: (query) => engine.searchBroll(query, { providers: resolved.providers }),
+        materialize: async (candidate) => {
+          const service = candidateToService(candidate)
+          const cached = await engine.cacheBroll(service)
+          return brollAssetForProject(project, service, cached)
+        },
+        onProgress: (update) => emitProgress({ projectId, phase: update.phase, message: update.message })
+      }
+    )
+    emitProgress({ projectId, phase: 'done', message: '' })
+    sentryLog.info('Studio auto b-roll completed', {
+      project_id: projectId,
+      download_id: downloadId,
+      chunk_count: result.stats.chunks,
+      chunk_failure_count: result.stats.chunksFailed,
+      moment_count: result.stats.moments,
+      placement_count: result.placements.length,
+      skipped_count: result.skipped.length,
+      provider_failure_count: result.stats.providerFailures,
+      duration_ms: result.stats.elapsedMs,
+      operation: 'auto_broll'
+    })
+    return result
+  } catch (error) {
+    emitProgress({ projectId, phase: 'error', message: '' })
+    sentryLog.error('Studio auto b-roll failed', {
+      project_id: projectId,
+      download_id: downloadId,
+      error_message: errorMessage(error).slice(0, 200),
+      operation: 'auto_broll'
+    })
+    throw error
+  }
 }
 
 async function updateScene(
@@ -1052,6 +1219,9 @@ export function registerVideoEngineIpc(): void {
         zIndex: input.zIndex
       })
     }))
+  ipcMain.handle('videoEngine:autoBroll', (_e, projectId: string, downloadId: string, options?: Partial<AutoBrollOptions>) =>
+    guard('autoBroll', () =>
+      autoBroll(reqString(projectId, 'projectId'), reqString(downloadId, 'downloadId'), options)))
 
   // ---- render ----
   ipcMain.handle('videoEngine:preflight', (_e, projectId: string) =>

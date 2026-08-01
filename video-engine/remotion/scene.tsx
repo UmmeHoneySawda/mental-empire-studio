@@ -15,6 +15,13 @@ import type {
 import { AudioAsset, sceneTransformStyle, VisualAsset } from './asset'
 import { HOOK_TEMPLATE_IDS } from './constants'
 import { hasValidHookPlan, HookTemplate } from './hook'
+import {
+  resolveTextMotion,
+  splitForTextMotion,
+  textMotionSplit,
+  textMotionStyle,
+  textMotionUnitCount,
+} from './textMotion'
 
 function stringProp(value: JsonValue | undefined): string | undefined {
   return typeof value === 'string' ? value : undefined
@@ -24,54 +31,25 @@ function numberProp(value: JsonValue | undefined): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
-/** Entrance motion for a text scene, by the `animation` prop its style template carries.
- *  Every curve is a pure function of the frame, so a seek lands on exactly the same
- *  picture a sequential render would produce. */
-function textEntrance(
-  animation: string,
-  frame: number,
-  fps: number,
-): { opacity: number; transform: string; filter?: string } {
-  // Roughly a third of a second: long enough to read as motion, short enough that a
-  // three-second title is not still animating when it should be legible.
-  const runway = Math.max(1, Math.round(fps * 0.35))
-  const t = interpolate(frame, [0, runway], [0, 1], {
-    extrapolateLeft: 'clamp',
-    extrapolateRight: 'clamp',
-  })
-  switch (animation) {
-    case 'none':
-      return { opacity: 1, transform: 'none' }
-    case 'fade':
-      return { opacity: t, transform: 'none' }
-    case 'drop':
-      return { opacity: t, transform: `translateY(${interpolate(t, [0, 1], [-60, 0])}px)` }
-    case 'scale':
-      return { opacity: t, transform: `scale(${interpolate(t, [0, 1], [0.9, 1])})` }
-    case 'blur-in':
-      return {
-        opacity: t,
-        transform: 'none',
-        filter: `blur(${interpolate(t, [0, 1], [14, 0])}px)`,
-      }
-    case 'slide-left':
-      return { opacity: t, transform: `translateX(${interpolate(t, [0, 1], [80, 0])}px)` }
-    case 'rise':
-    default:
-      return { opacity: t, transform: `translateY(${interpolate(t, [0, 1], [28, 0])}px)` }
-  }
-}
-
 /** A text clip. Style comes from the `remotion-text-*` template the editor attaches; with
  *  no template it falls back to the heading look this scene has always used, so projects
- *  written before the styles existed keep rendering identically. */
+ *  written before the styles existed keep rendering identically.
+ *
+ *  Motion comes from `textMotion.ts`. A motion that splits the copy renders one span per
+ *  unit; the seven that do not keep the single-element output — and the exact numbers —
+ *  this scene has always produced. The per-unit styles are plain function calls, never
+ *  hooks, because the unit count changes on every keystroke in the inspector's text box and
+ *  a hook inside that loop would break React's hook order and blank the composition. */
 function TextScene({ scene }: { readonly scene: VideoScene }) {
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
   const props = scene.template?.props
-  const animation = stringProp(props?.['animation']) ?? 'none'
+  const motion = resolveTextMotion(stringProp(props?.['animation']))
   const fontSize = numberProp(props?.['fontSize'])
-  const entrance = textEntrance(animation, frame, fps)
+  const split = textMotionSplit(motion)
+  const groups = splitForTextMotion(scene.text ?? '', split)
+  const unitCount = textMotionUnitCount(groups)
+  const entrance = textMotionStyle(motion, frame, fps)
 
   return (
     <AbsoluteFill
@@ -100,12 +78,44 @@ function TextScene({ scene }: { readonly scene: VideoScene }) {
           textAlign: (stringProp(props?.['align']) ?? 'center') as CSSProperties['textAlign'],
           whiteSpace: 'pre-wrap',
           textShadow: '0 10px 45px rgba(0,0,0,.55)',
-          opacity: entrance.opacity,
-          transform: entrance.transform,
-          ...(entrance.filter ? { filter: entrance.filter } : {}),
+          // A split motion animates its units, so the block itself stays neutral.
+          ...(split === 'none'
+            ? {
+                opacity: entrance.opacity,
+                transform: entrance.transform,
+                ...(entrance.filter ? { filter: entrance.filter } : {}),
+              }
+            : {}),
         }}
       >
-        {scene.text}
+        {split === 'none'
+          ? scene.text
+          : groups.map((group, groupIndex) => (
+              // The group is the unbreakable run — a word, or the whitespace after it — so
+              // per-character units still wrap at spaces instead of mid-word.
+              <span
+                key={`g${groupIndex}`}
+                style={{ display: 'inline-block', whiteSpace: 'pre' }}
+              >
+                {group.units.map((unit, unitIndex) => {
+                  const style = textMotionStyle(motion, frame, fps, unit.ordinal, unitCount)
+                  return (
+                    <span
+                      key={`u${unitIndex}`}
+                      style={{
+                        display: 'inline-block',
+                        whiteSpace: 'pre',
+                        opacity: style.opacity,
+                        transform: style.transform,
+                        ...(style.filter ? { filter: style.filter } : {}),
+                      }}
+                    >
+                      {unit.text}
+                    </span>
+                  )
+                })}
+              </span>
+            ))}
       </div>
     </AbsoluteFill>
   )

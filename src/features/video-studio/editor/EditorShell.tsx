@@ -68,6 +68,16 @@ export function EditorShell({ downloadId }: { downloadId: string }): JSX.Element
     })
   }, [downloadId, setProgressNote])
 
+  // Auto B-roll is eleven model calls plus up to twenty-five downloads for a long video —
+  // the same reason transcription needed a live phase rather than one static label.
+  useEffect(() => {
+    if (typeof window === 'undefined' || !window.api?.onAutoBrollProgress) return
+    return window.api.onAutoBrollProgress((progress) => {
+      if (progress.projectId !== useEditor.getState().projectId) return
+      setProgressNote(progress.phase === 'done' || progress.phase === 'error' ? '' : progress.message)
+    })
+  }, [setProgressNote])
+
   // Editor keys, but never while a field has focus — otherwise Space would stop typing a
   // headline and start playback instead.
   useEffect(() => {
