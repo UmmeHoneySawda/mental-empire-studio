@@ -51,7 +51,24 @@ export function compileHookPlan(
   const tracks: VideoTrack[] = project.tracks.filter((track) => track.id !== hookTrackId)
   tracks.push({ id: hookTrackId, name: 'Hook graphics', kind: 'overlay', order: 1, muted: false, locked: false })
 
-  const scenes = project.scenes.filter((scene) => scene.trackId !== hookTrackId)
+  /* Everything that is a hook goes, not just what is on the hook lane.
+   *
+   * The filter used to be `trackId !== hookTrackId` alone, and the two hook paths do not
+   * share a lane: the compiler owns `video-engine-hook`, while a hook placed from the
+   * templates panel goes through `instantiateTemplate` and lands on `video-engine-graphics`.
+   * So writing a plan did not replace a premade hook — it added a second one on another
+   * lane, and the plan-less original stayed to keep flagging itself in preflight.
+   *
+   * The registry is what decides, rather than a hard-coded id list, so this stays correct
+   * for every renderer and for hook templates added later. */
+  const isHookTemplateScene = (scene: VideoProject['scenes'][number]): boolean =>
+    scene.kind === 'template' && registry.get(scene.template?.id ?? '')?.kind === 'hook'
+  const dropped = new Set(
+    project.scenes
+      .filter((scene) => scene.trackId === hookTrackId || isHookTemplateScene(scene))
+      .map((scene) => scene.id)
+  )
+  const scenes = project.scenes.filter((scene) => !dropped.has(scene.id))
   const brollRequests: HookBrollRequest[] = []
   for (const beat of plan.beats) {
     if (beat.visual.kind === 'asset') {
@@ -97,9 +114,13 @@ export function compileHookPlan(
       },
       tracks,
       scenes,
+      // Every scene this replaced its transitions along with it — a transition pointing at
+      // a scene that no longer exists fails the project schema outright.
       transitions: project.transitions.filter(
         (transition) =>
-          transition.fromSceneId !== 'video-engine-hook-plan'
+          !dropped.has(transition.fromSceneId)
+          && !dropped.has(transition.toSceneId)
+          && transition.fromSceneId !== 'video-engine-hook-plan'
           && transition.toSceneId !== 'video-engine-hook-plan'
       ),
       metadata: {

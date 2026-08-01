@@ -17,6 +17,7 @@ import { useEditor, type PanelTab } from './useEditor'
 const TABS: ReadonlyArray<{ id: PanelTab; label: string }> = [
   { id: 'media', label: 'Media' },
   { id: 'templates', label: 'Templates' },
+  { id: 'hook', label: 'Hook' },
   { id: 'text', label: 'Text' },
   { id: 'captions', label: 'Captions' },
   { id: 'transitions', label: 'Transitions' },

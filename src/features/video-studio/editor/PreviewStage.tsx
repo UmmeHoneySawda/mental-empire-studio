@@ -1,5 +1,6 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { timecode } from './constants'
+import { gradeFilter, gradeTintLayer, gradeVignetteLayer } from './gradePreview'
 import { useEditor } from './useEditor'
 
 /* The Remotion bundle is large; a user who never opens the editor should not pay for it. */
@@ -69,6 +70,14 @@ export function PreviewStage(): JSX.Element {
   const total = Math.max(1, project?.canvas.durationFrames ?? 1)
   const { ref, size } = useFittedSize(project?.canvas.width ?? 16, project?.canvas.height ?? 9)
 
+  // A preview-only approximation of the FFmpeg grade — see `gradePreview.ts` for exactly
+  // which parts are faithful and which cannot be. Layered over the Player rather than
+  // baked into the composition, so what renders is still purely the composition.
+  const grading = project?.grading
+  const filter = useMemo(() => gradeFilter(grading), [grading])
+  const tint = useMemo(() => gradeTintLayer(grading), [grading])
+  const vignette = useMemo(() => gradeVignetteLayer(grading), [grading])
+
   const rangeStart = loopRange ? Math.max(0, Math.min(loopRange.startFrame, total - 1)) : 0
   const rangeEnd = loopRange ? Math.max(rangeStart + 1, Math.min(loopRange.endFrame, total)) : total
 
@@ -80,7 +89,11 @@ export function PreviewStage(): JSX.Element {
         ) : (
           <div
             className="ve-stage-frame"
-            style={{ width: size.width || undefined, height: size.height || undefined }}
+            style={{
+              width: size.width || undefined,
+              height: size.height || undefined,
+              ...(filter ? { filter } : {})
+            }}
           >
             <Suspense fallback={<div className="ve-stage-empty">Starting the player…</div>}>
               <EditorPlayer
@@ -92,6 +105,8 @@ export function PreviewStage(): JSX.Element {
                 onPlayingChange={setPlaying}
               />
             </Suspense>
+            {tint && <div className="ve-stage-grade" style={tint} aria-hidden />}
+            {vignette && <div className="ve-stage-grade" style={vignette} aria-hidden />}
           </div>
         )}
       </div>

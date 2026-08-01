@@ -519,10 +519,18 @@ export class RemotionRendererAdapter implements RendererAdapter {
       const plan = hookPlanForScene(scene)
       const knownHookTemplate = HOOK_TEMPLATE_IDS.has(scene.template?.id ?? '')
       if (knownHookTemplate && !plan) {
+        /* A warning, not an error.
+         *
+         * As an error this blocked the render of the WHOLE project, permanently, from one
+         * click on a hook card in the templates panel — and with no hook UI in the Remotion
+         * editor there was nothing to repair it with short of deleting the clip. The scene
+         * now renders its trusted fallback (see `scene.tsx`), so it is a degraded hook
+         * rather than a broken project, and "degraded" is what a warning is for. */
         problems.push({
-          severity: 'error',
-          code: 'hook-plan.invalid',
-          message: 'Hook templates require a validated HookPlan in props.hookPlan.',
+          severity: 'warning',
+          code: 'hook-plan.missing',
+          message:
+            'This hook template has no hook plan, so it renders as a plain title card. Write or paste a hook plan in the Hook panel to animate it.',
           path: `scenes.${index}.template.props.hookPlan`,
         })
         continue

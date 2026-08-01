@@ -173,13 +173,20 @@ export function removeClip(project: VideoProject, sceneId: string): VideoProject
   }
 }
 
-/** Copies a clip immediately after itself, or at the first gap that fits. */
+/** Copies a clip immediately after itself.
+ *
+ *  The copy lands at full length even when the original ends at the canvas end: the canvas
+ *  grows to fit it. Clamping into the existing canvas instead is what used to turn
+ *  "duplicate the last clip" into a two-frame sliver stacked on the final frames — a clip
+ *  too narrow to click, in the one place a user is most likely to duplicate. */
 export function duplicateClip(project: VideoProject, sceneId: string): VideoProject {
   const scene = project.scenes.find((candidate) => candidate.id === sceneId)
   if (!scene) return project
-  const span = clampSpan(project, scene.startFrame + scene.durationFrames, scene.durationFrames)
+  const startFrame = scene.startFrame + scene.durationFrames
+  const grown = withCanvasCoveringFrame(project, startFrame + scene.durationFrames)
+  const span = clampSpan(grown, startFrame, scene.durationFrames)
   const copy: VideoScene = { ...scene, id: uid('scene'), ...span }
-  return { ...project, scenes: [...project.scenes, copy] }
+  return { ...grown, scenes: [...grown.scenes, copy] }
 }
 
 /** Adds a clip. `kind` and its required companion field are the caller's business; this
@@ -259,13 +266,59 @@ export function patchTrack(
   return touched ? { ...project, tracks } : project
 }
 
-/** The last frame any clip occupies. Used to keep the canvas length honest as clips move
- *  past the current end. */
+/** The last frame any clip occupies. */
 export function contentEndFrame(project: VideoProject): number {
   return project.scenes.reduce(
     (end, scene) => Math.max(end, scene.startFrame + scene.durationFrames),
     0
   )
+}
+
+/** Grows the canvas so it covers `frame`, never shrinking it.
+ *
+ *  Shrinking is the user's call (the Canvas panel's Length field); growing is a correctness
+ *  requirement, because the Remotion composition's `durationInFrames` IS
+ *  `canvas.durationFrames`. A clip that ends past it is on the timeline, in the inspector
+ *  and in the saved document, but simply absent from the render — the timeline and the
+ *  rendered video disagreeing with nothing on screen to say so. */
+export function withCanvasCoveringFrame(project: VideoProject, frame: number): VideoProject {
+  const wanted = Math.max(1, Math.ceil(frame))
+  if (wanted <= project.canvas.durationFrames) return project
+  return { ...project, canvas: { ...project.canvas, durationFrames: wanted } }
+}
+
+/** Grows the canvas to cover every clip. Applied after each local edit as a safety net, so
+ *  no operation can leave content the renderer would silently truncate. */
+export function withCanvasCoveringContent(project: VideoProject): VideoProject {
+  return withCanvasCoveringFrame(project, contentEndFrame(project))
+}
+
+/** Clips that share a lane with another clip and overlap it in time.
+ *
+ *  Overlap is legal and load-bearing — an animated transition IS an overlap between two
+ *  neighbours — so this does not prevent it. It marks it. Two absolutely-positioned clips
+ *  stacked on one lane are otherwise indistinguishable from one clip, which is how a drag
+ *  that landed a clip on top of its neighbour read as "dragging created a duplicate". */
+export function overlappingSceneIds(project: VideoProject): Set<string> {
+  const overlapping = new Set<string>()
+  const byTrack = new Map<string, VideoScene[]>()
+  for (const scene of project.scenes) {
+    const lane = byTrack.get(scene.trackId)
+    if (lane) lane.push(scene)
+    else byTrack.set(scene.trackId, [scene])
+  }
+  for (const lane of byTrack.values()) {
+    const ordered = [...lane].sort((left, right) => left.startFrame - right.startFrame)
+    for (let index = 1; index < ordered.length; index += 1) {
+      const previous = ordered[index - 1]!
+      const current = ordered[index]!
+      if (current.startFrame < previous.startFrame + previous.durationFrames) {
+        overlapping.add(previous.id)
+        overlapping.add(current.id)
+      }
+    }
+  }
+  return overlapping
 }
 
 /** Clips on one track, in play order — what the composition and the ripple both need. */
@@ -327,19 +380,36 @@ export function rippleTrack(project: VideoProject, trackId: string): VideoProjec
   }
 }
 
-/** Candidate frames a dragged edge should snap to: the playhead, every other clip's
- *  edges, and each whole second. Screen-space thresholding happens at the call site,
- *  where zoom is known. */
+/** Candidate frames one dragged edge should snap to: the playhead, whole seconds, and the
+ *  other clips' edges — but which of a neighbour's edges depends on whose lane it is on.
+ *
+ *  On the SAME lane only the opposite edge is offered: a dragged leading edge snaps to a
+ *  neighbour's trailing edge and vice versa. That is the join a timeline drag is reaching
+ *  for, and it is the only one that is safe to offer, because start-to-start on one lane
+ *  lands the clip exactly on top of its neighbour. Two stacked clips look like one, so a
+ *  drag that ended in a perfect overlap read as "dragging created a duplicate" — the second
+ *  clip only reappeared when the first was dragged away again.
+ *
+ *  Across lanes both edges stay on offer: lining an overlay up with the clip beneath it is
+ *  the whole point, and stacking across lanes is visible because the lanes are separate.
+ *
+ *  Screen-space thresholding happens at the call site, where zoom is known. */
 export function snapCandidates(
   project: VideoProject,
-  excludeSceneId: string | null,
-  playheadFrame: number
+  dragged: { id: string; trackId: string } | null,
+  playheadFrame: number,
+  edge: 'start' | 'end'
 ): number[] {
   const frames = new Set<number>([0, playheadFrame, project.canvas.durationFrames])
   for (const scene of project.scenes) {
-    if (scene.id === excludeSceneId) continue
+    if (scene.id === dragged?.id) continue
+    const end = scene.startFrame + scene.durationFrames
+    if (dragged && scene.trackId === dragged.trackId) {
+      frames.add(edge === 'start' ? end : scene.startFrame)
+      continue
+    }
     frames.add(scene.startFrame)
-    frames.add(scene.startFrame + scene.durationFrames)
+    frames.add(end)
   }
   const fps = Math.max(1, project.canvas.fps)
   for (let second = 0; second * fps <= project.canvas.durationFrames; second += 1) {

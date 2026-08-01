@@ -40,6 +40,9 @@
   height: 100%;
   color: rgb(var(--ve-fg));
   background: rgb(var(--ve-bg));
+  /* Named so the layout rules at the bottom can size the columns against the editor's own
+     width. Inline-axis only — containing the block axis would break `height: 100%`. */
+  container: ve / inline-size;
 }
 
 .ve-mono {
@@ -227,6 +230,14 @@ textarea.ve-input { resize: vertical; min-height: 52px; }
   background: #000;
   box-shadow: 0 6px 28px rgb(0 0 0 / 0.55);
 }
+/* The colour-grade approximation, laid over the Player rather than baked into the
+   composition — see `gradePreview.ts`. Never interactive: the transport, the fullscreen
+   double-click and the Player's own error fallback all have to stay reachable through it. */
+.ve-stage-grade {
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+}
 /* A composition that throws must say so. Remotion's own fallback is a bare warning glyph,
    which reads as "the preview is just black" rather than as an error with a cause. */
 .ve-player-error {
@@ -276,24 +287,35 @@ textarea.ve-input { resize: vertical; min-height: 52px; }
 
 /* --------------------------------------------------------------------- inspector */
 
+/* A grid, not a wrapping flex row.
+ *
+ * Ten tabs never fit one line in a ~290px inspector, so they wrapped — and a wrapped flex
+ * row packs greedily, which left ragged rows whose tabs lined up with nothing above or
+ * below them and whose row count jumped as the panel resized. A grid keeps every tab the
+ * same width in tidy columns, and the column count still follows the available space. */
 .ve-tabs {
-  display: flex;
-  flex-wrap: wrap;
-  gap: 2px;
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(66px, 1fr));
+  gap: 1px 2px;
   padding: 8px 8px 0;
   border-bottom: 1px solid rgb(var(--ve-border));
 }
 .ve-tab {
-  padding: 5px 9px;
+  padding: 5px 4px;
   border: 0;
   border-bottom: 2px solid transparent;
   background: transparent;
   color: rgb(var(--ve-fg-dim));
   font: inherit;
   font-size: 11px;
+  text-align: center;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
   cursor: pointer;
 }
 .ve-tab:hover { color: rgb(var(--ve-fg)); }
+.ve-tab:focus-visible { outline: 2px solid rgb(var(--ve-accent) / 0.6); outline-offset: -2px; border-radius: 3px; }
 .ve-tab[aria-selected='true'] {
   color: rgb(var(--ve-accent));
   border-bottom-color: rgb(var(--ve-accent));
@@ -312,11 +334,26 @@ textarea.ve-input { resize: vertical; min-height: 52px; }
   color: rgb(var(--ve-fg-dim));
 }
 
-.ve-row { display: grid; gap: 4px; }
+.ve-row { display: grid; gap: 4px; min-width: 0; }
 .ve-row-label { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; font-size: 11px; }
-.ve-row-hint { font-size: 10px; color: rgb(var(--ve-fg-dim)); }
+/* The hint is the throwaway half of the pair, so it is what gives way when the row is
+   narrow — without this a long hint pushed the label out of the panel entirely. */
+.ve-row-label > :first-child { flex: none; }
+.ve-row-hint { flex: 1; min-width: 0; font-size: 10px; text-align: right; color: rgb(var(--ve-fg-dim)); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 .ve-row input[type='range'] { width: 100%; accent-color: rgb(var(--ve-accent)); }
 .ve-actions { display: flex; flex-wrap: wrap; gap: 6px; align-items: center; }
+/* Two fields that belong together and are short enough to share a line. */
+.ve-pair { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 8px; }
+
+.ve-beat {
+  display: grid;
+  gap: 6px;
+  padding: 8px;
+  border: 1px solid rgb(var(--ve-border));
+  border-radius: var(--ve-radius);
+  background: rgb(var(--ve-card));
+}
+.ve-beat-head { display: flex; align-items: baseline; justify-content: space-between; gap: 8px; }
 
 .ve-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
 .ve-card {
@@ -403,8 +440,12 @@ textarea.ve-input { resize: vertical; min-height: 52px; }
   display: flex;
   flex-direction: column;
   flex: none;
-  /* Tall enough for the ruler plus four lanes before it starts scrolling. */
-  height: 268px;
+  /* Four lanes plus the ruler where there is room, and less where there is not. A flat
+     268px was more than a third of the editor's height on a 720p laptop before the player
+     got any, so the preview was a stamp and the timeline was mostly empty lane. A
+     percentage measures the editor; `vh` would measure the window and ignore the app
+     shell's header, which is the same mistake the old breakpoints made. */
+  height: clamp(184px, 34%, 300px);
   border-top: 1px solid rgb(var(--ve-border));
   background: rgb(var(--ve-timeline-bg));
 }
@@ -413,6 +454,11 @@ textarea.ve-input { resize: vertical; min-height: 52px; }
   display: flex;
   align-items: center;
   gap: 6px;
+  /* Wraps rather than overflowing. Unwrapped, the zoom controls and "+ Track" were simply
+     cut off the right edge below about 1100px with no scrollbar to reach them. */
+  flex-wrap: wrap;
+  row-gap: 4px;
+  flex: none;
   padding: 6px 12px;
   border-bottom: 1px solid rgb(var(--ve-border));
 }
@@ -427,7 +473,10 @@ textarea.ve-input { resize: vertical; min-height: 52px; }
   border-right: 1px solid rgb(var(--ve-border));
   overflow: hidden;
 }
+/* The spacer holds the ruler's row and must NOT move; only the names below it track the
+   lanes' scroll offset. */
 .ve-labels-spacer { border-bottom: 1px solid rgb(var(--ve-border)); }
+.ve-labels-inner { will-change: transform; }
 .ve-label {
   display: flex;
   align-items: center;
@@ -497,6 +546,21 @@ textarea.ve-input { resize: vertical; min-height: 52px; }
   z-index: 2;
 }
 .ve-clip.is-dragging { cursor: grabbing; z-index: 4; }
+/* Two clips stacked on one lane are otherwise indistinguishable from one clip, which is
+   exactly how a drag that landed on top of a neighbour read as "a duplicate appeared". The
+   overlap is legal — an animated transition IS one — so it is marked, not prevented. */
+.ve-clip.is-overlapping::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  border-radius: 3px;
+  pointer-events: none;
+  background: repeating-linear-gradient(
+    135deg,
+    rgb(255 255 255 / 0.16) 0 4px,
+    transparent 4px 9px
+  );
+}
 
 /* Clip tone by content — a glance at the lanes shows the shape of the video. */
 .ve-clip--video { background: linear-gradient(180deg, #2b4c6f, #1e3550); }
@@ -524,9 +588,16 @@ textarea.ve-input { resize: vertical; min-height: 52px; }
   flex: none;
   align-self: stretch;
   cursor: ew-resize;
-  background: rgb(255 255 255 / 0.08);
+  /* Was 0.08 against a mid-tone clip: invisible, so the only way to find a trim handle was
+     to guess at the edge — and guessing wrong starts a MOVE instead, which is a different
+     edit entirely. A visible grip plus a hover state makes the two targets distinct. */
+  background: rgb(255 255 255 / 0.16);
+  box-shadow: inset 1px 0 rgb(255 255 255 / 0.22), inset -1px 0 rgb(255 255 255 / 0.22);
 }
-.ve-clip-handle:hover { background: rgb(var(--ve-accent) / 0.65); }
+.ve-clip-handle:hover { background: rgb(var(--ve-accent) / 0.75); }
+/* On a clip only a few handles wide there is no body left to grab, so the clip cannot be
+   moved at all. Below that width the handles step aside and the whole clip drags. */
+.ve-clip--tiny .ve-clip-handle { display: none; }
 .ve-clip-handle--start { border-radius: 3px 0 0 3px; }
 .ve-clip-handle--end { border-radius: 0 3px 3px 0; }
 
@@ -549,11 +620,21 @@ textarea.ve-input { resize: vertical; min-height: 52px; }
   clip-path: polygon(0 0, 100% 0, 50% 100%);
 }
 
-/* Keep the editor usable on a narrow window: the rails collapse before the player does. */
-@media (max-width: 1180px) {
-  .ve-body { grid-template-columns: 200px minmax(0, 1fr) 270px; }
+/* Keep the editor usable when it is narrow: the rails collapse before the player does.
+ *
+ * Measured against the EDITOR, not the viewport. As media queries these never fired when
+ * they were needed: the editor sits inside the app shell's sidebar and header, so on a
+ * 1366px laptop it is about 1117px wide — past every breakpoint below, yet the viewport
+ * said 1366 and nothing collapsed. The media rail kept its full 240px and the preview was
+ * left with under 400px of a 1117px row. A container query asks the right element. */
+@container ve (max-width: 1180px) {
+  .ve-body { grid-template-columns: 200px minmax(0, 1fr) 290px; }
 }
-@media (max-width: 980px) {
+@container ve (max-width: 1020px) {
+  .ve-body { grid-template-columns: 168px minmax(0, 1fr) 272px; }
+  .ve-bin-thumb { display: none; }
+}
+@container ve (max-width: 860px) {
   .ve-body { grid-template-columns: minmax(0, 1fr) 260px; }
   .ve-rail { display: none; }
 }

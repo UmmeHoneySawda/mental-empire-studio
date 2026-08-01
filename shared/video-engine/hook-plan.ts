@@ -182,7 +182,13 @@ export function buildHookPlanPrompt(options: HookPlanPromptOptions): string {
     // literal 30 / 900, and models copy an example verbatim — on a 24 or 60 fps project
     // that produced a plan the compiler rejects outright for fps mismatch, which reads to
     // the user as "the AI hook never works".
-    `{"schemaVersion":1,"rendererId":"remotion|hyperframes","templateId":"ID","templateVersion":"1.0.0","fps":${fps},"title":"TITLE","durationFrames":${durationFrames},"props":{},"beats":[{"id":"beat-1","startFrame":0,"durationFrames":${Math.max(1, Math.round(fps * 1.5))},"headline":"TEXT","body":"TEXT","variant":"VARIANT","importantWordIds":[],"visual":{"kind":"none|asset|broll","assetId":"ASSET_ID","searchQuery":"QUERY"},"transitionOut":{"type":"cut|fade|slide|wipe|zoom|dip-to-black","durationFrames":0,"direction":"left|right|up|down","easing":"linear|ease-in|ease-out|ease-in-out"}}]}`,
+    `{"schemaVersion":1,"rendererId":"remotion|hyperframes","templateId":"ID","templateVersion":"1.0.0","fps":${fps},"title":"TITLE","durationFrames":${durationFrames},"props":{},"beats":[{"id":"beat-1","startFrame":0,"durationFrames":${Math.max(1, Math.round(fps * 1.5))},"headline":"TEXT","body":"TEXT","variant":"VARIANT","importantWordIds":[],"visual":{"kind":"none"},"transitionOut":{"type":"fade","durationFrames":${Math.max(1, Math.round(fps / 4))},"direction":"left","easing":"ease-out"}}]}`,
+    // `visual` is a STRICT object with mutually exclusive shapes, and the example above used
+    // to show all three keys at once (`kind:"none|asset|broll"` alongside both `assetId` and
+    // `searchQuery`). Models copy an example verbatim, so that one line failed every beat
+    // and burned the single repair round trip. Spell the three legal shapes out instead.
+    'visual is exactly one of: {"kind":"none"} · {"kind":"asset","assetId":"ID"} · {"kind":"broll","searchQuery":"QUERY"}. Never send assetId with a non-asset kind, or searchQuery with a non-broll kind.',
+    'transitionOut is optional. Only {"type":"cut"} may have durationFrames 0; every other type needs at least 1 and no more than its own beat\'s durationFrames.',
     `fps MUST be exactly ${fps} and durationFrames MUST NOT exceed ${durationFrames}.`,
     `Renderer: ${RendererIdSchema.parse(options.rendererId)}`,
     `Template: ${StableIdSchema.parse(options.templateId)}`,

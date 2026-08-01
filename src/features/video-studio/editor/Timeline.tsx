@@ -8,12 +8,13 @@ import {
   TRACK_HEIGHT,
   TRACK_LABEL_WIDTH,
   ZOOM_STEPS,
+  clipWidthPx,
   framesToPx,
   pxToFrames,
   tickSeconds,
   timecode
 } from './constants'
-import { snapCandidates, snapFrame, trackAcceptsScene } from './operations'
+import { overlappingSceneIds, snapCandidates, snapFrame, trackAcceptsScene } from './operations'
 import { orderedTracks, useEditor } from './useEditor'
 
 /* The timeline surface: ruler, lanes, clips, playhead.
@@ -81,6 +82,9 @@ export function Timeline(): JSX.Element | null {
    *  closure state. */
   const live = useRef<{ frame: number; trackId: string; delta: number } | null>(null)
   const [dragging, setDragging] = useState<string | null>(null)
+  /** Mirrored onto the label column so names stay against their lanes when the lanes
+   *  scroll past the visible four. */
+  const [laneScrollTop, setLaneScrollTop] = useState(0)
 
   const fps = project?.canvas.fps ?? 30
   const total = project?.canvas.durationFrames ?? 1
@@ -90,6 +94,10 @@ export function Timeline(): JSX.Element | null {
     [project?.assets]
   )
   const width = framesToPx(total, fps, zoom)
+  const overlapping = useMemo(
+    () => (project ? overlappingSceneIds(project) : new Set<string>()),
+    [project]
+  )
 
   /** Frame under a client X coordinate, in lane space. */
   const frameAtClientX = useCallback(
@@ -108,9 +116,49 @@ export function Timeline(): JSX.Element | null {
   useEffect(() => {
     if (!project) return
 
+    /* Puts the DOM back exactly where React believes it is, and forgets the gesture.
+     *
+     * `width` must be RESTORED, not cleared. React owns it through the style prop, so it
+     * only writes it when its own previous value differs from its next one. A gesture that
+     * ends without changing the duration — every move, every trim that clamps to a no-op,
+     * every accidental click on a handle — leaves those two values identical, so clearing
+     * the inline width meant React never wrote it back and the clip stayed collapsed at its
+     * label's width. It looked like the clip had been shortened to a third of its length;
+     * `durationFrames` was untouched the whole time, so the inspector, the tooltip and the
+     * render all disagreed with the picture. */
+    const release = (): { active: Gesture; result: typeof live.current } | null => {
+      const active = gesture.current
+      const result = live.current
+      gesture.current = null
+      live.current = null
+      setDragging(null)
+      if (!active || active.kind === 'scrub') return null
+      const scene = project.scenes.find((candidate) => candidate.id === active.sceneId)
+      const { element } = active
+      element.style.transform = ''
+      element.style.opacity = ''
+      element.style.width = scene ? `${clipWidthPx(scene.durationFrames, fps, zoom)}px` : ''
+      delete element.dataset['dropTrack']
+      return { active, result }
+    }
+
     const onMove = (event: PointerEvent): void => {
       const active = gesture.current
       if (!active) return
+
+      // No button held means the release happened somewhere we never heard about — the
+      // pointer left the window, the OS took focus, a context menu opened. Without this the
+      // gesture stayed armed: the clip followed the bare cursor around the timeline, and
+      // the next click ANYWHERE in the app — a tab, a button — fired the pointerup that
+      // committed it to wherever the mouse happened to be.
+      if (event.buttons === 0) {
+        if (active.kind !== 'scrub') release()
+        else {
+          gesture.current = null
+          live.current = null
+        }
+        return
+      }
 
       if (active.kind === 'scrub') {
         setPlayhead(frameAtClientX(event.clientX))
@@ -118,19 +166,30 @@ export function Timeline(): JSX.Element | null {
       }
 
       const toleranceFrames = pxToFrames(SNAP_PX, fps, zoom)
-      const candidates = snapEnabled ? snapCandidates(project, active.sceneId, playheadFrame) : []
       const { element } = active
+      const scene = project.scenes.find((candidate) => candidate.id === active.sceneId)
 
       if (active.kind === 'move') {
         const deltaFrames = pxToFrames(event.clientX - active.pointerX, fps, zoom)
-        const scene = project.scenes.find((candidate) => candidate.id === active.sceneId)
         const duration = scene?.durationFrames ?? 1
         let next = Math.max(0, Math.min(total - duration, active.startFrame + deltaFrames))
-        if (snapEnabled) {
+        if (snapEnabled && scene) {
           // Snap whichever edge is closer, so butting a clip up against its neighbour
-          // works from either side.
-          const snappedStart = snapFrame(next, candidates, toleranceFrames)
-          const snappedEnd = snapFrame(next + duration, candidates, toleranceFrames) - duration
+          // works from either side. Each edge gets its own candidate list — see
+          // `snapCandidates`, which is what keeps a same-lane drag from landing exactly on
+          // top of a neighbour.
+          const dragged = { id: scene.id, trackId: active.trackId }
+          const snappedStart = snapFrame(
+            next,
+            snapCandidates(project, dragged, playheadFrame, 'start'),
+            toleranceFrames
+          )
+          const snappedEnd =
+            snapFrame(
+              next + duration,
+              snapCandidates(project, dragged, playheadFrame, 'end'),
+              toleranceFrames
+            ) - duration
           next = Math.abs(snappedStart - next) <= Math.abs(snappedEnd - next) ? snappedStart : snappedEnd
           next = Math.max(0, Math.min(total - duration, next))
         }
@@ -156,51 +215,57 @@ export function Timeline(): JSX.Element | null {
       }
 
       const deltaFrames = pxToFrames(event.clientX - active.pointerX, fps, zoom)
-      const scene = project.scenes.find((candidate) => candidate.id === active.sceneId)
       if (!scene) return
       let delta = deltaFrames
       if (snapEnabled) {
         const edgeFrame = active.edge === 'start' ? scene.startFrame : scene.startFrame + scene.durationFrames
-        delta = snapFrame(edgeFrame + deltaFrames, candidates, toleranceFrames) - edgeFrame
+        delta =
+          snapFrame(
+            edgeFrame + deltaFrames,
+            snapCandidates(project, scene, playheadFrame, active.edge),
+            toleranceFrames
+          ) - edgeFrame
       }
       live.current = { frame: 0, trackId: scene.trackId, delta }
       // Preview the trim by resizing in place; the real clamping happens on commit.
       const px = framesToPx(Math.abs(delta), fps, zoom) * Math.sign(delta)
+      const base = clipWidthPx(scene.durationFrames, fps, zoom)
       if (active.edge === 'start') {
         element.style.transform = `translateX(${px}px)`
-        element.style.width = `${Math.max(2, framesToPx(scene.durationFrames, fps, zoom) - px)}px`
+        element.style.width = `${Math.max(2, base - px)}px`
       } else {
-        element.style.width = `${Math.max(2, framesToPx(scene.durationFrames, fps, zoom) + px)}px`
+        element.style.width = `${Math.max(2, base + px)}px`
       }
     }
 
     const onUp = (): void => {
-      const active = gesture.current
-      const result = live.current
-      gesture.current = null
-      live.current = null
-      setDragging(null)
-      if (!active || active.kind === 'scrub') return
-
-      // Hand geometry back to React before committing, or the inline styles fight the
-      // re-render and the clip visibly jumps.
-      const { element } = active
-      element.style.transform = ''
-      element.style.width = ''
-      element.style.opacity = ''
-      delete element.dataset['dropTrack']
-      if (!result) return
+      const ended = release()
+      if (!ended?.result) return
+      const { active, result } = ended
       if (active.kind === 'move') moveClip(active.sceneId, result.frame, result.trackId)
-      else if (result.delta !== 0) trimClip(active.sceneId, active.edge, result.delta)
+      else if (active.kind === 'trim' && result.delta !== 0) {
+        trimClip(active.sceneId, active.edge, result.delta)
+      }
+    }
+
+    // A gesture must not survive the window losing focus. Alt-Tab mid-drag delivers no
+    // pointerup at all, and an armed gesture then commits on the user's next click.
+    const onBlur = (): void => {
+      if (gesture.current) {
+        if (gesture.current.kind === 'scrub') gesture.current = null
+        else release()
+      }
     }
 
     document.addEventListener('pointermove', onMove)
     document.addEventListener('pointerup', onUp)
     document.addEventListener('pointercancel', onUp)
+    window.addEventListener('blur', onBlur)
     return () => {
       document.removeEventListener('pointermove', onMove)
       document.removeEventListener('pointerup', onUp)
       document.removeEventListener('pointercancel', onUp)
+      window.removeEventListener('blur', onBlur)
     }
   }, [project, fps, zoom, total, tracks, snapEnabled, playheadFrame, frameAtClientX, setPlayhead, moveClip, trimClip])
 
@@ -263,20 +328,30 @@ export function Timeline(): JSX.Element | null {
       <div className="ve-timeline-body">
         <div className="ve-labels" style={{ width: TRACK_LABEL_WIDTH }}>
           <div className="ve-labels-spacer" style={{ height: RULER_HEIGHT }} />
-          {tracks.map((track) => (
-            <TrackLabel
-              key={track.id}
-              track={track}
-              selected={selection.kind === 'track' && selection.id === track.id}
-              onSelect={() => select({ kind: 'track', id: track.id })}
-              onMute={() => patchTrack(track.id, { muted: !track.muted })}
-              onLock={() => patchTrack(track.id, { locked: !track.locked })}
-              onRipple={() => rippleTrack(track.id)}
-            />
-          ))}
+          {/* Translated rather than scrolled. The label column has no scrollbar of its own
+              — it mirrors the lanes' vertical offset, which is the only way the two stay
+              row-aligned. Before this, `.ve-labels` was `overflow: hidden` and simply never
+              moved: scroll to a fifth lane and every name was against the wrong lane. */}
+          <div className="ve-labels-inner" style={{ transform: `translateY(${-laneScrollTop}px)` }}>
+            {tracks.map((track) => (
+              <TrackLabel
+                key={track.id}
+                track={track}
+                selected={selection.kind === 'track' && selection.id === track.id}
+                onSelect={() => select({ kind: 'track', id: track.id })}
+                onMute={() => patchTrack(track.id, { muted: !track.muted })}
+                onLock={() => patchTrack(track.id, { locked: !track.locked })}
+                onRipple={() => rippleTrack(track.id)}
+              />
+            ))}
+          </div>
         </div>
 
-        <div className="ve-lanes ed-scroll" ref={laneRef}>
+        <div
+          className="ve-lanes ed-scroll"
+          ref={laneRef}
+          onScroll={(event) => setLaneScrollTop(event.currentTarget.scrollTop)}
+        >
           <div className="ve-lanes-inner" style={{ width: Math.max(width, 320) }}>
             <div
               className="ve-ruler"
@@ -313,16 +388,20 @@ export function Timeline(): JSX.Element | null {
                   .map((scene) => {
                     const asset = scene.assetId ? assetsById.get(scene.assetId) : undefined
                     const isSelected = selection.kind === 'clip' && selection.id === scene.id
+                    // Under about three handle-widths the two trim handles leave no body to
+                    // grab, so the clip becomes impossible to move. Drop them and let the
+                    // whole clip drag; trimming stays available by zooming in.
+                    const tiny = clipWidthPx(scene.durationFrames, fps, zoom) < CLIP_HANDLE_PX * 3
                     return (
                       <div
                         key={scene.id}
                         data-clip={scene.id}
-                        className={`ve-clip ve-clip--${clipTone(scene, asset)}${isSelected ? ' is-selected' : ''}${dragging === scene.id ? ' is-dragging' : ''}`}
+                        className={`ve-clip ve-clip--${clipTone(scene, asset)}${tiny ? ' ve-clip--tiny' : ''}${isSelected ? ' is-selected' : ''}${dragging === scene.id ? ' is-dragging' : ''}${overlapping.has(scene.id) ? ' is-overlapping' : ''}`}
                         style={{
                           left: framesToPx(scene.startFrame, fps, zoom),
-                          width: Math.max(4, framesToPx(scene.durationFrames, fps, zoom))
+                          width: clipWidthPx(scene.durationFrames, fps, zoom)
                         }}
-                        title={`${clipLabel(scene, asset)} · ${timecode(scene.startFrame, fps)} → ${timecode(scene.startFrame + scene.durationFrames, fps)}`}
+                        title={`${clipLabel(scene, asset)} · ${timecode(scene.startFrame, fps)} → ${timecode(scene.startFrame + scene.durationFrames, fps)} · ${scene.durationFrames}f${overlapping.has(scene.id) ? '\nOverlaps another clip on this lane' : ''}`}
                         onPointerDown={(event) => {
                           if (track.locked) return
                           event.stopPropagation()
@@ -415,24 +494,29 @@ function TrackLabel({
       role="presentation"
     >
       <span className="ve-label-name me-ellipsis" title={track.name}>{track.name}</span>
+      {/* State is the chip's fill, not the letter's case. `m` vs `M` and `l` vs `L` at 10px
+          asked the eye to read capitalisation to know whether a lane was muted — two
+          variables encoding one fact, and the one that carried it was the illegible one. */}
       <span className="ve-label-actions">
         <button
           type="button"
           className={`ve-chip${track.muted ? ' is-on' : ''}`}
           onClick={(event) => { event.stopPropagation(); onMute() }}
-          title={track.muted ? 'Unmute this lane' : 'Mute this lane'}
+          title={track.muted ? `${track.name} is muted. Click to unmute.` : `Mute ${track.name}`}
+          aria-pressed={track.muted}
           aria-label={`${track.muted ? 'Unmute' : 'Mute'} ${track.name}`}
         >
-          {track.muted ? 'M' : 'm'}
+          M
         </button>
         <button
           type="button"
           className={`ve-chip${track.locked ? ' is-on' : ''}`}
           onClick={(event) => { event.stopPropagation(); onLock() }}
-          title={track.locked ? 'Unlock this lane' : 'Lock this lane against edits'}
+          title={track.locked ? `${track.name} is locked against edits. Click to unlock.` : `Lock ${track.name} against edits`}
+          aria-pressed={track.locked}
           aria-label={`${track.locked ? 'Unlock' : 'Lock'} ${track.name}`}
         >
-          {track.locked ? 'L' : 'l'}
+          L
         </button>
         <button
           type="button"

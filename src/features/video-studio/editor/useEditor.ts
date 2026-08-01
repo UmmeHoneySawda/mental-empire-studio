@@ -1,6 +1,10 @@
 import { create } from 'zustand'
+import { HookPlanSchema } from '@shared/video-engine'
 import type {
   CaptionCueList,
+  HookBeatPatch,
+  HookPlan,
+  HookPromptInput,
   JsonObject,
   RendererId,
   VideoBrollCandidate,
@@ -40,6 +44,7 @@ export type Selection =
 export type PanelTab =
   | 'media'
   | 'templates'
+  | 'hook'
   | 'text'
   | 'captions'
   | 'transitions'
@@ -142,11 +147,21 @@ interface EditorActions {
   setCanvas: (patch: { width?: number; height?: number; fps?: number; durationFrames?: number }) => Promise<void>
   rename: (name: string) => Promise<void>
   instantiateTemplate: (input: { templateId: string; startFrame: number; durationFrames?: number; props?: JsonObject }) => Promise<void>
+
+  /** Hook: all four go through the engine, which validates and compiles the plan. */
+  hookPrompt: (input: HookPromptInput) => Promise<string>
+  generateHookPlan: (input: HookPromptInput) => Promise<void>
+  importHookPlan: (json: string) => Promise<void>
+  updateHookBeat: (beatId: string, patch: HookBeatPatch) => Promise<void>
+
   captionsFromTranscript: (templateId?: string) => Promise<void>
   captionsFromSrt: (srt: string) => Promise<void>
   setCaptionTemplate: (templateId: string, props?: JsonObject) => Promise<void>
   refreshCues: (maxWordsPerCue?: number) => Promise<void>
   setWordImportance: (wordIds: string[], importance: 0 | 1 | 2 | 3) => Promise<void>
+  /** Copy-prompt round trip: ask an outside model which words to emphasise, paste back. */
+  importantWordsPrompt: (input?: { purpose?: string; maximumSelectionRatio?: number }) => Promise<string>
+  applyImportantWords: (json: string, maximumSelectionRatio?: number) => Promise<void>
   setGrading: (grading: VideoGrading) => Promise<void>
   searchBroll: (query: string) => Promise<void>
   placeBroll: (candidate: VideoBrollCandidate, startFrame: number, durationFrames: number) => Promise<void>
@@ -317,7 +332,11 @@ export const useEditor = create<EditorStore>((set, get) => {
     edit: (fn, options) => {
       const { project } = get()
       if (!project) return
-      const next = fn(project)
+      // The canvas grows to cover whatever the operation produced. `canvas.durationFrames`
+      // is the composition's `durationInFrames`, so a clip ending past it would be on the
+      // timeline, in the inspector and in the saved file, yet missing from the render.
+      // Growing here means no single operation has to remember to do it.
+      const next = ops.withCanvasCoveringContent(fn(project))
       // Reference equality means the operation declined the edit (clamped to a no-op).
       // Skipping the write keeps a rejected drag out of the undo stack.
       if (next === project) return
@@ -491,6 +510,51 @@ export const useEditor = create<EditorStore>((set, get) => {
       if (project) adopt(project, 'Template added to the timeline.')
     },
 
+    // ------------------------------------------------------------------------ hook
+    //
+    // Every one of these already existed on the bridge and was correct; nothing in the
+    // Remotion editor called any of them, so the only hook a user could reach here was the
+    // templates panel's plan-less one. `brollRequests` is deliberately dropped: the beats
+    // that asked for footage are readable off the compiled plan in the project itself, and
+    // holding a second copy in the store is how the old studio's beat list went stale.
+
+    hookPrompt: async (input) => {
+      const { projectId } = get()
+      if (!projectId) return ''
+      const prompt = await runEngine('Building the prompt', (native) =>
+        native.videoEngine.hookPrompt(projectId, input))
+      return prompt ?? ''
+    },
+
+    generateHookPlan: async (input) => {
+      const { projectId } = get()
+      if (!projectId) return
+      await get().flush()
+      const result = await runEngine('Writing the hook', (native) =>
+        native.videoEngine.generateHookPlan(projectId, input))
+      if (!result) return
+      adopt(result.project, `Hook written — ${result.plan.beats.length} beats over ${result.plan.durationFrames} frames.`)
+    },
+
+    importHookPlan: async (json) => {
+      const { projectId } = get()
+      if (!projectId) return
+      await get().flush()
+      const result = await runEngine('Importing the hook', (native) =>
+        native.videoEngine.importHookPlan(projectId, json))
+      if (!result) return
+      adopt(result.project, `Hook added — ${result.plan.beats.length} beats over ${result.plan.durationFrames} frames.`)
+    },
+
+    updateHookBeat: async (beatId, patch) => {
+      const { projectId } = get()
+      if (!projectId) return
+      await get().flush()
+      const result = await runEngine('Updating the beat', (native) =>
+        native.videoEngine.updateHookBeat(projectId, beatId, patch))
+      if (result) adopt(result.project)
+    },
+
     captionsFromTranscript: async (templateId) => {
       const { projectId, downloadId } = get()
       if (!projectId || !downloadId) return
@@ -542,6 +606,26 @@ export const useEditor = create<EditorStore>((set, get) => {
         native.videoEngine.setWordImportance(projectId, wordIds, importance))
       if (!project) return
       adopt(project)
+      await get().refreshCues()
+    },
+
+    importantWordsPrompt: async (input) => {
+      const { projectId } = get()
+      if (!projectId) return ''
+      const prompt = await runEngine('Building the prompt', (native) =>
+        native.videoEngine.importantWordsPrompt(projectId, input))
+      return prompt ?? ''
+    },
+
+    applyImportantWords: async (json, maximumSelectionRatio) => {
+      const { projectId } = get()
+      if (!projectId) return
+      await get().flush()
+      const project = await runEngine('Applying emphasis', (native) =>
+        native.videoEngine.applyImportantWords(projectId, json, maximumSelectionRatio))
+      if (!project) return
+      const emphasised = (project.captions?.words ?? []).filter((word) => (word.importance ?? 0) > 0).length
+      adopt(project, `${emphasised} word${emphasised === 1 ? '' : 's'} emphasised.`)
       await get().refreshCues()
     },
 
@@ -643,4 +727,32 @@ export function clipById(project: VideoProject | null, sceneId: string | null): 
 
 export function selectedClip(state: EditorStore): VideoScene | null {
   return state.selection.kind === 'clip' ? clipById(state.project, state.selection.id) : null
+}
+
+/** The compiled hook plan, read back off the project.
+ *
+ *  Read, not remembered. The plan lives in the saved document (`props.hookPlan` on the hook
+ *  scene), so deriving it here means the beats list survives a reload and can never
+ *  disagree with what is actually on the timeline. */
+export function hookPlanFromProject(project: VideoProject | null): HookPlan | null {
+  if (!project) return null
+  for (const scene of project.scenes) {
+    const candidate = scene.template?.props?.['hookPlan']
+    if (!candidate) continue
+    const parsed = HookPlanSchema.safeParse(candidate)
+    if (parsed.success) return parsed.data
+  }
+  return null
+}
+
+/** The scene carrying the hook, so the panel can select it or remove it. */
+export function hookSceneId(project: VideoProject | null): string | null {
+  if (!project) return null
+  return (
+    project.scenes.find((scene) => scene.template?.props?.['hookPlan'])?.id ??
+    project.scenes.find(
+      (scene) => scene.kind === 'template' && /-hook-/u.test(scene.template?.id ?? '')
+    )?.id ??
+    null
+  )
 }

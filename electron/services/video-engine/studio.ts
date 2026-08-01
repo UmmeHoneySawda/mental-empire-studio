@@ -8,6 +8,8 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import {
   createCaptionDocument,
   DEFAULT_VIDEO_GRADING,
+  HookPlanSchema,
+  rescaleHookPlan,
   VideoProjectSchema,
   VideoSceneSchema,
   type CaptionWord,
@@ -527,6 +529,30 @@ export async function unbindDownload(
 
 // ------------------------------------------------------------------- canvas
 
+/** Retimes a scene's embedded hook plan to a new frame rate, or leaves it alone.
+ *
+ *  Leaving it alone is the failure mode on purpose: a plan that cannot be expressed at the
+ *  new rate (a 30-second plan scaled up past the schema's 30-second ceiling) is worth a
+ *  preflight complaint the user can act on, and is not worth deleting their hook over. */
+function rescaledHookTemplate(
+  scene: VideoProject['scenes'][number],
+  fps: number,
+  scale: number
+): Partial<VideoProject['scenes'][number]> {
+  const props = scene.template?.props
+  const embedded = props?.['hookPlan']
+  if (!scene.template || !props || !embedded) return {}
+  const parsed = HookPlanSchema.safeParse(embedded)
+  if (!parsed.success) return {}
+  try {
+    return {
+      template: { ...scene.template, props: { ...props, hookPlan: rescaleHookPlan(parsed.data, fps, scale) } }
+    }
+  } catch {
+    return {}
+  }
+}
+
 export async function patchCanvas(projectId: string, patch: VideoCanvasPatch): Promise<VideoProject> {
   const engine = await getVideoEngine()
   const project = await engine.openProject(projectId)
@@ -559,7 +585,13 @@ export async function patchCanvas(projectId: string, patch: VideoCanvasPatch): P
             startFrame: rescale(scene.sourceRange.startFrame),
             durationFrames: Math.max(1, rescale(scene.sourceRange.durationFrames))
           }
-        : undefined
+        : undefined,
+      // A hook plan embedded in a template's props carries its OWN fps and its own beat
+      // frames, and nothing here used to touch it: changing the frame rate rescaled the
+      // scene around the plan and left the plan behind, so preflight then reported both
+      // `hook-plan.fps-mismatch` and `hook-plan.too-long` and the render was dead with no
+      // hook UI to repair it. `rescaleHookPlan` exists for exactly this and had no caller.
+      ...(scale === 1 ? {} : rescaledHookTemplate(scene, fps, scale))
     }))
     .filter((scene) => scene.startFrame < canvas.durationFrames)
     .map((scene) => VideoSceneSchema.parse({

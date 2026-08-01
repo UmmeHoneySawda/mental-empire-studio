@@ -3,6 +3,7 @@ import type {
   VideoScene,
   VideoTransition,
 } from '../../shared/video-engine'
+import { SUPPORTED_REMOTION_TRANSITIONS } from './constants'
 
 export interface RemotionTransitionChain {
   readonly startFrame: number
@@ -11,14 +12,24 @@ export interface RemotionTransitionChain {
   readonly durationFrames: number
 }
 
-function isRenderableTransition(
-  transition: VideoTransition,
-): transition is VideoTransition & { type: 'fade' | 'slide' | 'wipe' } {
+/* Every animated type `remotionTransition` can build a presentation for.
+ *
+ * This used to be a hand-written `fade | slide | wipe` list, and that is how `zoom`, `blur`
+ * and `dip-to-black` came to be dead: transition.tsx implements all three, preflight
+ * accepts all three, the inspector offers all three — but they were filtered out here, so
+ * they never entered a `TransitionSeries` chain. Their scenes fell through to the
+ * standalone branch and rendered as a plain overlap: no animation, no warning, in the
+ * player and in a headless render alike.
+ *
+ * Deriving the set from `SUPPORTED_REMOTION_TRANSITIONS` (minus `cut`, which is the one
+ * type with no presentation) means the gate cannot drift from the renderer again. */
+const ANIMATED_REMOTION_TRANSITIONS: ReadonlySet<string> = new Set(
+  SUPPORTED_REMOTION_TRANSITIONS.filter((type) => type !== 'cut'),
+)
+
+function isRenderableTransition(transition: VideoTransition): boolean {
   return (
-    transition.durationFrames > 0 &&
-    (transition.type === 'fade' ||
-      transition.type === 'slide' ||
-      transition.type === 'wipe')
+    transition.durationFrames > 0 && ANIMATED_REMOTION_TRANSITIONS.has(transition.type)
   )
 }
 

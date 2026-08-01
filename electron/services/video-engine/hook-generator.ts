@@ -1,4 +1,4 @@
-import { safeParseHookPlan, type HookPlan } from '../../../shared/video-engine'
+import { HookPlanSchema, safeParseHookPlan, type HookPlan } from '../../../shared/video-engine'
 import { logger } from '../logger'
 import { VideoEngineError } from './errors'
 
@@ -74,23 +74,46 @@ function coerceToBudget(plan: HookPlan, fps: number, durationFrames: number): Ho
       ? {
           transitionOut: {
             ...beat.transitionOut,
-            durationFrames: Math.max(0, Math.round(beat.transitionOut.durationFrames * scale))
+            // An animated transition needs a positive duration — the schema says so. Only
+            // `cut` may be zero, and scaling a two-frame fade by a third used to round it
+            // straight to 0 and fail the whole plan on a rule the model never broke.
+            durationFrames:
+              beat.transitionOut.type === 'cut'
+                ? 0
+                : Math.max(1, Math.round(beat.transitionOut.durationFrames * scale))
           }
         }
       : {})
   }))
   // Re-lay the beats end to end: rounding each one independently can leave a one-frame
   // overlap, which the schema rejects.
+  //
+  // The budget has to be enforced HERE, per beat, not just on the total. Each beat rounds
+  // independently and can round up, so seven beats scaled by a third overshot by a frame —
+  // and clamping only `durationFrames` at the end left the last beat ending past the plan,
+  // which is the one arrangement the schema calls out ("Hook beat extends beyond the plan
+  // duration"). The user saw a raw zod complaint about a plan they never wrote.
   let cursor = 0
-  const packed = beats.map((beat) => {
-    const next = { ...beat, startFrame: cursor }
+  const packed: typeof beats = []
+  for (const beat of beats) {
+    const room = durationFrames - cursor
+    if (room < 1) break
+    const next = { ...beat, startFrame: cursor, durationFrames: Math.min(beat.durationFrames, room) }
     if (next.transitionOut && next.transitionOut.durationFrames > next.durationFrames) {
       next.transitionOut = { ...next.transitionOut, durationFrames: next.durationFrames }
     }
     cursor += next.durationFrames
-    return next
-  })
-  return { ...plan, fps, beats: packed, durationFrames: Math.max(1, Math.min(cursor, durationFrames)) }
+    packed.push(next)
+  }
+  const coerced = {
+    ...plan,
+    fps,
+    beats: packed.length > 0 ? packed : plan.beats.slice(0, 1),
+    durationFrames: Math.max(1, Math.min(cursor, durationFrames))
+  }
+  // Validate what we produced. Returning it unchecked is what turned a coercion bug into a
+  // failure the user could only read as "the AI wrote a broken plan".
+  return HookPlanSchema.parse(coerced)
 }
 
 export interface GenerateHookPlanOptions {

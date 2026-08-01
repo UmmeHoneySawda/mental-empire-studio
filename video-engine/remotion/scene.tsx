@@ -227,10 +227,20 @@ export function SceneContent({
   if (scene.kind === 'text') return <TextScene scene={scene} />
 
   if (scene.kind === 'template') {
-    if (
-      HOOK_TEMPLATE_IDS.has(scene.template?.id ?? '') ||
-      hasValidHookPlan(scene)
-    ) {
+    /* The PLAN decides, not the template id.
+     *
+     * This used to be `HOOK_TEMPLATE_IDS.has(id) || hasValidHookPlan(scene)`, and the id
+     * test short-circuiting first is what made the premade hooks draw nothing at all:
+     * `HookTemplate` returns null without a plan, and the only path that attaches one is
+     * the hook compiler. Placing "30s Kinetic Hook" from the templates panel goes through
+     * `instantiateTemplate`, which hands the scene its manifest defaults and no plan — so
+     * the id matched, the plan did not exist, and the fallback that would have drawn the
+     * headline was unreachable. An empty frame, and a success notice.
+     *
+     * Ordering the tests this way makes a plan-less hook degrade to the same trusted
+     * fallback every other template gets, which is what the HyperFrames compiler already
+     * did (`renderSingleHook`). Both engines now behave the same. */
+    if (hasValidHookPlan(scene)) {
       return <HookTemplate project={project} scene={scene} />
     }
     return <TrustedTemplateFallback scene={scene} />

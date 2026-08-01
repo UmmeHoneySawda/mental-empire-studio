@@ -58,6 +58,19 @@ export function pxToFrames(px: number, fps: number, zoom: number): number {
   return Math.round((px / (PIXELS_PER_SECOND * zoom)) * Math.max(1, fps))
 }
 
+/** The on-screen width of a clip of `durationFrames`.
+ *
+ * ONE definition, used both by the render and by the code that hands geometry back after a
+ * gesture. It has to be one definition: a drag writes `style.width` straight to the DOM,
+ * and React does not know that happened. If the gesture then cleared the width — or
+ * restored a value computed slightly differently — React's style diff would compare its own
+ * unchanged previous value against its own unchanged next value, skip the write, and leave
+ * the DOM with whatever the gesture left behind. That is exactly how every dragged clip
+ * ended up rendering at its label's width while its duration was untouched. */
+export function clipWidthPx(durationFrames: number, fps: number, zoom: number): number {
+  return Math.max(4, framesToPx(durationFrames, fps, zoom))
+}
+
 /** Ruler tick spacing in seconds, chosen so labels never collide at any zoom. */
 export function tickSeconds(zoom: number): { major: number; minor: number } {
   const pxPerSecond = PIXELS_PER_SECOND * zoom
