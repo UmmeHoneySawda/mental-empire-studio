@@ -92,16 +92,20 @@ export function VisualAsset({
   const fit = scene.fit ?? 'cover'
   const trim = sourceTrim(scene)
   const wrapperStyle = sceneTransformStyle(scene)
-  const mediaStyle: CSSProperties = {
-    width: '100%',
-    height: '100%',
-    objectFit: fit,
-  }
+  const volume = scene.volume ?? 1
+  const isMuted = muted || volume <= 0
 
   if (asset.kind === 'image') {
     return (
       <AbsoluteFill style={wrapperStyle}>
-        <Img src={asset.uri} style={mediaStyle} />
+        <Img
+          src={asset.uri}
+          style={{
+            width: '100%',
+            height: '100%',
+            objectFit: fit,
+          }}
+        />
       </AbsoluteFill>
     )
   }
@@ -113,10 +117,13 @@ export function VisualAsset({
           src={asset.uri}
           trimBefore={trim.trimBefore}
           trimAfter={trim.trimAfter}
-          volume={scene.volume ?? 1}
-          muted={muted}
+          volume={isMuted ? undefined : volume}
+          muted={isMuted}
           objectFit={fit}
-          style={mediaStyle}
+          style={{
+            width: '100%',
+            height: '100%',
+          }}
         />
       </AbsoluteFill>
     )

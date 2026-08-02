@@ -263,7 +263,8 @@ export function SceneContent({
     return <AudioAsset asset={asset} scene={scene} />
   }
 
-  return <VisualAsset asset={asset} scene={scene} />
+  const track = project.tracks.find((candidate) => candidate.id === scene.trackId)
+  return <VisualAsset asset={asset} scene={scene} muted={track?.muted ?? false} />
 }
 
 export function sceneLayerStyle(
