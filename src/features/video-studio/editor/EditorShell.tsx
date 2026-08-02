@@ -1,4 +1,5 @@
 import { useEffect } from 'react'
+import type { RendererId, VideoProject } from '@shared/video-engine'
 import { Banner } from '../../../components/ui/kit'
 import { PreviewStage } from './PreviewStage'
 import { Timeline } from './Timeline'
@@ -6,13 +7,7 @@ import { MediaBin } from './MediaBin'
 import { Inspector } from './Inspector'
 import { timecode } from './constants'
 import { useEditor, type PanelTab } from './useEditor'
-
-/* The editor shell.
- *
- * Layout follows trykimu/videoeditor: a media rail on the left, the player centred with
- * its transport underneath, an inspector on the right, and the timeline spanning the full
- * width at the bottom. Sizes and spacing come from their editor; the accent stays this
- * app's amber so the editor reads as part of Studio rather than a second product. */
+import { openRendererEditor, reseedRendererEditor } from './rendererSession'
 
 const TABS: ReadonlyArray<{ id: PanelTab; label: string }> = [
   { id: 'media', label: 'Media' },
@@ -27,7 +22,31 @@ const TABS: ReadonlyArray<{ id: PanelTab; label: string }> = [
   { id: 'export', label: 'Export' }
 ]
 
-export function EditorShell({ downloadId }: { downloadId: string }): JSX.Element {
+type HyperframesWorkerChoice = 'auto' | '1' | '2' | '4'
+
+function hyperframesWorkerChoice(project: VideoProject): HyperframesWorkerChoice {
+  const value = project.metadata?.tags?.find((tag) => tag.startsWith('hf-workers:'))?.slice(11)
+  return value === '1' || value === '2' || value === '4' ? value : 'auto'
+}
+
+function withHyperframesWorkers(project: VideoProject, choice: HyperframesWorkerChoice): VideoProject {
+  const tags = (project.metadata?.tags ?? []).filter((tag) => !tag.startsWith('hf-workers:'))
+  return {
+    ...project,
+    metadata: {
+      ...project.metadata,
+      tags: [...tags, `hf-workers:${choice}`]
+    }
+  }
+}
+
+export function EditorShell({
+  downloadId,
+  rendererId = 'remotion'
+}: {
+  downloadId: string
+  rendererId?: RendererId
+}): JSX.Element {
   const project = useEditor((state) => state.project)
   const loading = useEditor((state) => state.loading)
   const error = useEditor((state) => state.error)
@@ -38,8 +57,7 @@ export function EditorShell({ downloadId }: { downloadId: string }): JSX.Element
   const jobs = useEditor((state) => state.jobs)
   const past = useEditor((state) => state.past)
   const future = useEditor((state) => state.future)
-  const open = useEditor((state) => state.open)
-  const reseed = useEditor((state) => state.reseed)
+  const edit = useEditor((state) => state.edit)
   const setTab = useEditor((state) => state.setTab)
   const clearMessages = useEditor((state) => state.clearMessages)
   const enqueueRender = useEditor((state) => state.enqueueRender)
@@ -47,18 +65,14 @@ export function EditorShell({ downloadId }: { downloadId: string }): JSX.Element
   const setProgressNote = useEditor((state) => state.setProgressNote)
 
   useEffect(() => {
-    void open(downloadId)
-  }, [downloadId, open])
+    void openRendererEditor(downloadId, rendererId)
+  }, [downloadId, rendererId])
 
-  // The render queue is a main-process singleton, so job changes arrive as events. A
-  // render keeps reporting progress even from another screen.
   useEffect(() => {
     if (typeof window === 'undefined' || !window.api?.onVideoEngineJob) return
     return window.api.onVideoEngineJob(applyJob)
   }, [applyJob])
 
-  // Groq transcription reports its phase on the classic project's channel. Mirroring it
-  // is what turns a multi-minute "Importing captions" freeze into visible progress.
   useEffect(() => {
     if (typeof window === 'undefined' || !window.api?.onTranscribeProgress) return
     const mine = `proj-${downloadId}`
@@ -68,8 +82,6 @@ export function EditorShell({ downloadId }: { downloadId: string }): JSX.Element
     })
   }, [downloadId, setProgressNote])
 
-  // Auto B-roll is eleven model calls plus up to twenty-five downloads for a long video —
-  // the same reason transcription needed a live phase rather than one static label.
   useEffect(() => {
     if (typeof window === 'undefined' || !window.api?.onAutoBrollProgress) return
     return window.api.onAutoBrollProgress((progress) => {
@@ -78,8 +90,6 @@ export function EditorShell({ downloadId }: { downloadId: string }): JSX.Element
     })
   }, [setProgressNote])
 
-  // Editor keys, but never while a field has focus — otherwise Space would stop typing a
-  // headline and start playback instead.
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
       const target = event.target as HTMLElement | null
@@ -157,7 +167,7 @@ export function EditorShell({ downloadId }: { downloadId: string }): JSX.Element
     return (
       <div className="ve">
         <div className="ve-empty">
-          <h3>Opening the project</h3>
+          <h3>Opening the {rendererId === 'hyperframes' ? 'HyperFrames' : 'Remotion'} project</h3>
           <p>Loading this clip&apos;s audio, stills and transcript into the editor.</p>
         </div>
       </div>
@@ -171,7 +181,7 @@ export function EditorShell({ downloadId }: { downloadId: string }): JSX.Element
         <div className="ve-empty">
           <h3>This clip has no project yet</h3>
           <p>Building one copies the clip&apos;s audio and stills in, and turns its transcript into word-timed captions.</p>
-          <button type="button" className="ve-btn ve-btn--primary" disabled={!!busy} onClick={() => void reseed()}>
+          <button type="button" className="ve-btn ve-btn--primary" disabled={!!busy} onClick={() => void reseedRendererEditor(downloadId, rendererId)}>
             {busy || 'Build the project'}
           </button>
         </div>
@@ -179,17 +189,40 @@ export function EditorShell({ downloadId }: { downloadId: string }): JSX.Element
     )
   }
 
+  const workerChoice = hyperframesWorkerChoice(project)
+
   return (
-    <div className="ve">
+    <div className="ve" data-engine={rendererId}>
       <header className="ve-head">
         <div className="ve-head-title">
           <span className="me-ellipsis" title={project.name}>{project.name}</span>
           <span className="ve-head-spec ve-mono">
+            {rendererId === 'hyperframes' ? 'HyperFrames GPU' : 'Remotion'} ·{' '}
             {project.canvas.width}×{project.canvas.height} · {project.canvas.fps}fps ·{' '}
             {timecode(project.canvas.durationFrames, project.canvas.fps)} · rev {project.revision}
           </span>
         </div>
         <div className="ve-head-actions">
+          {rendererId === 'hyperframes' && (
+            <label className="ve-head-spec" title="HyperFrames capture workers. Auto calibrates for this machine and composition.">
+              Workers{' '}
+              <select
+                className="ed-input ve-mono"
+                value={workerChoice}
+                onChange={(event) => {
+                  const choice = event.target.value as HyperframesWorkerChoice
+                  edit((current) => withHyperframesWorkers(current, choice))
+                }}
+                aria-label="HyperFrames capture workers"
+                style={{ width: 72, marginLeft: 5 }}
+              >
+                <option value="auto">Auto</option>
+                <option value="1">1</option>
+                <option value="2">2</option>
+                <option value="4">4</option>
+              </select>
+            </label>
+          )}
           <button
             type="button"
             className="ve-btn ve-btn--ghost"
@@ -240,7 +273,7 @@ export function EditorShell({ downloadId }: { downloadId: string }): JSX.Element
           <MediaBin />
         </aside>
 
-        <PreviewStage />
+        <PreviewStage rendererId={rendererId} />
 
         <aside className="ve-inspector" aria-label="Inspector">
           <div className="ve-tabs" role="tablist" aria-label="Editor panels">

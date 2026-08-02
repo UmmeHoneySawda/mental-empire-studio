@@ -1,6 +1,7 @@
 import { useEffect, useMemo } from 'react'
 import type { ComposeEngine } from '@shared/video-engine'
 import { Banner, Btn } from '../../components/ui/kit'
+import { EditorShell } from './editor/EditorShell'
 import { useVideoStudio, type StudioTab } from './store/useVideoStudio'
 import { PreviewStage } from './preview/PreviewStage'
 import { StudioTimeline } from './timeline/StudioTimeline'
@@ -14,10 +15,6 @@ import { BrollPanel } from './panels/BrollPanel'
 import { MediaPanel } from './panels/MediaPanel'
 import { RenderPanel } from './panels/RenderPanel'
 
-/* The studio shell: preview beside the inspector, timeline underneath, and one
-   message strip. Panels never render errors themselves — everything the engine
-   rejects surfaces here, once, in the same place. */
-
 const TABS: Array<{ id: StudioTab; label: string }> = [
   { id: 'templates', label: 'Templates' },
   { id: 'hook', label: 'Hook' },
@@ -29,7 +26,15 @@ const TABS: Array<{ id: StudioTab; label: string }> = [
   { id: 'render', label: 'Render' }
 ]
 
-export function VideoStudio({ downloadId, engine }: { downloadId: string; engine: ComposeEngine }): JSX.Element {
+/** HyperFrames now uses the same live timeline editor as Remotion. */
+export function VideoStudio(props: { downloadId: string; engine: ComposeEngine }): JSX.Element {
+  if (props.engine === 'hyperframes') {
+    return <EditorShell downloadId={props.downloadId} rendererId="hyperframes" />
+  }
+  return <LegacyVideoStudio {...props} />
+}
+
+function LegacyVideoStudio({ downloadId, engine }: { downloadId: string; engine: ComposeEngine }): JSX.Element {
   const project = useVideoStudio((state) => state.project)
   const status = useVideoStudio((state) => state.status)
   const jobs = useVideoStudio((state) => state.jobs)
@@ -53,15 +58,11 @@ export function VideoStudio({ downloadId, engine }: { downloadId: string; engine
     void openEngine(downloadId, engine)
   }, [downloadId, engine, openEngine])
 
-  // The queue is a main-process singleton, so job changes arrive as events rather
-  // than polling — a render keeps reporting progress even from another tab.
   useEffect(() => {
     if (typeof window === 'undefined' || !window.api?.onVideoEngineJob) return
     return window.api.onVideoEngineJob(applyJob)
   }, [applyJob])
 
-  // Groq transcription reports its phase on the classic project's channel. Mirroring it
-  // here is what turns a multi-minute "Importing captions" freeze into visible progress.
   useEffect(() => {
     if (typeof window === 'undefined' || !window.api?.onTranscribeProgress) return
     const mine = `proj-${downloadId}`
@@ -73,8 +74,6 @@ export function VideoStudio({ downloadId, engine }: { downloadId: string; engine
     })
   }, [downloadId, setTranscribeMessage])
 
-  // Editor keys, but only when focus is not in a field — otherwise space would stop
-  // typing a headline and start playback instead.
   useEffect(() => {
     const onKey = (event: KeyboardEvent): void => {
       const target = event.target as HTMLElement | null
@@ -118,8 +117,6 @@ export function VideoStudio({ downloadId, engine }: { downloadId: string; engine
     [jobs, project?.id]
   )
 
-  // A dot on a tab means that step already has something in the project, so the
-  // user can see at a glance what is done without opening each one.
   const filled = useMemo<Partial<Record<StudioTab, boolean>>>(() => {
     if (!project) return {}
     return {

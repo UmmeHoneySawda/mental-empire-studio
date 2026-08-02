@@ -69,9 +69,7 @@ export async function createVideoEngine(
   }
   const hyperframesOptions: HyperframesAdapterOptions = {
     ...options.hyperframes,
-    // One capture worker keeps Chromium's GPU command stream coherent and avoids four
-    // browser processes competing for the same VRAM. Advanced callers can still override.
-    workers: options.hyperframes?.workers ?? 1,
+    // Undefined delegates capture-worker sizing to HyperFrames' calibration logic.
     telemetry: options.hyperframes?.telemetry ?? {
       info: (message, attributes) => sentryLog.info(message, attributes),
       warn: (message, attributes) => sentryLog.warn(message, attributes),

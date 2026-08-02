@@ -6,13 +6,19 @@ import {
   createRenderJob,
   executeRenderJob,
   resolveConfig,
+  runHyperframeLint,
   type RenderConfigInput,
 } from '@hyperframes/producer'
+import {
+  detectGpuEncoder,
+  resolveBrowserGpuMode,
+} from '@hyperframes/engine'
 import type { VideoProject } from '../../shared/video-engine'
 import type {
   PrepareContext,
   PreparedRender,
   RenderArtifact,
+  RenderProblem,
 } from '../../electron/services/video-engine/render/types'
 import { HyperframesRendererAdapter } from './adapter'
 import { optimizeHyperframesHtml } from './gpu-html'
@@ -31,10 +37,26 @@ interface OutputFormat {
 interface GpuAdapterOptions {
   quality: NonNullable<HyperframesAdapterOptions['quality']>
   strictness: NonNullable<HyperframesAdapterOptions['strictness']>
-  workers: number
-  variables: HyperframesAdapterOptions['variables']
+  workers: number | undefined
   telemetry: HyperframesTelemetry
 }
+
+type DetectedGpuEncoder = Awaited<ReturnType<typeof detectGpuEncoder>>
+
+interface HardwareReadiness {
+  encoder: Exclude<DetectedGpuEncoder, null>
+  browserMode: 'hardware'
+}
+
+export interface HyperframesGpuProbe {
+  detectEncoder(): Promise<DetectedGpuEncoder>
+  resolveBrowserMode(): Promise<'hardware' | 'software'>
+}
+
+const DEFAULT_GPU_PROBE: HyperframesGpuProbe = Object.freeze({
+  detectEncoder: () => detectGpuEncoder(),
+  resolveBrowserMode: () => resolveBrowserGpuMode('auto'),
+})
 
 const NOOP_TELEMETRY: HyperframesTelemetry = Object.freeze({
   info: () => undefined,
@@ -44,16 +66,12 @@ const NOOP_TELEMETRY: HyperframesTelemetry = Object.freeze({
 })
 
 function outputFormat(outputPath: string): OutputFormat {
-  switch (extname(outputPath).toLowerCase()) {
-    case '.mp4':
-      return { format: 'mp4', mimeType: 'video/mp4' }
-    case '.webm':
-      return { format: 'webm', mimeType: 'video/webm' }
-    case '.mov':
-      return { format: 'mov', mimeType: 'video/quicktime' }
-    default:
-      throw new Error('HyperFrames output path must end in .mp4, .webm, or .mov')
+  if (extname(outputPath).toLowerCase() !== '.mp4') {
+    throw new Error(
+      'GPU-required HyperFrames renders must use .mp4. WebM VP9 and MOV ProRes use CPU encoders.',
+    )
   }
+  return { format: 'mp4', mimeType: 'video/mp4' }
 }
 
 function clampProgress(value: number): number {
@@ -81,27 +99,97 @@ function preparedPayload(prepared: PreparedRender): HyperframesPreparedPayload {
   return candidate as HyperframesPreparedPayload
 }
 
-/**
- * GPU-first HyperFrames adapter.
- *
- * The base adapter remains responsible for trusted project compilation, asset copying,
- * linting, ownership markers, and cleanup. This class adds the parts that the producer API
- * does not enable by default: hardware Chrome/WebGL capture, hardware FFmpeg encoding,
- * compositor-friendly generated HTML, and the Remotion text-motion vocabulary.
- */
+export function resolveHyperframesWorkers(project: VideoProject): number | undefined {
+  const tag = project.metadata?.tags?.find((candidate) => candidate.startsWith('hf-workers:'))
+  if (!tag || tag === 'hf-workers:auto') return undefined
+  const value = Number(tag.slice('hf-workers:'.length))
+  return value === 1 || value === 2 || value === 4 ? value : undefined
+}
+
+export function createGpuHyperframesRenderConfig(input: {
+  payload: HyperframesPreparedPayload
+  quality: NonNullable<HyperframesAdapterOptions['quality']>
+  strictness: NonNullable<HyperframesAdapterOptions['strictness']>
+}): RenderConfigInput {
+  return {
+    fps: input.payload.fps,
+    quality: input.quality,
+    format: 'mp4',
+    workers: input.payload.workers,
+    strictness: input.strictness,
+    entryFile: input.payload.entryFile,
+    variables: { ...input.payload.variables },
+    videoFrameFormat: 'auto',
+    hdrMode: 'force-sdr',
+    useGpu: true,
+    producerConfig: resolveConfig({ browserGpuMode: 'hardware' }),
+  }
+}
+
+/** GPU-first HyperFrames adapter with fail-closed hardware policy. */
 export class GpuHyperframesRendererAdapter extends HyperframesRendererAdapter {
   private readonly gpuOptions: GpuAdapterOptions
+  private readonly gpuProbe: HyperframesGpuProbe
+  private readinessPromise: Promise<HardwareReadiness> | undefined
 
-  constructor(options: HyperframesAdapterOptions = {}) {
-    const workers = options.workers ?? 1
-    super({ ...options, workers })
+  constructor(
+    options: HyperframesAdapterOptions = {},
+    gpuProbe: HyperframesGpuProbe = DEFAULT_GPU_PROBE,
+  ) {
+    super(options)
     this.gpuOptions = {
       quality: options.quality ?? 'high',
       strictness: options.strictness ?? 'strict',
-      workers,
-      variables: options.variables,
+      workers: options.workers,
       telemetry: options.telemetry ?? NOOP_TELEMETRY,
     }
+    this.gpuProbe = gpuProbe
+  }
+
+  private hardwareReadiness(): Promise<HardwareReadiness> {
+    if (!this.readinessPromise) {
+      this.readinessPromise = Promise.all([
+        this.gpuProbe.detectEncoder(),
+        this.gpuProbe.resolveBrowserMode(),
+      ])
+        .then(([encoder, browserMode]) => {
+          if (!encoder) {
+            throw new Error(
+              'No usable hardware H.264 encoder was found. HyperFrames CPU fallback is disabled.',
+            )
+          }
+          if (browserMode !== 'hardware') {
+            throw new Error(
+              'Chromium could not start with a hardware WebGL renderer. HyperFrames software rendering is disabled.',
+            )
+          }
+          return { encoder, browserMode }
+        })
+        .catch((error) => {
+          // Hardware can become available after a driver reset or another process releases
+          // the encoder. Do not cache a rejected probe for the lifetime of the app.
+          this.readinessPromise = undefined
+          throw error
+        })
+    }
+    return this.readinessPromise
+  }
+
+  override async preflight(project: VideoProject): Promise<RenderProblem[]> {
+    const problems = await super.preflight(project)
+    try {
+      await this.hardwareReadiness()
+    } catch (error) {
+      const message = error instanceof Error ? error.message : String(error)
+      problems.push({
+        severity: 'error',
+        code: message.includes('WebGL')
+          ? 'hyperframes-browser-gpu-unavailable'
+          : 'hyperframes-gpu-encoder-unavailable',
+        message,
+      })
+    }
+    return problems
   }
 
   override async prepare(
@@ -114,12 +202,30 @@ export class GpuHyperframesRendererAdapter extends HyperframesRendererAdapter {
     try {
       const html = await readFile(entryPath, 'utf8')
       const optimized = optimizeHyperframesHtml(html, project)
+      const lint = await runHyperframeLint({
+        entryFile: payload.entryFile,
+        html: optimized,
+        source: 'html',
+      })
+      if (lint.errorCount > 0) {
+        const findings = lint.findings
+          .filter((finding) => finding.severity === 'error')
+          .slice(0, 8)
+          .map((finding) => `${finding.code}: ${finding.message}`)
+        throw new Error(`GPU-optimized HyperFrames composition failed lint: ${findings.join('; ')}`)
+      }
+      payload.lintWarnings = lint.findings
+        .filter((finding) => finding.severity === 'warning')
+        .map((finding) => `${finding.code}: ${finding.message}`)
+      payload.workers = resolveHyperframesWorkers(project) ?? this.gpuOptions.workers
       await writeFile(entryPath, optimized, 'utf8')
-      this.gpuOptions.telemetry.info('HyperFrames GPU composition optimized', {
+      this.gpuOptions.telemetry.info('HyperFrames GPU composition optimized and linted', {
         renderer_id: this.id,
         project_id: project.id,
-        worker_count: this.gpuOptions.workers,
+        worker_count: payload.workers ?? 0,
+        worker_mode: payload.workers ? 'fixed' : 'auto',
         text_scene_count: project.scenes.filter((scene) => scene.kind === 'text').length,
+        lint_warning_count: payload.lintWarnings.length,
       })
       return prepared
     } catch (error) {
@@ -135,35 +241,30 @@ export class GpuHyperframesRendererAdapter extends HyperframesRendererAdapter {
   ): Promise<RenderArtifact> {
     const payload = preparedPayload(prepared)
     const startedAt = performance.now()
-    this.gpuOptions.telemetry.info('HyperFrames GPU render started', {
-      renderer_id: this.id,
-      width: payload.width,
-      height: payload.height,
-      fps: payload.fps,
-      duration_frames: payload.durationFrames,
-      worker_count: this.gpuOptions.workers,
-      browser_gpu_mode: 'hardware',
-      hardware_encoding: true,
-    })
 
     try {
       throwIfAborted(context.signal)
+      const hardware = await this.hardwareReadiness()
       const output = outputFormat(outputPath)
       const resolvedOutputPath = resolve(outputPath)
       await mkdir(dirname(resolvedOutputPath), { recursive: true })
-      const job = createRenderJob({
+      this.gpuOptions.telemetry.info('HyperFrames GPU render started', {
+        renderer_id: this.id,
+        width: payload.width,
+        height: payload.height,
         fps: payload.fps,
-        quality: this.gpuOptions.quality,
-        format: output.format,
-        workers: this.gpuOptions.workers,
-        strictness: this.gpuOptions.strictness,
-        entryFile: payload.entryFile,
-        variables: { ...payload.variables },
-        videoFrameFormat: 'png',
-        hdrMode: 'force-sdr',
-        useGpu: true,
-        producerConfig: resolveConfig({ browserGpuMode: 'hardware' }),
+        duration_frames: payload.durationFrames,
+        worker_count: payload.workers ?? 0,
+        worker_mode: payload.workers ? 'fixed' : 'auto',
+        browser_gpu_mode: hardware.browserMode,
+        gpu_encoder: hardware.encoder,
+        hardware_encoding: true,
       })
+      const job = createRenderJob(createGpuHyperframesRenderConfig({
+        payload,
+        quality: this.gpuOptions.quality,
+        strictness: this.gpuOptions.strictness,
+      }))
 
       await executeRenderJob(
         job,
@@ -200,6 +301,8 @@ export class GpuHyperframesRendererAdapter extends HyperframesRendererAdapter {
         duration_ms: Math.round(performance.now() - startedAt),
         duration_frames: payload.durationFrames,
         warning_count: job.warnings.length,
+        gpu_encoder: hardware.encoder,
+        hardware_encoding: true,
       })
       return {
         rendererId: this.id,

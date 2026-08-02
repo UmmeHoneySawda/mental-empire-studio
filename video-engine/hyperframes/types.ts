@@ -49,6 +49,8 @@ export interface HyperframesPreparedPayload {
   fps: number
   variables: HyperframesCompileVariables
   lintWarnings: string[]
+  /** undefined delegates worker sizing to HyperFrames' calibration logic. */
+  workers?: number
 }
 
 export interface HyperframesAdapterOptions {

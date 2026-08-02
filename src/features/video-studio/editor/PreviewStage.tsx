@@ -1,18 +1,14 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import type { RendererId } from '@shared/video-engine'
 import { timecode } from './constants'
 import { gradeFilter, gradeTintLayer, gradeVignetteLayer } from './gradePreview'
 import { useEditor } from './useEditor'
 
-/* The Remotion bundle is large; a user who never opens the editor should not pay for it. */
 const EditorPlayer = lazy(() =>
   import('./EditorPlayer').then((module) => ({ default: module.EditorPlayer })))
+const HyperframesEditorPlayer = lazy(() =>
+  import('./HyperframesEditorPlayer').then((module) => ({ default: module.HyperframesEditorPlayer })))
 
-/** Fits the composition inside the available box without ever overflowing it, so a
- *  1080×1920 vertical project and a 1920×1080 landscape one both read correctly.
- *
- *  Both halves matter: the ref callback has to be stable or React re-attaches the observer
- *  every render, and the size update has to be value-compared or each observation
- *  manufactures a new object and re-renders forever. Either alone still loops. */
 function useFittedSize(width: number, height: number): {
   ref: (node: HTMLDivElement | null) => void
   size: { width: number; height: number }
@@ -53,7 +49,7 @@ function useFittedSize(width: number, height: number): {
   return { ref, size }
 }
 
-export function PreviewStage(): JSX.Element {
+export function PreviewStage({ rendererId }: { rendererId: RendererId }): JSX.Element {
   const project = useEditor((state) => state.project)
   const playheadFrame = useEditor((state) => state.playheadFrame)
   const playing = useEditor((state) => state.playing)
@@ -70,9 +66,6 @@ export function PreviewStage(): JSX.Element {
   const total = Math.max(1, project?.canvas.durationFrames ?? 1)
   const { ref, size } = useFittedSize(project?.canvas.width ?? 16, project?.canvas.height ?? 9)
 
-  // A preview-only approximation of the FFmpeg grade — see `gradePreview.ts` for exactly
-  // which parts are faithful and which cannot be. Layered over the Player rather than
-  // baked into the composition, so what renders is still purely the composition.
   const grading = project?.grading
   const filter = useMemo(() => gradeFilter(grading), [grading])
   const tint = useMemo(() => gradeTintLayer(grading), [grading])
@@ -80,6 +73,7 @@ export function PreviewStage(): JSX.Element {
 
   const rangeStart = loopRange ? Math.max(0, Math.min(loopRange.startFrame, total - 1)) : 0
   const rangeEnd = loopRange ? Math.max(rangeStart + 1, Math.min(loopRange.endFrame, total)) : total
+  const previewScale = project && project.canvas.width > 0 ? size.width / project.canvas.width : 1
 
   return (
     <div className="ve-preview">
@@ -92,18 +86,30 @@ export function PreviewStage(): JSX.Element {
             style={{
               width: size.width || undefined,
               height: size.height || undefined,
+              ['--hf-preview-scale' as string]: previewScale,
               ...(filter ? { filter } : {})
             }}
           >
             <Suspense fallback={<div className="ve-stage-empty">Starting the player…</div>}>
-              <EditorPlayer
-                project={project}
-                frame={playheadFrame}
-                playing={playing}
-                loopRange={loopRange}
-                onFrame={setPlayhead}
-                onPlayingChange={setPlaying}
-              />
+              {rendererId === 'hyperframes' ? (
+                <HyperframesEditorPlayer
+                  project={project}
+                  frame={playheadFrame}
+                  playing={playing}
+                  loopRange={loopRange}
+                  onFrame={setPlayhead}
+                  onPlayingChange={setPlaying}
+                />
+              ) : (
+                <EditorPlayer
+                  project={project}
+                  frame={playheadFrame}
+                  playing={playing}
+                  loopRange={loopRange}
+                  onFrame={setPlayhead}
+                  onPlayingChange={setPlaying}
+                />
+              )}
             </Suspense>
             {tint && <div className="ve-stage-grade" style={tint} aria-hidden />}
             {vignette && <div className="ve-stage-grade" style={vignette} aria-hidden />}
@@ -154,8 +160,6 @@ export function PreviewStage(): JSX.Element {
         >
           Solo
         </button>
-        {/* The only save indicator the editor needs. Edits are local and instant; this
-            says whether they have reached disk yet. */}
         <span className={`ve-save${saving ? ' is-saving' : dirty ? ' is-dirty' : ''}`}>
           {saving ? 'Saving…' : dirty ? 'Unsaved' : 'Saved'}
         </span>
