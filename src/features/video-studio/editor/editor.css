@@ -121,6 +121,7 @@
 }
 .ve-input:focus-visible { outline: 2px solid rgb(var(--ve-accent) / 0.6); outline-offset: 1px; }
 textarea.ve-input { resize: vertical; min-height: 52px; }
+.ve-custom-hook-json { min-height: 360px; font-family: "JetBrains Mono", monospace; font-size: 11px; line-height: 1.5; tab-size: 2; }
 
 .ve-eyebrow {
   font-size: 10px;
@@ -168,6 +169,9 @@ textarea.ve-input { resize: vertical; min-height: 52px; }
 .ve-bin { display: flex; flex-direction: column; gap: 8px; min-height: 0; }
 .ve-bin.is-dropping { outline: 2px dashed rgb(var(--ve-accent) / 0.6); outline-offset: 4px; border-radius: var(--ve-radius); }
 .ve-bin-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; }
+.ve-bin-cycle { display: grid; gap: 7px; padding: 8px; border: 1px solid rgb(var(--ve-border)); border-radius: var(--ve-radius); background: rgb(var(--ve-card)); }
+.ve-bin-cycle-actions { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 6px; }
+.ve-bin-cycle-actions .ve-input { min-width: 0; }
 .ve-bin-list { list-style: none; margin: 0; padding: 0; display: grid; gap: 6px; }
 .ve-bin-item { position: relative; }
 .ve-bin-card {
@@ -185,6 +189,7 @@ textarea.ve-input { resize: vertical; min-height: 52px; }
   cursor: pointer;
 }
 .ve-bin-card:hover { border-color: rgb(var(--ve-accent) / 0.5); }
+.ve-bin-item.is-cycle-selected .ve-bin-card { border-color: rgb(var(--ve-accent) / 0.8); box-shadow: inset 0 0 0 1px rgb(var(--ve-accent) / 0.25); }
 .ve-bin-thumb {
   display: grid;
   place-items: center;
@@ -202,6 +207,7 @@ textarea.ve-input { resize: vertical; min-height: 52px; }
 .ve-bin-kind { font-size: 10px; color: rgb(var(--ve-fg-dim)); }
 .ve-bin-remove { position: absolute; top: 3px; right: 3px; opacity: 0; }
 .ve-bin-item:hover .ve-bin-remove { opacity: 1; }
+.ve-bin-cycle-pick { position: absolute; right: 3px; bottom: 3px; min-width: 24px; }
 
 /* ----------------------------------------------------------------------- preview */
 

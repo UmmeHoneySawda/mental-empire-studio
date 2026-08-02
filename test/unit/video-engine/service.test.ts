@@ -283,8 +283,8 @@ describe('built-in templates and hook compilation', () => {
         new Set(hyperframes.map((template) => template.id)),
       ),
     ).toBe(true)
-    expect(registry.list({ rendererId: 'remotion', kind: 'hook' })).toHaveLength(2)
-    expect(registry.list({ rendererId: 'hyperframes', kind: 'caption' })).toHaveLength(6)
+    expect(registry.list({ rendererId: 'remotion', kind: 'hook' })).toHaveLength(7)
+    expect(registry.list({ rendererId: 'hyperframes', kind: 'caption' })).toHaveLength(10)
     expect(
       registry
         .list({ rendererId: 'remotion', kind: 'caption', capabilities: ['word-highlighting'] })
@@ -443,6 +443,19 @@ describe('video engine service orchestration', () => {
         'remotion-caption-neon-accent',
       )
       expect(project.captions?.templateId).toBe('remotion-caption-neon-accent')
+      const beforeInvalidCaptionImport = project
+      await expect(service.setCaptionsFromSrt({
+        projectId: project.id,
+        srt: [
+          '1',
+          '00:00:00,000 --> 00:00:00,050',
+          'too many words',
+          '',
+        ].join('\n'),
+      })).rejects.toThrow(/too short to assign 3 words/i)
+      project = await service.openProject(project.id)
+      expect(project.revision).toBe(beforeInvalidCaptionImport.revision)
+      expect(project.captions).toEqual(beforeInvalidCaptionImport.captions)
 
       project = await service.applyTransitionTemplate(project.id, {
         templateId: 'remotion-transition-fade',

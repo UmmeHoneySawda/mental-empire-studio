@@ -202,6 +202,21 @@ async function copyRuntimeFiles(workspacePath: string): Promise<void> {
       packagePath: '@fontsource/anton/files/anton-latin-400-normal.woff2',
       outputName: 'anton-400.woff2',
     },
+    {
+      packagePath:
+        '@fontsource/hanken-grotesk/files/hanken-grotesk-latin-700-normal.woff2',
+      outputName: 'hanken-grotesk-700.woff2',
+    },
+    {
+      packagePath:
+        '@fontsource/hanken-grotesk/files/hanken-grotesk-latin-800-normal.woff2',
+      outputName: 'hanken-grotesk-800.woff2',
+    },
+    {
+      packagePath:
+        '@fontsource/jetbrains-mono/files/jetbrains-mono-latin-700-normal.woff2',
+      outputName: 'jetbrains-mono-700.woff2',
+    },
   ] as const
   for (const file of runtimeFiles) {
     await copyFile(

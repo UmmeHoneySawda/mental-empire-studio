@@ -55,6 +55,22 @@ function random(seed: number): () => number {
   }
 }
 
+/** Stable seed for a saved media arrangement. Project revision is deliberately absent:
+ *  repeating the same request after an unrelated edit must not reshuffle the pictures. */
+export function mediaFillSeed(
+  projectId: string,
+  assetIds: readonly string[],
+  segmentSeconds: number
+): number {
+  const value = [projectId, String(segmentSeconds), ...assetIds].join('\u0000')
+  let hash = 0x811c9dc5
+  for (let index = 0; index < value.length; index += 1) {
+    hash ^= value.charCodeAt(index)
+    hash = Math.imul(hash, 0x01000193)
+  }
+  return hash >>> 0
+}
+
 /** Splits `total` frames into `count` slots whose lengths differ by at most one frame,
  *  so the slots always sum to exactly `total` — no rounding gap at the end. */
 function evenSplit(total: number, count: number): number[] {
@@ -102,10 +118,13 @@ function slotsFor(span: FillSpan, assetCount: number, segmentFrames: number): nu
   const total = span.endFrame - span.startFrame
   if (total <= 0) return []
   if (segmentFrames > 0) {
-    const count = Math.max(1, Math.round(total / segmentFrames))
-    // Rounding can leave a sliver; evenSplit absorbs it across the slots instead.
-    if (Math.floor(total / count) < MIN_SEGMENT_FRAMES) return [total]
-    return evenSplit(total, count)
+    const fullSlots = Math.floor(total / segmentFrames)
+    const remainder = total - fullSlots * segmentFrames
+    const lengths = Array.from({ length: fullSlots }, () => segmentFrames)
+    // The requested interval stays exact. Only the final item is trimmed, including a
+    // one-frame remainder: dropping that frame would leave visible background at export.
+    if (remainder > 0) lengths.push(remainder)
+    return lengths.length > 0 ? lengths : [total]
   }
   const count = Math.max(1, Math.min(assetCount, Math.floor(total / MIN_SEGMENT_FRAMES) || 1))
   return evenSplit(total, count)
@@ -117,14 +136,16 @@ function slotsFor(span: FillSpan, assetCount: number, segmentFrames: number): nu
  * straight to the project without further arithmetic.
  */
 export function planMediaFill(input: MediaFillPlanInput): PlannedFillScene[] {
-  const assetIds = input.assetIds.filter(Boolean)
+  const assetIds = [...new Set(input.assetIds.filter(Boolean))]
   if (assetIds.length === 0) return []
   const fps = Math.max(1, input.fps)
   const segmentFrames = input.segmentSeconds > 0 ? Math.max(MIN_SEGMENT_FRAMES, Math.round(input.segmentSeconds * fps)) : 0
 
   const spans = input.spans
     .map((span) => ({ startFrame: Math.max(0, Math.round(span.startFrame)), endFrame: Math.round(span.endFrame) }))
-    .filter((span) => span.endFrame - span.startFrame >= MIN_SEGMENT_FRAMES)
+    // Fill mode still ignores visual-noise gaps. Cycle mode must cover every last frame,
+    // because its contract is complete timeline coverage with a trimmed final item.
+    .filter((span) => span.endFrame - span.startFrame >= (segmentFrames > 0 ? 1 : MIN_SEGMENT_FRAMES))
     .sort((left, right) => left.startFrame - right.startFrame)
   if (spans.length === 0) return []
 

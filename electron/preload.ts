@@ -323,6 +323,7 @@ const api: NativeApi = {
     updateHookBeat: (projectId: string, beatId: string, patch: HookBeatPatch) =>
       ipcRenderer.invoke('videoEngine:updateHookBeat', projectId, beatId, patch),
     importHookPlan: (projectId: string, json: string) => ipcRenderer.invoke('videoEngine:importHookPlan', projectId, json),
+    importCustomHook: (projectId: string, json: string) => ipcRenderer.invoke('videoEngine:importCustomHook', projectId, json),
     resolveHookBroll: (projectId: string, beatId: string, candidate: VideoBrollCandidate) =>
       ipcRenderer.invoke('videoEngine:resolveHookBroll', projectId, beatId, candidate),
 

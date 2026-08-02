@@ -67,6 +67,12 @@ export const CaptionDocumentSchema = z
   })
 export type CaptionDocument = z.infer<typeof CaptionDocumentSchema>
 
+export const CaptionLineSchema = z.strictObject({
+  text: z.string().min(1),
+  wordIds: z.array(StableIdSchema).min(1),
+})
+export type CaptionLine = z.infer<typeof CaptionLineSchema>
+
 export const CaptionCueSchema = z.strictObject({
   id: StableIdSchema,
   startFrame: FrameSchema,
@@ -74,22 +80,29 @@ export const CaptionCueSchema = z.strictObject({
   text: z.string().min(1),
   wordIds: z.array(StableIdSchema).min(1),
   importantWordIds: z.array(StableIdSchema),
+  lines: z.array(CaptionLineSchema).min(1).max(3),
 })
 export type CaptionCue = z.infer<typeof CaptionCueSchema>
 
 export const CaptionGroupingOptionsSchema = z.strictObject({
   maxWordsPerCue: z.number().int().min(1).max(20).default(5),
   maxCharactersPerCue: z.number().int().min(5).max(500).default(48),
+  maxCharactersPerLine: z.number().int().min(5).max(250).default(25),
+  maxLines: z.number().int().min(1).max(3).default(2),
   maxDurationFrames: z.number().int().positive().default(90),
   maxGapFrames: FrameSchema.default(15),
+  preferSentenceBreaks: z.boolean().default(true),
 })
 export type CaptionGroupingOptions = z.infer<typeof CaptionGroupingOptionsSchema>
 
 const DEFAULT_CAPTION_GROUPING_OPTIONS: CaptionGroupingOptions = {
   maxWordsPerCue: 5,
   maxCharactersPerCue: 48,
+  maxCharactersPerLine: 25,
+  maxLines: 2,
   maxDurationFrames: 90,
   maxGapFrames: 15,
+  preferSentenceBreaks: true,
 }
 
 function fnv1a64(text: string): string {
@@ -141,9 +154,51 @@ function cueText(words: readonly CaptionWord[]): string {
     .trim()
 }
 
-function toCue(words: readonly CaptionWord[]): CaptionCue {
+function isClosingPunctuation(text: string): boolean {
+  return /^[,.;:!?%)\]}]+$/u.test(text)
+}
+
+function endsSentence(text: string): boolean {
+  return /[.!?][\])}'"’”]*$/u.test(text)
+}
+
+interface CaptionLineDraft {
+  text: string
+  wordIds: string[]
+}
+
+export function wrapCaptionLines(
+  words: readonly CaptionWord[],
+  options: Pick<CaptionGroupingOptions, 'maxCharactersPerLine' | 'maxLines'>,
+): CaptionLine[] | null {
+  const lines: CaptionLineDraft[] = []
+  for (const word of words) {
+    const current = lines[lines.length - 1]
+    if (!current) {
+      lines.push({ text: word.text, wordIds: [word.id] })
+      continue
+    }
+    const separator = isClosingPunctuation(word.text) ? '' : ' '
+    const proposed = `${current.text}${separator}${word.text}`
+    if (proposed.length <= options.maxCharactersPerLine || isClosingPunctuation(word.text)) {
+      current.text = proposed
+      current.wordIds.push(word.id)
+      continue
+    }
+    if (lines.length >= options.maxLines) return null
+    lines.push({ text: word.text, wordIds: [word.id] })
+  }
+  return lines.map((line) => CaptionLineSchema.parse(line))
+}
+
+function toCue(
+  words: readonly CaptionWord[],
+  settings: CaptionGroupingOptions,
+): CaptionCue {
   const first = words[0]!
   const last = words[words.length - 1]!
+  const lines = wrapCaptionLines(words, settings)
+  if (!lines) throw new Error('Caption cue cannot fit within the configured line limits')
   return CaptionCueSchema.parse({
     id: `cue:${fnv1a64(`${first.id}\u0000${last.id}`)}`,
     startFrame: first.startFrame,
@@ -151,6 +206,7 @@ function toCue(words: readonly CaptionWord[]): CaptionCue {
     text: cueText(words),
     wordIds: words.map((word) => word.id),
     importantWordIds: words.filter((word) => (word.importance ?? 0) > 0).map((word) => word.id),
+    lines,
   })
 }
 
@@ -170,7 +226,7 @@ export function groupCaptionCues(
   let current: CaptionWord[] = []
 
   const flush = (): void => {
-    if (current.length > 0) cues.push(toCue(current))
+    if (current.length > 0) cues.push(toCue(current, settings))
     current = []
   }
 
@@ -181,16 +237,102 @@ export function groupCaptionCues(
     }
     const first = current[0]!
     const previous = current[current.length - 1]!
+    if (
+      settings.preferSentenceBreaks &&
+      current.length >= 2 &&
+      endsSentence(previous.text) &&
+      !isClosingPunctuation(word.text)
+    ) {
+      flush()
+      current.push(word)
+      continue
+    }
+    const exceedsDuration = word.endFrame - first.startFrame > settings.maxDurationFrames
+    const exceedsGap = word.startFrame - previous.endFrame > settings.maxGapFrames
+    // A punctuation-only token belongs to the word before it. Word and character limits
+    // are soft for punctuation, but corrupt/distant timestamps must not extend the cue's
+    // hard duration or gap. In that case display the mark with the preceding word timing.
+    if (isClosingPunctuation(word.text)) {
+      current.push(exceedsDuration || exceedsGap
+        ? {
+            ...word,
+            startFrame: Math.max(previous.startFrame, previous.endFrame - 1),
+            endFrame: previous.endFrame,
+          }
+        : word)
+      continue
+    }
     const proposedText = cueText([...current, word])
     const exceedsWords = current.length + 1 > settings.maxWordsPerCue
     const exceedsCharacters = proposedText.length > settings.maxCharactersPerCue
-    const exceedsDuration = word.endFrame - first.startFrame > settings.maxDurationFrames
-    const exceedsGap = word.startFrame - previous.endFrame > settings.maxGapFrames
-    if (exceedsWords || exceedsCharacters || exceedsDuration || exceedsGap) flush()
+    const exceedsLines = wrapCaptionLines([...current, word], settings) === null
+    if (exceedsWords || exceedsCharacters || exceedsDuration || exceedsGap || exceedsLines) flush()
     current.push(word)
   }
   flush()
   return cues
+}
+
+export function activeCaptionCue(
+  cues: readonly CaptionCue[],
+  frame: number,
+): CaptionCue | null {
+  if (!Number.isFinite(frame) || cues.length === 0) return null
+  const lookup = captionCueLookup(cues)
+  if (!lookup.sorted) {
+    return cues.find((cue) => frame >= cue.startFrame && frame < cue.endFrame) ?? null
+  }
+
+  let low = 0
+  let high = cues.length - 1
+  let latestStarted = -1
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2)
+    const cue = cues[middle]!
+    if (cue.startFrame <= frame) {
+      latestStarted = middle
+      low = middle + 1
+    } else {
+      high = middle - 1
+    }
+  }
+  if (latestStarted < 0) return null
+
+  low = 0
+  high = latestStarted
+  let earliestActive = -1
+  while (low <= high) {
+    const middle = Math.floor((low + high) / 2)
+    if (lookup.prefixMaximumEnds[middle]! > frame) {
+      earliestActive = middle
+      high = middle - 1
+    } else {
+      low = middle + 1
+    }
+  }
+  return earliestActive < 0 ? null : cues[earliestActive]!
+}
+
+interface CaptionCueLookup {
+  readonly sorted: boolean
+  readonly prefixMaximumEnds: readonly number[]
+}
+
+const CAPTION_CUE_LOOKUPS = new WeakMap<readonly CaptionCue[], CaptionCueLookup>()
+
+function captionCueLookup(cues: readonly CaptionCue[]): CaptionCueLookup {
+  const cached = CAPTION_CUE_LOOKUPS.get(cues)
+  if (cached) return cached
+  let sorted = true
+  let maximumEnd = Number.NEGATIVE_INFINITY
+  const prefixMaximumEnds = cues.map((cue, index) => {
+    if (index > 0 && cue.startFrame < cues[index - 1]!.startFrame) sorted = false
+    maximumEnd = Math.max(maximumEnd, cue.endFrame)
+    return maximumEnd
+  })
+  const lookup = { sorted, prefixMaximumEnds }
+  CAPTION_CUE_LOOKUPS.set(cues, lookup)
+  return lookup
 }
 
 export const ImportantWordSelectionSchema = z.strictObject({

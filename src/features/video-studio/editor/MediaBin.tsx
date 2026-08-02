@@ -41,9 +41,13 @@ export function MediaBin(): JSX.Element {
   const project = useEditor((state) => state.project)
   const importAssets = useEditor((state) => state.importAssets)
   const removeAsset = useEditor((state) => state.removeAsset)
+  const cycleImages = useEditor((state) => state.cycleImages)
   const busy = useEditor((state) => state.busy)
   const [filter, setFilter] = useState('')
   const [dropping, setDropping] = useState(false)
+  const [cycleSelection, setCycleSelection] = useState<string[]>([])
+  const [cycleInterval, setCycleInterval] = useState<3 | 4>(3)
+  const [cycleOrder, setCycleOrder] = useState<'sequential' | 'shuffle'>('sequential')
   const picker = useRef<HTMLInputElement>(null)
 
   const assets = useMemo(() => {
@@ -51,6 +55,10 @@ export function MediaBin(): JSX.Element {
     const needle = filter.trim().toLowerCase()
     return needle ? all.filter((asset) => asset.name.toLowerCase().includes(needle)) : all
   }, [project?.assets, filter])
+  const allImageIds = (project?.assets ?? [])
+    .filter((asset) => asset.kind === 'image')
+    .map((asset) => asset.id)
+  const selectedImageIds = allImageIds.filter((id) => cycleSelection.includes(id))
 
   /** Resolving a picked or dropped File to a real absolute path is the one thing the
    *  renderer cannot do alone — `webUtils` lives on the preload bridge, and the engine
@@ -148,6 +156,62 @@ export function MediaBin(): JSX.Element {
         onChange={(event) => setFilter(event.target.value)}
       />
 
+      <div className="ve-bin-cycle">
+        <div className="ve-bin-head">
+          <span className="ve-eyebrow">Full-timeline image cycle</span>
+          <span className="ve-chip">{selectedImageIds.length} selected</span>
+        </div>
+        <div className="ve-bin-cycle-actions">
+          <button
+            type="button"
+            className="ve-btn ve-btn--ghost"
+            disabled={allImageIds.length === 0}
+            onClick={() => setCycleSelection(allImageIds)}
+          >
+            All images
+          </button>
+          <button
+            type="button"
+            className="ve-btn ve-btn--ghost"
+            disabled={selectedImageIds.length === 0}
+            onClick={() => setCycleSelection([])}
+          >
+            Clear
+          </button>
+        </div>
+        <div className="ve-bin-cycle-actions">
+          <select
+            className="ve-input"
+            aria-label="Image cycle interval"
+            value={cycleInterval}
+            onChange={(event) => setCycleInterval(Number(event.target.value) as 3 | 4)}
+          >
+            <option value={3}>Every 3 seconds</option>
+            <option value={4}>Every 4 seconds</option>
+          </select>
+          <select
+            className="ve-input"
+            aria-label="Image cycle order"
+            value={cycleOrder}
+            onChange={(event) => setCycleOrder(event.target.value as 'sequential' | 'shuffle')}
+          >
+            <option value="sequential">Sequential</option>
+            <option value="shuffle">Deterministic shuffle</option>
+          </select>
+        </div>
+        <button
+          type="button"
+          className="ve-btn ve-btn--primary"
+          disabled={!!busy || selectedImageIds.length < 2}
+          onClick={() => cycleImages(selectedImageIds, cycleInterval, cycleOrder === 'shuffle')}
+        >
+          Cycle across timeline
+        </button>
+        <p className="ve-hint">
+          Pick two or more stills. The final item is trimmed to the exact project end; one undo removes the full sequence.
+        </p>
+      </div>
+
       {assets.length === 0 ? (
         <p className="ve-hint">
           {project?.assets.length === 0
@@ -158,8 +222,9 @@ export function MediaBin(): JSX.Element {
         <ul className="ve-bin-list">
           {assets.map((asset) => {
             const thumb = thumbUrl(asset)
+            const cycleSelected = cycleSelection.includes(asset.id)
             return (
-              <li key={asset.id} className="ve-bin-item">
+              <li key={asset.id} className={`ve-bin-item${cycleSelected ? ' is-cycle-selected' : ''}`}>
                 <button
                   type="button"
                   className="ve-bin-card"
@@ -177,6 +242,21 @@ export function MediaBin(): JSX.Element {
                     </span>
                   </span>
                 </button>
+                {asset.kind === 'image' && (
+                  <button
+                    type="button"
+                    className="ve-chip ve-bin-cycle-pick"
+                    aria-pressed={cycleSelected}
+                    onClick={() => setCycleSelection((current) =>
+                      current.includes(asset.id)
+                        ? current.filter((id) => id !== asset.id)
+                        : [...current, asset.id]
+                    )}
+                    title={`${cycleSelected ? 'Remove' : 'Add'} “${asset.name}” ${cycleSelected ? 'from' : 'to'} the full-timeline cycle`}
+                  >
+                    {cycleSelected ? '✓' : '+'}
+                  </button>
+                )}
                 <button
                   type="button"
                   className="ve-chip ve-bin-remove"

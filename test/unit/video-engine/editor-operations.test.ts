@@ -1,9 +1,13 @@
-import { describe, expect, it } from 'vitest'
+import { describe, expect, it, vi } from 'vitest'
 import type { AutoBrollPlacement, VideoProject, VideoScene } from '../../../shared/video-engine'
 import {
   applyAutoBroll,
+  applyImageCycle,
   contentEndFrame,
   duplicateClip,
+  IMAGE_CYCLE_SCENE_PREFIX,
+  IMAGE_CYCLE_TRACK_ID,
+  IMAGE_CYCLE_TRACK_ORDER,
   moveClip,
   overlappingSceneIds,
   snapCandidates,
@@ -11,6 +15,7 @@ import {
   trimClip,
   withCanvasCoveringContent
 } from '../../../src/features/video-studio/editor/operations'
+import { useEditor } from '../../../src/features/video-studio/editor/useEditor'
 import { clipWidthPx, framesToPx } from '../../../src/features/video-studio/editor/constants'
 import { defaultHookPlan } from '../../../src/features/video-studio/editor/hookPlan'
 import { createEmptyVideoProject, HookPlanSchema, VideoProjectSchema } from '../../../shared/video-engine'
@@ -417,5 +422,153 @@ describe('splicing an Auto B-roll run into the timeline', () => {
   it('declines an empty run so it never lands in the undo stack', () => {
     const before = realProject()
     expect(applyAutoBroll(before, [])).toBe(before)
+  })
+})
+
+describe('full-timeline image cycling', () => {
+  function imageProject(durationFrames = 305): VideoProject {
+    const mediaStart = Math.min(10, Math.max(0, durationFrames - 1))
+    const textStart = Math.min(30, Math.max(0, durationFrames - 1))
+    return VideoProjectSchema.parse({
+      ...createEmptyVideoProject({
+        id: 'image-cycle-project',
+        name: 'Image cycle',
+        rendererId: 'remotion',
+        width: 1920,
+        height: 1080,
+        fps,
+        durationFrames,
+        now: '2026-01-01T00:00:00.000Z'
+      }),
+      assets: [
+        { id: 'image-a', name: 'a.png', kind: 'image', uri: 'file:///a.png' },
+        { id: 'image-b', name: 'b.png', kind: 'image', uri: 'file:///b.png' },
+        { id: 'image-c', name: 'c.png', kind: 'image', uri: 'file:///c.png' },
+        { id: 'video-a', name: 'keep.mp4', kind: 'video', uri: 'file:///keep.mp4', durationFrames: 90 }
+      ],
+      tracks: [
+        { id: 'main-video', name: 'Visuals', kind: 'video', order: 0, muted: false, locked: false },
+        { id: 'overlay', name: 'Overlay', kind: 'overlay', order: 1, muted: false, locked: false }
+      ],
+      scenes: [
+        { id: 'unrelated-media', trackId: 'main-video', kind: 'media', startFrame: mediaStart, durationFrames: Math.min(60, durationFrames - mediaStart), zIndex: 0, assetId: 'video-a', fit: 'cover' },
+        { id: 'unrelated-text', trackId: 'overlay', kind: 'text', startFrame: textStart, durationFrames: Math.min(90, durationFrames - textStart), zIndex: 10, text: 'Keep me' }
+      ]
+    })
+  }
+
+  function generated(project: VideoProject): VideoScene[] {
+    return project.scenes.filter((scene) => scene.id.startsWith(IMAGE_CYCLE_SCENE_PREFIX))
+  }
+
+  function expectExactCoverage(scenes: VideoScene[], durationFrames: number): void {
+    let cursor = 0
+    for (const scene of scenes) {
+      expect(scene.startFrame).toBe(cursor)
+      expect(scene.durationFrames).toBeGreaterThan(0)
+      cursor += scene.durationFrames
+    }
+    expect(cursor).toBe(durationFrames)
+  }
+
+  it('cycles sequentially at exact 3-second intervals and trims the final item', () => {
+    const next = applyImageCycle(imageProject(), ['image-a', 'image-b'], 3, false)
+    const scenes = generated(next)
+    expect(scenes.map((scene) => scene.durationFrames)).toEqual([90, 90, 90, 35])
+    expect(scenes.map((scene) => scene.assetId)).toEqual(['image-a', 'image-b', 'image-a', 'image-b'])
+    expectExactCoverage(scenes, 305)
+    expect(next.tracks.filter((track) => track.id === IMAGE_CYCLE_TRACK_ID)).toHaveLength(1)
+    expect(next.tracks.find((track) => track.id === IMAGE_CYCLE_TRACK_ID)?.order)
+      .toBe(IMAGE_CYCLE_TRACK_ORDER)
+    expect(IMAGE_CYCLE_TRACK_ORDER).toBeLessThan(
+      next.tracks.find((track) => track.id === 'overlay')!.order
+    )
+  })
+
+  it('uses exact 4-second intervals on a short project without an invalid duration', () => {
+    const next = applyImageCycle(imageProject(45), ['image-a', 'image-b'], 4, false)
+    expect(generated(next).map((scene) => scene.durationFrames)).toEqual([45])
+    expectExactCoverage(generated(next), 45)
+    expect(() => VideoProjectSchema.parse(next)).not.toThrow()
+  })
+
+  it('shuffles deterministically and never repeats adjacent images', () => {
+    const first = applyImageCycle(imageProject(3601), ['image-a', 'image-b', 'image-c'], 4, true)
+    const second = applyImageCycle(imageProject(3601), ['image-a', 'image-b', 'image-c'], 4, true)
+    const firstIds = generated(first).map((scene) => scene.assetId)
+    const secondIds = generated(second).map((scene) => scene.assetId)
+    expect(firstIds).toEqual(secondIds)
+    expect(firstIds.every((id, index) => index === 0 || id !== firstIds[index - 1])).toBe(true)
+    expectExactCoverage(generated(first), 3601)
+  })
+
+  it('preserves unrelated timeline items and replaces rather than duplicates a prior run', () => {
+    const before = imageProject(600)
+    const first = applyImageCycle(before, ['image-a', 'image-b'], 3, false)
+    const second = applyImageCycle(first, ['image-b', 'image-c'], 4, false)
+    expect(second.scenes.find((scene) => scene.id === 'unrelated-media'))
+      .toEqual(before.scenes.find((scene) => scene.id === 'unrelated-media'))
+    expect(second.scenes.find((scene) => scene.id === 'unrelated-text'))
+      .toEqual(before.scenes.find((scene) => scene.id === 'unrelated-text'))
+    expect(second.tracks.filter((track) => track.id === IMAGE_CYCLE_TRACK_ID)).toHaveLength(1)
+    expect(generated(second)).toHaveLength(5)
+    expect(generated(second).map((scene) => scene.assetId)).toEqual([
+      'image-b', 'image-c', 'image-b', 'image-c', 'image-b'
+    ])
+    expectExactCoverage(generated(second), 600)
+    expect(applyImageCycle(second, ['image-b', 'image-c'], 4, false)).toBe(second)
+  })
+
+  it('repairs the previous order-5 lane without changing its deterministic sequence', () => {
+    const applied = applyImageCycle(imageProject(), ['image-a', 'image-b'], 3, false)
+    const stale = {
+      ...applied,
+      tracks: applied.tracks.map((track) => track.id === IMAGE_CYCLE_TRACK_ID
+        ? { ...track, order: 5 }
+        : track)
+    }
+    const repaired = applyImageCycle(stale, ['image-a', 'image-b'], 3, false)
+
+    expect(repaired).not.toBe(stale)
+    expect(generated(repaired)).toEqual(generated(applied))
+    expect(repaired.tracks.find((track) => track.id === IMAGE_CYCLE_TRACK_ID)?.order)
+      .toBe(IMAGE_CYCLE_TRACK_ORDER)
+  })
+
+  it('keeps the identical order and timing through a JSON save/reload round trip', () => {
+    const next = applyImageCycle(imageProject(1001), ['image-a', 'image-b', 'image-c'], 3, true)
+    const reloaded = VideoProjectSchema.parse(JSON.parse(JSON.stringify(next)))
+    expect(generated(reloaded)).toEqual(generated(next))
+    expectExactCoverage(generated(reloaded), 1001)
+  })
+
+  it('lands as one undoable operation and redo restores the exact saved sequence', () => {
+    vi.useFakeTimers()
+    try {
+      const before = imageProject(305)
+      useEditor.setState({
+        project: before,
+        projectId: before.id,
+        past: [],
+        future: [],
+        dirty: false,
+        error: '',
+        notice: ''
+      })
+      useEditor.getState().cycleImages(['image-a', 'image-b'], 3, false)
+      const applied = useEditor.getState().project!
+      expect(generated(applied)).toHaveLength(4)
+      expect(useEditor.getState().past).toEqual([before])
+
+      useEditor.getState().undo()
+      expect(useEditor.getState().project).toEqual(before)
+      expect(useEditor.getState().future).toEqual([applied])
+
+      useEditor.getState().redo()
+      expect(generated(useEditor.getState().project!)).toEqual(generated(applied))
+    } finally {
+      vi.runOnlyPendingTimers()
+      vi.useRealTimers()
+    }
   })
 })

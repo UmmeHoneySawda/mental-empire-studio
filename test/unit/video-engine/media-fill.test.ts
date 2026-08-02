@@ -1,5 +1,5 @@
 import { describe, expect, it } from 'vitest'
-import { emptySpans, planMediaFill, type FillSpan } from '../../../shared/video-engine/fill'
+import { emptySpans, mediaFillSeed, planMediaFill, type FillSpan } from '../../../shared/video-engine/fill'
 
 // The user's case: three or four stills and an eight-minute voiceover. "Fill" gives one
 // long slot each; "cycle" keeps the frame moving. Both must tile the timeline exactly,
@@ -126,11 +126,72 @@ describe('planMediaFill — cycle mode', () => {
     expect(planMediaFill(args)).toEqual(planMediaFill(args))
   })
 
-  it('does not slice a span into slivers shorter than a few frames', () => {
+  it.each([3, 4] as const)('keeps %ss intervals exact and trims only the final item', (seconds) => {
+    const segmentFrames = seconds * FPS
+    const spans: FillSpan[] = [{ startFrame: 0, endFrame: segmentFrames * 3 + 17 }]
+    const plan = planMediaFill({
+      assetIds: ['a', 'b'],
+      spans,
+      fps: FPS,
+      segmentSeconds: seconds,
+      shuffle: false,
+      seed: 1
+    })
+    expect(plan.map((scene) => scene.durationFrames)).toEqual([
+      segmentFrames,
+      segmentFrames,
+      segmentFrames,
+      17
+    ])
+    expect(plan.map((scene) => scene.assetId)).toEqual(['a', 'b', 'a', 'b'])
+    expect(covers(plan, spans)).toBe(true)
+  })
+
+  it('covers a project shorter than one interval with one valid trimmed item', () => {
+    const spans: FillSpan[] = [{ startFrame: 0, endFrame: 45 }]
+    const plan = planMediaFill({ assetIds: ['a', 'b'], spans, fps: FPS, segmentSeconds: 4, shuffle: false, seed: 1 })
+    expect(plan).toEqual([{ assetId: 'a', startFrame: 0, durationFrames: 45 }])
+    expect(covers(plan, spans)).toBe(true)
+  })
+
+  it('covers the last one-frame remainder instead of leaving a gap', () => {
+    const spans: FillSpan[] = [{ startFrame: 0, endFrame: 271 }]
+    const plan = planMediaFill({ assetIds: ['a', 'b'], spans, fps: FPS, segmentSeconds: 3, shuffle: false, seed: 1 })
+    expect(plan.map((scene) => scene.durationFrames)).toEqual([90, 90, 90, 1])
+    expect(plan.every((scene) => scene.durationFrames > 0)).toBe(true)
+    expect(covers(plan, spans)).toBe(true)
+  })
+
+  it('tiles a long project without drifting away from the requested interval', () => {
+    const spans: FillSpan[] = [{ startFrame: 0, endFrame: 22 * 60 * FPS + 11 }]
+    const plan = planMediaFill({ assetIds: ['a', 'b', 'c'], spans, fps: FPS, segmentSeconds: 3, shuffle: false, seed: 1 })
+    expect(plan.slice(0, -1).every((scene) => scene.durationFrames === 90)).toBe(true)
+    expect(plan.at(-1)?.durationFrames).toBe(11)
+    expect(covers(plan, spans)).toBe(true)
+  })
+
+  it('keeps even a tiny final partial slot so coverage stays exact', () => {
     const spans: FillSpan[] = [{ startFrame: 0, endFrame: 20 }]
     const plan = planMediaFill({ assetIds: ['a', 'b', 'c', 'd'], spans, fps: FPS, segmentSeconds: 0.1, shuffle: false, seed: 1 })
-    expect(plan.every((scene) => scene.durationFrames >= 6)).toBe(true)
+    expect(plan.map((scene) => scene.durationFrames)).toEqual([6, 6, 6, 2])
     expect(covers(plan, spans)).toBe(true)
+  })
+
+  it('deduplicates selected asset ids before cycling', () => {
+    const plan = planMediaFill({
+      assetIds: ['a', 'a', 'b'],
+      spans: [{ startFrame: 0, endFrame: 270 }],
+      fps: FPS,
+      segmentSeconds: 3,
+      shuffle: false,
+      seed: 1
+    })
+    expect(plan.map((scene) => scene.assetId)).toEqual(['a', 'b', 'a'])
+  })
+
+  it('derives the same shuffle seed across unrelated project revisions', () => {
+    expect(mediaFillSeed('project-1', ['a', 'b'], 3)).toBe(mediaFillSeed('project-1', ['a', 'b'], 3))
+    expect(mediaFillSeed('project-1', ['a', 'b'], 3)).not.toBe(mediaFillSeed('project-1', ['b', 'a'], 3))
   })
 })
 

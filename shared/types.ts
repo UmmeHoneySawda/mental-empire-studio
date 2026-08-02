@@ -1541,6 +1541,8 @@ export interface NativeApi {
     hookPrompt(projectId: string, input: HookPromptInput): Promise<string>
     /** validate + compile a pasted hook plan; rejects anything executable-shaped */
     importHookPlan(projectId: string, json: string): Promise<ImportedHookPlan>
+    /** validate + compile a bounded JSON-only custom hook configuration */
+    importCustomHook(projectId: string, json: string): Promise<ImportedHookPlan>
     /** Write the hook with Groq instead of round-tripping through a chat model. */
     generateHookPlan(projectId: string, input: HookPromptInput): Promise<ImportedHookPlan>
     /** Edit one beat's text, variant, or length. */

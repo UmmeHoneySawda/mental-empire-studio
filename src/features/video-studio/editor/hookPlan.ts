@@ -21,7 +21,7 @@ interface BeatSeed {
   headline: string
   body?: string
   /** Drives `paletteFor` in the Remotion hook renderer. */
-  variant: 'default' | 'urgent' | 'cinematic' | 'minimal'
+  variant: 'default' | 'urgent' | 'cinematic' | 'minimal' | 'clean'
   /** Share of the total duration. Normalised, so these need not sum to 1. */
   weight: number
 }
@@ -40,8 +40,45 @@ const CINEMATIC: readonly BeatSeed[] = [
   { headline: 'The answer', body: 'Why it matters enough to keep watching.', variant: 'cinematic', weight: 1 }
 ]
 
+const MOTIVATIONAL: readonly BeatSeed[] = [
+  { headline: 'TITLE', body: 'Make the promise impossible to miss.', variant: 'urgent', weight: 1.15 },
+  { headline: 'You are closer than you think', body: 'Name the friction they already feel.', variant: 'default', weight: 1 },
+  { headline: 'Change this one move', body: 'Deliver the practical turn.', variant: 'minimal', weight: 1 },
+  { headline: 'Start today', body: 'End with a clean forward action.', variant: 'urgent', weight: 0.9 }
+]
+
+const PSYCHOLOGICAL: readonly BeatSeed[] = [
+  { headline: 'TITLE', body: 'Open with the surprising behavior.', variant: 'cinematic', weight: 1.15 },
+  { headline: 'Your brain does this for a reason', body: 'Reframe the pattern without overclaiming.', variant: 'minimal', weight: 1 },
+  { headline: 'Try this instead', body: 'Land on one useful, testable shift.', variant: 'default', weight: 1 }
+]
+
+const SELF_IMPROVEMENT: readonly BeatSeed[] = [
+  { headline: 'TITLE', body: 'Name the result in plain language.', variant: 'default', weight: 1.1 },
+  { headline: 'The old loop', body: 'Show the habit that keeps repeating.', variant: 'urgent', weight: 0.95 },
+  { headline: 'The better system', body: 'Replace motivation with a repeatable step.', variant: 'minimal', weight: 1.05 },
+  { headline: 'One percent today', body: 'Give the viewer an immediate next action.', variant: 'default', weight: 0.9 }
+]
+
+const EDUCATIONAL: readonly BeatSeed[] = [
+  { headline: 'TITLE', body: 'State exactly what the viewer will learn.', variant: 'clean', weight: 1.1 },
+  { headline: 'First, the idea', body: 'Define the concept before adding detail.', variant: 'minimal', weight: 1 },
+  { headline: 'Then, the example', body: 'Make the explanation concrete.', variant: 'clean', weight: 1 },
+  { headline: 'Here is the takeaway', body: 'Close the loop in one sentence.', variant: 'default', weight: 0.9 }
+]
+
+const CUSTOM: readonly BeatSeed[] = [
+  { headline: 'TITLE', body: 'Configure this hook with the declarative JSON editor below.', variant: 'default', weight: 1 }
+]
+
 function seedsFor(templateId: string): readonly BeatSeed[] {
-  return templateId.includes('cinematic') ? CINEMATIC : KINETIC
+  if (templateId.includes('cinematic')) return CINEMATIC
+  if (templateId.includes('motivational')) return MOTIVATIONAL
+  if (templateId.includes('psychological')) return PSYCHOLOGICAL
+  if (templateId.includes('self-improvement')) return SELF_IMPROVEMENT
+  if (templateId.includes('educational')) return EDUCATIONAL
+  if (templateId.includes('custom')) return CUSTOM
+  return KINETIC
 }
 
 /** Builds a valid plan for `template`, filling the exact frame budget with whole frames.
@@ -102,7 +139,7 @@ export function defaultHookPlan(options: {
 
   return {
     schemaVersion: 1,
-    rendererId: 'remotion',
+    rendererId: template.rendererId,
     templateId: template.id,
     templateVersion: template.version,
     fps,

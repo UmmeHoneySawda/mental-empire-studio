@@ -4,6 +4,7 @@ import { pathToFileURL } from 'node:url'
 import {
   buildHookPlanPrompt,
   buildImportantWordsPrompt,
+  captionGroupingOptionsForStyle,
   createCaptionDocument,
   groupCaptionCues,
   importImportantWords,
@@ -13,6 +14,7 @@ import {
   HookPlanSchema,
   type HookBeatPatch,
   resolveTemplateProps,
+  resolveCaptionStyle,
   safeParseVideoProject,
   VideoGradingSchema,
   VideoProjectSchema,
@@ -500,7 +502,19 @@ export class VideoEngineService {
 
   compileCaptionCues(project: VideoProject, options: Partial<CaptionGroupingOptions> = {}) {
     if (!project.captions) return []
-    return groupCaptionCues(project.captions, options)
+    const scene = project.scenes.find(
+      (candidate) =>
+        candidate.kind === 'caption' &&
+        candidate.template?.id === project.captions?.templateId,
+    )
+    const style = resolveCaptionStyle(
+      scene?.template?.id ?? project.captions.templateId,
+      scene?.template?.props,
+    )
+    return groupCaptionCues(project.captions, {
+      ...captionGroupingOptionsForStyle(style, project.canvas.fps),
+      ...options,
+    })
   }
 
   searchBroll(

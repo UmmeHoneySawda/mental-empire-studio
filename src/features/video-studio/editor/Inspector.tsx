@@ -1,6 +1,7 @@
 import { useState } from 'react'
 import {
   AUTO_BROLL_DENSITY_PER_MINUTE,
+  REMOTION_CUSTOM_HOOK_TEMPLATE_ID,
   type AutoBrollDensity,
   type AutoBrollSkipReason,
   type VideoGrading,
@@ -531,6 +532,33 @@ function TextPanel(): JSX.Element {
  *  letting someone build one that fails on import. */
 const MAX_HOOK_SECONDS = 30
 
+const CUSTOM_HOOK_EXAMPLE = JSON.stringify({
+  schemaVersion: 1,
+  name: 'The focus reset',
+  text: {
+    headline: 'Your attention is not broken',
+    body: 'It is responding to the system around it.'
+  },
+  durationSeconds: 8,
+  animationPreset: 'focus',
+  typography: {
+    fontFamily: 'Hanken Grotesk',
+    fontSize: 108,
+    fontWeight: 700,
+    lineHeight: 1.02,
+    letterSpacing: -2
+  },
+  colors: {
+    text: '#FFFFFF',
+    accent: '#BFA7FF',
+    background: '#100B22'
+  },
+  alignment: 'left',
+  position: 'center',
+  backgroundPreset: 'spotlight',
+  energy: 'restrained'
+}, null, 2)
+
 function visualLabel(kind: string): string {
   if (kind === 'asset') return 'your media'
   if (kind === 'broll') return 'stock footage'
@@ -555,6 +583,7 @@ function HookPanel(): JSX.Element {
   const templates = useEditor((state) => state.templates)
   const busy = useEditor((state) => state.busy)
   const importHookPlan = useEditor((state) => state.importHookPlan)
+  const importCustomHook = useEditor((state) => state.importCustomHook)
   const generateHookPlan = useEditor((state) => state.generateHookPlan)
   const updateHookBeat = useEditor((state) => state.updateHookBeat)
   const hookPromptFor = useEditor((state) => state.hookPrompt)
@@ -565,8 +594,11 @@ function HookPanel(): JSX.Element {
   const [seconds, setSeconds] = useState(10)
   const [title, setTitle] = useState<string | null>(null)
   const [transcript, setTranscript] = useState('')
+  const [customJson, setCustomJson] = useState(CUSTOM_HOOK_EXAMPLE)
 
   const hooks = templates.filter((template) => template.kind === 'hook')
+  const premadeHooks = hooks.filter((template) => template.id !== REMOTION_CUSTOM_HOOK_TEMPLATE_ID)
+  const customHookAvailable = hooks.some((template) => template.id === REMOTION_CUSTOM_HOOK_TEMPLATE_ID)
   const plan = hookPlanFromProject(project)
   const sceneId = hookSceneId(project)
 
@@ -587,10 +619,10 @@ function HookPanel(): JSX.Element {
     <>
       <Section
         title="Hook template"
-        blurb="A 30-second opener that runs over the front of the video. Pick the motion, then either drop it in as-is or have the beats written for you."
+        blurb="A 1–30 second opener over the front of the video. Each preset has its own typography, layout, palette, background, and seek-safe motion."
       >
         <div className="ve-list">
-          {hooks.map((template) => (
+          {premadeHooks.map((template) => (
             <button
               key={template.id}
               type="button"
@@ -662,6 +694,43 @@ function HookPanel(): JSX.Element {
         </div>
         {!selected && <p className="ve-hint">Pick a template above to enable both buttons.</p>}
       </Section>
+
+      {customHookAvailable ? (
+        <Section
+          title="Custom declarative hook"
+          blurb="Edit the bounded JSON recipe below. Only the listed text, timing, typography, color, alignment, position, background, energy, and animation presets are accepted."
+        >
+          <textarea
+            className="ve-input ve-custom-hook-json"
+            rows={18}
+            spellCheck={false}
+            aria-label="Custom hook JSON"
+            value={customJson}
+            onChange={(event) => setCustomJson(event.target.value)}
+          />
+          <div className="ve-actions">
+            <button
+              type="button"
+              className="ve-btn ve-btn--primary"
+              disabled={!!busy || !customJson.trim()}
+              onClick={() => void importCustomHook(customJson)}
+            >
+              {busy === 'Importing the custom hook' ? 'Validating…' : 'Validate and add custom hook'}
+            </button>
+            <button
+              type="button"
+              className="ve-btn ve-btn--soft"
+              disabled={!!busy}
+              onClick={() => setCustomJson(CUSTOM_HOOK_EXAMPLE)}
+            >
+              Reset example
+            </button>
+          </div>
+          <p className="ve-hint">
+            JavaScript, JSX, HTML, CSS, shell commands, package/module fields, unknown keys, and out-of-range values are rejected before the project is written.
+          </p>
+        </Section>
+      ) : null}
 
       <Section title="Context" blurb="Optional. Paste the script so the written beats say what the voice says.">
         <textarea

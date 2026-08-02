@@ -38,6 +38,7 @@ export function captionWordsFromRemotionCaptions(
 ): CaptionWord[] {
   const fps = assertFps(fpsInput)
   const output: CaptionWord[] = []
+  let previousEndFrame = 0
   for (let cueIndex = 0; cueIndex < captions.length; cueIndex += 1) {
     const cue = captions[cueIndex]!
     if (
@@ -50,30 +51,42 @@ export function captionWordsFromRemotionCaptions(
     }
     const tokens = captionTokens(cue.text)
     if (tokens.length === 0) continue
-    const startFrame = millisecondsToFrame(cue.startMs, fps)
-    const endFrame = Math.max(startFrame + 1, millisecondsToFrame(cue.endMs, fps))
+    const roundedStartFrame = millisecondsToFrame(cue.startMs, fps)
+    const roundedEndFrame = millisecondsToFrame(cue.endMs, fps)
+    const startFrame = Math.max(previousEndFrame, roundedStartFrame)
+    if (previousEndFrame > roundedStartFrame && roundedEndFrame <= startFrame) {
+      throw new Error(`Caption cue ${cueIndex + 1} overlaps the previous cue without a usable frame`)
+    }
+    const endFrame = Math.max(startFrame + 1, roundedEndFrame)
+    if (endFrame - startFrame < tokens.length) {
+      throw new Error(
+        `Caption cue ${cueIndex + 1} is too short to assign ${tokens.length} words at ${fps} FPS`,
+      )
+    }
     const totalWeight = tokens.reduce(
       (total, token) => total + Math.max(1, [...token].length),
       0,
     )
+    const boundaries = [startFrame]
     let consumedWeight = 0
-    for (let tokenIndex = 0; tokenIndex < tokens.length; tokenIndex += 1) {
+    for (let tokenIndex = 0; tokenIndex < tokens.length - 1; tokenIndex += 1) {
       const token = tokens[tokenIndex]!
       const tokenWeight = Math.max(1, [...token].length)
-      const tokenStart = Math.min(
-        endFrame - 1,
-        startFrame +
-          Math.floor(((endFrame - startFrame) * consumedWeight) / totalWeight),
-      )
       consumedWeight += tokenWeight
-      const tokenEnd =
-        tokenIndex === tokens.length - 1
-          ? endFrame
-          : Math.max(
-              tokenStart + 1,
-              startFrame +
-                Math.ceil(((endFrame - startFrame) * consumedWeight) / totalWeight),
-            )
+      const remainingTokens = tokens.length - tokenIndex - 1
+      const proportional = startFrame + Math.round(
+        ((endFrame - startFrame) * consumedWeight) / totalWeight,
+      )
+      boundaries.push(Math.max(
+        boundaries[boundaries.length - 1]! + 1,
+        Math.min(endFrame - remainingTokens, proportional),
+      ))
+    }
+    boundaries.push(endFrame)
+    for (let tokenIndex = 0; tokenIndex < tokens.length; tokenIndex += 1) {
+      const token = tokens[tokenIndex]!
+      const tokenStart = boundaries[tokenIndex]!
+      const tokenEnd = boundaries[tokenIndex + 1]!
       output.push(
         CaptionWordSchema.parse({
           id: `${idPrefix}:${String(cueIndex + 1).padStart(5, '0')}:${String(
@@ -81,7 +94,7 @@ export function captionWordsFromRemotionCaptions(
           ).padStart(3, '0')}`,
           text: token,
           startFrame: tokenStart,
-          endFrame: Math.min(endFrame, tokenEnd),
+          endFrame: tokenEnd,
           confidence:
             cue.confidence === null || cue.confidence === undefined
               ? undefined
@@ -89,6 +102,7 @@ export function captionWordsFromRemotionCaptions(
         }),
       )
     }
+    previousEndFrame = endFrame
   }
   return output
 }

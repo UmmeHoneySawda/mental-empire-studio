@@ -348,20 +348,45 @@ export function captionWordsFromTranscript(
   const output: CaptionWord[] = []
   let dropped = 0
   let previousEnd = 0
-  const ordered = [...words].sort((a, b) => a.start - b.start || a.ord - b.ord)
+  const hasIncompleteStart = words.some((word) => !Number.isFinite(word.start))
+  const ordered = [...words].sort((a, b) =>
+    hasIncompleteStart ? a.ord - b.ord : a.start - b.start || a.ord - b.ord,
+  )
+  const nextKnownStarts: Array<number | undefined> = new Array(ordered.length)
+  let nextKnownStart: number | undefined
+  for (let index = ordered.length - 1; index >= 0; index -= 1) {
+    nextKnownStarts[index] = nextKnownStart
+    const candidate = ordered[index]!
+    if (Number.isFinite(candidate.start)) nextKnownStart = candidate.start
+  }
   for (let index = 0; index < ordered.length; index += 1) {
     const word = ordered[index]!
     const text = word.word.trim()
     if (!text) { dropped += 1; continue }
-    let startFrame = Math.max(previousEnd, Math.round(word.start * fps))
-    let endFrame = Math.max(startFrame + 1, Math.round(word.end * fps))
+    const rawStart = Number.isFinite(word.start)
+      ? Math.round(word.start * fps)
+      : previousEnd
+    let startFrame = Math.max(previousEnd, rawStart)
+    const nextKnownStart = nextKnownStarts[index]
+    const readingFrames = Math.max(
+      1,
+      Math.min(Math.round(fps * 1.2), Math.round(fps * Math.max(0.24, [...text].length / 14))),
+    )
+    const rawEnd = Number.isFinite(word.end) && word.end > (Number.isFinite(word.start) ? word.start : -1)
+      ? Math.round(word.end * fps)
+      : nextKnownStart !== undefined && Math.round(nextKnownStart * fps) > startFrame
+        ? Math.round(nextKnownStart * fps)
+        : startFrame + readingFrames
+    let endFrame = Math.max(startFrame + 1, rawEnd)
     if (startFrame >= durationFrames) { dropped += 1; continue }
     endFrame = Math.min(endFrame, durationFrames)
     if (endFrame <= startFrame) {
       startFrame = Math.max(0, endFrame - 1)
       if (endFrame <= startFrame) { dropped += 1; continue }
     }
-    previousEnd = startFrame
+    // Provider timestamps occasionally overlap by a frame or arrive with one missing
+    // boundary. Advancing by the repaired end guarantees one active word at a time.
+    previousEnd = endFrame
     output.push({
       id: `word-${String(index + 1).padStart(6, '0')}`,
       text: text.slice(0, 500),

@@ -1,8 +1,12 @@
 import {
+  CAPTION_STYLE_DEFINITIONS,
   HookPlanSchema,
   TemplateManifestSchema,
   assertDataOnlyAiPayload,
+  captionStyleIdFromTemplateId,
+  captionStyleTemplateDefaults,
   parseJsonInput,
+  type CaptionStyleId,
   type HookPlan,
   type JsonObject,
   type TemplateManifest,
@@ -32,6 +36,10 @@ export const HYPERFRAMES_CAPTION_TEMPLATE_IDS = [
   'hyperframes-caption-neon-accent',
   'hyperframes-caption-particle-burst',
   'hyperframes-caption-weight-shift',
+  'hyperframes-caption-motivation-bold',
+  'hyperframes-caption-mindset-pill',
+  'hyperframes-caption-progress-underline',
+  'hyperframes-caption-coach-clean',
   'caption-clean',
   'caption-karaoke',
   'caption-punch',
@@ -57,13 +65,7 @@ export type HyperframesVisualTemplateId =
   | HyperframesHookTemplateId
   | HyperframesSceneTemplateId
 export type HyperframesHookStyle = 'kinetic' | 'editorial' | 'cinematic'
-export type HyperframesCaptionStyle =
-  | 'emoji-pop'
-  | 'clip-wipe'
-  | 'highlight'
-  | 'neon-accent'
-  | 'particle-burst'
-  | 'weight-shift'
+export type HyperframesCaptionStyle = CaptionStyleId
 
 const allHookIds = new Set<string>(HYPERFRAMES_HOOK_TEMPLATE_IDS)
 const allSceneIds = new Set<string>(HYPERFRAMES_SCENE_TEMPLATE_IDS)
@@ -101,23 +103,7 @@ export function hyperframesHookStyle(
 export function hyperframesCaptionStyle(
   templateId: HyperframesCaptionTemplateId,
 ): HyperframesCaptionStyle {
-  switch (templateId) {
-    case 'hyperframes-caption-emoji-pop':
-      return 'emoji-pop'
-    case 'hyperframes-caption-clip-wipe':
-    case 'caption-karaoke':
-      return 'clip-wipe'
-    case 'hyperframes-caption-neon-accent':
-      return 'neon-accent'
-    case 'hyperframes-caption-particle-burst':
-      return 'particle-burst'
-    case 'hyperframes-caption-weight-shift':
-    case 'caption-punch':
-      return 'weight-shift'
-    case 'hyperframes-caption-highlight':
-    case 'caption-clean':
-      return 'highlight'
-  }
+  return captionStyleIdFromTemplateId(templateId)
 }
 
 const commonVisualParameters = [
@@ -386,55 +372,75 @@ const sceneManifests = [
   }),
 ]
 
-const captionManifests = HYPERFRAMES_CAPTION_TEMPLATE_IDS.map((id) =>
-  TemplateManifestSchema.parse({
+const captionManifests = HYPERFRAMES_CAPTION_TEMPLATE_IDS.map((id) => {
+  const style = CAPTION_STYLE_DEFINITIONS[captionStyleIdFromTemplateId(id)]
+  const defaults = captionStyleTemplateDefaults(style)
+  return TemplateManifestSchema.parse({
     schemaVersion: 1,
     id,
     version: HYPERFRAMES_TEMPLATE_VERSION,
     rendererId: 'hyperframes',
     kind: 'caption',
-    name:
-      id === 'hyperframes-caption-emoji-pop'
-        ? 'Emoji Pop'
-        : id === 'hyperframes-caption-clip-wipe'
-          ? 'Clip Wipe'
-          : id === 'hyperframes-caption-highlight'
-            ? 'Active Highlight'
-            : id === 'hyperframes-caption-neon-accent'
-              ? 'Neon Accent'
-              : id === 'hyperframes-caption-particle-burst'
-                ? 'Particle Burst'
-                : id === 'hyperframes-caption-weight-shift'
-                  ? 'Weight Shift'
-                  : id === 'caption-clean'
-                    ? 'Clean Captions'
-                    : id === 'caption-karaoke'
-                      ? 'Karaoke Captions'
-                      : 'Punch Captions',
-    description: 'Word-timed captions with optional important-word emphasis.',
+    name: style.name,
+    description: style.description,
     implementationId: id,
     aspectRatios: ['16:9', '9:16', '1:1', '4:5', 'custom'],
     duration: { minimumFrames: 1, maximumFrames: 1_000_000, defaultFrames: 90 },
     capabilities: ['captions', 'dynamic-duration', 'word-highlighting'],
     parameters: [
       {
-        key: 'accent',
-        label: 'Accent',
-        type: 'color',
-        default: '#FFD166',
+        key: 'fontFamily',
+        label: 'Font family',
+        type: 'enum',
+        default: defaults.fontFamily,
+        values: ['Space Grotesk', 'Hanken Grotesk', 'Anton', 'JetBrains Mono'],
         required: false,
       },
       {
         key: 'textColor',
         label: 'Text color',
         type: 'color',
-        default: '#FFFFFF',
+        default: defaults.textColor,
+        required: false,
+      },
+      {
+        key: 'activeColor',
+        label: 'Spoken-word color',
+        type: 'color',
+        default: defaults.activeColor,
+        required: false,
+      },
+      {
+        key: 'importantColor',
+        label: 'Important-word color',
+        type: 'color',
+        default: defaults.importantColor,
+        required: false,
+      },
+      {
+        key: 'maxWordsPerCue',
+        label: 'Maximum words per cue',
+        type: 'number',
+        default: defaults.maxWordsPerCue,
+        minimum: 1,
+        maximum: 12,
+        integer: true,
+        required: false,
+      },
+      {
+        key: 'maxCharactersPerLine',
+        label: 'Maximum characters per line',
+        type: 'number',
+        default: defaults.maxCharactersPerLine,
+        minimum: 10,
+        maximum: 42,
+        integer: true,
         required: false,
       },
     ],
     tags: ['captions', 'subtitles', 'word-highlighting'],
-  }),
-)
+  })
+})
 
 const transitionNames: Record<(typeof HYPERFRAMES_TRANSITION_TEMPLATE_IDS)[number], string> = {
   'transition-cut': 'Cut',

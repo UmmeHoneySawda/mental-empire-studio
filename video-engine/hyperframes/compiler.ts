@@ -1,7 +1,13 @@
 import {
   DEFAULT_VIDEO_TRANSFORM,
   VideoProjectSchema,
+  captionGroupingOptionsForStyle,
+  captionLayoutMetrics,
+  captionNeedsLeadingSpace,
   groupCaptionCues,
+  readableTextColor,
+  resolveCaptionStyle,
+  type CaptionStyleDefinition,
   type CaptionWord,
   type HookBeat,
   type HookPlan,
@@ -1400,13 +1406,28 @@ function captionPresetClass(templateId: HyperframesCaptionTemplateId): string {
 
 function captionDefaultColor(
   word: CaptionWord,
-  templateId: HyperframesCaptionTemplateId,
-  variables: HyperframesCompileVariables,
+  style: CaptionStyleDefinition,
 ): string {
-  if ((word.importance ?? 0) > 0) {
-    return variables.hfCaptionImportant
-  }
-  return variables.hfCaptionText
+  return (word.importance ?? 0) > 0 ? style.importantColor : style.textColor
+}
+
+function captionFontFamily(fontFamily: CaptionStyleDefinition['fontFamily']): string {
+  if (fontFamily === 'Anton') return cssFamily('HF Anton')
+  if (fontFamily === 'Hanken Grotesk') return cssFamily('HF Hanken')
+  if (fontFamily === 'JetBrains Mono') return cssFamily('HF JetBrains')
+  return cssFamily('HF Space')
+}
+
+function captionEntrance(
+  style: CaptionStyleDefinition,
+): {
+  entrance: 'kinetic' | 'editorial' | 'cinematic' | 'standard'
+  energy: 'restrained' | 'balanced' | 'intense'
+} {
+  if (style.entrance === 'pop') return { entrance: 'kinetic', energy: 'intense' }
+  if (style.entrance === 'wipe') return { entrance: 'editorial', energy: 'balanced' }
+  if (style.entrance === 'fade') return { entrance: 'cinematic', energy: 'restrained' }
+  return { entrance: 'standard', energy: 'restrained' }
 }
 
 function captionTemplateProps(project: VideoProject): JsonObject {
@@ -1425,37 +1446,47 @@ function renderCaptions(context: BuildContext): void {
   const templateId = (document.templateId ??
     HYPERFRAMES_CAPTION_TEMPLATE_IDS[0]) as HyperframesCaptionTemplateId
   const words = new Map(document.words.map((word) => [word.id, word]))
-  const requestedMaxWords = props.maxWordsPerCue
-  const cues = groupCaptionCues(document, {
-    maxWordsPerCue:
-      typeof requestedMaxWords === 'number' && Number.isFinite(requestedMaxWords)
-        ? Math.max(1, Math.min(12, Math.round(requestedMaxWords)))
-        : 5,
-  })
-  const minimum = Math.min(context.project.canvas.width, context.project.canvas.height)
+  const style = resolveCaptionStyle(templateId, props)
+  const cues = groupCaptionCues(
+    document,
+    captionGroupingOptionsForStyle(style, context.project.canvas.fps),
+  )
   const captionStyle = hyperframesCaptionStyle(templateId)
-  const fontSize =
-    captionStyle === 'emoji-pop' || captionStyle === 'particle-burst'
-      ? Math.max(42, Math.round(minimum * 0.065))
-      : captionStyle === 'weight-shift'
-        ? Math.max(34, Math.round(minimum * 0.048))
-        : Math.max(34, Math.round(minimum * 0.052))
+  const entrance = captionEntrance(style)
   for (const cue of cues) {
     const key = `caption-${cue.id}`
     const clipId = `clip-${safeDomToken(key)}`
     const innerId = `content-${safeDomToken(key)}`
     const cueWords = cue.wordIds.map((id) => words.get(id)!).filter(Boolean)
-    const spans = cueWords
-      .map((word) => {
+    const metrics = captionLayoutMetrics(
+      style,
+      context.project.canvas.width,
+      context.project.canvas.height,
+      cue.lines.map((line) => [...line.text].length),
+    )
+    const lineHtml = cue.lines.map((line, lineIndex) => {
+      const spans = line.wordIds.map((wordId, wordIndex) => {
+        const word = words.get(wordId)!
         const id = `caption-word-${safeDomToken(word.id)}`
         const importance = word.importance ?? 0
-        return `<span id="${id}" data-hf-id="${escapeAttribute(
+        const leadingSpace = wordIndex > 0 && captionNeedsLeadingSpace(word.text) ? ' ' : ''
+        const backgroundSize = style.activeTreatment === 'underline' ? '0% .12em' : '0% 100%'
+        return `${leadingSpace}<span id="${id}" data-hf-id="${escapeAttribute(
           `caption-word:${word.id}`,
         )}" class="hf-caption-word${
           importance > 0 ? ` hf-important hf-important-${importance}` : ''
-        }" data-word-id="${escapeAttribute(word.id)}">${escapeHtml(word.text)}</span>`
-      })
-      .join(' ')
+        }" data-word-id="${escapeAttribute(word.id)}" style="color:${captionDefaultColor(
+          word,
+          style,
+        )};font-weight:${importance > 0 ? Math.max(style.fontWeight, 800) : style.fontWeight};background-size:${backgroundSize}">${escapeHtml(word.text)}</span>`
+      }).join('')
+      return `<div class="hf-caption-line" data-hf-id="${escapeAttribute(
+        `caption:${cue.id}:line:${lineIndex}`,
+      )}">${spans}</div>`
+    }).join('')
+    const sectionLayout = style.placement === 'center'
+      ? `align-items:center;justify-content:center;padding:${metrics.safeInset}px`
+      : `align-items:center;justify-content:flex-end;padding:0 ${metrics.safeInset}px ${metrics.bottomOffset}px`
     context.nodes.push(`<section ${visualTiming(
       context,
       clipId,
@@ -1463,17 +1494,20 @@ function renderCaptions(context: BuildContext): void {
       cue.endFrame - cue.startFrame,
       `caption:${cue.id}`,
       `clip hf-scene-clip hf-caption-clip ${captionPresetClass(templateId)}`,
-    )} style="z-index:2147482000;font-size:${fontSize}px">
+    )} data-caption-style="${escapeAttribute(captionStyle)}" style="z-index:2147482000;font-size:${metrics.fontSize}px;${sectionLayout}">
   <div id="${innerId}" data-hf-id="${escapeAttribute(
-    `caption:${cue.id}:line`,
-  )}" class="hf-caption-inner">${spans}</div>
+    `caption:${cue.id}:page`,
+  )}" class="hf-caption-inner" style="max-width:${metrics.maxWidth}px;font-family:${captionFontFamily(
+    style.fontFamily,
+  )};font-weight:${style.fontWeight};color:${style.textColor};text-transform:${style.uppercase ? 'uppercase' : 'none'}">${lineHtml}</div>
 </section>`)
     addSimpleEntrance(
       context,
       innerId,
       cue.startFrame,
       cue.endFrame - cue.startFrame,
-      'standard',
+      entrance.entrance,
+      entrance.energy,
     )
     for (const word of cueWords) {
       const wordId = `caption-word-${safeDomToken(word.id)}`
@@ -1483,64 +1517,73 @@ function renderCaptions(context: BuildContext): void {
       )
       const important = (word.importance ?? 0) > 0
       const activeTo: AnimationValues = {
-        color: context.variables.hfCaptionAccent,
+        color: style.activeColor,
         scale: important ? 1.14 : 1.07,
         duration: activeDuration,
         ease: 'power2.out',
       }
-      if (captionStyle === 'emoji-pop') {
+      if (style.activeTreatment === 'punch') {
         Object.assign(activeTo, {
           y: important ? -10 : -6,
-          rotation: important ? -2 : 0,
           backgroundColor: 'rgba(0,0,0,0.76)',
           boxShadow: important
-            ? `0 0 0 4px ${context.variables.hfCaptionImportant}`
+            ? `0 0 0 4px ${style.importantColor}`
             : '0 0 0 0 rgba(0,0,0,0)',
           scale: important ? 1.24 : 1.16,
           ease: 'back.out(2.2)',
         })
-      } else if (captionStyle === 'clip-wipe') {
+      } else if (style.activeTreatment === 'pill') {
         Object.assign(activeTo, {
-          color: '#07090D',
-          backgroundColor: context.variables.hfCaptionAccent,
-          clipPath: 'inset(0% 0% 0% 0%)',
+          color: readableTextColor(style.activeColor),
+          backgroundImage: `linear-gradient(${style.activeColor},${style.activeColor})`,
+          backgroundSize: '100% 100%',
           scale: important ? 1.1 : 1.04,
         })
-      } else if (captionStyle === 'neon-accent') {
+      } else if (style.activeTreatment === 'neon') {
         Object.assign(activeTo, {
-          color: important
-            ? context.variables.hfCaptionImportant
-            : context.variables.hfCaptionAccent,
+          color: important ? style.importantColor : style.activeColor,
           textShadow: important
-            ? `0 0 12px ${context.variables.hfCaptionImportant},0 0 30px ${context.variables.hfCaptionImportant}`
-            : `0 0 10px ${context.variables.hfCaptionAccent},0 0 24px ${context.variables.hfCaptionAccent}`,
+            ? `0 0 10px ${style.importantColor},0 0 24px ${style.importantColor}`
+            : `0 0 8px ${style.activeColor},0 0 18px ${style.activeColor}`,
           scale: important ? 1.16 : 1.08,
         })
-      } else if (captionStyle === 'particle-burst') {
+      } else if (style.activeTreatment === 'burst') {
         Object.assign(activeTo, {
           y: important ? -8 : -4,
-          rotation: important ? 2 : 0,
-          color: important
-            ? context.variables.hfCaptionImportant
-            : context.variables.hfCaptionAccent,
-          boxShadow: important
-            ? `-18px -12px 0 -7px ${context.variables.hfCaptionAccent},18px -10px 0 -7px ${context.variables.hfCaptionImportant},16px 13px 0 -8px ${context.variables.hfCaptionAccent},-14px 14px 0 -8px ${context.variables.hfCaptionImportant}`
-            : '0 0 0 0 rgba(0,0,0,0)',
+          color: important ? style.importantColor : style.activeColor,
+          boxShadow: `-18px -12px 0 -7px ${style.activeColor},18px -10px 0 -7px ${style.importantColor},16px 13px 0 -8px ${style.activeColor},-14px 14px 0 -8px ${style.importantColor}`,
           scale: important ? 1.25 : 1.14,
           ease: 'back.out(2.5)',
         })
-      } else if (captionStyle === 'weight-shift') {
+      } else if (style.activeTreatment === 'weight') {
         Object.assign(activeTo, {
-          color: important
-            ? context.variables.hfCaptionImportant
-            : context.variables.hfCaptionAccent,
+          color: important ? style.importantColor : style.activeColor,
           fontWeight: important ? 900 : 800,
           letterSpacing: important ? '-0.04em' : '-0.02em',
           scale: important ? 1.1 : 1.04,
         })
+      } else if (style.activeTreatment === 'underline') {
+        Object.assign(activeTo, {
+          color: important ? style.importantColor : style.activeColor,
+          backgroundImage: `linear-gradient(${style.activeColor},${style.activeColor})`,
+          backgroundSize: '100% .12em',
+          fontWeight: important ? 900 : 800,
+          scale: 1.04,
+        })
+      } else if (style.activeTreatment === 'clean') {
+        Object.assign(activeTo, {
+          color: important ? style.importantColor : style.activeColor,
+          fontWeight: important ? 850 : 800,
+          scale: 1,
+        })
+      }
+      const oneFrameWord = word.endFrame - word.startFrame === 1
+      if (oneFrameWord) {
+        delete activeTo.duration
+        delete activeTo.ease
       }
       addOperation(context, {
-        kind: 'to',
+        kind: oneFrameWord ? 'set' : 'to',
         elementId: wordId,
         at: word.startFrame / context.project.canvas.fps,
         to: activeTo,
@@ -1550,21 +1593,15 @@ function renderCaptions(context: BuildContext): void {
         elementId: wordId,
         at: word.endFrame / context.project.canvas.fps,
         to: {
-          color: captionDefaultColor(word, templateId, context.variables),
+          color: captionDefaultColor(word, style),
           backgroundColor: 'rgba(0,0,0,0)',
+          backgroundImage: 'linear-gradient(transparent,transparent)',
+          backgroundSize: style.activeTreatment === 'underline' ? '0% .12em' : '0% 100%',
           boxShadow: '0 0 0 0 rgba(0,0,0,0)',
           textShadow: '0 0 0 rgba(0,0,0,0)',
-          clipPath: captionStyle === 'clip-wipe' ? 'inset(0% 100% 0% 0%)' : 'none',
           y: 0,
           rotation: 0,
-          fontWeight:
-            captionStyle === 'weight-shift'
-              ? important
-                ? 760
-                : 480
-              : important
-                ? 700
-                : 600,
+          fontWeight: important ? Math.max(style.fontWeight, 800) : style.fontWeight,
           letterSpacing: '0em',
           scale: 1,
           duration: 1 / context.project.canvas.fps,
@@ -1647,6 +1684,9 @@ function compositionCss(context: BuildContext): string {
 @font-face{font-family:"HF Space";src:url("./vendor/space-grotesk-400.woff2") format("woff2");font-style:normal;font-weight:400;font-display:block}
 @font-face{font-family:"HF Space";src:url("./vendor/space-grotesk-700.woff2") format("woff2");font-style:normal;font-weight:700;font-display:block}
 @font-face{font-family:"HF Anton";src:url("./vendor/anton-400.woff2") format("woff2");font-style:normal;font-weight:400;font-display:block}
+@font-face{font-family:"HF Hanken";src:url("./vendor/hanken-grotesk-700.woff2") format("woff2");font-style:normal;font-weight:700;font-display:block}
+@font-face{font-family:"HF Hanken";src:url("./vendor/hanken-grotesk-800.woff2") format("woff2");font-style:normal;font-weight:800;font-display:block}
+@font-face{font-family:"HF JetBrains";src:url("./vendor/jetbrains-mono-700.woff2") format("woff2");font-style:normal;font-weight:700;font-display:block}
 ${customFontCss(context)}
 *{box-sizing:border-box}
 html,body{width:${width}px;height:${height}px;margin:0;overflow:hidden;background:#000}
@@ -1702,15 +1742,16 @@ blockquote{max-width:${Math.round(width * 0.78)}px;margin:${Math.round(
     Math.min(width, height) * 0.04,
   )}px 0;line-height:1.12;font-weight:700;text-wrap:balance}
 .hf-caption-clip{display:flex;align-items:flex-end;justify-content:center;padding:0 ${safe}px ${captionBottom}px;pointer-events:none}
-.hf-caption-inner{display:flex;align-items:center;justify-content:center;flex-wrap:wrap;gap:.24em;max-width:${Math.round(
+.hf-caption-inner{display:flex;flex-direction:column;align-items:center;justify-content:center;gap:.12em;max-width:${Math.round(
     width * 0.88,
   )}px;padding:.34em .55em;color:var(--hfCaptionText);font-weight:700;line-height:1.08;text-align:center;text-shadow:0 .08em .24em rgba(0,0,0,.9)}
-.hf-caption-word{display:inline-block;transform-origin:50% 70%;padding:.08em .04em;border-radius:.18em}
+.hf-caption-line{display:block;max-width:100%;overflow-wrap:anywhere;text-wrap:balance}
+.hf-caption-word{display:inline-block;transform-origin:50% 70%;padding:.08em .04em;border-radius:.18em;background-repeat:no-repeat;background-position:left bottom}
 .hf-caption-emoji-pop{align-items:center;padding-bottom:0}
 .hf-caption-emoji-pop .hf-caption-inner{font-family:"HF Anton","HF Space";font-weight:700;text-transform:uppercase;background:transparent}
 .hf-caption-emoji-pop .hf-caption-word{padding:.08em .14em;-webkit-text-stroke:.025em rgba(0,0,0,.72)}
 .hf-caption-clip-wipe .hf-caption-inner{background:rgba(2,4,8,.86);border-radius:.28em;box-shadow:0 .28em .8em rgba(0,0,0,.34)}
-.hf-caption-clip-wipe .hf-caption-word{padding:.1em .14em;clip-path:inset(0 100% 0 0)}
+.hf-caption-clip-wipe .hf-caption-word{padding:.1em .14em}
 .hf-caption-highlight .hf-caption-inner{background:rgba(0,0,0,.34);border-radius:.32em}
 .hf-caption-highlight .hf-important{color:var(--hfCaptionImportant);text-decoration:underline;text-decoration-thickness:.08em;text-underline-offset:.12em}
 .hf-caption-neon-accent .hf-caption-inner{font-family:"HF Anton","HF Space";text-transform:uppercase;background:rgba(3,5,14,.58);border:.025em solid rgba(255,255,255,.2);border-radius:.24em}
@@ -1720,6 +1761,10 @@ blockquote{max-width:${Math.round(width * 0.78)}px;margin:${Math.round(
 .hf-caption-particle-burst .hf-caption-word{padding:.08em .13em}
 .hf-caption-weight-shift .hf-caption-inner{font-family:"HF Space";font-weight:480;letter-spacing:0;background:rgba(0,0,0,.28);border-radius:.26em}
 .hf-caption-weight-shift .hf-important{font-weight:760;color:var(--hfCaptionImportant)}
+.hf-caption-motivation-bold .hf-caption-inner{background:rgba(0,0,0,.18);border-radius:.2em;-webkit-text-stroke:.02em rgba(0,0,0,.72)}
+.hf-caption-mindset-pill .hf-caption-inner{background:rgba(22,14,45,.62);border:1px solid rgba(167,139,250,.3);border-radius:.3em}
+.hf-caption-progress-underline .hf-caption-inner{background:rgba(3,12,18,.48);border-radius:.24em}
+.hf-caption-coach-clean .hf-caption-inner{background:rgba(0,0,0,.3);border-radius:.24em;text-shadow:0 .06em .2em rgba(0,0,0,.85)}
 .hf-important-2,.hf-important-3{font-weight:700}
 .hf-important-3{text-decoration-color:var(--hfCaptionImportant)}
 .hf-transition-overlay{pointer-events:none}

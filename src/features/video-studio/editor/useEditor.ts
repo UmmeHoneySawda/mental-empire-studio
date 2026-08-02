@@ -141,6 +141,7 @@ interface EditorActions {
   removeClip: (sceneId: string) => void
   duplicateClip: (sceneId: string) => void
   patchClip: (sceneId: string, patch: Partial<VideoScene>) => void
+  cycleImages: (assetIds: string[], intervalSeconds: ops.ImageCycleInterval, shuffle: boolean) => void
   addTrack: (kind: VideoTrack['kind']) => void
   removeTrack: (trackId: string) => void
   patchTrack: (trackId: string, patch: Partial<VideoTrack>) => void
@@ -153,10 +154,11 @@ interface EditorActions {
   rename: (name: string) => Promise<void>
   instantiateTemplate: (input: { templateId: string; startFrame: number; durationFrames?: number; props?: JsonObject }) => Promise<void>
 
-  /** Hook: all four go through the engine, which validates and compiles the plan. */
+  /** Hook operations all go through the engine, which validates and compiles the plan. */
   hookPrompt: (input: HookPromptInput) => Promise<string>
   generateHookPlan: (input: HookPromptInput) => Promise<void>
   importHookPlan: (json: string) => Promise<void>
+  importCustomHook: (json: string) => Promise<void>
   updateHookBeat: (beatId: string, patch: HookBeatPatch) => Promise<void>
 
   captionsFromTranscript: (templateId?: string) => Promise<void>
@@ -416,6 +418,27 @@ export const useEditor = create<EditorStore>((set, get) => {
     },
     duplicateClip: (sceneId) => get().edit((project) => ops.duplicateClip(project, sceneId)),
     patchClip: (sceneId, patch) => get().edit((project) => ops.patchClip(project, sceneId, patch)),
+    cycleImages: (assetIds, intervalSeconds, shuffle) => {
+      const uniqueImages = [...new Set(assetIds)].filter((id) =>
+        get().project?.assets.some((asset) => asset.id === id && asset.kind === 'image')
+      )
+      if (uniqueImages.length < 2) {
+        set({ error: 'Select at least two images to cycle across the timeline.' })
+        return
+      }
+      // One transform through the local edit funnel: one immediate repaint, one save,
+      // and one undo entry for the complete generated sequence.
+      get().edit((project) => ops.applyImageCycle(project, uniqueImages, intervalSeconds, shuffle))
+      const count = get().project?.scenes.filter((scene) =>
+        scene.id.startsWith(ops.IMAGE_CYCLE_SCENE_PREFIX)
+      ).length ?? 0
+      set({
+        error: '',
+        notice: count > 0
+          ? `Cycled ${uniqueImages.length} images across the timeline in ${intervalSeconds}-second intervals${shuffle ? ' · shuffled' : ''}.`
+          : ''
+      })
+    },
     addTrack: (kind) => get().edit((project) => ops.addTrack(project, kind)),
     removeTrack: (trackId) => get().edit((project) => ops.removeTrack(project, trackId)),
     patchTrack: (trackId, patch) => get().edit((project) => ops.patchTrack(project, trackId, patch)),
@@ -585,6 +608,16 @@ export const useEditor = create<EditorStore>((set, get) => {
       adopt(result.project, `Hook added — ${result.plan.beats.length} beats over ${result.plan.durationFrames} frames.`)
     },
 
+    importCustomHook: async (json) => {
+      const { projectId } = get()
+      if (!projectId) return
+      await get().flush()
+      const result = await runEngine('Importing the custom hook', (native) =>
+        native.videoEngine.importCustomHook(projectId, json))
+      if (!result) return
+      adopt(result.project, `Custom hook added — ${result.plan.durationFrames} frames.`)
+    },
+
     updateHookBeat: async (beatId, patch) => {
       const { projectId } = get()
       if (!projectId) return
@@ -627,7 +660,9 @@ export const useEditor = create<EditorStore>((set, get) => {
       await get().flush()
       const project = await runEngine('Applying the caption style', (native) =>
         native.videoEngine.setCaptionTemplate(projectId, templateId, props))
-      if (project) adopt(project)
+      if (!project) return
+      adopt(project)
+      await get().refreshCues()
     },
 
     refreshCues: async (maxWordsPerCue) => {

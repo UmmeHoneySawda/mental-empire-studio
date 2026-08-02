@@ -7,62 +7,23 @@ import {
   useVideoConfig,
 } from 'remotion'
 import {
+  activeCaptionCue,
+  captionGroupingOptionsForStyle,
+  captionLayoutMetrics,
+  captionNeedsLeadingSpace,
+  captionWordIsActive,
+  captionWordRenderProgress,
   groupCaptionCues,
+  hexColorWithAlpha,
+  readableTextColor,
+  resolveCaptionStyle,
+  type CaptionStyleDefinition,
   type CaptionWord,
+  type ResolvedCaptionStyle,
   type VideoProject,
   type VideoScene,
 } from '../../shared/video-engine'
 import { sceneTransformStyle } from './asset'
-
-type CaptionPreset =
-  | 'emoji-pop'
-  | 'clip-wipe'
-  | 'highlight'
-  | 'neon-accent'
-  | 'particle-burst'
-  | 'weight-shift'
-
-interface CaptionTheme {
-  readonly fontFamily?: string
-  readonly textColor?: string
-  readonly activeColor?: string
-  readonly importantColor?: string
-  readonly maxWordsPerCue: number
-}
-
-function captionTheme(scene: VideoScene | undefined): CaptionTheme {
-  const props = scene?.template?.props
-  const text = (key: string): string | undefined => {
-    const value = props?.[key]
-    return typeof value === 'string' && value.trim() ? value : undefined
-  }
-  const requestedWords = props?.['maxWordsPerCue']
-  return {
-    fontFamily: text('fontFamily'),
-    textColor: text('textColor'),
-    activeColor: text('activeColor'),
-    importantColor: text('importantColor'),
-    maxWordsPerCue:
-      typeof requestedWords === 'number' && Number.isFinite(requestedWords)
-        ? Math.max(1, Math.min(12, Math.round(requestedWords)))
-        : 6,
-  }
-}
-
-function presetFromId(id: string | undefined): CaptionPreset {
-  const normalized = id?.toLowerCase() ?? ''
-  if (normalized.includes('emoji-pop')) return 'emoji-pop'
-  if (normalized.includes('clip-wipe')) return 'clip-wipe'
-  if (normalized.includes('neon-accent')) return 'neon-accent'
-  if (normalized.includes('particle-burst')) return 'particle-burst'
-  if (normalized.includes('weight-shift')) return 'weight-shift'
-  // Legacy names remain deterministic while new projects use the six manifests.
-  if (normalized.includes('karaoke') || normalized.includes('pop')) return 'emoji-pop'
-  if (normalized.includes('box') || normalized.includes('cinematic')) {
-    return 'clip-wipe'
-  }
-  return 'highlight'
-}
 
 function activeCaptionScene(
   project: VideoProject,
@@ -81,261 +42,300 @@ function activeCaptionScene(
   )
 }
 
-function layoutStyle(
-  preset: CaptionPreset,
-  width: number,
-  theme: CaptionTheme,
+function outerStyle(
+  style: CaptionStyleDefinition,
+  metrics: ReturnType<typeof captionLayoutMetrics>,
 ): CSSProperties {
-  const fontSize = Math.max(32, Math.min(76, width * 0.047))
-  const shared: CSSProperties = {
-    maxWidth: '88%',
-    textAlign: 'center',
-    fontFamily:
-      theme.fontFamily ??
-      '"Hanken Grotesk", "Arial Black", Arial, sans-serif',
-    fontSize,
-    fontWeight: 800,
-    lineHeight: 1.08,
-    letterSpacing: '-0.035em',
-    color: theme.textColor ?? '#FFFFFF',
-    textShadow: '0 4px 18px rgba(0,0,0,.9)',
-  }
-
-  switch (preset) {
-    case 'clip-wipe':
-      return {
-        ...shared,
-        maxWidth: '82%',
-        padding: '0.28em 0.46em 0.34em',
-        borderRadius: '0.22em',
-        background: 'rgba(2,4,8,.86)',
-        boxShadow: '0 14px 45px rgba(0,0,0,.34)',
-      }
-    case 'emoji-pop':
-      return {
-        ...shared,
-        fontSize: fontSize * 1.13,
-        fontWeight: 900,
-        textTransform: 'uppercase',
-        WebkitTextStroke: `${Math.max(1, width / 900)}px rgba(0,0,0,.72)`,
-      }
-    case 'weight-shift':
-      return {
-        ...shared,
-        maxWidth: '76%',
-        fontSize: fontSize * 0.92,
-        fontWeight: 520,
-        lineHeight: 1.14,
-        letterSpacing: '-0.015em',
-      }
-    case 'particle-burst':
-      return {
-        ...shared,
-        maxWidth: '90%',
-        fontSize: fontSize * 1.08,
-        fontWeight: 900,
-        textTransform: 'uppercase',
-      }
-    case 'neon-accent':
-      return {
-        ...shared,
-        fontSize: fontSize * 1.03,
-        textTransform: 'uppercase',
-        letterSpacing: '-0.025em',
-        textShadow:
-          '0 0 12px rgba(65,246,255,.65), 0 0 34px rgba(65,246,255,.25), 0 4px 18px rgba(0,0,0,.9)',
-      }
-    case 'highlight':
-    default:
-      return shared
-  }
-}
-
-function verticalPosition(preset: CaptionPreset): CSSProperties {
-  if (preset === 'emoji-pop' || preset === 'particle-burst') {
-    return { alignItems: 'center', justifyContent: 'center', padding: '6%' }
+  if (style.placement === 'center') {
+    return {
+      alignItems: 'center',
+      justifyContent: 'center',
+      padding: metrics.safeInset,
+    }
   }
   return {
     alignItems: 'center',
     justifyContent: 'flex-end',
-    padding: preset === 'weight-shift' ? '0 5% 7%' : '0 5% 10%',
+    padding: `0 ${metrics.safeInset}px ${metrics.bottomOffset}px`,
   }
 }
 
-function punctuationWithoutLeadingSpace(text: string): boolean {
-  return /^[,.;:!?%)\]}]/u.test(text)
+function pageStyle(
+  style: ResolvedCaptionStyle,
+  metrics: ReturnType<typeof captionLayoutMetrics>,
+): CSSProperties {
+  const shared: CSSProperties = {
+    display: 'flex',
+    flexDirection: 'column',
+    alignItems: 'center',
+    gap: '0.12em',
+    maxWidth: metrics.maxWidth,
+    padding: '0.28em 0.48em 0.34em',
+    color: style.textColor,
+    fontFamily: `"${style.fontFamily}", Arial, sans-serif`,
+    fontSize: metrics.fontSize,
+    fontWeight: style.fontWeight,
+    lineHeight: 1.08,
+    letterSpacing: style.uppercase ? '-0.025em' : '-0.02em',
+    textAlign: 'center',
+    textTransform: style.uppercase ? 'uppercase' : undefined,
+    textShadow: '0 0.08em 0.24em rgba(0,0,0,.9)',
+    transformOrigin: '50% 70%',
+  }
+  if (style.id === 'clip-wipe') {
+    return {
+      ...shared,
+      background: 'rgba(2,4,8,.86)',
+      borderRadius: '0.28em',
+      boxShadow: '0 0.28em 0.8em rgba(0,0,0,.34)',
+    }
+  }
+  if (style.id === 'mindset-pill') {
+    return {
+      ...shared,
+      background: 'rgba(22,14,45,.62)',
+      border: '1px solid rgba(167,139,250,.3)',
+      borderRadius: '0.3em',
+    }
+  }
+  if (style.id === 'neon-accent') {
+    return {
+      ...shared,
+      background: 'rgba(3,5,14,.58)',
+      border: '1px solid rgba(255,255,255,.18)',
+      borderRadius: '0.24em',
+      textShadow: '0 0 0.15em rgba(67,246,255,.48), 0 0.08em 0.24em rgba(0,0,0,.9)',
+    }
+  }
+  if (style.id === 'weight-shift' || style.id === 'coach-clean') {
+    return {
+      ...shared,
+      background: 'rgba(0,0,0,.3)',
+      borderRadius: '0.24em',
+    }
+  }
+  if (style.id === 'progress-underline') {
+    return {
+      ...shared,
+      background: 'rgba(3,12,18,.48)',
+      borderRadius: '0.24em',
+    }
+  }
+  return shared
 }
 
-function wordStyle(
-  word: CaptionWord,
-  active: boolean,
-  preset: CaptionPreset,
-  theme: CaptionTheme,
+function pageMotion(
+  style: CaptionStyleDefinition,
+  frame: number,
+  startFrame: number,
+  endFrame: number,
+  fps: number,
 ): CSSProperties {
+  const localFrame = frame - startFrame
+  const duration = Math.max(5, Math.round(fps * 0.28))
+  const exit = interpolate(
+    frame,
+    [Math.max(startFrame, endFrame - Math.max(2, Math.round(fps * 0.12))), endFrame],
+    [1, 0],
+    { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' },
+  )
+  if (style.entrance === 'fade') {
+    const opacity = interpolate(localFrame, [0, Math.max(2, Math.round(fps * 0.2))], [0, 1], {
+      extrapolateLeft: 'clamp',
+      extrapolateRight: 'clamp',
+    })
+    return { opacity: opacity * exit }
+  }
+  const progress = spring({
+    frame: localFrame,
+    fps,
+    durationInFrames: duration,
+    config: style.entrance === 'pop'
+      ? { damping: 13, stiffness: 240, mass: 0.7 }
+      : { damping: 22, stiffness: 210, mass: 0.72 },
+  })
+  return {
+    opacity: progress * exit,
+    transform: style.entrance === 'pop'
+      ? `translateY(${(1 - progress) * 30}px) scale(${0.78 + progress * 0.22})`
+      : `translateY(${(1 - progress) * 24}px) scale(${0.96 + progress * 0.04})`,
+    clipPath: style.entrance === 'wipe'
+      ? `inset(0 ${(1 - progress) * 100}% 0 0)`
+      : undefined,
+  }
+}
+
+const BURST_MARKS = [
+  { left: '-0.22em', top: '-0.2em' },
+  { right: '-0.22em', top: '-0.18em' },
+  { left: '-0.18em', bottom: '-0.2em' },
+  { right: '-0.18em', bottom: '-0.18em' },
+] as const
+
+function CaptionToken({
+  word,
+  style,
+  frame,
+  fps,
+}: {
+  readonly word: CaptionWord
+  readonly style: ResolvedCaptionStyle
+  readonly frame: number
+  readonly fps: number
+}): JSX.Element {
+  const active = captionWordIsActive(word, frame)
+  const progress = active ? captionWordRenderProgress(word, frame) : 0
   const importance = word.importance ?? 0
   const important = importance > 0
-  const activeColor =
-    theme.activeColor ??
-    (preset === 'neon-accent'
-      ? '#43F6FF'
-      : preset === 'particle-burst'
-        ? '#FFF23D'
-        : '#E6FF38')
-  const importantColor =
-    theme.importantColor ??
-    (preset === 'neon-accent'
-      ? '#FF4FD8'
-      : importance >= 3
-        ? '#FF5A45'
-        : importance === 2
-          ? '#FFB928'
-          : '#67E8F9')
+  const attack = active
+    ? Math.min(1, (frame - word.startFrame + 1) / Math.max(1, Math.round(fps * 0.12)))
+    : 0
+  const activeColor = active ? style.activeColor : important ? style.importantColor : style.textColor
+  const pillTextColor = readableTextColor(style.activeColor)
+  const isPill = style.activeTreatment === 'pill'
+  const isUnderline = style.activeTreatment === 'underline'
+  const scale = !active
+    ? 1
+    : style.activeTreatment === 'punch' || style.activeTreatment === 'burst'
+      ? 1 + attack * (important ? 0.2 : 0.14)
+      : style.activeTreatment === 'clean'
+        ? 1
+        : 1 + attack * (important ? 0.1 : 0.06)
+  const persistentWeight = important ? Math.max(style.fontWeight, 800) : style.fontWeight
 
-  return {
-    display: 'inline-block',
-    color:
-      active
-        ? activeColor
-        : important
-          ? importantColor
-          : theme.textColor ?? '#FFFFFF',
-    fontWeight:
-      preset === 'weight-shift'
-        ? active
-          ? 950
-          : important
-            ? 800
-            : 500
-        : important || active
-          ? 900
+  return (
+    <span
+      style={{
+        position: 'relative',
+        isolation: 'isolate',
+        zIndex: 0,
+        display: 'inline-block',
+        padding: isPill ? '0.06em 0.14em 0.09em' : '0.05em 0.04em 0.08em',
+        borderRadius: isPill ? '0.18em' : '0.12em',
+        color: active && isPill ? pillTextColor : activeColor,
+        fontWeight: active && (style.activeTreatment === 'weight' || isUnderline)
+          ? Math.max(800, persistentWeight)
+          : persistentWeight,
+        letterSpacing: active && style.activeTreatment === 'weight' ? '-0.035em' : undefined,
+        background: active && (style.activeTreatment === 'punch' || style.activeTreatment === 'burst')
+          ? 'rgba(0,0,0,.72)'
           : undefined,
-    transform: active ? 'scale(1.12) translateY(-0.04em)' : 'scale(1)',
-    transformOrigin: 'center bottom',
-    transition: 'none',
-    textDecoration:
-      important && !active && preset === 'highlight' ? 'underline' : undefined,
-    textDecorationThickness: important ? '0.11em' : undefined,
-    textUnderlineOffset: important ? '0.12em' : undefined,
-    textShadow: active
-      ? `0 0 22px ${activeColor}77, 0 4px 18px rgba(0,0,0,.9)`
-      : important
-        ? `0 0 18px ${importantColor}55, 0 4px 18px rgba(0,0,0,.9)`
-        : undefined,
-    padding:
-      (preset === 'emoji-pop' ||
-        preset === 'particle-burst' ||
-        preset === 'clip-wipe') &&
-      (active || important)
-        ? '0.05em 0.12em 0.08em'
-        : 0,
-    borderRadius:
-      preset === 'emoji-pop' || preset === 'particle-burst' ? '0.14em' : undefined,
-    background:
-      preset === 'clip-wipe' && active
-        ? activeColor
-        : (preset === 'emoji-pop' || preset === 'particle-burst') && active
-        ? 'rgba(0,0,0,.76)'
-        : (preset === 'emoji-pop' || preset === 'particle-burst') && important
-          ? 'rgba(0,0,0,.48)'
+        textDecoration: important && !active && style.activeTreatment === 'highlight'
+          ? 'underline'
           : undefined,
-    WebkitTextFillColor:
-      preset === 'clip-wipe' && active ? '#07090D' : undefined,
-  }
+        textDecorationThickness: important ? '0.1em' : undefined,
+        textUnderlineOffset: important ? '0.12em' : undefined,
+        textShadow: active && style.activeTreatment === 'neon'
+          ? `0 0 0.14em ${activeColor}, 0 0 0.36em ${activeColor}`
+          : active && style.activeTreatment !== 'clean'
+            ? `0 0 0.24em ${hexColorWithAlpha(activeColor, 0.53)}, 0 0.08em 0.24em rgba(0,0,0,.9)`
+            : undefined,
+        transform: `translateY(${active && (style.activeTreatment === 'punch' || style.activeTreatment === 'burst') ? -attack * 0.08 : 0}em) scale(${scale})`,
+        transformOrigin: '50% 75%',
+        transition: 'none',
+      }}
+    >
+      {(isPill || isUnderline) && active && (
+        <span
+          aria-hidden
+          style={{
+            position: 'absolute',
+            zIndex: -1,
+            left: 0,
+            bottom: isUnderline ? '0.02em' : 0,
+            width: `${Math.max(8, progress * 100)}%`,
+            height: isUnderline ? '0.11em' : '100%',
+            borderRadius: isUnderline ? '999px' : '0.18em',
+            background: style.activeColor,
+          }}
+        />
+      )}
+      {active && style.activeTreatment === 'burst' && BURST_MARKS.map((position, index) => (
+        <span
+          key={index}
+          aria-hidden
+          style={{
+            position: 'absolute',
+            ...position,
+            width: '0.1em',
+            height: '0.1em',
+            borderRadius: index % 2 === 0 ? '50%' : '0.02em',
+            background: index % 2 === 0 ? style.activeColor : style.importantColor,
+            opacity: attack,
+            transform: `scale(${0.4 + attack * 0.6})`,
+          }}
+        />
+      ))}
+      <span style={{ position: 'relative', zIndex: 1 }}>{word.text}</span>
+    </span>
+  )
 }
 
 export function CaptionLayer({ project }: { readonly project: VideoProject }) {
   const frame = useCurrentFrame()
-  const { fps, width } = useVideoConfig()
+  const { fps, width, height } = useVideoConfig()
   const document = project.captions
-
-  // Everything below the hooks used to run per frame, including groupCaptionCues —
-  // which starts with a full CaptionDocumentSchema.parse whose refinement hashes every
-  // word. On a 2500-word transcript that is ~16 ms of work 30 times a second, and it is
-  // what made the studio crawl as soon as captions were imported. Neither the cue
-  // grouping nor the id index depends on the frame, so both are computed once.
-  //
-  // Hooks stay above every early return so their order is fixed; the guards that used to
-  // sit here now gate the render below instead.
   const scene = document && document.words.length > 0 ? activeCaptionScene(project, frame) : null
-  const theme = scene ? captionTheme(scene) : null
-  const maxWordsPerCue = theme?.maxWordsPerCue ?? 0
-
+  const templateId = scene?.template?.id ?? document?.templateId
+  const templateProps = scene?.template?.props
+  const style = useMemo(
+    () => document ? resolveCaptionStyle(templateId, templateProps) : null,
+    [document, templateId, templateProps],
+  )
   const cues = useMemo(
-    () =>
-      document && maxWordsPerCue > 0
-        ? groupCaptionCues(document, {
-            maxWordsPerCue,
-            maxCharactersPerCue: 56,
-            maxDurationFrames: Math.max(1, Math.round(fps * 3.2)),
-            maxGapFrames: Math.max(0, Math.round(fps * 0.55)),
-          })
-        : [],
-    [document, maxWordsPerCue, fps],
+    () => document && style
+      ? groupCaptionCues(document, captionGroupingOptionsForStyle(style, fps))
+      : [],
+    [document, style, fps],
   )
   const wordById = useMemo(
     () => new Map((document?.words ?? []).map((word) => [word.id, word])),
     [document],
   )
 
-  if (!document || document.words.length === 0) return null
-  if (scene === null || theme === null) return null
-
-  const cue = cues.find(
-    (candidate) => frame >= candidate.startFrame && frame < candidate.endFrame,
-  )
+  if (!document || document.words.length === 0 || !style) return null
+  if (scene === null) return null
+  const cue = activeCaptionCue(cues, frame)
   if (!cue) return null
-
-  const words = cue.wordIds
-    .map((id) => wordById.get(id))
-    .filter((word): word is CaptionWord => Boolean(word))
-  const preset = presetFromId(scene?.template?.id ?? document.templateId)
-  const cueFrame = frame - cue.startFrame
-  const entrance = spring({
-    fps,
-    frame: cueFrame,
-    config: { damping: 20, stiffness: 250, mass: 0.62 },
-    durationInFrames: Math.max(5, Math.round(fps * 0.28)),
-  })
-  const cueExit = interpolate(
-    frame,
-    [Math.max(cue.startFrame, cue.endFrame - Math.max(2, fps * 0.12)), cue.endFrame],
-    [1, 0],
-    { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' },
+  const metrics = captionLayoutMetrics(
+    style,
+    width,
+    height,
+    cue.lines.map((line) => [...line.text].length),
   )
 
   return (
     <AbsoluteFill
       style={{
-        ...verticalPosition(preset),
+        ...outerStyle(style, metrics),
         ...(scene ? sceneTransformStyle(scene) : {}),
         pointerEvents: 'none',
         zIndex: 1_000_000,
       }}
     >
       <div
+        data-caption-style={style.id}
         style={{
-          ...layoutStyle(preset, width, theme),
-          opacity: entrance * cueExit,
-          transform: `translateY(${(1 - entrance) * 28}px) scale(${
-            preset === 'emoji-pop' || preset === 'particle-burst'
-              ? 0.82 + entrance * 0.18
-              : 0.94 + entrance * 0.06
-          })`,
-          clipPath:
-            preset === 'clip-wipe'
-              ? `inset(0 ${(1 - entrance) * 100}% 0 0)`
-              : undefined,
+          ...pageStyle(style, metrics),
+          ...pageMotion(style, frame, cue.startFrame, cue.endFrame, fps),
         }}
       >
-        {words.map((word, index) => {
-          const active = frame >= word.startFrame && frame < word.endFrame
+        {cue.lines.map((line, lineIndex) => {
+          const words = line.wordIds
+            .map((id) => wordById.get(id))
+            .filter((word): word is CaptionWord => Boolean(word))
           return (
-            <span key={word.id}>
-              {index > 0 && !punctuationWithoutLeadingSpace(word.text) ? ' ' : null}
-              <span style={wordStyle(word, active, preset, theme)}>
-                {word.text}
-              </span>
-            </span>
+            <div
+              key={`${cue.id}:line:${lineIndex}`}
+              style={{ display: 'block', maxWidth: '100%', overflowWrap: 'anywhere', textWrap: 'balance' }}
+            >
+              {words.map((word, wordIndex) => (
+                <span key={word.id}>
+                  {wordIndex > 0 && captionNeedsLeadingSpace(word.text) ? ' ' : null}
+                  <CaptionToken word={word} style={style} frame={frame} fps={fps} />
+                </span>
+              ))}
+            </div>
           )
         })}
       </div>

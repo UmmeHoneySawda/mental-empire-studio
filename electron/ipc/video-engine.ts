@@ -6,9 +6,11 @@ import {
   AUTO_BROLL_DEFAULT_OPTIONS,
   AUTO_BROLL_TRACK_ID,
   createCaptionDocument,
+  customHookPlan,
   emptySpans,
+  mediaFillSeed,
   planMediaFill,
-  groupCaptionCues,
+  safeParseCustomHookConfig,
   safeParseHookPlan,
   VideoGradingSchema,
   VideoProjectSchema,
@@ -316,8 +318,9 @@ async function fillWithMedia(projectId: string, input: FillWithMediaInput): Prom
     fps: project.canvas.fps,
     segmentSeconds: input.mode === 'cycle' ? input.segmentSeconds ?? 8 : 0,
     shuffle: input.shuffle ?? false,
-    // Derived from the project so a re-run reproduces the same arrangement.
-    seed: project.revision * 2654435761 % 2147483647
+    // Stable across unrelated revisions, so reload, preview, export, and a repeated
+    // request all retain the same shuffled order.
+    seed: mediaFillSeed(project.id, assetIds, input.mode === 'cycle' ? input.segmentSeconds ?? 8 : 0)
   })
   if (planned.length === 0) {
     throw new VideoEngineError('INVALID_PROJECT', 'There is no empty space on this track to fill.')
@@ -765,7 +768,10 @@ async function captionCues(projectId: string, maxWordsPerCue?: number): Promise<
   const project = await engine.openProject(projectId)
   if (!project.captions) return { cues: [], words: [], transcriptHash: '' }
   return {
-    cues: groupCaptionCues(project.captions, maxWordsPerCue ? { maxWordsPerCue } : {}),
+    cues: engine.compileCaptionCues(
+      project,
+      maxWordsPerCue ? { maxWordsPerCue } : {},
+    ),
     words: project.captions.words,
     transcriptHash: project.captions.transcriptHash
   }
@@ -850,6 +856,40 @@ async function importHookPlan(projectId: string, json: string): Promise<Imported
   }
   const compiled = await engine.importHookPlan(projectId, parsed.data)
   return { project: compiled.project, plan: parsed.data, brollRequests: compiled.brollRequests }
+}
+
+/** Validates the bounded custom-hook vocabulary before opening or writing a project, then
+ *  hands the resulting ordinary HookPlan to the same compiler as every built-in hook. */
+async function importCustomHook(projectId: string, json: string): Promise<ImportedHookPlan> {
+  const parsed = safeParseCustomHookConfig(json)
+  if (!parsed.success) {
+    throw new VideoEngineError(
+      'INVALID_HOOK_PLAN',
+      `Custom hook config is invalid: ${parsed.error.issues
+        .slice(0, 8)
+        .map((issue) => `${issue.path.join('.') || 'root'}: ${issue.message}`)
+        .join('; ')}`
+    )
+  }
+  const engine = await getVideoEngine()
+  const project = await engine.openProject(projectId)
+  if (project.rendererId !== 'remotion') {
+    throw new VideoEngineError(
+      'INVALID_TEMPLATE',
+      'Custom declarative hooks are currently available in the Remotion renderer.'
+    )
+  }
+  const plan = customHookPlan(parsed.data, { fps: project.canvas.fps })
+  const compiled = await engine.importHookPlan(projectId, plan)
+  sentryLog.info('Studio custom hook imported', {
+    project_id: projectId,
+    renderer: project.rendererId,
+    template_id: plan.templateId,
+    duration_frames: plan.durationFrames,
+    animation_preset: parsed.data.animationPreset,
+    operation: 'video_hook_custom_import'
+  })
+  return { project: compiled.project, plan, brollRequests: compiled.brollRequests }
 }
 
 /** Reads the compiled plan back off a project, so the studio can rehydrate the beats list
@@ -1051,6 +1091,8 @@ export function registerVideoEngineIpc(): void {
     guard('hookPrompt', () => hookPrompt(reqString(projectId, 'projectId'), input)))
   ipcMain.handle('videoEngine:importHookPlan', (_e, projectId: string, json: string) =>
     guard('importHookPlan', () => importHookPlan(reqString(projectId, 'projectId'), reqString(json, 'json'))))
+  ipcMain.handle('videoEngine:importCustomHook', (_e, projectId: string, json: string) =>
+    guard('importCustomHook', () => importCustomHook(reqString(projectId, 'projectId'), reqString(json, 'json'))))
   ipcMain.handle('videoEngine:generateHookPlan', (_e, projectId: string, input: HookPromptInput) =>
     guard('generateHookPlan', () => generateHookPlanFor(reqString(projectId, 'projectId'), input)))
   ipcMain.handle('videoEngine:updateHookBeat', (_e, projectId: string, beatId: string, patch: HookBeatPatch) =>

@@ -3,18 +3,23 @@ import {
   AbsoluteFill,
   Easing,
   interpolate,
-  spring,
   useCurrentFrame,
   useVideoConfig,
 } from 'remotion'
 import {
   HookPlanSchema,
+  hexColorWithAlpha,
+  hookPaletteFor,
+  resolveHookStyle,
   type HookBeat,
+  type HookBackgroundPreset,
   type HookPlan,
+  type HookPalette,
   type VideoProject,
   type VideoScene,
 } from '../../shared/video-engine'
 import { sceneTransformStyle, VisualAsset } from './asset'
+import { hookEntranceProgress, hookMotionValues } from './hook-motion'
 
 function hookPlanFromScene(scene: VideoScene): HookPlan | null {
   const props = scene.template?.props
@@ -40,40 +45,41 @@ function activeBeat(plan: HookPlan, frame: number): HookBeat | null {
   )
 }
 
-function paletteFor(variant: string | undefined): {
-  accent: string
-  accentSoft: string
-  background: string
-} {
-  switch (variant) {
-    case 'warning':
-    case 'urgent':
-      return {
-        accent: '#FF4D35',
-        accentSoft: '#FFB21A',
-        background: '#190504',
-      }
-    case 'luxury':
-    case 'cinematic':
-      return {
-        accent: '#EBCB83',
-        accentSoft: '#FFF2C9',
-        background: '#090A0D',
-      }
-    case 'clean':
-    case 'minimal':
-      return {
-        accent: '#1CE1C5',
-        accentSoft: '#B9FFF5',
-        background: '#071210',
-      }
-    default:
-      return {
-        accent: '#B8FF35',
-        accentSoft: '#E8FFB9',
-        background: '#07090D',
-      }
+function backgroundStyle(preset: HookBackgroundPreset, palette: HookPalette): CSSProperties {
+  if (preset === 'solid') return { backgroundColor: palette.background }
+  if (preset === 'grid') {
+    return {
+      backgroundColor: palette.background,
+      backgroundImage: `linear-gradient(${hexColorWithAlpha(palette.accent, 24 / 255)} 1px, transparent 1px), linear-gradient(90deg, ${hexColorWithAlpha(palette.accent, 24 / 255)} 1px, transparent 1px), radial-gradient(circle at 76% 42%, ${hexColorWithAlpha(palette.accent, 42 / 255)}, transparent 42%)`,
+      backgroundSize: '72px 72px, 72px 72px, auto',
+    }
   }
+  if (preset === 'spotlight') {
+    return {
+      backgroundColor: palette.background,
+      backgroundImage: `radial-gradient(circle at 68% 30%, ${hexColorWithAlpha(palette.accent, 66 / 255)} 0%, ${hexColorWithAlpha(palette.accent, 18 / 255)} 24%, transparent 58%), linear-gradient(135deg, ${palette.background}, #030407)`,
+    }
+  }
+  if (preset === 'split') {
+    return {
+      backgroundColor: palette.background,
+      backgroundImage: `linear-gradient(90deg, ${palette.background} 0%, ${palette.background} 58%, ${hexColorWithAlpha(palette.accent, 36 / 255)} 58%, #02060D 100%)`,
+    }
+  }
+  return {
+    backgroundColor: palette.background,
+    backgroundImage: `radial-gradient(circle at 78% 24%, ${hexColorWithAlpha(palette.accent, 69 / 255)}, transparent 42%), linear-gradient(135deg, ${palette.background}, #05070E 72%)`,
+  }
+}
+
+function templateEyebrow(templateId: string): string {
+  if (templateId.includes('motivational')) return 'MOMENTUM'
+  if (templateId.includes('psychological')) return 'MIND SHIFT'
+  if (templateId.includes('self-improvement')) return 'PROGRESS PATH'
+  if (templateId.includes('educational')) return 'LESSON / 01'
+  if (templateId.includes('cinematic')) return 'A SHORT FILM'
+  if (templateId.includes('custom')) return 'CUSTOM HOOK'
+  return 'WATCH THIS'
 }
 
 function normalizedToken(value: string): string {
@@ -115,7 +121,7 @@ function ImportantText({
               important
                 ? {
                     color: accent,
-                    textShadow: `0 0 28px ${accent}55`,
+                    textShadow: `0 0 28px ${hexColorWithAlpha(accent, 85 / 255)}`,
                   }
                 : undefined
             }
@@ -221,20 +227,28 @@ export function HookTemplate({
   if (!beat) return null
 
   const beatFrame = planFrame - beat.startFrame
-  const enter = spring({
+  const templateProps = scene.template?.props ?? {}
+  const style = resolveHookStyle(plan.templateId, templateProps)
+  const enter = hookEntranceProgress({
     fps: plan.fps,
     frame: beatFrame,
-    config: { damping: 18, stiffness: 170, mass: 0.7 },
-    durationInFrames: Math.max(8, Math.min(24, beat.durationFrames)),
+    durationFrames: beat.durationFrames,
+    energy: style.energy,
   })
-  const palette = paletteFor(beat.variant)
+  const motion = hookMotionValues(style.animationPreset, enter, style.alignment)
+  const palette = hookPaletteFor(style, beat.variant)
+  const headline = beat.headline
+    ?? (typeof templateProps['headline'] === 'string' ? templateProps['headline'] : '')
+  const body = beat.body
+    ?? (typeof templateProps['subheadline'] === 'string' ? templateProps['subheadline'] : '')
   const importantIds = new Set(beat.importantWordIds ?? [])
   const fallbackImportantTexts = new Set(
     (project.captions?.words ?? [])
       .filter((word) => importantIds.has(word.id))
       .map((word) => normalizedToken(word.text)),
   )
-  const headlineSize = Math.max(48, Math.min(132, Math.round(width * 0.074)))
+  const canvasScale = Math.max(0.72, Math.min(1.25, width / 1920))
+  const headlineSize = Math.round(style.fontSize * canvasScale)
   const visualScale = interpolate(
     beatFrame,
     [0, Math.max(1, beat.durationFrames)],
@@ -247,42 +261,63 @@ export function HookTemplate({
     <AbsoluteFill
       style={{
         overflow: 'hidden',
-        backgroundColor: palette.background,
-        color: '#FFFFFF',
-        fontFamily: '"Space Grotesk", "Arial Black", Arial, sans-serif',
+        ...backgroundStyle(style.backgroundPreset, palette),
+        color: palette.text,
+        fontFamily: `"${style.fontFamily}", "Space Grotesk", Arial, sans-serif`,
         ...sceneTransformStyle(scene),
       }}
     >
       <HookVisual beat={beat} project={project} scene={scene}>
         <AbsoluteFill
           style={{
-            transform: `scale(${visualScale})`,
+            scale: visualScale,
             background: assetOverlay(beat.visual.kind, palette),
           }}
         />
         <AbsoluteFill
           style={{
             background:
-              'linear-gradient(90deg, rgba(2,3,7,0.94) 0%, rgba(2,3,7,0.64) 48%, rgba(2,3,7,0.14) 100%)',
+              style.alignment === 'right'
+                ? 'linear-gradient(270deg, rgba(2,3,7,0.84) 0%, rgba(2,3,7,0.38) 56%, rgba(2,3,7,0.05) 100%)'
+                : style.alignment === 'center'
+                  ? 'radial-gradient(circle at center, rgba(2,3,7,0.2), rgba(2,3,7,0.62))'
+                  : 'linear-gradient(90deg, rgba(2,3,7,0.84) 0%, rgba(2,3,7,0.38) 56%, rgba(2,3,7,0.05) 100%)',
           }}
         />
-        <AbsoluteFill
-          style={{
-            opacity: 0.28,
-            backgroundImage:
-              'linear-gradient(rgba(255,255,255,.07) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.07) 1px, transparent 1px)',
-            backgroundSize: '72px 72px',
-            transform: `translateY(${(planFrame * 0.4) % 72}px)`,
-          }}
-        />
+        {style.backgroundPreset === 'grid' ? (
+          <AbsoluteFill
+            style={{
+              opacity: 0.34,
+              backgroundImage:
+                'linear-gradient(rgba(255,255,255,.07) 1px, transparent 1px), linear-gradient(90deg, rgba(255,255,255,.07) 1px, transparent 1px)',
+              backgroundSize: '72px 72px',
+              backgroundPositionY: (planFrame * 0.4) % 72,
+            }}
+          />
+        ) : null}
 
         <AbsoluteFill
           style={{
-            justifyContent: 'center',
+            justifyContent: style.position === 'top' ? 'flex-start' : style.position === 'bottom' ? 'flex-end' : 'center',
+            alignItems: style.alignment === 'left' ? 'flex-start' : style.alignment === 'right' ? 'flex-end' : 'center',
+            textAlign: style.alignment,
             padding: '8%',
             ...contentExit,
           }}
         >
+          <div
+            style={{
+              marginBottom: 18,
+              color: palette.accent,
+              fontFamily: '"JetBrains Mono", monospace',
+              fontSize: Math.max(15, Math.round(width * 0.011)),
+              fontWeight: 600,
+              letterSpacing: '0.18em',
+              opacity: enter,
+            }}
+          >
+            {templateEyebrow(plan.templateId)}
+          </div>
           <div
             style={{
               width: 112,
@@ -290,22 +325,26 @@ export function HookTemplate({
               marginBottom: 34,
               borderRadius: 999,
               background: palette.accent,
-              boxShadow: `0 0 42px ${palette.accent}99`,
-              transform: `scaleX(${enter})`,
-              transformOrigin: 'left center',
+              boxShadow: `0 0 42px ${hexColorWithAlpha(palette.accent, 0.6)}`,
+              scale: `${enter} 1`,
+              transformOrigin: style.alignment === 'right' ? 'right center' : style.alignment === 'center' ? 'center' : 'left center',
             }}
           />
-          {beat.headline ? (
+          {headline ? (
             <div
               style={{
-                maxWidth: '88%',
+                maxWidth: style.backgroundPreset === 'split' ? '54%' : style.alignment === 'center' ? '84%' : '88%',
                 fontSize: headlineSize,
-                fontWeight: 800,
-                lineHeight: 0.94,
-                letterSpacing: '-0.055em',
-                textTransform: 'uppercase',
-                opacity: enter,
-                transform: `translateY(${(1 - enter) * 64}px)`,
+                fontWeight: style.fontWeight,
+                lineHeight: style.lineHeight,
+                letterSpacing: style.letterSpacing,
+                textTransform: plan.templateId.includes('motivational') || plan.templateId.includes('kinetic') ? 'uppercase' : 'none',
+                opacity: motion.opacity,
+                translate: `${motion.translateX}px ${motion.translateY}px`,
+                scale: motion.scale,
+                rotate: `${motion.rotate}deg`,
+                filter: motion.blur > 0.01 ? `blur(${motion.blur}px)` : undefined,
+                clipPath: style.animationPreset === 'cinematic' ? `inset(${(1 - motion.reveal) * 100}% 0 0)` : undefined,
                 textShadow: '0 12px 60px rgba(0,0,0,.55)',
               }}
             >
@@ -316,14 +355,14 @@ export function HookTemplate({
                 field="headline"
                 accent={palette.accent}
               >
-                {beat.headline}
+                {headline}
               </ImportantText>
             </div>
           ) : null}
-          {beat.body ? (
+          {body ? (
             <div
               style={{
-                maxWidth: '70%',
+                maxWidth: style.backgroundPreset === 'split' ? '50%' : '70%',
                 marginTop: 30,
                 color: palette.accentSoft,
                 fontSize: Math.max(24, Math.min(46, width * 0.027)),
@@ -334,7 +373,7 @@ export function HookTemplate({
                   extrapolateLeft: 'clamp',
                   extrapolateRight: 'clamp',
                 }),
-                transform: `translateY(${(1 - enter) * 34}px)`,
+                translate: `0 ${(1 - enter) * 34}px`,
               }}
             >
               <ImportantText
@@ -344,7 +383,7 @@ export function HookTemplate({
                 field="body"
                 accent={palette.accent}
               >
-                {beat.body}
+                {body}
               </ImportantText>
             </div>
           ) : null}
@@ -370,13 +409,13 @@ export function HookTemplate({
 
 function assetOverlay(
   kind: HookBeat['visual']['kind'],
-  palette: ReturnType<typeof paletteFor>,
+  palette: HookPalette,
 ): string {
   if (kind === 'asset') {
-    return `radial-gradient(circle at 75% 48%, ${palette.accent}18, transparent 48%)`
+    return `radial-gradient(circle at 75% 48%, ${hexColorWithAlpha(palette.accent, 24 / 255)}, transparent 48%)`
   }
   if (kind === 'broll') {
-    return `radial-gradient(circle at 72% 38%, ${palette.accent}40, transparent 38%), linear-gradient(135deg, ${palette.background}, #121926)`
+    return `radial-gradient(circle at 72% 38%, ${hexColorWithAlpha(palette.accent, 64 / 255)}, transparent 38%), linear-gradient(135deg, ${palette.background}, #121926)`
   }
-  return `radial-gradient(circle at 74% 42%, ${palette.accent}33, transparent 38%), linear-gradient(135deg, ${palette.background}, #111725)`
+  return `radial-gradient(circle at 74% 42%, ${hexColorWithAlpha(palette.accent, 51 / 255)}, transparent 38%), linear-gradient(135deg, ${palette.background}, #111725)`
 }

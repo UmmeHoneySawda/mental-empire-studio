@@ -2,6 +2,8 @@ import {
   AUTO_BROLL_TRACK_ID,
   AUTO_BROLL_TRACK_NAME,
   AUTO_BROLL_TRACK_ORDER,
+  mediaFillSeed,
+  planMediaFill,
   type AutoBrollPlacement,
   type VideoProject,
   type VideoScene,
@@ -22,6 +24,12 @@ import { MIN_CLIP_FRAMES } from './constants'
 
 const uid = (prefix: string): string =>
   `${prefix}-${crypto.randomUUID?.() ?? Math.random().toString(36).slice(2)}`
+
+export const IMAGE_CYCLE_TRACK_ID = 'image-cycle'
+export const IMAGE_CYCLE_TRACK_NAME = 'Image cycle'
+export const IMAGE_CYCLE_TRACK_ORDER = 0
+export const IMAGE_CYCLE_SCENE_PREFIX = 'image-cycle-scene-'
+export type ImageCycleInterval = 3 | 4
 
 /** The frames a clip may occupy: inside the canvas, at least MIN_CLIP_FRAMES long. */
 function clampSpan(
@@ -294,6 +302,90 @@ export function applyAutoBroll(
 
   if (added.length === 0) return project
   return { ...project, tracks, assets, scenes: [...project.scenes, ...added] }
+}
+
+/** Covers the complete project with selected stills on one dedicated lane.
+ *
+ * One pure transform is one editor undo entry. Existing generated scenes are replaced,
+ * while every unrelated track and scene is retained. Scene ids and shuffled order are
+ * deterministic for the project + selection + interval, so a repeated click is a no-op
+ * and the saved project is exactly what preview and export consume. */
+export function applyImageCycle(
+  project: VideoProject,
+  assetIds: readonly string[],
+  intervalSeconds: ImageCycleInterval,
+  shuffle: boolean
+): VideoProject {
+  if (intervalSeconds !== 3 && intervalSeconds !== 4) return project
+  const imageIds = [...new Set(assetIds)].filter((id) =>
+    project.assets.some((asset) => asset.id === id && asset.kind === 'image')
+  )
+  if (imageIds.length < 2 || project.canvas.durationFrames < 1) return project
+
+  const existingTrack = project.tracks.find((track) => track.id === IMAGE_CYCLE_TRACK_ID)
+  if (existingTrack && existingTrack.kind !== 'video' && existingTrack.kind !== 'overlay') {
+    return project
+  }
+  const seed = mediaFillSeed(project.id, imageIds, intervalSeconds)
+  const plan = planMediaFill({
+    assetIds: imageIds,
+    spans: [{ startFrame: 0, endFrame: project.canvas.durationFrames }],
+    fps: project.canvas.fps,
+    segmentSeconds: intervalSeconds,
+    shuffle,
+    seed
+  })
+  if (plan.length === 0) return project
+
+  const generated: VideoScene[] = plan.map((slot, index) => ({
+    id: `${IMAGE_CYCLE_SCENE_PREFIX}${seed.toString(36)}-${index}`,
+    trackId: IMAGE_CYCLE_TRACK_ID,
+    kind: 'media',
+    startFrame: slot.startFrame,
+    durationFrames: slot.durationFrames,
+    zIndex: 0,
+    assetId: slot.assetId,
+    fit: 'cover',
+    opacity: 1,
+    volume: 0
+  }))
+
+  const currentGenerated = project.scenes.filter((scene) =>
+    scene.id.startsWith(IMAGE_CYCLE_SCENE_PREFIX)
+  )
+  const currentById = new Map(currentGenerated.map((scene) => [scene.id, scene]))
+  const alreadyApplied = Boolean(existingTrack)
+    && existingTrack?.order === IMAGE_CYCLE_TRACK_ORDER
+    && currentGenerated.length === generated.length
+    && generated.every((scene) => {
+      const current = currentById.get(scene.id)
+      return current?.trackId === scene.trackId
+        && current.kind === scene.kind
+        && current.startFrame === scene.startFrame
+        && current.durationFrames === scene.durationFrames
+        && current.assetId === scene.assetId
+        && current.fit === scene.fit
+        && current.opacity === scene.opacity
+        && current.volume === scene.volume
+    })
+  if (alreadyApplied) return project
+
+  const tracks: VideoTrack[] = existingTrack
+    ? project.tracks.map((track) => track.id === IMAGE_CYCLE_TRACK_ID
+        ? { ...track, order: IMAGE_CYCLE_TRACK_ORDER }
+        : track)
+    : [...project.tracks, {
+        id: IMAGE_CYCLE_TRACK_ID,
+        name: IMAGE_CYCLE_TRACK_NAME,
+        kind: 'video',
+        order: IMAGE_CYCLE_TRACK_ORDER,
+        muted: false,
+        locked: false
+      }]
+  const kept = project.scenes.filter((scene) =>
+    !scene.id.startsWith(IMAGE_CYCLE_SCENE_PREFIX)
+  )
+  return { ...project, tracks, scenes: [...kept, ...generated] }
 }
 
 /** Sets a per-clip field the inspector owns (opacity, volume, fit, transform, text…). */

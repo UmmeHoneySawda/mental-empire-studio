@@ -1,5 +1,11 @@
 import {
+  CAPTION_STYLE_DEFINITIONS,
+  CAPTION_STYLE_IDS,
+  captionStyleTemplateDefaults,
+  hookStylePresetFor,
+  REMOTION_CUSTOM_HOOK_TEMPLATE_ID,
   TemplateManifestSchema,
+  type HookStyleProps,
   type RendererId,
   type TemplateKind,
   type TemplateManifest
@@ -40,7 +46,8 @@ function manifest(input: {
   })
 }
 
-const hookParameters: TemplateManifest['parameters'] = [
+function hookParameters(style?: HookStyleProps): TemplateManifest['parameters'] {
+  const parameters: TemplateManifest['parameters'] = [
   {
     key: 'headline',
     label: 'Headline',
@@ -61,14 +68,14 @@ const hookParameters: TemplateManifest['parameters'] = [
     label: 'Accent color',
     type: 'color',
     required: false,
-    default: '#F8E71C'
+    default: style?.accentColor ?? '#F8E71C'
   },
   {
     key: 'backgroundColor',
     label: 'Background color',
     type: 'color',
     required: false,
-    default: '#080808'
+    default: style?.backgroundColor ?? '#080808'
   },
   {
     key: 'energy',
@@ -76,107 +83,219 @@ const hookParameters: TemplateManifest['parameters'] = [
     type: 'enum',
     required: false,
     values: ['restrained', 'balanced', 'intense'],
-    default: 'balanced'
+    default: style?.energy ?? 'balanced'
   }
-]
+  ]
+  if (!style) return parameters
+  return [
+    ...parameters,
+    { key: 'textColor', label: 'Text color', type: 'color', required: false, default: style.textColor },
+    {
+      key: 'animationPreset',
+      label: 'Animation',
+      type: 'enum',
+      required: false,
+      values: ['kinetic', 'cinematic', 'punch', 'focus', 'rise', 'slide'],
+      default: style.animationPreset
+    },
+    {
+      key: 'backgroundPreset',
+      label: 'Background',
+      type: 'enum',
+      required: false,
+      values: ['solid', 'gradient', 'grid', 'spotlight', 'split'],
+      default: style.backgroundPreset
+    },
+    {
+      key: 'alignment',
+      label: 'Alignment',
+      type: 'enum',
+      required: false,
+      values: ['left', 'center', 'right'],
+      default: style.alignment
+    },
+    {
+      key: 'position',
+      label: 'Position',
+      type: 'enum',
+      required: false,
+      values: ['top', 'center', 'bottom'],
+      default: style.position
+    },
+    {
+      key: 'fontFamily',
+      label: 'Font',
+      type: 'enum',
+      required: false,
+      values: ['Space Grotesk', 'Hanken Grotesk', 'Anton', 'JetBrains Mono'],
+      default: style.fontFamily
+    },
+    { key: 'fontSize', label: 'Headline size', type: 'number', required: false, default: style.fontSize, minimum: 32, maximum: 180, integer: true },
+    { key: 'fontWeight', label: 'Weight', type: 'number', required: false, default: style.fontWeight, minimum: 400, maximum: 700, integer: true },
+    { key: 'lineHeight', label: 'Line height', type: 'number', required: false, default: style.lineHeight, minimum: 0.8, maximum: 1.6, integer: false },
+    { key: 'letterSpacing', label: 'Letter spacing', type: 'number', required: false, default: style.letterSpacing, minimum: -10, maximum: 16, integer: false }
+  ]
+}
 
-const captionParameters: TemplateManifest['parameters'] = [
+function captionParameters(styleId: (typeof CAPTION_STYLE_IDS)[number]): TemplateManifest['parameters'] {
+  const style = CAPTION_STYLE_DEFINITIONS[styleId]
+  const defaults = captionStyleTemplateDefaults(style)
+  return [
   {
     key: 'fontFamily',
     label: 'Font family',
-    type: 'string',
+    type: 'enum',
     required: false,
-    default: 'Hanken Grotesk',
-    maxLength: 128
+    default: defaults.fontFamily,
+    values: ['Space Grotesk', 'Hanken Grotesk', 'Anton', 'JetBrains Mono']
   },
   {
     key: 'textColor',
     label: 'Text color',
     type: 'color',
     required: false,
-    default: '#FFFFFF'
+    default: defaults.textColor
   },
   {
     key: 'activeColor',
     label: 'Spoken-word color',
     type: 'color',
     required: false,
-    default: '#F8E71C'
+    default: defaults.activeColor
   },
   {
     key: 'importantColor',
     label: 'Important-word color',
     type: 'color',
     required: false,
-    default: '#FF4D4D'
+    default: defaults.importantColor
   },
   {
     key: 'maxWordsPerCue',
     label: 'Maximum words per cue',
     type: 'number',
     required: false,
-    default: 6,
+    default: defaults.maxWordsPerCue,
     minimum: 1,
     maximum: 12,
     integer: true
+  },
+  {
+    key: 'maxCharactersPerLine',
+    label: 'Maximum characters per line',
+    type: 'number',
+    required: false,
+    default: defaults.maxCharactersPerLine,
+    minimum: 10,
+    maximum: 42,
+    integer: true
   }
-]
+  ]
+}
 
 function hookTemplates(rendererId: RendererId): TemplateManifest[] {
   const prefix = rendererId === 'remotion' ? 'remotion' : 'hyperframes'
-  return [
+  const parametersFor = (id: string): TemplateManifest['parameters'] =>
+    rendererId === 'remotion' ? hookParameters(hookStylePresetFor(id)) : hookParameters()
+  const templates = [
     manifest({
       id: `${prefix}-hook-kinetic-30`,
       rendererId,
       kind: 'hook',
-      name: '30s Kinetic Hook',
-      description: 'A configurable five-beat hook with oversized kinetic type, proof beat, tension beat, and payoff.',
+      name: 'Kinetic Hook',
+      description: 'Fast oversized type for a concise promise, proof, tension, payoff, and turn.',
       minimumFrames: 24,
       maximumFrames: 7_200,
-      defaultFrames: 900,
+      defaultFrames: 300,
       capabilities: ['audio', 'broll', 'dynamic-duration', 'transitions'],
-      parameters: hookParameters,
-      tags: ['hook', 'intro', 'kinetic', '30-second']
+      parameters: parametersFor(`${prefix}-hook-kinetic-30`),
+      tags: ['hook', 'intro', 'kinetic', 'short-form']
     }),
     manifest({
       id: `${prefix}-hook-cinematic-30`,
       rendererId,
       kind: 'hook',
-      name: '30s Cinematic Hook',
-      description: 'A restrained cinematic hook with layered media, editorial typography, light leaks, and reveal beats.',
+      name: 'Cinematic Hook',
+      description: 'Restrained editorial typography, a soft spotlight, and measured reveal beats.',
       minimumFrames: 24,
       maximumFrames: 7_200,
-      defaultFrames: 900,
+      defaultFrames: 300,
       capabilities: ['audio', 'broll', 'dynamic-duration', 'lut-grading', 'transitions'],
-      parameters: hookParameters,
-      tags: ['hook', 'intro', 'cinematic', '30-second']
+      parameters: parametersFor(`${prefix}-hook-cinematic-30`),
+      tags: ['hook', 'intro', 'cinematic', 'editorial']
     })
+  ]
+  if (rendererId !== 'remotion') return templates
+
+  const remotionPresets: ReadonlyArray<{
+    id: string
+    name: string
+    description: string
+    tags: string[]
+  }> = [
+    {
+      id: 'remotion-hook-motivational',
+      name: 'Motivational Punch',
+      description: 'Centered Anton type with an energetic scale punch and warm high-contrast palette.',
+      tags: ['hook', 'motivational', 'punch', 'creator']
+    },
+    {
+      id: 'remotion-hook-psychological-tip',
+      name: 'Mind Shift',
+      description: 'Calm focus motion and a violet spotlight for psychology, mindset, and behavior tips.',
+      tags: ['hook', 'psychology', 'mindset', 'tip']
+    },
+    {
+      id: 'remotion-hook-self-improvement',
+      name: 'Progress Path',
+      description: 'Grounded rising type and a structured grid for habits, growth, and self-improvement.',
+      tags: ['hook', 'self-improvement', 'habits', 'progress']
+    },
+    {
+      id: 'remotion-hook-educational',
+      name: 'Lesson Board',
+      description: 'A left teaching panel that preserves visual room for talking-head or demonstration footage.',
+      tags: ['hook', 'educational', 'talking-head', 'lesson']
+    },
+    {
+      id: REMOTION_CUSTOM_HOOK_TEMPLATE_ID,
+      name: 'Custom Declarative Hook',
+      description: 'A bounded JSON-configured hook using trusted typography, motion, layout, and background presets.',
+      tags: ['hook', 'custom', 'declarative', 'safe']
+    }
+  ]
+  return [
+    ...templates,
+    ...remotionPresets.map((preset) => manifest({
+      ...preset,
+      rendererId,
+      kind: 'hook',
+      minimumFrames: 24,
+      maximumFrames: 7_200,
+      defaultFrames: 240,
+      capabilities: ['audio', 'broll', 'dynamic-duration', 'transitions'],
+      parameters: parametersFor(preset.id)
+    }))
   ]
 }
 
-const captionStyles = [
-  ['emoji-pop', 'Emoji Pop'],
-  ['clip-wipe', 'Clip Wipe'],
-  ['highlight', 'Active Highlight'],
-  ['neon-accent', 'Neon Accent'],
-  ['particle-burst', 'Particle Burst'],
-  ['weight-shift', 'Weight Shift']
-] as const
-
 function captionTemplates(rendererId: RendererId): TemplateManifest[] {
   const prefix = rendererId === 'remotion' ? 'remotion' : 'hyperframes'
-  return captionStyles.map(([id, name]) => manifest({
+  return CAPTION_STYLE_IDS.map((id) => {
+    const style = CAPTION_STYLE_DEFINITIONS[id]
+    return manifest({
     id: `${prefix}-caption-${id}`,
     implementationId: `caption-${id}`,
     rendererId,
     kind: 'caption',
-    name,
-    description: `${name} word-timed captions with separate spoken-word and AI-selected important-word emphasis.`,
+    name: style.name,
+    description: `${style.description} Spoken and AI-selected important words remain separate.`,
     defaultFrames: 90,
     capabilities: ['captions', 'dynamic-duration', 'word-highlighting'],
-    parameters: captionParameters,
-    tags: ['caption', 'word-timed', 'highlight']
-  }))
+    parameters: captionParameters(id),
+    tags: ['caption', 'word-timed', 'highlight', id]
+    })
+  })
 }
 
 function transitionTemplate(

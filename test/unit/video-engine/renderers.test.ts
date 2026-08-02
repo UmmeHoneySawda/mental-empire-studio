@@ -3,7 +3,7 @@ import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { runHyperframeLint } from '@hyperframes/producer'
 import { describe, expect, it } from 'vitest'
-import { VideoProjectSchema } from '../../../shared/video-engine'
+import { CAPTION_STYLE_IDS, VideoProjectSchema } from '../../../shared/video-engine'
 import { BUILTIN_VIDEO_TEMPLATES } from '../../../electron/services/video-engine/templates/builtins'
 import {
   HYPERFRAMES_CAPTION_TEMPLATE_IDS,
@@ -18,14 +18,9 @@ import {
   REMOTION_CAPTION_TEMPLATE_IDS,
 } from '../../../video-engine/remotion/constants'
 
-const canonicalHyperframesCaptionIds = [
-  'hyperframes-caption-emoji-pop',
-  'hyperframes-caption-clip-wipe',
-  'hyperframes-caption-highlight',
-  'hyperframes-caption-neon-accent',
-  'hyperframes-caption-particle-burst',
-  'hyperframes-caption-weight-shift',
-] as const
+const canonicalHyperframesCaptionIds = CAPTION_STYLE_IDS.map(
+  (id) => `hyperframes-caption-${id}`,
+)
 
 describe('renderer template alignment', () => {
   it('advertises only hook and caption IDs implemented by Remotion', () => {
@@ -34,8 +29,8 @@ describe('renderer template alignment', () => {
     )
     const hooks = remotion.filter((template) => template.kind === 'hook')
     const captions = remotion.filter((template) => template.kind === 'caption')
-    expect(hooks).toHaveLength(2)
-    expect(captions).toHaveLength(6)
+    expect(hooks).toHaveLength(7)
+    expect(captions).toHaveLength(10)
     expect(hooks.every((template) => HOOK_TEMPLATE_IDS.has(template.id))).toBe(true)
     expect(captions.map((template) => template.id).sort()).toEqual(
       [...REMOTION_CAPTION_TEMPLATE_IDS].sort(),
@@ -49,13 +44,13 @@ describe('renderer template alignment', () => {
     const hooks = hyperframes.filter((template) => template.kind === 'hook')
     const captions = hyperframes.filter((template) => template.kind === 'caption')
     expect(hooks).toHaveLength(2)
-    expect(captions).toHaveLength(6)
+    expect(captions).toHaveLength(10)
     for (const template of [...hooks, ...captions]) {
       expect(getHyperframesTemplateManifest(template.id, template.version)).toBeDefined()
     }
   })
 
-  it('keeps legacy HyperFrames caption aliases in addition to the six canonical styles', () => {
+  it('keeps legacy HyperFrames caption aliases in addition to the ten canonical styles', () => {
     expect(HYPERFRAMES_CAPTION_TEMPLATE_IDS).toEqual(
       expect.arrayContaining([
         ...canonicalHyperframesCaptionIds,
