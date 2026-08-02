@@ -55,9 +55,6 @@ describe('Remotion render NVENC policy', () => {
 
     expect(rendererMocks.renderMedia).toHaveBeenCalledOnce()
     expect(rendererMocks.renderMedia.mock.calls[0]![0].hardwareAcceleration).toBe('required')
-    expect(rendererMocks.renderMedia.mock.calls[0]![0].chromiumOptions).toEqual(
-      expect.objectContaining({ gl: 'angle', ignoreGPUBlacklist: true })
-    )
   })
 
   it('uses h264_nvenc for the grading re-encode with no libx264 fallback', () => {

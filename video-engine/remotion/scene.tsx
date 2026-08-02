@@ -259,12 +259,14 @@ export function SceneContent({
   const asset = project.assets.find((candidate) => candidate.id === scene.assetId)
   if (!asset) return null
 
+  const track = project.tracks.find((candidate) => candidate.id === scene.trackId)
+  const muted = track?.muted ?? false
+
   if (scene.kind === 'audio' || asset.kind === 'audio') {
-    return <AudioAsset asset={asset} scene={scene} />
+    return <AudioAsset asset={asset} scene={scene} muted={muted} />
   }
 
-  const track = project.tracks.find((candidate) => candidate.id === scene.trackId)
-  return <VisualAsset asset={asset} scene={scene} muted={track?.muted ?? false} />
+  return <VisualAsset asset={asset} scene={scene} muted={muted} />
 }
 
 export function sceneLayerStyle(

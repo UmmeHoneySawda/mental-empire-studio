@@ -65,17 +65,22 @@ export function sceneTransformStyle(scene: VideoScene): CSSProperties {
 export function AudioAsset({
   asset,
   scene,
+  muted = false,
 }: {
   readonly asset: VideoAsset
   readonly scene: VideoScene
+  readonly muted?: boolean
 }) {
   const trim = sourceTrim(scene)
+  const volume = scene.volume ?? 1
+  const isMuted = muted || volume <= 0
   return (
     <Audio
       src={asset.uri}
       trimBefore={trim.trimBefore}
       trimAfter={trim.trimAfter}
-      volume={scene.volume ?? 1}
+      volume={isMuted ? undefined : volume}
+      muted={isMuted}
     />
   )
 }
@@ -131,4 +136,3 @@ export function VisualAsset({
 
   return null
 }
-
