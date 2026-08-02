@@ -57,6 +57,20 @@ const NOOP_TELEMETRY: RemotionRendererTelemetry = Object.freeze({
   captureException: () => undefined,
 })
 
+const DEFAULT_CHROMIUM_OPTIONS = Object.freeze({
+  gl: 'angle' as const,
+  ignoreGPUBlacklist: true,
+  extraArgs: [
+    '--ignore-gpu-blocklist',
+    '--enable-gpu-rasterization',
+    '--enable-zero-copy',
+    '--use-angle=d3d11',
+    '--enable-features=CanvasOopRasterization,VaapiVideoDecoder,RawDraw',
+    '--disable-software-rasterizer',
+    '--force-gpu-rasterization',
+  ],
+})
+
 export interface RemotionRendererAdapterOptions {
   readonly rootDirectory?: string
   readonly entryPoint?: string
@@ -66,6 +80,7 @@ export interface RemotionRendererAdapterOptions {
   readonly binariesDirectory?: string | null
   readonly browserExecutable?: string | null
   readonly chromeMode?: ChromeMode
+  readonly chromiumOptions?: Parameters<typeof selectComposition>[0]['chromiumOptions']
   readonly concurrency?: number | string | null
   readonly timeoutInMilliseconds?: number
   readonly licenseKey?: string | null
@@ -83,6 +98,7 @@ interface ResolvedAdapterOptions {
   readonly binariesDirectory: string | null
   readonly browserExecutable: string | null
   readonly chromeMode: ChromeMode
+  readonly chromiumOptions: Parameters<typeof selectComposition>[0]['chromiumOptions']
   readonly concurrency: number | string | null
   readonly timeoutInMilliseconds: number
   readonly licenseKey: string | null
@@ -153,7 +169,8 @@ function resolveOptions(
       ? absoluteFrom(rootDirectory, options.browserExecutable)
       : null,
     chromeMode: options.chromeMode ?? 'headless-shell',
-    concurrency: options.concurrency ?? null,
+    chromiumOptions: options.chromiumOptions ?? DEFAULT_CHROMIUM_OPTIONS,
+    concurrency: options.concurrency ?? 4,
     timeoutInMilliseconds: options.timeoutInMilliseconds ?? 120_000,
     licenseKey: options.licenseKey ?? null,
     logLevel: options.logLevel ?? 'warn',
@@ -865,6 +882,7 @@ export class RemotionRendererAdapter implements RendererAdapter {
         inputProps,
         binariesDirectory: this.options.binariesDirectory,
         browserExecutable: this.options.browserExecutable,
+        chromiumOptions: this.options.chromiumOptions,
         chromeMode: this.options.chromeMode,
         timeoutInMilliseconds: this.options.timeoutInMilliseconds,
         logLevel: this.options.logLevel,
@@ -954,6 +972,7 @@ export class RemotionRendererAdapter implements RendererAdapter {
         // This is deliberately the exact object used by selectComposition().
         inputProps: payload.inputProps,
         codec: settings.codec,
+        chromiumOptions: this.options.chromiumOptions,
         // Chrome rasterizes the frames, but the encode must run on NVIDIA NVENC.
         // `required` makes Remotion fail visibly instead of falling back to libx264.
         hardwareAcceleration: 'required',
