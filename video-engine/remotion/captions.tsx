@@ -170,8 +170,9 @@ function pageMotion(
   return {
     opacity: progress * exit,
     transform: style.entrance === 'pop'
-      ? `translateY(${(1 - progress) * 30}px) scale(${0.78 + progress * 0.22})`
-      : `translateY(${(1 - progress) * 24}px) scale(${0.96 + progress * 0.04})`,
+      ? `translate3d(0, ${(1 - progress) * 30}px, 0) scale(${0.78 + progress * 0.22})`
+      : `translate3d(0, ${(1 - progress) * 24}px, 0) scale(${0.96 + progress * 0.04})`,
+    willChange: 'transform, opacity',
     clipPath: style.entrance === 'wipe'
       ? `inset(0 ${(1 - progress) * 100}% 0 0)`
       : undefined,
@@ -243,7 +244,8 @@ function CaptionToken({
           : active && style.activeTreatment !== 'clean'
             ? `0 0 0.24em ${hexColorWithAlpha(activeColor, 0.53)}, 0 0.08em 0.24em rgba(0,0,0,.9)`
             : undefined,
-        transform: `translateY(${active && (style.activeTreatment === 'punch' || style.activeTreatment === 'burst') ? -attack * 0.08 : 0}em) scale(${scale})`,
+        willChange: active ? 'transform' : undefined,
+        transform: `translate3d(0, ${active && (style.activeTreatment === 'punch' || style.activeTreatment === 'burst') ? -attack * 0.08 : 0}em, 0) scale(${scale})`,
         transformOrigin: '50% 75%',
         transition: 'none',
       }}
