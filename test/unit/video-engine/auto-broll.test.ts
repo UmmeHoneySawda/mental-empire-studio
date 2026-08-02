@@ -735,10 +735,10 @@ function sectionOf(prompt: string): { startSec: number; endSec: number } {
   }
 }
 
-function poolOf(size: number): VideoBrollCandidate[] {
+function poolOf(size: number, prefix = 'pool'): VideoBrollCandidate[] {
   return Array.from({ length: size }, (_unused, index) =>
     candidate({
-      id: `pool-${index}`,
+      id: `${prefix}-${index}`,
       provider: ['pexels', 'pixabay', 'coverr'][index % 3]!,
       title: `Stock clip ${index}`,
       durationMs: 8000 + index * 500,
@@ -769,7 +769,6 @@ function harness(over: Partial<AutoBrollDeps> = {}, poolSize = 40): Harness {
   const prompts: string[] = []
   const searches: string[] = []
   const materialized: string[] = []
-  const pool = poolOf(poolSize)
   const deps: AutoBrollDeps = {
     askModel: async (prompt) => {
       prompts.push(prompt)
@@ -792,7 +791,7 @@ function harness(over: Partial<AutoBrollDeps> = {}, poolSize = 40): Harness {
     },
     searchBroll: async (query) => {
       searches.push(query.query)
-      return pool
+      return poolOf(poolSize, `search-${searches.length}`)
     },
     materialize: async (clip) => {
       materialized.push(`${clip.provider}:${clip.id}`)
@@ -830,6 +829,24 @@ describe('planAutoBroll covers a 22-minute video end to end', () => {
     expect(Math.min(...starts)).toBeLessThan(120)
     expect(Math.max(...starts)).toBeGreaterThan(TRANSCRIPT_END - 120)
     expect(starts.some((start) => start > 600 && start < 720)).toBe(true)
+  })
+
+  it('fills every frame with transcript-grounded footage and no blank spans', async () => {
+    const { deps } = harness()
+    const input = planInput()
+    const result = await planAutoBroll(input, deps)
+
+    let cursor = 0
+    for (const placement of result.placements) {
+      expect(placement.startFrame).toBe(cursor)
+      expect(placement.durationFrames).toBeGreaterThan(0)
+      expect(placement.moment.text.trim()).not.toBe('')
+      expect(placement.moment.query.trim()).not.toBe('')
+      cursor += placement.durationFrames
+    }
+    expect(cursor).toBe(input.canvasDurationFrames)
+    expect(result.placements.reduce((frames, placement) => frames + placement.durationFrames, 0))
+      .toBe(input.canvasDurationFrames)
   })
 
   it('returns placements in play order with valid, non-overlapping timing', async () => {
@@ -879,8 +896,13 @@ describe('planAutoBroll covers a 22-minute video end to end', () => {
       expect(placement.startFrame).toBeGreaterThanOrEqual(30 * 200)
     }
     expect(result.skipped.some((skip) => skip.reason === 'occupied')).toBe(true)
-    // The rest of the video is still covered — an occupied opening is not a dead run.
-    expect(result.placements.length).toBeGreaterThanOrEqual(8)
+    // The existing opening plus the new placements tile the entire requested range.
+    let cursor = occupied[0]!.durationFrames
+    for (const placement of result.placements) {
+      expect(placement.startFrame).toBe(cursor)
+      cursor += placement.durationFrames
+    }
+    expect(cursor).toBe(planInput().canvasDurationFrames)
   })
 })
 
@@ -1009,12 +1031,13 @@ describe('a partial failure leaves the project usable', () => {
     expect(result.stats.moments).toBeGreaterThanOrEqual(11)
   })
 
-  it('degrades to the clips it has when the pool is smaller than the plan', async () => {
-    const { deps } = harness({}, 4)
-    const result = await planAutoBroll(planInput(), deps)
-    expect(result.placements.length).toBeLessThanOrEqual(4)
-    expect(result.placements.length).toBeGreaterThan(0)
-    expect(result.skipped.some((skip) => skip.reason === 'duplicate')).toBe(true)
+  it('reuses downloaded footage instead of leaving blanks when a query pool is shallow', async () => {
+    const { deps, materialized } = harness({}, 4)
+    const input = planInput()
+    const result = await planAutoBroll(input, deps)
+    expect(result.placements.length).toBeGreaterThan(materialized.length)
+    expect(result.placements.reduce((frames, placement) => frames + placement.durationFrames, 0))
+      .toBe(input.canvasDurationFrames)
   })
 
   it('answers empty for a project with no transcript instead of failing', async () => {

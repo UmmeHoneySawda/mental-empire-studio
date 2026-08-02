@@ -1339,7 +1339,7 @@ function AutoBrollSection(): JSX.Element {
   return (
     <Section
       title="Auto B-roll"
-      blurb="Reads the whole transcript, writes a search query for each moment worth a cutaway, and places the footage on its own lane. One undo reverses the entire run."
+      blurb="Reads the whole transcript, refreshes the visual theme at meaningful moments, and fills every uncovered frame on its own lane. One undo reverses the entire run."
     >
       {wordCount === 0 ? (
         <p className="ve-hint">
@@ -1348,15 +1348,15 @@ function AutoBrollSection(): JSX.Element {
         </p>
       ) : (
         <>
-          <Row label="Density" hint={`≈ ${Math.max(1, Math.round(minutes * perMinute))} clips`}>
+          <Row label="Theme changes" hint={`≈ ${Math.max(1, Math.round(minutes * perMinute))} transcript themes`}>
             <select
               className="ve-input"
               value={density}
               onChange={(event) => setDensity(event.target.value as AutoBrollDensity)}
             >
-              <option value="sparse">Sparse — one every two minutes</option>
-              <option value="balanced">Balanced — one a minute</option>
-              <option value="dense">Dense — three every two minutes</option>
+              <option value="sparse">Sparse — change about every two minutes</option>
+              <option value="balanced">Balanced — change about once a minute</option>
+              <option value="dense">Dense — change about three times every two minutes</option>
             </select>
           </Row>
           <Row label="Shortest clip" hint={`${minSeconds}s`}>
@@ -1390,6 +1390,10 @@ function AutoBrollSection(): JSX.Element {
               <option value="portrait">Portrait</option>
             </select>
           </Row>
+          <p className="ve-hint">
+            Footage covers the full video. Clip length controls how often the shot changes;
+            theme changes keep every shot tied to the transcript.
+          </p>
           {onlyLocal && (
             <p className="ve-hint">
               Only the local library is available. Add a Pexels, Pixabay or Coverr key in
@@ -1538,8 +1542,8 @@ function ExportPanel(): JSX.Element {
 
       <Section title="Render" blurb="The queue snapshots the project as it is now, so edits afterwards do not change a job already running.">
         <dl className="ve-specs">
-          <dt>Format</dt><dd>MP4 · H.264 — the only container with an NVENC encoder.</dd>
-          <dt>Encoder</dt><dd>h264_nvenc, required — the render fails rather than dropping to CPU.</dd>
+          <dt>Format</dt><dd>MP4 · H.264</dd>
+          <dt>Encoder</dt><dd>Hardware H.264 when available · software H.264 fallback.</dd>
           <dt>Size</dt><dd>{project.canvas.width}×{project.canvas.height}</dd>
           <dt>Rate</dt><dd>{project.canvas.fps} fps</dd>
           <dt>Length</dt><dd>{timecode(project.canvas.durationFrames, project.canvas.fps)} · {project.canvas.durationFrames}f</dd>

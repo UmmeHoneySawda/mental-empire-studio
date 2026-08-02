@@ -9,10 +9,12 @@ import {
   TRACK_LABEL_WIDTH,
   ZOOM_STEPS,
   clipWidthPx,
+  fitTimelineZoom,
   framesToPx,
   pxToFrames,
   tickSeconds,
-  timecode
+  timecode,
+  zoomLabel
 } from './constants'
 import { overlappingSceneIds, snapCandidates, snapFrame, trackAcceptsScene } from './operations'
 import { orderedTracks, useEditor } from './useEditor'
@@ -272,12 +274,21 @@ export function Timeline(): JSX.Element | null {
   if (!project) return null
 
   const ticks = tickSeconds(zoom)
-  const majorCount = Math.ceil(total / fps / ticks.major) + 1
+  // Never draw a label beyond the project end. At fit zoom that out-of-range label sat
+  // outside the inner lane and recreated a horizontal scrollbar all by itself.
+  const majorCount = Math.floor(total / fps / ticks.major) + 1
 
   const zoomBy = (direction: 1 | -1): void => {
-    const index = ZOOM_STEPS.findIndex((step) => step >= zoom)
-    const next = ZOOM_STEPS[Math.max(0, Math.min(ZOOM_STEPS.length - 1, (index < 0 ? ZOOM_STEPS.length - 1 : index) + direction))]
+    const ordered = direction === 1 ? ZOOM_STEPS : [...ZOOM_STEPS].reverse()
+    const next = ordered.find((step) => direction === 1 ? step > zoom : step < zoom)
     setZoom(next ?? zoom)
+  }
+
+  const fitTimeline = (): void => {
+    const lane = laneRef.current
+    if (!lane) return
+    setZoom(fitTimelineZoom(total, fps, lane.clientWidth))
+    lane.scrollLeft = 0
   }
 
   return (
@@ -316,8 +327,9 @@ export function Timeline(): JSX.Element | null {
           Snap {snapEnabled ? 'on' : 'off'}
         </button>
         <div className="ve-zoom">
+          <button type="button" className="ve-btn ve-btn--ghost" onClick={fitTimeline} title="Fit the full project in the timeline">Fit</button>
           <button type="button" className="ve-btn ve-btn--ghost" onClick={() => zoomBy(-1)} aria-label="Zoom out">−</button>
-          <span className="ve-mono ve-zoom-value">{zoom}×</span>
+          <span className="ve-mono ve-zoom-value">{zoomLabel(zoom)}</span>
           <button type="button" className="ve-btn ve-btn--ghost" onClick={() => zoomBy(1)} aria-label="Zoom in">+</button>
         </div>
         <button type="button" className="ve-btn ve-btn--ghost" onClick={() => addTrack('video')} title="Add a video lane">

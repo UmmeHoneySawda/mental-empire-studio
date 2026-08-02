@@ -16,7 +16,13 @@ import {
   withCanvasCoveringContent
 } from '../../../src/features/video-studio/editor/operations'
 import { useEditor } from '../../../src/features/video-studio/editor/useEditor'
-import { clipWidthPx, framesToPx } from '../../../src/features/video-studio/editor/constants'
+import {
+  clipWidthPx,
+  fitTimelineZoom,
+  framesToPx,
+  MIN_ZOOM,
+  tickSeconds
+} from '../../../src/features/video-studio/editor/constants'
 import { defaultHookPlan } from '../../../src/features/video-studio/editor/hookPlan'
 import { createEmptyVideoProject, HookPlanSchema, VideoProjectSchema } from '../../../shared/video-engine'
 
@@ -109,6 +115,25 @@ describe('one definition of a clip’s on-screen width', () => {
 
   it('never returns a width too small to click', () => {
     expect(clipWidthPx(1, fps, 0.25)).toBeGreaterThanOrEqual(4)
+  })
+})
+
+describe('a long project can fit in the timeline viewport', () => {
+  it('fits a 24:30 project inside 1000 pixels at the minimum zoom', () => {
+    const durationFrames = 24.5 * 60 * fps
+    expect(framesToPx(durationFrames, fps, MIN_ZOOM)).toBeLessThanOrEqual(1000)
+  })
+
+  it('computes a viewport-specific zoom without horizontal overflow', () => {
+    const durationFrames = 24.5 * 60 * fps
+    const zoom = fitTimelineZoom(durationFrames, fps, 1000)
+    expect(zoom).toBeGreaterThan(MIN_ZOOM)
+    expect(framesToPx(durationFrames, fps, zoom)).toBeLessThanOrEqual(1000)
+  })
+
+  it('keeps ruler labels at least 80 pixels apart at the minimum zoom', () => {
+    const ticks = tickSeconds(MIN_ZOOM)
+    expect(ticks.major * 100 * MIN_ZOOM).toBeGreaterThanOrEqual(80)
   })
 })
 

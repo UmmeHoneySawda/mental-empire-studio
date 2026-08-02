@@ -1,5 +1,111 @@
 # Current Objective
 
+Fix the Remotion Video Studio regressions reported on 2026-08-02: make transcript-driven
+Auto B-roll continuously cover the full project duration, make the full timeline usable at
+minimum zoom, and require NVIDIA NVENC for both Remotion rendering and grading with no
+libx264 fallback. HyperFrames is explicitly out of scope.
+
+# Verified Completed
+
+- Read the requested `feature-dev`, `karpathy-guidelines`, `codebase-memory`, and
+  `remotion-best-practices` instructions, including the Remotion rendering reference.
+- Read the supplied screenshots and the complete `AUTO_BROLL_MAINTENANCE_GUIDE.md`.
+- Confirmed the repository at `D:\Work\mental-empire-studio`, branch
+  `build/mental-empire-studio`; codebase-memory is already indexed as
+  `D-Work-mental-empire-studio`.
+- Read repository `AGENTS.md`, `CLAUDE.md`, `skills/video-studio-editor/SKILL.md`, and
+  `docs/SENTRY_LOGGING.md` before code changes.
+- Pre-change worktree is clean except for the user-owned, untracked
+  `AUTO_BROLL_MAINTENANCE_GUIDE.md`; preserve it.
+- Screenshot evidence establishes: sparse Auto B-roll islands across a 24:30 project,
+  0.25x minimum zoom showing only about one minute, and render failure because
+  `h264_nvenc` is required but unavailable.
+- Auto B-roll now tiles every uncovered frame in the requested range with contiguous clips
+  selected from the nearest transcript-derived theme. Density controls theme refresh rate,
+  existing generated footage is preserved, cached clips are reused only after fresh results
+  are exhausted, and the panel explains the continuous-coverage contract.
+- Auto B-roll regression is executable and verified: the new test first failed at frame 1200;
+  after the patch all 65 focused tests pass, including exact 22-minute frame-sum coverage,
+  existing-span gap filling, transcript metadata, unique downloads, and shallow-pool reuse.
+- Full TypeScript verification passes after the Auto B-roll milestone — `npm run typecheck
+  -- --pretty false`.
+- The user explicitly superseded the portable fallback policy: Remotion now passes
+  `hardwareAcceleration: 'required'`, and every non-identity grading pass uses
+  `h264_nvenc`; neither stage silently falls back to libx264.
+- The strict policy follows Remotion's documented contract: `required` fails when hardware
+  acceleration is unavailable, and H.264 hardware encoding on Windows/Linux uses NVENC.
+- Local capability verification passes on an NVIDIA GeForce GTX 1660 Ti (driver 610.62):
+  both the app's vendored FFmpeg and Remotion's compositor FFmpeg expose `h264_nvenc`, and
+  each successfully completed a real NVENC encode probe.
+- Post-render-change verification passes: 21/21 focused encoder/renderer tests, TypeScript,
+  the production build, and `git diff --check`.
+- Timeline regression reproduced: the previous 0.25x minimum made a 24:30 project
+  36,750px wide. The editor now supports adaptive fit-to-viewport zoom, readable low-scale
+  ruler intervals, robust step controls, and no tick beyond the project boundary.
+- Guarded live Electron verification passes with a scratch profile: clicking Fit reduced
+  the 24:30 timeline from 147,047px to the 895px viewport; the displayed zoom was 0.0059x
+  and major ruler ticks remained 177.75px apart.
+- The required user-data backup ran before Electron launch. Although its helper could not
+  call `Get-FileHash`, independent .NET SHA-256 checks verified matching database and
+  settings copies in the timestamped backup.
+- `AUTO_BROLL_MAINTENANCE_GUIDE.md` now contains the traced local application map, current
+  data flow, architectural differences, and a continuous-coverage change-log entry.
+- Prior focused verification passes across Auto B-roll and timeline geometry; the strict
+  NVENC policy additionally passes the focused renderer/encoder checks above.
+- Full Vitest result: 70 files passed, 4 skipped, and only the documented unrelated
+  `settings-secrets.test.ts` readable-key clearing test failed (829 passed, 28 skipped,
+  1 failed). It predates and is outside this goal.
+
+# Current Problem
+
+- No task blocker remains. The full suite still has the pre-existing, unrelated
+  `settings-secrets.test.ts` readable-key clearing failure described above.
+
+# Relevant Files
+
+- `shared/video-engine/auto-broll.ts`
+- `electron/services/video-engine/broll/auto.ts`
+- `electron/services/video-engine/broll/auto-plan.ts`
+- `src/features/video-studio/editor/Inspector.tsx`
+- `test/unit/video-engine/auto-broll.test.ts`
+- `src/features/video-studio/editor/constants.ts`
+- `src/features/video-studio/editor/Timeline.tsx`
+- `test/unit/video-engine/editor-operations.test.ts`
+- `electron/services/video-engine/remotion/adapter.ts`
+- `electron/services/video-engine/render/queue.ts`
+- `electron/services/video-engine/render/postprocess/ffmpeg-grade.ts`
+- `electron/services/engine/encoder.ts`
+- `test/unit/encoder.test.ts`
+- `test/unit/video-engine/remotion-render-nvenc.test.ts`
+- `AUTO_BROLL_MAINTENANCE_GUIDE.md`
+
+# Do Not Modify
+
+- HyperFrames code or behavior.
+- Classic Video Studio and the manual `placeBroll` / `fetchBrollBatch` paths.
+- Unrelated caption, hook, image-cycle, provider, persistence, or user-data behavior.
+- Generated output (`out/`, `dist/`, build artifacts) and the user's untracked guide except
+  for the guide's required Local Application Map / Change Log after verified architecture work.
+
+# Next Action
+
+None for this goal. Review and commit the verified changes when authorized.
+
+# Verification
+
+- Focused Auto B-roll coverage tests, including non-divisible final duration and transcript
+  grounding across beginning/middle/end.
+- Focused renderer/encoder NVENC-policy tests plus real NVENC probes through both FFmpeg
+  binaries used by the export path.
+- Focused timeline geometry tests plus live Remotion editor verification.
+- `npm run typecheck`, `npm run build`, relevant Vitest suites, and guarded scratch-profile E2E.
+- Final result: strict NVENC tests 21/21; typecheck passed; production build passed; both
+  FFmpeg NVENC probes passed; the earlier live Fit interaction remains verified.
+
+# Protected Prior Work — Caption, Hook, and Image-Cycle Repairs
+
+# Prior Objective
+
 Fix the ten verified post-milestone regressions in image-cycle layering, hook validation
 and rendering, caption timing/grouping, and Remotion/HyperFrames caption presentation
 without disturbing Auto B-roll or unrelated user work.

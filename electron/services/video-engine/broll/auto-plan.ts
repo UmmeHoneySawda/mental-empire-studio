@@ -16,7 +16,6 @@ import {
   mergeMoments,
   normalizeMoments,
   normalizeQuery,
-  placementTiming,
   selectPick,
   targetMomentCount,
   transcriptLinesFromWords,
@@ -190,6 +189,59 @@ function overlaps(
     other.startFrame < span.startFrame + span.durationFrames)
 }
 
+export interface AutoBrollFrameSpan {
+  startFrame: number
+  durationFrames: number
+}
+
+/** Returns the exact holes left by existing generated footage inside the requested range. */
+export function uncoveredAutoBrollSpans(
+  canvasDurationFrames: number,
+  occupied: ReadonlyArray<AutoBrollFrameSpan> = [],
+  rangeStartFrame = 0,
+  rangeEndFrame = canvasDurationFrames
+): AutoBrollFrameSpan[] {
+  const total = Math.max(0, Math.round(canvasDurationFrames))
+  const start = Math.max(0, Math.min(total, Math.round(rangeStartFrame)))
+  const end = Math.max(start, Math.min(total, Math.round(rangeEndFrame)))
+  if (start === end) return []
+
+  const clipped = occupied
+    .map((span) => ({
+      startFrame: Math.max(start, Math.min(end, Math.round(span.startFrame))),
+      endFrame: Math.max(start, Math.min(end, Math.round(span.startFrame + span.durationFrames)))
+    }))
+    .filter((span) => span.endFrame > span.startFrame)
+    .sort((left, right) => left.startFrame - right.startFrame)
+
+  const gaps: AutoBrollFrameSpan[] = []
+  let cursor = start
+  for (const span of clipped) {
+    if (span.startFrame > cursor) {
+      gaps.push({ startFrame: cursor, durationFrames: span.startFrame - cursor })
+    }
+    cursor = Math.max(cursor, span.endFrame)
+  }
+  if (cursor < end) gaps.push({ startFrame: cursor, durationFrames: end - cursor })
+  return gaps
+}
+
+function continuousClipDuration(
+  remainingFrames: number,
+  maxClipFrames: number,
+  assetDurationFrames?: number
+): number {
+  let duration = Math.min(
+    remainingFrames,
+    maxClipFrames,
+    assetDurationFrames === undefined ? Number.MAX_SAFE_INTEGER : Math.max(0, Math.round(assetDurationFrames))
+  )
+  // Do not strand a one-frame tail: `applyAutoBroll` intentionally ignores clips shorter
+  // than two frames, so taking one frame from this clip keeps both placements renderable.
+  if (remainingFrames - duration === 1 && duration > 2) duration -= 1
+  return duration >= 2 ? duration : 0
+}
+
 /**
  * Plans and downloads B-roll for a whole video.
  *
@@ -291,95 +343,150 @@ export async function planAutoBroll(
     }
   })
 
+  const fps = Math.max(1, Math.round(input.fps))
+  const canvasFrames = Math.max(0, Math.round(input.canvasDurationFrames))
+  const rangeStartFrame = Math.max(0, Math.min(
+    canvasFrames,
+    Math.round((options.startSec ?? 0) * fps)
+  ))
+  const rangeEndFrame = Math.max(rangeStartFrame, Math.min(
+    canvasFrames,
+    Math.round((options.endSec ?? canvasFrames / fps) * fps)
+  ))
+  const occupied = input.occupied ?? []
+  const gaps = uncoveredAutoBrollSpans(canvasFrames, occupied, rangeStartFrame, rangeEndFrame)
+  const requestedSpan = { startFrame: rangeStartFrame, durationFrames: rangeEndFrame - rangeStartFrame }
+  if (occupied.some((span) => overlaps(span, [requestedSpan]))) {
+    skipped.push({
+      startSec: rangeStartFrame / fps,
+      query: '',
+      reason: 'occupied',
+      detail: 'Existing Auto B-roll was preserved; only uncovered frames were filled.'
+    })
+  }
+  for (let index = 0; index < pools.length; index += 1) {
+    if ((pools[index]?.length ?? 0) === 0) {
+      const moment = merged.moments[index]!
+      skipped.push({ startSec: moment.startSec, query: moment.query, reason: 'no-results' })
+    }
+  }
+
   const placements: AutoBrollPlacement[] = []
   const usedIds = new Set<string>()
-  const placedSpans = [...(input.occupied ?? [])]
-  let downloaded = 0
+  const unavailableIds = new Set<string>()
+  const assetCache = new Map<string, VideoAsset>()
+  const maxClipFrames = Math.max(2, Math.round(options.maxClipSeconds * fps))
+  const landscape = options.orientation === 'any'
+    ? input.landscape
+    : options.orientation === 'landscape'
+  let placedCount = 0
 
-  for (let index = 0; index < merged.moments.length; index += 1) {
-    throwIfAborted(deps.signal)
-    const moment = merged.moments[index]!
-    const scoreContext = {
-      query: moment.query,
-      landscape: options.orientation === 'any' ? input.landscape : options.orientation === 'landscape',
-      minClipSeconds: options.minClipSeconds,
-      maxClipSeconds: options.maxClipSeconds
-    }
-    const pool = pools[index] ?? []
-    if (pool.length === 0) {
-      skipped.push({ startSec: moment.startSec, query: moment.query, reason: 'no-results' })
-      continue
-    }
+  const orderedMomentIndices = (frame: number): number[] => merged.moments
+    .map((_moment, index) => index)
+    .sort((left, right) => {
+      const leftDistance = Math.abs(Math.round(merged.moments[left]!.startSec * fps) - frame)
+      const rightDistance = Math.abs(Math.round(merged.moments[right]!.startSec * fps) - frame)
+      return leftDistance - rightDistance || left - right
+    })
 
-    let placed = false
-    // Two attempts: the best unused clip, then the next one if the download failed. More
-    // than that and one unreachable CDN could spend the whole run's time on one moment.
-    for (let attempt = 0; attempt < 2 && !placed; attempt += 1) {
-      const pick = selectPick(pool, scoreContext, usedIds)
-      if (!pick) {
-        // Distinguishing these two is the whole point of reporting skips at all: a
-        // shallow provider pool ("everything here is already on the timeline") is a
-        // different problem from a query that matched nothing usable.
-        const exhausted = pool.every((entry) => usedIds.has(candidateKey(entry)))
-        skipped.push({
-          startSec: moment.startSec,
-          query: moment.query,
-          reason: exhausted ? 'duplicate' : 'no-results'
-        })
-        break
-      }
-      usedIds.add(candidateKey(pick.candidate))
-      let asset: VideoAsset
-      try {
-        asset = await deps.materialize(pick.candidate)
-      } catch (error) {
-        if (attempt === 1) {
-          skipped.push({
-            startSec: moment.startSec,
-            query: moment.query,
-            reason: 'download-failed',
-            detail: (error instanceof Error ? error.message : String(error)).slice(0, 200)
-          })
-        }
-        continue
-      }
-
-      const timing = placementTiming({
-        moment,
-        fps: input.fps,
-        canvasDurationFrames: input.canvasDurationFrames,
+  const findPick = (
+    frame: number,
+    excluded: ReadonlySet<string>,
+    cachedOnly: boolean
+  ): { momentIndex: number; pick: NonNullable<ReturnType<typeof selectPick>> } | null => {
+    for (const momentIndex of orderedMomentIndices(frame)) {
+      const moment = merged.moments[momentIndex]!
+      const pick = selectPick(pools[momentIndex] ?? [], {
+        query: moment.query,
+        landscape,
         minClipSeconds: options.minClipSeconds,
-        maxClipSeconds: options.maxClipSeconds,
-        candidateDurationFrames: asset.durationFrames
-      })
-      if (!timing) {
-        skipped.push({ startSec: moment.startSec, query: moment.query, reason: 'too-short' })
-        break
-      }
-      // A placement near the end slides earlier to keep its length, which can walk it into
-      // the clip before it. Overlapping cutaways on one lane are indistinguishable from a
-      // single clip, so the later one is dropped rather than stacked.
-      if (overlaps(timing, placedSpans)) {
-        skipped.push({ startSec: moment.startSec, query: moment.query, reason: 'occupied' })
-        break
+        maxClipSeconds: options.maxClipSeconds
+      }, excluded)
+      if (!pick) continue
+      if (cachedOnly && !assetCache.has(candidateKey(pick.candidate))) continue
+      return { momentIndex, pick }
+    }
+    return null
+  }
+
+  for (const gap of gaps) {
+    let cursor = gap.startFrame
+    const gapEnd = gap.startFrame + gap.durationFrames
+    while (cursor < gapEnd) {
+      throwIfAborted(deps.signal)
+      const remainingFrames = gapEnd - cursor
+      let placed = false
+
+      // Two network attempts per slot keep one broken CDN from monopolising a long run.
+      // Once every fresh result is used, a successfully cached clip may repeat: continuous
+      // transcript-relevant coverage is more useful than an empty lane.
+      for (let attempt = 0; attempt < 2 && !placed; attempt += 1) {
+        const excluded = new Set([...usedIds, ...unavailableIds])
+        let selection = findPick(cursor, excluded, false)
+        if (!selection) selection = findPick(cursor, unavailableIds, true)
+        if (!selection) break
+
+        const moment = merged.moments[selection.momentIndex]!
+        const key = candidateKey(selection.pick.candidate)
+        let asset = assetCache.get(key)
+        if (!asset) {
+          try {
+            asset = await deps.materialize(selection.pick.candidate)
+            assetCache.set(key, asset)
+          } catch (error) {
+            unavailableIds.add(key)
+            if (attempt === 1) {
+              skipped.push({
+                startSec: cursor / fps,
+                query: moment.query,
+                reason: 'download-failed',
+                detail: (error instanceof Error ? error.message : String(error)).slice(0, 200)
+              })
+            }
+            continue
+          }
+        }
+
+        const durationFrames = continuousClipDuration(
+          remainingFrames,
+          maxClipFrames,
+          asset.durationFrames
+        )
+        if (durationFrames === 0) {
+          unavailableIds.add(key)
+          if (attempt === 1) {
+            skipped.push({ startSec: cursor / fps, query: moment.query, reason: 'too-short' })
+          }
+          continue
+        }
+
+        placements.push({
+          moment,
+          candidate: selection.pick.candidate,
+          asset,
+          startFrame: cursor,
+          durationFrames,
+          ...(asset.durationFrames === undefined
+            ? {}
+            : { sourceRange: { startFrame: 0, durationFrames } }),
+          score: selection.pick.score
+        })
+        usedIds.add(key)
+        cursor += durationFrames
+        placed = true
+        placedCount += 1
+        deps.onProgress?.({
+          phase: 'downloading',
+          message: `Preparing continuous footage — ${placedCount} clips`
+        })
       }
 
-      placedSpans.push(timing)
-      placements.push({
-        moment,
-        candidate: pick.candidate,
-        asset,
-        startFrame: timing.startFrame,
-        durationFrames: timing.durationFrames,
-        ...(timing.sourceRange ? { sourceRange: timing.sourceRange } : {}),
-        score: pick.score
-      })
-      placed = true
-      downloaded += 1
-      deps.onProgress?.({
-        phase: 'downloading',
-        message: `Downloading footage — ${downloaded} of ${merged.moments.length}`
-      })
+      if (!placed) {
+        // Preserve partial success semantics. A provider or CDN failure may leave this one
+        // slot blank, but later slots still get a chance to use another transcript theme.
+        const advance = continuousClipDuration(remainingFrames, maxClipFrames) || remainingFrames
+        cursor += advance
+      }
     }
   }
 

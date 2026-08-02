@@ -19,13 +19,16 @@ export const TRACK_LABEL_WIDTH = 200
 /** Gap between lanes, so adjacent clips on different tracks stay legible. */
 export const TRACK_GAP = 4
 
-export const MIN_ZOOM = 0.25
+export const MIN_ZOOM = 0.001
 export const MAX_ZOOM = 4
 export const DEFAULT_ZOOM = 1
 
 /** Zoom steps the +/- buttons walk through, so clicking zoom is predictable rather
  *  than multiplying by 1.5 forever. */
-export const ZOOM_STEPS = [0.25, 0.35, 0.5, 0.75, 1, 1.5, 2, 3, 4] as const
+export const ZOOM_STEPS = [
+  0.001, 0.0025, 0.005, 0.01, 0.02, 0.05, 0.1, 0.15,
+  0.25, 0.35, 0.5, 0.75, 1, 1.5, 2, 3, 4
+] as const
 
 /** A clip narrower than this is unclickable, so trimming clamps here rather than
  *  letting a drag produce a zero-width clip. */
@@ -53,6 +56,18 @@ export function framesToPx(frames: number, fps: number, zoom: number): number {
   return (frames / Math.max(1, fps)) * PIXELS_PER_SECOND * zoom
 }
 
+/** Zoom that shows the complete project inside the available lane width. */
+export function fitTimelineZoom(frames: number, fps: number, viewportWidth: number): number {
+  const widthAtOne = framesToPx(Math.max(1, frames), fps, 1)
+  const usableWidth = Math.max(1, viewportWidth - 24)
+  return Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, usableWidth / widthAtOne))
+}
+
+export function zoomLabel(zoom: number): string {
+  const decimals = zoom < 0.01 ? 4 : zoom < 0.1 ? 3 : 2
+  return `${Number(zoom.toFixed(decimals))}×`
+}
+
 /** Converts timeline pixels back to whole frames. */
 export function pxToFrames(px: number, fps: number, zoom: number): number {
   return Math.round((px / (PIXELS_PER_SECOND * zoom)) * Math.max(1, fps))
@@ -74,11 +89,10 @@ export function clipWidthPx(durationFrames: number, fps: number, zoom: number): 
 /** Ruler tick spacing in seconds, chosen so labels never collide at any zoom. */
 export function tickSeconds(zoom: number): { major: number; minor: number } {
   const pxPerSecond = PIXELS_PER_SECOND * zoom
-  if (pxPerSecond >= 200) return { major: 1, minor: 0.25 }
-  if (pxPerSecond >= 100) return { major: 1, minor: 0.5 }
-  if (pxPerSecond >= 50) return { major: 5, minor: 1 }
-  if (pxPerSecond >= 25) return { major: 10, minor: 2 }
-  return { major: 30, minor: 5 }
+  const intervals = [1, 2, 5, 10, 15, 30, 60, 120, 300, 600, 900, 1800, 3600, 7200]
+  const major = intervals.find((seconds) => seconds * pxPerSecond >= 80) ?? intervals[intervals.length - 1]!
+  const subdivisions = major % 5 === 0 ? 5 : 4
+  return { major, minor: major / subdivisions }
 }
 
 /** `m:ss` plus frames, matching the readout the old studio used. */

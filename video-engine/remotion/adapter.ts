@@ -775,13 +775,10 @@ export class RemotionRendererAdapter implements RendererAdapter {
         // This is deliberately the exact object used by selectComposition().
         inputProps: payload.inputProps,
         codec: settings.codec,
-        // Chrome rasterizes the frames — that part is inherent to Remotion — but the
-        // ENCODE must run on the NVIDIA card. 'required' makes Remotion resolve
-        // h264_nvenc and throw if it cannot, which is what this project wants: a GPU
-        // failure is a visible failure, never a silent fall back to libx264.
+        // Chrome rasterizes the frames, but the encode must run on NVIDIA NVENC.
+        // `required` makes Remotion fail visibly instead of falling back to libx264.
         hardwareAcceleration: 'required',
-        // crf/encodingMaxRate/encodingBufferSize are rejected outright alongside
-        // hardwareAcceleration: 'required', so quality is a bitrate target instead.
+        // CRF is incompatible with hardware acceleration, so use a bitrate target.
         videoBitrate: videoBitrateFor(prepared.height),
         outputLocation: absoluteOutputPath,
         overwrite: true,
