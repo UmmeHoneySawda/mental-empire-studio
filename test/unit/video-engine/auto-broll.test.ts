@@ -1040,6 +1040,19 @@ describe('a partial failure leaves the project usable', () => {
       .toBe(input.canvasDurationFrames)
   })
 
+  it('durably checkpoints every placement before completing the run', async () => {
+    const checkpoints: number[] = []
+    const { deps } = harness()
+    const result = await planAutoBroll(planInput(), {
+      ...deps,
+      onPlacement: async (placement) => {
+        checkpoints.push(placement.startFrame)
+      },
+    })
+
+    expect(checkpoints).toEqual(result.placements.map((placement) => placement.startFrame))
+  })
+
   it('answers empty for a project with no transcript instead of failing', async () => {
     const { deps, prompts } = harness()
     const result = await planAutoBroll(planInput({ words: [] }), deps)

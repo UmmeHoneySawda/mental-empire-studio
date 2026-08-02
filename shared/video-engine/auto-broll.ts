@@ -205,6 +205,8 @@ export interface AutoBrollStats {
 }
 
 export interface AutoBrollResult {
+  /** Durable run identity. Absent only in pure planner results and legacy callers. */
+  jobId?: string
   placements: AutoBrollPlacement[]
   skipped: AutoBrollSkip[]
   stats: AutoBrollStats

@@ -55,7 +55,7 @@ import {
 } from '../../shared/video-engine'
 import { getRepos } from '../db'
 import { getSettings } from '../store/settings'
-import { sentryLog } from '../services/sentry'
+import { captureException, sentryLog } from '../services/sentry'
 import { errorMessage, VideoEngineError } from '../services/video-engine/errors'
 import {
   appendBrollBatch,
@@ -68,6 +68,10 @@ import {
 import type { TimedWord } from '../services/video-engine/broll/auto'
 import { createAutoBrollModel } from '../services/video-engine/broll/auto-model'
 import { planAutoBroll } from '../services/video-engine/broll/auto-plan'
+import {
+  AutoBrollJobStore,
+  type AutoBrollJobRecord,
+} from '../services/video-engine/broll/job-store'
 import { brollAssetForProject } from '../services/video-engine/service'
 import { generateHookPlan } from '../services/video-engine/hook-generator'
 import { ensureTranscript } from './compose'
@@ -485,18 +489,30 @@ function clampSeconds(value: number, low: number, high: number): number {
   return Math.min(high, Math.max(low, value))
 }
 
+let autoBrollJobStore: AutoBrollJobStore | undefined
+const activeAutoBrollRuns = new Map<string, Promise<AutoBrollResult>>()
+
+function durableAutoBrollJobs(): AutoBrollJobStore {
+  const root = join(videoEngineDataRoot(), 'auto-broll-jobs')
+  if (!autoBrollJobStore || autoBrollJobStore.rootPath !== root) {
+    autoBrollJobStore = new AutoBrollJobStore(root)
+  }
+  return autoBrollJobStore
+}
+
+function autoBrollRunKey(projectId: string, downloadId: string): string {
+  return `${projectId}:${downloadId}`
+}
+
 /**
- * Auto B-roll for a whole video.
- *
- * Returns placements rather than a saved project. That is the load-bearing decision: the
- * renderer splices them in with one local `edit()`, so the Player repaints on the same tick
- * and the entire run collapses into a single undo entry. Saving here instead would give the
- * user twenty-five separate writes and no way back.
+ * Auto B-roll for a whole video. Placements remain a single renderer edit, but each
+ * successful materialization is also checkpointed main-side before planning continues.
  */
-async function autoBroll(
+async function executeAutoBroll(
   projectId: string,
   downloadId: string,
-  options?: Partial<AutoBrollOptions>
+  options?: Partial<AutoBrollOptions>,
+  recoveringJob?: AutoBrollJobRecord
 ): Promise<AutoBrollResult> {
   const engine = await getVideoEngine()
   const project = await engine.openProject(projectId)
@@ -525,12 +541,63 @@ async function autoBroll(
     ...(options?.endSec === undefined ? {} : { endSec: Math.max(0, options.endSec) })
   }
 
+  const jobs = durableAutoBrollJobs()
+  const now = new Date().toISOString()
+  let job: AutoBrollJobRecord = recoveringJob ?? {
+    schemaVersion: 1,
+    id: `auto-broll-${randomUUID()}`,
+    projectId,
+    downloadId,
+    options: resolved,
+    stage: 'queued',
+    message: '',
+    placements: [],
+    skipped: [],
+    createdAt: now,
+    updatedAt: now
+  }
+  job = {
+    ...job,
+    options: resolved,
+    stage: 'reading',
+    message: recoveringJob
+      ? `Resuming Auto B-roll from ${job.placements.length} saved clip${job.placements.length === 1 ? '' : 's'}`
+      : 'Reading the transcript',
+    updatedAt: now,
+    errorMessage: undefined
+  }
+  await jobs.save(job)
+
   // A second run adds to the lane rather than stacking a duplicate on the first run's work.
-  const occupied = project.scenes
+  const occupied = [
+    ...project.scenes
     .filter((scene) => scene.trackId === AUTO_BROLL_TRACK_ID)
-    .map((scene) => ({ startFrame: scene.startFrame, durationFrames: scene.durationFrames }))
+    .map((scene) => ({ startFrame: scene.startFrame, durationFrames: scene.durationFrames })),
+    ...job.placements.map((placement) => ({
+      startFrame: placement.startFrame,
+      durationFrames: placement.durationFrames
+    }))
+  ]
 
   const emitProgress = (progress: AutoBrollProgress): void => emit('videoEngine:autoBroll', progress)
+  const reportProgress = (update: {
+    phase: 'reading' | 'searching' | 'downloading'
+    message: string
+  }): void => {
+    emitProgress({ projectId, phase: update.phase, message: update.message })
+    job = { ...job, stage: update.phase, message: update.message, updatedAt: new Date().toISOString() }
+    const snapshot = job
+    void jobs.save(snapshot).catch((error) => {
+      sentryLog.error('Studio auto b-roll progress checkpoint failed', {
+        project_id: projectId,
+        job_id: job.id,
+        error_message: errorMessage(error).slice(0, 200),
+        operation: 'auto_broll_checkpoint'
+      })
+      captureException(error)
+    })
+  }
+  emitProgress({ projectId, phase: 'reading', message: job.message })
   const settings = getSettings()
   // Two keys, tried in order. A free Groq key's DAILY token budget does not cover a
   // 22-minute video twice over, and when it runs out no amount of waiting brings it back —
@@ -551,6 +618,9 @@ async function autoBroll(
     density: resolved.density,
     orientation: resolved.orientation,
     existing_auto_clips: occupied.length,
+    checkpointed_clips: job.placements.length,
+    resumed: !!recoveringJob,
+    job_id: job.id,
     operation: 'auto_broll'
   })
 
@@ -568,53 +638,167 @@ async function autoBroll(
       {
         askModel: createAutoBrollModel(modelKeys, {
           // A tokens-per-minute wait can be half a minute. Saying so beats a frozen counter.
-          onWait: (seconds) => emitProgress({
-            projectId,
+          onWait: (seconds) => reportProgress({
             phase: 'reading',
             message: `Rate limit — waiting ${seconds}s`
           }),
           // Switching provider mid-run looks exactly like a stall from the outside.
-          onFailover: (from, to) => emitProgress({
-            projectId,
+          onFailover: (from, to) => reportProgress({
             phase: 'reading',
             message: `${from} quota spent — continuing on ${to}`
           })
         }),
         // One query, every enabled provider — `BrollService.search` already fans out with
         // `allSettled`, so a dead Pexels key cannot take the run down with it.
-        searchBroll: (query) => engine.searchBroll(query, { providers: resolved.providers }),
+        searchBroll: (query) => engine.searchBroll(query, {
+          providers: resolved.providers,
+          localFirst: true
+        }),
         materialize: async (candidate) => {
           const service = candidateToService(candidate)
           const cached = await engine.cacheBroll(service)
           return brollAssetForProject(project, service, cached)
         },
-        onProgress: (update) => emitProgress({ projectId, phase: update.phase, message: update.message })
+        onProgress: reportProgress,
+        onPlacement: async (placement) => {
+          job = {
+            ...job,
+            stage: 'downloading',
+            placements: [...job.placements, placement],
+            message: `Saved ${job.placements.length + 1} Auto B-roll clip${job.placements.length === 0 ? '' : 's'}`,
+            updatedAt: new Date().toISOString()
+          }
+          await jobs.save(job)
+        }
       }
     )
+    const skipped = [...job.skipped, ...result.skipped]
+    job = {
+      ...job,
+      stage: 'ready',
+      message: '',
+      skipped,
+      stats: result.stats,
+      updatedAt: new Date().toISOString(),
+      errorMessage: undefined
+    }
+    await jobs.save(job)
+    const durableResult: AutoBrollResult = {
+      jobId: job.id,
+      placements: job.placements,
+      skipped,
+      stats: result.stats
+    }
     emitProgress({ projectId, phase: 'done', message: '' })
     sentryLog.info('Studio auto b-roll completed', {
       project_id: projectId,
       download_id: downloadId,
+      job_id: job.id,
       chunk_count: result.stats.chunks,
       chunk_failure_count: result.stats.chunksFailed,
       moment_count: result.stats.moments,
-      placement_count: result.placements.length,
-      skipped_count: result.skipped.length,
+      placement_count: durableResult.placements.length,
+      skipped_count: durableResult.skipped.length,
       provider_failure_count: result.stats.providerFailures,
       duration_ms: result.stats.elapsedMs,
       operation: 'auto_broll'
     })
-    return result
+    return durableResult
   } catch (error) {
+    job = {
+      ...job,
+      stage: 'failed',
+      message: '',
+      updatedAt: new Date().toISOString(),
+      errorMessage: errorMessage(error).slice(0, 1_000)
+    }
+    await jobs.save(job).catch((checkpointError) => {
+      sentryLog.error('Studio auto b-roll failure checkpoint failed', {
+        project_id: projectId,
+        job_id: job.id,
+        error_message: errorMessage(checkpointError).slice(0, 200),
+        operation: 'auto_broll_checkpoint'
+      })
+      captureException(checkpointError)
+    })
     emitProgress({ projectId, phase: 'error', message: '' })
     sentryLog.error('Studio auto b-roll failed', {
       project_id: projectId,
       download_id: downloadId,
+      job_id: job.id,
       error_message: errorMessage(error).slice(0, 200),
       operation: 'auto_broll'
     })
+    captureException(error)
     throw error
   }
+}
+
+function runAutoBroll(
+  projectId: string,
+  downloadId: string,
+  options?: Partial<AutoBrollOptions>,
+  recoveringJob?: AutoBrollJobRecord
+): Promise<AutoBrollResult> {
+  const key = autoBrollRunKey(projectId, downloadId)
+  const active = activeAutoBrollRuns.get(key)
+  if (active) return active
+  const run = (async () => {
+    try {
+      return await executeAutoBroll(projectId, downloadId, options, recoveringJob)
+    } finally {
+      activeAutoBrollRuns.delete(key)
+    }
+  })()
+  activeAutoBrollRuns.set(key, run)
+  return run
+}
+
+function autoBroll(
+  projectId: string,
+  downloadId: string,
+  options?: Partial<AutoBrollOptions>
+): Promise<AutoBrollResult> {
+  return runAutoBroll(projectId, downloadId, options)
+}
+
+async function resumeAutoBroll(projectId: string, downloadId: string): Promise<AutoBrollResult | null> {
+  const active = activeAutoBrollRuns.get(autoBrollRunKey(projectId, downloadId))
+  if (active) return active
+  const job = await durableAutoBrollJobs().latestRecoverable(projectId, downloadId)
+  if (!job) return null
+  if (job.stage === 'ready' && job.stats) {
+    sentryLog.info('Studio auto b-roll ready checkpoint restored', {
+      project_id: projectId,
+      download_id: downloadId,
+      job_id: job.id,
+      placement_count: job.placements.length,
+      operation: 'auto_broll_resume'
+    })
+    return {
+      jobId: job.id,
+      placements: job.placements,
+      skipped: job.skipped,
+      stats: job.stats
+    }
+  }
+  sentryLog.info('Studio auto b-roll interrupted job resumed', {
+    project_id: projectId,
+    download_id: downloadId,
+    job_id: job.id,
+    checkpointed_clips: job.placements.length,
+    previous_stage: job.stage,
+    operation: 'auto_broll_resume'
+  })
+  return runAutoBroll(projectId, downloadId, job.options, job)
+}
+
+async function acknowledgeAutoBroll(jobId: string): Promise<void> {
+  await durableAutoBrollJobs().acknowledge(jobId)
+  sentryLog.info('Studio auto b-roll project save acknowledged', {
+    job_id: jobId,
+    operation: 'auto_broll_acknowledge'
+  })
 }
 
 async function updateScene(
@@ -1244,7 +1428,10 @@ export function registerVideoEngineIpc(): void {
           maxDurationMs: input.maxDurationMs,
           safeSearch: input.safeSearch ?? true
         },
-        { providers: input.providers && input.providers.length > 0 ? input.providers : undefined }
+        {
+          providers: input.providers && input.providers.length > 0 ? input.providers : undefined,
+          localFirst: true
+        }
       )
     }))
   ipcMain.handle('videoEngine:placeBroll', (_e, projectId: string, input: PlaceVideoBrollInput) =>
@@ -1264,6 +1451,11 @@ export function registerVideoEngineIpc(): void {
   ipcMain.handle('videoEngine:autoBroll', (_e, projectId: string, downloadId: string, options?: Partial<AutoBrollOptions>) =>
     guard('autoBroll', () =>
       autoBroll(reqString(projectId, 'projectId'), reqString(downloadId, 'downloadId'), options)))
+  ipcMain.handle('videoEngine:resumeAutoBroll', (_e, projectId: string, downloadId: string) =>
+    guard('resumeAutoBroll', () =>
+      resumeAutoBroll(reqString(projectId, 'projectId'), reqString(downloadId, 'downloadId'))))
+  ipcMain.handle('videoEngine:acknowledgeAutoBroll', (_e, jobId: string) =>
+    guard('acknowledgeAutoBroll', () => acknowledgeAutoBroll(reqString(jobId, 'jobId'))))
 
   // ---- render ----
   ipcMain.handle('videoEngine:preflight', (_e, projectId: string) =>

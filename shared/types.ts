@@ -1583,6 +1583,10 @@ export interface NativeApi {
      * edit, which is what makes a whole run a single undo entry.
      */
     autoBroll(projectId: string, downloadId: string, options?: Partial<AutoBrollOptions>): Promise<AutoBrollResult>
+    /** Restores the newest interrupted/ready run for this bound project, if any. */
+    resumeAutoBroll(projectId: string, downloadId: string): Promise<AutoBrollResult | null>
+    /** Called only after the renderer has saved every returned placement. */
+    acknowledgeAutoBroll(jobId: string): Promise<void>
 
     preflight(projectId: string): Promise<VideoRenderProblem[]>
     enqueueRender(projectId: string, container?: '.mp4' | '.mov' | '.webm'): Promise<VideoRenderJob>

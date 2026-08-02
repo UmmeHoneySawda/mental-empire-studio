@@ -23,6 +23,8 @@ export interface CreateVideoEngineOptions {
   hyperframes?: HyperframesAdapterOptions
   brollCredentials?: BrollProviderCredentials
   localBrollDirectories?: string[]
+  /** Durable shared library. Defaults to the engine data root for non-Electron callers. */
+  brollCacheRoot?: string
 }
 
 function packagedRemotionBundle(): string | undefined {
@@ -37,7 +39,7 @@ export async function createVideoEngine(
 ): Promise<VideoEngineService> {
   configureVideoEngineBinaryEnvironment()
   const dataRoot = resolve(options.dataRoot)
-  const brollCacheRoot = join(dataRoot, 'broll-cache')
+  const brollCacheRoot = resolve(options.brollCacheRoot ?? join(dataRoot, 'broll-cache'))
   const providers = []
   const credentials = options.brollCredentials ?? {}
   if (credentials.pexelsApiKey) providers.push(new PexelsBrollProvider(credentials.pexelsApiKey))

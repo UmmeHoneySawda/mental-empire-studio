@@ -80,6 +80,7 @@ export class PexelsBrollProvider implements BrollProvider {
         id: String(video.id),
         provider: this.id,
         title: described || `Pexels video ${video.id}`,
+        description: described || undefined,
         sourceUrl: video.url,
         downloadUrl: file.link,
         thumbnailUrl: video.image,

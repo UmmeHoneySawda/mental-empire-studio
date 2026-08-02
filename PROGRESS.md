@@ -1,106 +1,111 @@
 # Current Objective
 
-Fix the Remotion Video Studio regressions reported on 2026-08-02: make transcript-driven
-Auto B-roll continuously cover the full project duration, make the full timeline usable at
-minimum zoom, and require NVIDIA NVENC for both Remotion rendering and grading with no
-libx264 fallback. HyperFrames is explicitly out of scope.
+Fix the 2026-08-02 Remotion Video Studio Auto B-roll regressions: bounded asset fields,
+caption-template changes that preserve generated B-roll and caption visibility, a searchable
+D-drive media library with useful metadata, and crash-safe persisted progress with automatic
+resume after application restart.
 
 # Verified Completed
 
-- Read the requested `feature-dev`, `karpathy-guidelines`, `codebase-memory`, and
-  `remotion-best-practices` instructions, including the Remotion rendering reference.
-- Read the supplied screenshots and the complete `AUTO_BROLL_MAINTENANCE_GUIDE.md`.
+- Read the requested `feature-dev`, `karpathy-guidelines`, and `codebase-memory` skills,
+  including the feature workflow's referenced `PATTERNS.md`.
+- Read both supplied screenshots and the complete
+  `REMOTION_EDITOR_TIMELINE_MAINTENANCE_GUIDE.md`; no external repository was cloned or
+  reread.
 - Confirmed the repository at `D:\Work\mental-empire-studio`, branch
-  `build/mental-empire-studio`; codebase-memory is already indexed as
+  `build/mental-empire-studio`; codebase-memory is already indexed and responsive as
   `D-Work-mental-empire-studio`.
-- Read repository `AGENTS.md`, `CLAUDE.md`, `skills/video-studio-editor/SKILL.md`, and
-  `docs/SENTRY_LOGGING.md` before code changes.
 - Pre-change worktree is clean except for the user-owned, untracked
-  `AUTO_BROLL_MAINTENANCE_GUIDE.md`; preserve it.
-- Screenshot evidence establishes: sparse Auto B-roll islands across a 24:30 project,
-  0.25x minimum zoom showing only about one minute, and render failure because
-  `h264_nvenc` is required but unavailable.
-- Auto B-roll now tiles every uncovered frame in the requested range with contiguous clips
-  selected from the nearest transcript-derived theme. Density controls theme refresh rate,
-  existing generated footage is preserved, cached clips are reused only after fresh results
-  are exhausted, and the panel explains the continuous-coverage contract.
-- Auto B-roll regression is executable and verified: the new test first failed at frame 1200;
-  after the patch all 65 focused tests pass, including exact 22-minute frame-sum coverage,
-  existing-span gap filling, transcript metadata, unique downloads, and shallow-pool reuse.
-- Full TypeScript verification passes after the Auto B-roll milestone — `npm run typecheck
-  -- --pretty false`.
-- The user explicitly superseded the portable fallback policy: Remotion now passes
-  `hardwareAcceleration: 'required'`, and every non-identity grading pass uses
-  `h264_nvenc`; neither stage silently falls back to libx264.
-- The strict policy follows Remotion's documented contract: `required` fails when hardware
-  acceleration is unavailable, and H.264 hardware encoding on Windows/Linux uses NVENC.
-- Local capability verification passes on an NVIDIA GeForce GTX 1660 Ti (driver 610.62):
-  both the app's vendored FFmpeg and Remotion's compositor FFmpeg expose `h264_nvenc`, and
-  each successfully completed a real NVENC encode probe.
-- Post-render-change verification passes: 21/21 focused encoder/renderer tests, TypeScript,
-  the production build, and `git diff --check`.
-- Timeline regression reproduced: the previous 0.25x minimum made a 24:30 project
-  36,750px wide. The editor now supports adaptive fit-to-viewport zoom, readable low-scale
-  ruler intervals, robust step controls, and no tick beyond the project boundary.
-- Guarded live Electron verification passes with a scratch profile: clicking Fit reduced
-  the 24:30 timeline from 147,047px to the 895px viewport; the displayed zoom was 0.0059x
-  and major ruler ticks remained 177.75px apart.
-- The required user-data backup ran before Electron launch. Although its helper could not
-  call `Get-FileHash`, independent .NET SHA-256 checks verified matching database and
-  settings copies in the timestamped backup.
-- `AUTO_BROLL_MAINTENANCE_GUIDE.md` now contains the traced local application map, current
-  data flow, architectural differences, and a continuous-coverage change-log entry.
-- Prior focused verification passes across Auto B-roll and timeline geometry; the strict
-  NVENC policy additionally passes the focused renderer/encoder checks above.
-- Full Vitest result: 70 files passed, 4 skipped, and only the documented unrelated
-  `settings-secrets.test.ts` readable-key clearing test failed (829 passed, 28 skipped,
-  1 failed). It predates and is outside this goal.
+  `REMOTION_EDITOR_TIMELINE_MAINTENANCE_GUIDE.md`; preserve it.
+- Screenshot 1 establishes the concrete completion failure: generated asset index 98 has a
+  `name` longer than the schema's inclusive 512-character maximum.
+- Screenshot 2 establishes a separate destructive state transition: applying a caption
+  template leaves only the caption and voice-over tracks, removing the Auto B-roll lane.
+- Sentry issue `ELECTRON-W` confirms the same production failure at `assets[98].name` in
+  `saveProject`; B-roll cache logs show the downloads themselves completed successfully.
+- **Milestone 1 verified:** provider titles are bounded before entering `VideoProject`,
+  recovered placements are idempotent, caption documents/lanes/scenes survive Auto B-roll,
+  and every engine-authoritative editor mutation now stops when the pending local save
+  fails instead of adopting stale disk state. Regression result: 70/70 focused tests pass;
+  `npm run typecheck` passes.
+- **Milestone 2 verified:** Windows now prefers
+  `D:\Mental Empire Studio\broll-library` (with `ME_BROLL_LIBRARY_DIR` override and a
+  user-data fallback only when the drive is unavailable). Studio and classic downloads
+  share that durable root; sidecars retain bounded title, description, tags, dimensions,
+  duration, author, original source, and licence metadata. The local provider searches the
+  metadata behind hash filenames, and Auto B-roll uses local-first/remote-fallback search.
+  Regression result: 28/28 focused cache/path/service tests pass; `npm run typecheck` passes.
+- **Milestone 3 verified:** Auto B-roll jobs are written atomically through
+  queued/reading/searching/downloading/ready/applied stages; every completed placement is
+  checkpointed before planning continues. Project open resumes the latest recoverable job,
+  recovered placements apply idempotently, and the renderer acknowledges a ready job only
+  after an immediate project save succeeds. Regression result: 149/149 combined focused
+  tests pass; `npm run typecheck` and `npm run build` pass.
+- Updated `AUTO_BROLL_MAINTENANCE_GUIDE.md` with the D-drive library, local-first search,
+  durable job/resume/ack data flow, and a concise architecture change-log entry.
+- Before launching Electron, `npm run userdata:backup` copied the live database/settings to
+  `Mental Empire Studio - CLAUDE-BACKUP-20260802-140515`. Its final checksum command is not
+  available in this PowerShell, so the copied database and settings were independently
+  SHA-256 verified against their sources with .NET; both match.
+- Guarded Remotion E2E passed in a scratch `ME_SMOKE_USERDATA_DIR`: resume/ack IPC wiring,
+  caption style and seeking, one Auto B-roll run with four persisted muted clips, captions,
+  live preview, and preflight all passed with no renderer console errors. The D-drive helper
+  deliberately keeps smoke/E2E media inside the throwaway profile.
 
 # Current Problem
 
-- No task blocker remains. The full suite still has the pre-existing, unrelated
-  `settings-secrets.test.ts` readable-key clearing failure described above.
+- No remaining failure in this objective. The repository-wide suite retains one known,
+  unrelated baseline failure in `test/unit/settings-secrets.test.ts` (clearing a readable
+  transcription key); this repair does not modify the settings/secrets subsystem.
 
 # Relevant Files
 
 - `shared/video-engine/auto-broll.ts`
-- `electron/services/video-engine/broll/auto.ts`
 - `electron/services/video-engine/broll/auto-plan.ts`
+- `electron/services/video-engine/broll/service.ts`
+- `electron/services/video-engine/broll/cache.ts`
+- `electron/services/video-engine/broll/providers/local.ts`
+- `electron/services/video-engine/broll/library-root.ts`
+- `electron/services/video-engine/broll/job-store.ts`
+- `electron/services/video-engine/service.ts`
+- `src/features/video-studio/editor/operations.ts`
+- `src/features/video-studio/editor/useEditor.ts`
 - `src/features/video-studio/editor/Inspector.tsx`
+- `electron/db/index.ts`
+- `electron/ipc/video-engine.ts`
+- `electron/services/broll.ts`
+- `electron/services/video-engine/factory.ts`
+- `electron/services/video-engine/studio.ts`
 - `test/unit/video-engine/auto-broll.test.ts`
-- `src/features/video-studio/editor/constants.ts`
-- `src/features/video-studio/editor/Timeline.tsx`
+- `test/unit/video-engine/auto-broll-job-store.test.ts`
+- `test/unit/video-engine/broll-library-path.test.ts`
 - `test/unit/video-engine/editor-operations.test.ts`
-- `electron/services/video-engine/remotion/adapter.ts`
-- `electron/services/video-engine/render/queue.ts`
-- `electron/services/video-engine/render/postprocess/ffmpeg-grade.ts`
-- `electron/services/engine/encoder.ts`
-- `test/unit/encoder.test.ts`
-- `test/unit/video-engine/remotion-render-nvenc.test.ts`
 - `AUTO_BROLL_MAINTENANCE_GUIDE.md`
 
 # Do Not Modify
 
-- HyperFrames code or behavior.
-- Classic Video Studio and the manual `placeBroll` / `fetchBrollBatch` paths.
-- Unrelated caption, hook, image-cycle, provider, persistence, or user-data behavior.
-- Generated output (`out/`, `dist/`, build artifacts) and the user's untracked guide except
-  for the guide's required Local Application Map / Change Log after verified architecture work.
+- HyperFrames or Classic Video Studio behavior.
+- Manual `placeBroll` / `fetchBrollBatch` semantics unless shared cache reuse requires a
+  strictly compatible internal change.
+- Unrelated caption styles, hooks, image cycling, rendering policy, timeline geometry, or
+  generated output (`out/`, `dist/`).
+- The user's untracked maintenance guide except for a verified Local Application Map or
+  Change Log update required by this repair.
 
 # Next Action
 
-None for this goal. Review and commit the verified changes when authorized.
+None for this objective. Do not commit or push unless the user authorizes it.
 
 # Verification
 
-- Focused Auto B-roll coverage tests, including non-divisible final duration and transcript
-  grounding across beginning/middle/end.
-- Focused renderer/encoder NVENC-policy tests plus real NVENC probes through both FFmpeg
-  binaries used by the export path.
-- Focused timeline geometry tests plus live Remotion editor verification.
-- `npm run typecheck`, `npm run build`, relevant Vitest suites, and guarded scratch-profile E2E.
-- Final result: strict NVENC tests 21/21; typecheck passed; production build passed; both
-  FFmpeg NVENC probes passed; the earlier live Fit interaction remains verified.
+- `npx vitest run` over the five changed Video Studio suites: **149/149 passed**.
+- `npm run typecheck -- --pretty false`: passed.
+- `npm run build`: passed after the final code changes.
+- `node scripts/e2e-studio.mjs --engine remotion`: passed in a scratch profile, including
+  Auto B-roll, captions, live preview, persistence, preflight, and resume/ack IPC wiring.
+- `npm test`: **845 passed, 28 skipped, 1 unrelated known failure** in
+  `test/unit/settings-secrets.test.ts`.
+- `git diff --check`: passed (Git reported only expected LF-to-CRLF notices).
 
 # Protected Prior Work — Caption, Hook, and Image-Cycle Repairs
 

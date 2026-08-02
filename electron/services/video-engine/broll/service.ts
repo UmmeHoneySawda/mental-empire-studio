@@ -43,7 +43,7 @@ export class BrollService {
 
   async search(
     query: BrollSearchQuery,
-    options: { providers?: string[]; signal?: AbortSignal } = {}
+    options: { providers?: string[]; signal?: AbortSignal; localFirst?: boolean } = {}
   ): Promise<BrollCandidate[]> {
     if (!query.query.trim()) throw new VideoEngineError('BROLL_PROVIDER_ERROR', 'B-roll query cannot be empty')
     const ids = options.providers ?? this.listProviders()
@@ -54,11 +54,44 @@ export class BrollService {
       operation: 'broll_search'
     })
     try {
-      const settled = await Promise.allSettled(ids.map(async (id) => {
-        const provider = this.providers.get(id)
-        if (!provider) throw new VideoEngineError('BROLL_PROVIDER_ERROR', `Unknown B-roll provider: ${id}`)
-        return provider.search(query, options.signal)
-      }))
+      const searchProviders = (providerIds: string[]): Promise<PromiseSettledResult<BrollCandidate[]>[]> =>
+        Promise.allSettled(providerIds.map(async (id) => {
+          const provider = this.providers.get(id)
+          if (!provider) throw new VideoEngineError('BROLL_PROVIDER_ERROR', `Unknown B-roll provider: ${id}`)
+          return provider.search(query, options.signal)
+        }))
+      let searchedIds = ids
+      let settled: PromiseSettledResult<BrollCandidate[]>[]
+      if (options.localFirst) {
+        const localIds = ids.filter((id) => /^local(?:-|$)/u.test(id))
+        const remoteIds = ids.filter((id) => !localIds.includes(id))
+        if (localIds.length > 0) {
+          const localSettled = await searchProviders(localIds)
+          const localCandidates = localSettled.flatMap((result) =>
+            result.status === 'fulfilled' ? result.value : [])
+          if (localCandidates.length > 0) {
+            const deduped = [...new Map(localCandidates.map((candidate) => [
+              `${candidate.provider}:${candidate.id}`,
+              candidate
+            ])).values()]
+            sentryLog.info('Video engine B-roll search completed', {
+              provider_count: localIds.length,
+              provider_failure_count: localSettled.filter((result) => result.status === 'rejected').length,
+              result_count: deduped.length,
+              local_cache_hit: true,
+              duration_ms: Math.round(performance.now() - startedAt),
+              operation: 'broll_search'
+            })
+            return deduped
+          }
+          searchedIds = remoteIds.length > 0 ? remoteIds : localIds
+          settled = remoteIds.length > 0 ? await searchProviders(remoteIds) : localSettled
+        } else {
+          settled = await searchProviders(ids)
+        }
+      } else {
+        settled = await searchProviders(ids)
+      }
       const candidates: BrollCandidate[] = []
       let failureCount = 0
       for (const result of settled) {
@@ -74,7 +107,7 @@ export class BrollService {
         candidate
       ])).values()]
       sentryLog.info('Video engine B-roll search completed', {
-        provider_count: ids.length,
+        provider_count: searchedIds.length,
         provider_failure_count: failureCount,
         result_count: deduped.length,
         duration_ms: Math.round(performance.now() - startedAt),

@@ -10,21 +10,26 @@ import {
 import { tmpdir } from 'node:os'
 import { dirname, join } from 'node:path'
 import { pathToFileURL } from 'node:url'
-import { afterEach, describe, expect, it } from 'vitest'
+import { afterEach, describe, expect, it, vi } from 'vitest'
 import {
   createEmptyVideoProject,
   type HookPlan,
   type VideoProject,
+  VideoProjectSchema,
 } from '@shared/video-engine'
 import { BrollCache } from '../../../electron/services/video-engine/broll/cache'
 import { BrollService } from '../../../electron/services/video-engine/broll/service'
+import { LocalBrollProvider } from '../../../electron/services/video-engine/broll/providers/local'
 import type {
   BrollCandidate,
   BrollProvider,
   BrollSearchQuery,
 } from '../../../electron/services/video-engine/broll/types'
 import { compileHookPlan } from '../../../electron/services/video-engine/hook-compiler'
-import { VideoEngineService } from '../../../electron/services/video-engine/service'
+import {
+  brollAssetForProject,
+  VideoEngineService,
+} from '../../../electron/services/video-engine/service'
 import {
   buildGradeFilter,
   escapeFilterPath,
@@ -131,11 +136,14 @@ function brollCandidate(input: {
   sourceUrl?: string
   downloadUrl?: string
   title?: string
+  description?: string
+  tags?: string[]
 } = {}): BrollCandidate {
   return {
     id: input.id ?? 'candidate-1',
     provider: input.provider ?? 'local',
     title: input.title ?? 'City skyline',
+    description: input.description,
     sourceUrl: input.sourceUrl ?? 'https://example.test/videos/candidate-1',
     downloadUrl: input.downloadUrl ?? 'https://cdn.example.test/candidate-1.mp4',
     width: 1920,
@@ -148,7 +156,7 @@ function brollCandidate(input: {
       commercialUseAllowed: true,
       attribution: 'Test Creator',
     },
-    tags: ['city', 'skyline'],
+    tags: input.tags ?? ['city', 'skyline'],
   }
 }
 
@@ -645,6 +653,24 @@ describe('cinematic grading filter construction', () => {
 })
 
 describe('B-roll cache and provider service', () => {
+  it('bounds provider titles before they enter the strict project schema', () => {
+    const project = projectFixture()
+    const candidate = brollCandidate({ title: `A descriptive stock title ${'detail '.repeat(120)}` })
+    const asset = brollAssetForProject(project, candidate, {
+      id: candidate.id,
+      provider: candidate.provider,
+      absolutePath: 'D:\\Mental Empire Studio\\broll-library\\fixture.mp4',
+      sha256: 'a'.repeat(64),
+      bytes: 123,
+      sourceUrl: candidate.sourceUrl,
+      cachedAt: '2026-08-02T00:00:00.000Z',
+      license: candidate.license,
+    })
+
+    expect(asset.name.length).toBeLessThanOrEqual(512)
+    expect(() => VideoProjectSchema.parse({ ...project, assets: [asset] })).not.toThrow()
+  })
+
   it('content-addresses local media, deduplicates bytes, and writes a license sidecar', async () => {
     const root = await temporaryRoot('broll-cache')
     const cacheRoot = join(root, 'cache')
@@ -652,7 +678,13 @@ describe('B-roll cache and provider service', () => {
     const bytes = Buffer.from('deterministic-local-video-fixture')
     await writeFile(localPath, bytes)
     const sourceUrl = pathToFileURL(localPath).toString()
-    const candidate = brollCandidate({ sourceUrl, downloadUrl: sourceUrl })
+    const candidate = brollCandidate({
+      sourceUrl,
+      downloadUrl: sourceUrl,
+      title: 'Blue-hour city skyline',
+      description: 'A slow aerial move over a modern city at blue hour.',
+      tags: ['city', 'skyline', 'blue hour'],
+    })
     const cache = new BrollCache(cacheRoot)
 
     const first = await cache.importLocal(localPath, candidate)
@@ -673,8 +705,45 @@ describe('B-roll cache and provider service', () => {
       provider: candidate.provider,
       sha256: expectedHash,
       sourceUrl: candidate.sourceUrl,
+      title: candidate.title,
+      description: candidate.description,
+      tags: candidate.tags,
+      width: candidate.width,
+      height: candidate.height,
+      durationMs: candidate.durationMs,
       license: candidate.license,
     })
+  })
+
+  it('searches cached title, tags, and description even when the filename is only a hash', async () => {
+    const root = await temporaryRoot('broll-metadata-search')
+    const cacheRoot = join(root, 'library')
+    const localPath = join(root, 'source.mp4')
+    await writeFile(localPath, 'local metadata fixture')
+    const sourceUrl = pathToFileURL(localPath).toString()
+    const candidate = brollCandidate({
+      provider: 'pexels',
+      sourceUrl: 'https://www.pexels.com/video/1234/',
+      downloadUrl: sourceUrl,
+      title: 'Mountain lake at dawn',
+      description: 'Mist drifts above a quiet alpine lake during sunrise.',
+      tags: ['mountain', 'lake', 'sunrise'],
+    })
+    await new BrollCache(cacheRoot).store(candidate)
+
+    const results = await new LocalBrollProvider(cacheRoot).search({ query: 'alpine sunrise' })
+
+    expect(results).toHaveLength(1)
+    expect(results[0]).toMatchObject({
+      id: candidate.id,
+      provider: candidate.provider,
+      title: candidate.title,
+      description: candidate.description,
+      sourceUrl: candidate.sourceUrl,
+      tags: candidate.tags,
+      license: candidate.license,
+    })
+    expect(results[0]!.downloadUrl).toMatch(/^file:/u)
   })
 
   it('rejects insecure remote B-roll downloads before opening a network connection', async () => {
@@ -709,6 +778,36 @@ describe('B-roll cache and provider service', () => {
     const results = await service.search({ query: 'city skyline' })
 
     expect(results).toEqual([duplicate, unique])
+  })
+
+  it('uses a local match without calling remote providers when local-first is requested', async () => {
+    const root = await temporaryRoot('broll-local-first')
+    const local = brollCandidate({ id: 'cached', provider: 'pexels' })
+    const localSearch = vi.fn(async () => [local])
+    const remoteSearch = vi.fn(async () => [brollCandidate({ id: 'remote', provider: 'pixabay' })])
+    const service = new BrollService(new BrollCache(join(root, 'cache')), [
+      { id: 'local-1', search: localSearch },
+      { id: 'pexels', search: remoteSearch },
+    ])
+
+    const results = await service.search({ query: 'city skyline' }, { localFirst: true })
+
+    expect(results).toEqual([local])
+    expect(localSearch).toHaveBeenCalledTimes(1)
+    expect(remoteSearch).not.toHaveBeenCalled()
+  })
+
+  it('falls back to remote providers when a local-first search has no match', async () => {
+    const root = await temporaryRoot('broll-local-fallback')
+    const remote = brollCandidate({ id: 'remote', provider: 'pixabay' })
+    const remoteSearch = vi.fn(async () => [remote])
+    const service = new BrollService(new BrollCache(join(root, 'cache')), [
+      { id: 'local-1', search: async () => [] },
+      { id: 'pixabay', search: remoteSearch },
+    ])
+
+    expect(await service.search({ query: 'city skyline' }, { localFirst: true })).toEqual([remote])
+    expect(remoteSearch).toHaveBeenCalledTimes(1)
   })
 })
 

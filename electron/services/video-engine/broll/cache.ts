@@ -122,7 +122,18 @@ export class BrollCache {
         bytes,
         sourceUrl: candidate.sourceUrl,
         cachedAt: new Date().toISOString(),
-        license: candidate.license
+        license: candidate.license,
+        metadataVersion: 1,
+        title: (candidate.title.trim() || `B-roll ${candidate.id}`).slice(0, 512),
+        description: (candidate.description?.trim() || candidate.title.trim()).slice(0, 4_000),
+        tags: [...new Set(candidate.tags.map((tag) => tag.trim()).filter(Boolean))]
+          .slice(0, 64)
+          .map((tag) => tag.slice(0, 100)),
+        width: candidate.width,
+        height: candidate.height,
+        durationMs: candidate.durationMs,
+        author: candidate.author?.trim().slice(0, 256),
+        downloadUrl: candidate.downloadUrl
       }
       await writeJsonAtomic(`${destination}.license.json`, record)
       return record

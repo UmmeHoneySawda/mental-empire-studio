@@ -264,6 +264,11 @@ export function applyAutoBroll(
 
   const assets = [...project.assets]
   const knownAssets = new Set(assets.map((asset) => asset.id))
+  const existingPlacements = new Set(
+    project.scenes
+      .filter((scene) => scene.trackId === AUTO_BROLL_TRACK_ID && scene.kind === 'media')
+      .map((scene) => `${scene.assetId}:${scene.startFrame}:${scene.durationFrames}`)
+  )
   const added: VideoScene[] = []
 
   for (const placement of placements) {
@@ -276,6 +281,9 @@ export function applyAutoBroll(
     let durationFrames = Math.max(MIN_CLIP_FRAMES, Math.round(placement.durationFrames))
     if (assetFrames !== undefined) durationFrames = Math.min(durationFrames, assetFrames)
     if (durationFrames < MIN_CLIP_FRAMES) continue
+    const placementKey = `${placement.asset.id}:${startFrame}:${durationFrames}`
+    if (existingPlacements.has(placementKey)) continue
+    existingPlacements.add(placementKey)
 
     const sourceRange = placement.sourceRange ?? (assetFrames === undefined ? undefined : { startFrame: 0, durationFrames })
     added.push({

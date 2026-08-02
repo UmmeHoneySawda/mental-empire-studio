@@ -356,6 +356,10 @@ const api: NativeApi = {
     placeBroll: (projectId: string, input: PlaceVideoBrollInput) => ipcRenderer.invoke('videoEngine:placeBroll', projectId, input),
     autoBroll: (projectId: string, downloadId: string, options?: Partial<AutoBrollOptions>) =>
       ipcRenderer.invoke('videoEngine:autoBroll', projectId, downloadId, options),
+    resumeAutoBroll: (projectId: string, downloadId: string) =>
+      ipcRenderer.invoke('videoEngine:resumeAutoBroll', projectId, downloadId),
+    acknowledgeAutoBroll: (jobId: string) =>
+      ipcRenderer.invoke('videoEngine:acknowledgeAutoBroll', jobId),
 
     preflight: (projectId: string) => ipcRenderer.invoke('videoEngine:preflight', projectId),
     enqueueRender: (projectId: string, container?: '.mp4' | '.mov' | '.webm') =>

@@ -305,6 +305,7 @@ export interface VideoBrollCandidate {
   id: string
   provider: string
   title: string
+  description?: string
   sourceUrl: string
   downloadUrl: string
   previewUrl?: string

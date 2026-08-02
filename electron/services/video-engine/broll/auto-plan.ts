@@ -57,6 +57,8 @@ export interface AutoBrollDeps {
   /** Downloads the clip and returns the project asset for it, licence metadata included. */
   materialize(candidate: VideoBrollCandidate): Promise<VideoAsset>
   onProgress?(update: { phase: 'reading' | 'searching' | 'downloading'; message: string }): void
+  /** Awaited after each successful download so callers can atomically checkpoint it. */
+  onPlacement?(placement: AutoBrollPlacement): Promise<void> | void
   signal?: AbortSignal
 }
 
@@ -471,6 +473,7 @@ export async function planAutoBroll(
             : { sourceRange: { startFrame: 0, durationFrames } }),
           score: selection.pick.score
         })
+        await deps.onPlacement?.(placements[placements.length - 1]!)
         usedIds.add(key)
         cursor += durationFrames
         placed = true

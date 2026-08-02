@@ -42,6 +42,7 @@ export class CoverrBrollProvider implements BrollProvider {
         // Never the query — see the note in pixabay.ts. The description is the provider's
         // own words and is a fair thing to rank on; the query is not.
         title: video.title || video.description || `Coverr video ${video.id}`,
+        description: video.description || video.title || undefined,
         sourceUrl: `https://coverr.co/videos/${encodeURIComponent(video.id)}`,
         downloadUrl,
         previewUrl: video.urls?.mp4_preview,

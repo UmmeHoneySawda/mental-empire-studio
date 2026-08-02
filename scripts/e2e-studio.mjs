@@ -171,7 +171,17 @@ try {
   // A method that needs a project must still REACH its handler. A rejection mentioning
   // "No handler registered" is a wiring bug; a rejection about a missing project is the
   // handler doing its job.
-  const wired = ['fillWithMedia', 'brollBatches', 'generateHookPlan', 'importCustomHook', 'updateHookBeat', 'fetchBrollBatch', 'autoBroll']
+  const wired = [
+    'fillWithMedia',
+    'brollBatches',
+    'generateHookPlan',
+    'importCustomHook',
+    'updateHookBeat',
+    'fetchBrollBatch',
+    'autoBroll',
+    'resumeAutoBroll',
+    'acknowledgeAutoBroll'
+  ]
   for (const method of wired) {
     const result = await page.evaluate(async (name) => {
       try {

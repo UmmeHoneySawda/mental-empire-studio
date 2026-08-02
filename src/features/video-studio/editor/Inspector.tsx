@@ -1029,7 +1029,7 @@ function TransitionsPanel(): JSX.Element {
     }
     // Local edits must reach disk BEFORE the engine is asked to change the same document,
     // or the next debounced save writes our stale copy back over the engine's version.
-    await state.flush()
+    if (!(await state.flush())) return
     const native = window.api
     if (!native) return
     // A junction holds exactly one transition. Without dropping the previous one first the
@@ -1111,7 +1111,7 @@ function TransitionsPanel(): JSX.Element {
                   aria-label="Remove this transition"
                   onClick={async () => {
                     if (!project) return
-                    await useEditor.getState().flush()
+                    if (!(await useEditor.getState().flush())) return
                     try {
                       const updated = await window.api.videoEngine.removeTransition(project.id, transition.id)
                       useEditor.setState({ project: updated, dirty: false })

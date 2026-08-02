@@ -25,6 +25,7 @@ export interface BrollCandidate {
   id: string
   provider: string
   title: string
+  description?: string
   sourceUrl: string
   downloadUrl: string
   previewUrl?: string
@@ -46,6 +47,16 @@ export interface CachedBrollAsset {
   sourceUrl: string
   cachedAt: string
   license: BrollLicense
+  /** Search metadata is optional so sidecars written by older builds remain readable. */
+  metadataVersion?: 1
+  title?: string
+  description?: string
+  tags?: string[]
+  width?: number
+  height?: number
+  durationMs?: number
+  author?: string
+  downloadUrl?: string
 }
 
 export interface BrollProvider {

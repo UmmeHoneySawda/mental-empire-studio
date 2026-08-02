@@ -110,6 +110,7 @@ export function getVideoEngine(): Promise<VideoEngineService> {
   const beta = getSettings().beta
   enginePromise = createVideoEngine({
     dataRoot: videoEngineDataRoot(),
+    brollCacheRoot: brollLibraryDir(),
     renderConcurrency: 1,
     localBrollDirectories: localBrollDirectories(),
     brollCredentials: {

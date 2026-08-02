@@ -1583,9 +1583,12 @@ Auto B-roll button/component:
 src/features/video-studio/editor/Inspector.tsx — AutoBrollSection
 
 Auto B-roll controller/orchestrator:
-src/features/video-studio/editor/useEditor.ts — autoBroll
-electron/ipc/video-engine.ts — autoBroll IPC handler
+src/features/video-studio/editor/useEditor.ts — autoBroll, commitAutoBrollResult,
+and automatic resume during open
+electron/ipc/video-engine.ts — autoBroll, resumeAutoBroll, and
+acknowledgeAutoBroll IPC handlers
 electron/services/video-engine/broll/auto-plan.ts — planAutoBroll
+electron/services/video-engine/broll/job-store.ts — atomic durable job checkpoints
 
 Transcript model/store:
 shared/video-engine/model.ts — VideoProject.captions.words
@@ -1613,7 +1616,8 @@ electron/services/video-engine/broll/providers/local.ts
 
 Candidate normalization:
 shared/video-engine/ipc.ts — VideoBrollCandidate
-electron/services/video-engine/broll/service.ts — BrollService.search provider fanout
+electron/services/video-engine/broll/service.ts — BrollService.search local-first lookup
+with remote fallback
 
 Ranking/deduplication:
 electron/services/video-engine/broll/auto.ts — candidateFitsSlot, scoreCandidate,
@@ -1622,6 +1626,10 @@ candidateKey, and selectPick
 Media download/cache/import:
 electron/services/video-engine/broll/service.ts — BrollService.cacheCandidate
 electron/services/video-engine/broll/cache.ts — BrollCache.store / importLocal
+electron/services/video-engine/broll/library-root.ts — preferred library root policy
+electron/services/broll.ts — D:\\Mental Empire Studio\\broll-library on Windows,
+with ME_BROLL_LIBRARY_DIR override and user-data fallback
+electron/services/video-engine/broll/providers/local.ts — searchable sidecar metadata
 
 Timeline command/insertion:
 src/features/video-studio/editor/operations.ts — applyAutoBroll
@@ -1632,9 +1640,11 @@ src/features/video-studio/editor/useEditor.ts — edit / undo / redo;
 one completed Auto B-roll run is one editor edit
 
 Project persistence:
-src/features/video-studio/editor/useEditor.ts — flush and debounced save
-electron/preload.ts — saveProject IPC bridge
+src/features/video-studio/editor/useEditor.ts — flush, immediate result save, then job ack
+electron/preload.ts — saveProject plus Auto B-roll resume/ack IPC bridges
 electron/services/video-engine/service.ts — VideoEngineService.saveProject
+electron/services/video-engine/broll/job-store.ts — queued-through-ready progress retained
+until the renderer project save succeeds
 
 Remotion preview component:
 src/features/video-studio/editor/EditorPlayer.tsx
@@ -1645,6 +1655,8 @@ video-engine/remotion/adapter.ts — RemotionRendererAdapter.prepare / render
 
 Auto B-roll tests:
 test/unit/video-engine/auto-broll.test.ts
+test/unit/video-engine/auto-broll-job-store.test.ts
+test/unit/video-engine/broll-library-path.test.ts
 test/unit/video-engine/editor-operations.test.ts
 scripts/e2e-studio.mjs
 ```
@@ -1655,16 +1667,25 @@ scripts/e2e-studio.mjs
 AutoBrollSection
   -> useEditor.flush()
   -> preload autoBroll IPC
+  -> IPC creates an atomic durable job record
   -> IPC loads VideoProject, transcript words, and occupied auto-broll spans
   -> createAutoBrollModel + planAutoBroll
      -> chunk transcript and request semantic moments
-     -> search, normalize, rank, deduplicate, and cache provider candidates
+     -> search the D-drive metadata library first; query remote providers only on a miss
+     -> normalize, rank, deduplicate, download, and cache provider candidates
+     -> atomically checkpoint each completed placement before planning continues
      -> tile every uncovered frame with the nearest transcript-derived moment
-  -> IPC returns placements
-  -> useEditor.edit(applyAutoBroll(...))
+  -> IPC marks the durable job ready and returns its placements plus job ID
+  -> useEditor.edit(applyAutoBroll(...)) idempotently
   -> EditorPlayer re-renders immediately
-  -> debounced project save
+  -> immediate project save
+  -> renderer acknowledges the job only after that save succeeds
   -> the same persisted scenes feed Remotion preview and export
+
+On project open after interruption:
+  -> resumeAutoBroll returns a ready job or continues the latest transient job
+  -> checkpointed spans are occupied, so completed placements are not downloaded again
+  -> renderer applies the recovered result idempotently, saves, then acknowledges it
 ```
 
 ### 15.3 Known architectural differences from this guide
@@ -1677,8 +1698,14 @@ AutoBrollSection
 - Existing generated Auto B-roll spans are preserved. Only their gaps are planned.
 - Fresh transcript-relevant candidates are preferred. If provider pools are exhausted,
   an already cached relevant clip may repeat instead of leaving a blank interval.
-- Provider search fans out across the enabled remote/local adapters through BrollService
-  and imports selected assets through the shared BrollCache.
+- Provider search checks the searchable local metadata library first and fans out to enabled
+  remote adapters only when local results are insufficient. Selected remote assets and their
+  bounded title, description, tags, dimensions, duration, author, source, and licence metadata
+  are retained in the shared BrollCache.
+- Windows production profiles prefer D:\\Mental Empire Studio\\broll-library. Test/smoke
+  profiles stay isolated under their throwaway user-data directory.
+- Auto B-roll progress is an atomic staged job. Ready jobs remain recoverable until the
+  renderer has saved the project and explicitly acknowledged them.
 - Remotion consumes ordinary media scenes; Auto B-roll has no special render-time type.
 ```
 
@@ -2179,6 +2206,20 @@ blockers.
 ## 26. Change Log
 
 Agents should add concise entries here only when this guide or Auto B-roll architecture changes materially.
+
+### 2026-08-02 — Durable local-library and recovery repair
+
+- Bounded generated asset names at the project schema limit and made editor flush failures
+  block engine-authoritative mutations, preventing a caption-template response from adopting
+  stale disk state and erasing B-roll or captions.
+- Added a shared Windows D-drive B-roll library with searchable title, description, tags,
+  dimensions, duration, author, source, and licence sidecars. Auto B-roll now searches local
+  metadata first and contacts remote providers only on a miss.
+- Added atomic queued-through-ready job checkpoints, per-placement persistence, automatic
+  restart recovery, idempotent renderer application, and acknowledgement only after the
+  recovered project is saved successfully.
+- Added focused regression coverage and a scratch-profile Remotion E2E check for IPC wiring,
+  persisted generated clips, captions, preview, and preflight parity.
 
 ### 2026-08-02 — Continuous coverage repair
 

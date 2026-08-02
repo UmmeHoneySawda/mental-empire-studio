@@ -134,7 +134,13 @@ export function brollAssetForProject(
   cached: CachedBrollAsset
 ): VideoAsset {
   const assetId = `broll:${cached.sha256.slice(0, 24)}`
-  const isLocal = candidate.sourceUrl.startsWith('file:') || candidate.downloadUrl.startsWith('file:')
+  const candidateTitle = candidate.title.trim()
+  // Provider descriptions are untrusted input. Coverr in particular can return a full
+  // paragraph here, while the strict project schema caps every asset name at 512 chars.
+  // Bound it at the bridge into the project so a successful download can always be saved.
+  const assetName = (candidateTitle || `B-roll ${candidate.id}`).slice(0, 512)
+  // Cached stock footage downloads locally but keeps its provider source and licence.
+  const isLocal = candidate.sourceUrl.startsWith('file:')
   const provider = isLocal
     ? 'local'
     : ['pexels', 'pixabay', 'coverr'].includes(candidate.provider)
@@ -148,7 +154,7 @@ export function brollAssetForProject(
   }[extname(cached.absolutePath).toLowerCase()] ?? 'video/mp4'
   return {
     id: assetId,
-    name: candidate.title,
+    name: assetName,
     kind: 'video',
     uri: pathToFileURL(cached.absolutePath).toString(),
     mimeType,
@@ -519,7 +525,7 @@ export class VideoEngineService {
 
   searchBroll(
     query: BrollSearchQuery,
-    options?: { providers?: string[]; signal?: AbortSignal }
+    options?: { providers?: string[]; signal?: AbortSignal; localFirst?: boolean }
   ): Promise<BrollCandidate[]> {
     return this.broll.search(query, options)
   }

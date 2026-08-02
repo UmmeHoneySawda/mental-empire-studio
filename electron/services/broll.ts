@@ -13,6 +13,7 @@ import { logger } from './logger'
 import { cacheDir } from './storage'
 import { poolKeyForNiche, nicheSearchThemes, dimsForOrientation, planPoolPrune } from './niche'
 import { seededBrollOrder } from '../../shared/automationBroll'
+import { resolveBrollLibraryRoot } from './video-engine/broll/library-root'
 
 // Auto B-roll: themed stock-footage pool driven by the transcript. We pick the
 // video's dominant themes, fetch a small pool of clips (Pexels → Pixabay → Coverr),
@@ -475,9 +476,19 @@ export function readBrollManifestClipIds(jobId: string): string[] {
  *  Video Studio's local b-roll provider can search the same pool instead of an empty
  *  scratch directory. */
 export function brollLibraryDir(): string {
-  const d = join(app.getPath('userData'), 'broll-library')
-  mkdirSync(d, { recursive: true })
-  return d
+  const userDataRoot = app.getPath('userData')
+  const preferred = resolveBrollLibraryRoot(userDataRoot)
+  try {
+    mkdirSync(preferred, { recursive: true })
+    return preferred
+  } catch (error) {
+    // Keep the app usable on a machine where D: was detached. The warning is explicit and
+    // the next startup tries D: again; an environment override remains available.
+    const fallback = join(userDataRoot, 'broll-library')
+    BROLL_LOG.warn(`preferred library unavailable path=${preferred}: ${(error as Error).message}`)
+    mkdirSync(fallback, { recursive: true })
+    return fallback
+  }
 }
 
 function libraryIndexPath(sourceKey: string): string {

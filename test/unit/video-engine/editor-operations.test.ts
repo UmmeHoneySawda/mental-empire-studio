@@ -24,7 +24,12 @@ import {
   tickSeconds
 } from '../../../src/features/video-studio/editor/constants'
 import { defaultHookPlan } from '../../../src/features/video-studio/editor/hookPlan'
-import { createEmptyVideoProject, HookPlanSchema, VideoProjectSchema } from '../../../shared/video-engine'
+import {
+  createCaptionDocument,
+  createEmptyVideoProject,
+  HookPlanSchema,
+  VideoProjectSchema
+} from '../../../shared/video-engine'
 
 /* Regression cover for the three timeline bugs and the premade-hook plan.
  *
@@ -409,6 +414,202 @@ describe('splicing an Auto B-roll run into the timeline', () => {
     // The input project is untouched, which is what makes one undo restore it whole.
     expect(before.scenes).toHaveLength(1)
     expect(before.tracks).toHaveLength(2)
+  })
+
+  it('preserves the caption document, caption lane, and caption scene', () => {
+    const base = realProject()
+    const captions = createCaptionDocument({
+      id: 'captions-regression',
+      templateId: 'remotion-caption-coach-clean',
+      words: [{ id: 'word-one', text: 'Focus', startFrame: 0, endFrame: 30 }]
+    })
+    const before = VideoProjectSchema.parse({
+      ...base,
+      captions,
+      tracks: [
+        ...base.tracks,
+        { id: 'captions', name: 'Captions', kind: 'caption', order: 20, muted: false, locked: false }
+      ],
+      scenes: [
+        ...base.scenes,
+        {
+          id: 'caption-scene',
+          trackId: 'captions',
+          kind: 'caption',
+          startFrame: 0,
+          durationFrames: base.canvas.durationFrames,
+          zIndex: 1_000_000
+        }
+      ]
+    })
+
+    const next = applyAutoBroll(before, [placement()])
+
+    expect(next.captions).toEqual(before.captions)
+    expect(next.tracks.find((track) => track.id === 'captions')).toEqual(
+      before.tracks.find((track) => track.id === 'captions')
+    )
+    expect(next.scenes.find((candidate) => candidate.id === 'caption-scene')).toEqual(
+      before.scenes.find((candidate) => candidate.id === 'caption-scene')
+    )
+    expect(() => VideoProjectSchema.parse(next)).not.toThrow()
+  })
+
+  it('does not duplicate a checkpointed placement when a recovered job is delivered again', () => {
+    const once = applyAutoBroll(realProject(), [placement()])
+    const twice = applyAutoBroll(once, [placement()])
+    expect(twice.scenes.filter((scene) => scene.trackId === 'auto-broll')).toHaveLength(1)
+  })
+
+  it('does not replace unsaved B-roll with a stale caption-template response', async () => {
+    const before = applyAutoBroll(realProject(), [placement()])
+    const saveProject = vi.fn(async () => { throw new Error('VIDEO_ENGINE_ERROR: invalid asset') })
+    const setCaptionTemplate = vi.fn(async () => realProject())
+    vi.stubGlobal('window', { api: { videoEngine: { saveProject, setCaptionTemplate } } })
+    useEditor.setState({
+      project: before,
+      projectId: before.id,
+      dirty: true,
+      saving: false,
+      error: '',
+      notice: '',
+      past: [],
+      future: []
+    })
+
+    try {
+      await useEditor.getState().setCaptionTemplate('remotion-caption-coach-clean')
+      expect(saveProject).toHaveBeenCalledTimes(1)
+      expect(setCaptionTemplate).not.toHaveBeenCalled()
+      expect(useEditor.getState().project?.scenes.some((scene) => scene.trackId === 'auto-broll')).toBe(true)
+      expect(useEditor.getState().dirty).toBe(true)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('acknowledges a durable run only after its placements save successfully', async () => {
+    const before = realProject()
+    const result = {
+      jobId: 'auto-broll-job-save-order',
+      placements: [placement()],
+      skipped: [],
+      stats: { chunks: 1, chunksFailed: 0, moments: 1, searched: 1, providerFailures: 0, elapsedMs: 50 }
+    }
+    const autoBroll = vi.fn(async () => result)
+    const saveProject = vi.fn(async (_id: string, project: VideoProject) => ({
+      ...project,
+      revision: project.revision + 1,
+      updatedAt: '2026-08-02T11:00:00.000Z'
+    }))
+    const acknowledgeAutoBroll = vi.fn(async () => undefined)
+    vi.stubGlobal('window', { api: { videoEngine: { autoBroll, saveProject, acknowledgeAutoBroll } } })
+    useEditor.setState({
+      project: before,
+      projectId: before.id,
+      downloadId: 'download-save-order',
+      dirty: false,
+      saving: false,
+      error: '',
+      notice: '',
+      past: [],
+      future: []
+    })
+
+    try {
+      await useEditor.getState().autoBroll()
+      expect(saveProject).toHaveBeenCalledTimes(1)
+      expect(acknowledgeAutoBroll).toHaveBeenCalledWith(result.jobId)
+      expect(saveProject.mock.invocationCallOrder[0]).toBeLessThan(
+        acknowledgeAutoBroll.mock.invocationCallOrder[0]!
+      )
+      expect(useEditor.getState().dirty).toBe(false)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('leaves a durable run recoverable when the project save fails', async () => {
+    const before = realProject()
+    const result = {
+      jobId: 'auto-broll-job-unsaved',
+      placements: [placement()],
+      skipped: [],
+      stats: { chunks: 1, chunksFailed: 0, moments: 1, searched: 1, providerFailures: 0, elapsedMs: 50 }
+    }
+    const saveProject = vi.fn(async () => { throw new Error('disk unavailable') })
+    const acknowledgeAutoBroll = vi.fn(async () => undefined)
+    vi.stubGlobal('window', {
+      api: { videoEngine: { autoBroll: async () => result, saveProject, acknowledgeAutoBroll } }
+    })
+    useEditor.setState({
+      project: before,
+      projectId: before.id,
+      downloadId: 'download-unsaved',
+      dirty: false,
+      saving: false,
+      error: '',
+      notice: '',
+      past: [],
+      future: []
+    })
+
+    try {
+      await useEditor.getState().autoBroll()
+      expect(saveProject).toHaveBeenCalledTimes(1)
+      expect(acknowledgeAutoBroll).not.toHaveBeenCalled()
+      expect(useEditor.getState().dirty).toBe(true)
+      expect(useEditor.getState().project?.scenes.some((scene) => scene.trackId === 'auto-broll')).toBe(true)
+    } finally {
+      vi.unstubAllGlobals()
+    }
+  })
+
+  it('automatically restores a checkpoint when its project editor reopens', async () => {
+    const base = realProject()
+    const captioned = VideoProjectSchema.parse({
+      ...base,
+      captions: createCaptionDocument({
+        id: 'captions-for-resume',
+        words: [{ id: 'resume-word', text: 'Resume', startFrame: 0, endFrame: 20 }]
+      })
+    })
+    const recovered = {
+      jobId: 'auto-broll-job-recovered',
+      placements: [placement()],
+      skipped: [],
+      stats: { chunks: 1, chunksFailed: 0, moments: 1, searched: 1, providerFailures: 0, elapsedMs: 50 }
+    }
+    const resumeAutoBroll = vi.fn(async () => recovered)
+    const acknowledgeAutoBroll = vi.fn(async () => undefined)
+    const saveProject = vi.fn(async (_id: string, project: VideoProject) => ({
+      ...project,
+      revision: project.revision + 1,
+      updatedAt: '2026-08-02T11:30:00.000Z'
+    }))
+    vi.stubGlobal('window', { api: { videoEngine: {
+      status: async () => ({ ready: true }),
+      bindDownload: async () => ({ binding: { downloadId: 'download-recovered' }, project: captioned }),
+      templates: async () => [],
+      gradingPresets: async () => [],
+      jobs: async () => [],
+      brollProviders: async () => [],
+      captionCues: async () => ({ documentId: 'captions-for-resume', cues: [] }),
+      resumeAutoBroll,
+      acknowledgeAutoBroll,
+      saveProject
+    } } })
+
+    try {
+      await useEditor.getState().open('download-recovered')
+      expect(resumeAutoBroll).toHaveBeenCalledWith(captioned.id, 'download-recovered')
+      expect(saveProject).toHaveBeenCalledTimes(1)
+      expect(acknowledgeAutoBroll).toHaveBeenCalledWith(recovered.jobId)
+      expect(useEditor.getState().project?.scenes.some((scene) => scene.trackId === 'auto-broll')).toBe(true)
+      expect(useEditor.getState().notice).toMatch(/^Resumed after restart\./u)
+    } finally {
+      vi.unstubAllGlobals()
+    }
   })
 
   it('adds to the lane on a second run instead of creating another one', () => {

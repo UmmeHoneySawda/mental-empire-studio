@@ -114,7 +114,9 @@ interface EditorActions {
   open: (downloadId: string) => Promise<void>
   reseed: () => Promise<void>
   reload: () => Promise<void>
-  flush: () => Promise<void>
+  /** Saves pending local edits. False means disk still has an older project, so an
+   *  engine-authoritative mutation must not run and replace the newer local state. */
+  flush: () => Promise<boolean>
 
   setTab: (tab: PanelTab) => void
   select: (selection: Selection) => void
@@ -294,6 +296,31 @@ export const useEditor = create<EditorStore>((set, get) => {
       future: [],
       ...(notice ? { notice } : {})
     }))
+  }
+
+  /** Apply a durable run once, force it to disk, then acknowledge the checkpoint. A crash
+   *  at any earlier point leaves the job recoverable; idempotent placement handles the
+   *  narrow save-before-ack window. */
+  async function commitAutoBrollResult(result: AutoBrollResult, resumed = false): Promise<boolean> {
+    set({ autoBrollResult: result })
+    if (result.placements.length > 0) {
+      get().edit((project) => ops.applyAutoBroll(project, result.placements))
+    }
+    const saved = await get().flush()
+    if (!saved) return false
+    if (result.jobId) {
+      const native = api()
+      if (!native) return false
+      try {
+        await native.videoEngine.acknowledgeAutoBroll(result.jobId)
+      } catch (error) {
+        set({ error: message(error) })
+        return false
+      }
+    }
+    const summary = summariseAutoBroll(result)
+    set({ notice: resumed ? `Resumed after restart. ${summary}` : summary })
+    return true
   }
 
   return {
@@ -488,6 +515,17 @@ export const useEditor = create<EditorStore>((set, get) => {
         // never a reason to leave the editor unusable.
         if ((bound.project.captions?.words.length ?? 0) === 0) await get().captionsFromTranscript()
         await get().refreshCues()
+        // Power loss can happen after any downloaded clip. The main process returns the
+        // latest atomic checkpoint; the same idempotent edit is then saved and acknowledged.
+        set({ busy: 'Checking saved Auto B-roll progress' })
+        try {
+          const recovered = await native.videoEngine.resumeAutoBroll(bound.project.id, downloadId)
+          if (recovered) await commitAutoBrollResult(recovered, true)
+        } catch (error) {
+          set({ error: message(error) })
+        } finally {
+          set({ busy: '' })
+        }
       } catch (error) {
         set({ error: message(error), loading: false })
       }
@@ -514,8 +552,10 @@ export const useEditor = create<EditorStore>((set, get) => {
      *  since the queue snapshots what is on disk. */
     flush: async () => {
       clearTimeout(saveTimer)
+      saveTimer = undefined
       if (get().dirty) persist()
       await saveChain.catch(() => undefined)
+      return !get().dirty && !get().saving
     },
 
     // ------------------------------------------------------- engine-computed edits
@@ -523,7 +563,7 @@ export const useEditor = create<EditorStore>((set, get) => {
     importAssets: async (paths) => {
       const { projectId } = get()
       if (!projectId || paths.length === 0) return
-      await get().flush()
+      if (!(await get().flush())) return
       const result = await runEngine('Importing media', (native) => native.videoEngine.importAssets(projectId, paths))
       if (!result) return
       adopt(
@@ -539,7 +579,7 @@ export const useEditor = create<EditorStore>((set, get) => {
     removeAsset: async (assetId) => {
       const { projectId } = get()
       if (!projectId) return
-      await get().flush()
+      if (!(await get().flush())) return
       const project = await runEngine('Removing media', (native) => native.videoEngine.removeAsset(projectId, assetId))
       if (project) adopt(project)
     },
@@ -547,7 +587,7 @@ export const useEditor = create<EditorStore>((set, get) => {
     setCanvas: async (patch) => {
       const { projectId } = get()
       if (!projectId) return
-      await get().flush()
+      if (!(await get().flush())) return
       const project = await runEngine('Updating the canvas', (native) => native.videoEngine.setCanvas(projectId, patch))
       if (project) {
         adopt(project)
@@ -558,7 +598,7 @@ export const useEditor = create<EditorStore>((set, get) => {
     rename: async (name) => {
       const { projectId } = get()
       if (!projectId) return
-      await get().flush()
+      if (!(await get().flush())) return
       const project = await runEngine('Renaming', (native) => native.videoEngine.renameProject(projectId, name))
       if (project) adopt(project)
     },
@@ -566,7 +606,7 @@ export const useEditor = create<EditorStore>((set, get) => {
     instantiateTemplate: async (input) => {
       const { projectId } = get()
       if (!projectId) return
-      await get().flush()
+      if (!(await get().flush())) return
       const project = await runEngine('Adding the template', (native) =>
         native.videoEngine.instantiateTemplate(projectId, input))
       if (project) adopt(project, 'Template added to the timeline.')
@@ -591,7 +631,7 @@ export const useEditor = create<EditorStore>((set, get) => {
     generateHookPlan: async (input) => {
       const { projectId } = get()
       if (!projectId) return
-      await get().flush()
+      if (!(await get().flush())) return
       const result = await runEngine('Writing the hook', (native) =>
         native.videoEngine.generateHookPlan(projectId, input))
       if (!result) return
@@ -601,7 +641,7 @@ export const useEditor = create<EditorStore>((set, get) => {
     importHookPlan: async (json) => {
       const { projectId } = get()
       if (!projectId) return
-      await get().flush()
+      if (!(await get().flush())) return
       const result = await runEngine('Importing the hook', (native) =>
         native.videoEngine.importHookPlan(projectId, json))
       if (!result) return
@@ -611,7 +651,7 @@ export const useEditor = create<EditorStore>((set, get) => {
     importCustomHook: async (json) => {
       const { projectId } = get()
       if (!projectId) return
-      await get().flush()
+      if (!(await get().flush())) return
       const result = await runEngine('Importing the custom hook', (native) =>
         native.videoEngine.importCustomHook(projectId, json))
       if (!result) return
@@ -621,7 +661,7 @@ export const useEditor = create<EditorStore>((set, get) => {
     updateHookBeat: async (beatId, patch) => {
       const { projectId } = get()
       if (!projectId) return
-      await get().flush()
+      if (!(await get().flush())) return
       const result = await runEngine('Updating the beat', (native) =>
         native.videoEngine.updateHookBeat(projectId, beatId, patch))
       if (result) adopt(result.project)
@@ -630,7 +670,7 @@ export const useEditor = create<EditorStore>((set, get) => {
     captionsFromTranscript: async (templateId) => {
       const { projectId, downloadId } = get()
       if (!projectId || !downloadId) return
-      await get().flush()
+      if (!(await get().flush())) return
       const result = await runEngine('Importing captions', (native) =>
         native.videoEngine.setCaptionsFromTranscript(projectId, downloadId, templateId))
       if (!result) return
@@ -646,7 +686,7 @@ export const useEditor = create<EditorStore>((set, get) => {
     captionsFromSrt: async (srt) => {
       const { projectId } = get()
       if (!projectId) return
-      await get().flush()
+      if (!(await get().flush())) return
       const project = await runEngine('Importing captions', (native) =>
         native.videoEngine.setCaptionsFromSrt(projectId, { srt }))
       if (!project) return
@@ -657,7 +697,7 @@ export const useEditor = create<EditorStore>((set, get) => {
     setCaptionTemplate: async (templateId, props) => {
       const { projectId } = get()
       if (!projectId) return
-      await get().flush()
+      if (!(await get().flush())) return
       const project = await runEngine('Applying the caption style', (native) =>
         native.videoEngine.setCaptionTemplate(projectId, templateId, props))
       if (!project) return
@@ -675,7 +715,7 @@ export const useEditor = create<EditorStore>((set, get) => {
     setWordImportance: async (wordIds, importance) => {
       const { projectId } = get()
       if (!projectId || wordIds.length === 0) return
-      await get().flush()
+      if (!(await get().flush())) return
       const project = await runEngine('Updating emphasis', (native) =>
         native.videoEngine.setWordImportance(projectId, wordIds, importance))
       if (!project) return
@@ -694,7 +734,7 @@ export const useEditor = create<EditorStore>((set, get) => {
     applyImportantWords: async (json, maximumSelectionRatio) => {
       const { projectId } = get()
       if (!projectId) return
-      await get().flush()
+      if (!(await get().flush())) return
       const project = await runEngine('Applying emphasis', (native) =>
         native.videoEngine.applyImportantWords(projectId, json, maximumSelectionRatio))
       if (!project) return
@@ -706,7 +746,7 @@ export const useEditor = create<EditorStore>((set, get) => {
     setGrading: async (grading) => {
       const { projectId } = get()
       if (!projectId) return
-      await get().flush()
+      if (!(await get().flush())) return
       const project = await runEngine('Updating the grade', (native) => native.videoEngine.setGrading(projectId, grading))
       if (project) adopt(project)
     },
@@ -724,7 +764,7 @@ export const useEditor = create<EditorStore>((set, get) => {
     placeBroll: async (candidate, startFrame, durationFrames) => {
       const { projectId } = get()
       if (!projectId) return
-      await get().flush()
+      if (!(await get().flush())) return
       const project = await runEngine('Downloading and placing footage', (native) =>
         native.videoEngine.placeBroll(projectId, { candidate, startFrame, durationFrames }))
       if (project) adopt(project, `Placed “${candidate.title}”.`)
@@ -737,16 +777,12 @@ export const useEditor = create<EditorStore>((set, get) => {
     autoBroll: async (options) => {
       const { projectId, downloadId } = get()
       if (!projectId || !downloadId) return
-      await get().flush()
+      if (!(await get().flush())) return
       const result = await runEngine('Finding B-roll', (native) =>
         native.videoEngine.autoBroll(projectId, downloadId, options))
       set({ progressNote: '' })
       if (!result) return
-      set({ autoBrollResult: result })
-      if (result.placements.length > 0) {
-        get().edit((project) => ops.applyAutoBroll(project, result.placements))
-      }
-      set({ notice: summariseAutoBroll(result) })
+      await commitAutoBrollResult(result)
     },
 
     clearBroll: () => set({ brollResults: [] }),
@@ -754,7 +790,15 @@ export const useEditor = create<EditorStore>((set, get) => {
     preflight: async () => {
       const { projectId } = get()
       if (!projectId) return []
-      await get().flush()
+      if (!(await get().flush())) {
+        const failure: VideoRenderProblem = {
+          severity: 'error',
+          code: 'preflight.unsaved-project',
+          message: get().error || 'The latest project changes could not be saved.'
+        }
+        set({ problems: [failure] })
+        return [failure]
+      }
       const problems = await runEngine('Checking the project', (native) => native.videoEngine.preflight(projectId))
       if (!problems) {
         // `runEngine` answers undefined when the call itself failed. Collapsing that to an
