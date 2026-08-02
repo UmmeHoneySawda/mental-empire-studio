@@ -10,12 +10,13 @@ import {
   IMAGE_CYCLE_TRACK_ORDER,
   moveClip,
   overlappingSceneIds,
+  reorderTrack,
   snapCandidates,
   snapFrame,
   trimClip,
   withCanvasCoveringContent
 } from '../../../src/features/video-studio/editor/operations'
-import { useEditor } from '../../../src/features/video-studio/editor/useEditor'
+import { orderedTracks, useEditor } from '../../../src/features/video-studio/editor/useEditor'
 import {
   clipWidthPx,
   fitTimelineZoom,
@@ -30,6 +31,8 @@ import {
   HookPlanSchema,
   VideoProjectSchema
 } from '../../../shared/video-engine'
+import { captionLayerZIndex } from '../../../video-engine/remotion/captions'
+import { sceneLayerStyle } from '../../../video-engine/remotion/scene'
 
 /* Regression cover for the three timeline bugs and the premade-hook plan.
  *
@@ -81,6 +84,45 @@ function project(scenes: VideoScene[], durationFrames = 600): VideoProject {
     }
   } as unknown as VideoProject
 }
+
+describe('visual track stacking order', () => {
+  it('gives captions their persisted track z-index instead of a fixed value below Auto B-roll', () => {
+    const caption = scene({ id: 'caption', kind: 'caption', trackId: 'captions', zIndex: 0 })
+    const broll = scene({ id: 'broll', kind: 'media', trackId: 'auto-broll', zIndex: 1 })
+    const before = {
+      ...project([caption, broll]),
+      tracks: [
+        { id: 'main-video', name: 'Visuals', kind: 'video', order: 0, muted: false, locked: false },
+        { id: 'auto-broll', name: 'Auto B-roll', kind: 'video', order: 10, muted: false, locked: false },
+        { id: 'captions', name: 'Captions', kind: 'caption', order: 10_000, muted: false, locked: false }
+      ]
+    } satisfies VideoProject
+
+    expect(captionLayerZIndex(before, caption))
+      .toBeGreaterThan(Number(sceneLayerStyle(before, broll).zIndex))
+  })
+
+  it('drags a visual track to the target row and persists foreground-first compositor order', () => {
+    const before = {
+      ...project([]),
+      tracks: [
+        { id: 'audio', name: 'Voice-over', kind: 'audio', order: -10, muted: false, locked: false },
+        { id: 'main-video', name: 'Visuals', kind: 'video', order: 0, muted: false, locked: false },
+        { id: 'captions', name: 'Captions', kind: 'caption', order: 5, muted: false, locked: false },
+        { id: 'auto-broll', name: 'Auto B-roll', kind: 'video', order: 10, muted: false, locked: false }
+      ]
+    } satisfies VideoProject
+
+    expect(orderedTracks(before).map((track) => track.id))
+      .toEqual(['auto-broll', 'captions', 'main-video', 'audio'])
+    const after = reorderTrack(before, 'captions', 'auto-broll')
+    expect(orderedTracks(after).map((track) => track.id))
+      .toEqual(['captions', 'auto-broll', 'main-video', 'audio'])
+    expect(after.tracks.find((track) => track.id === 'captions')?.order).toBe(2)
+    expect(after.tracks.find((track) => track.id === 'audio')?.order).toBe(-10)
+    expect(reorderTrack(after, 'captions', 'captions')).toBe(after)
+  })
+})
 
 describe('moving a clip never resizes it', () => {
   // The reported symptom was "clicking or editing an item appears to shorten it, but the

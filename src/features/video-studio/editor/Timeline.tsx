@@ -72,6 +72,7 @@ export function Timeline(): JSX.Element | null {
   const moveClip = useEditor((state) => state.moveClip)
   const trimClip = useEditor((state) => state.trimClip)
   const patchTrack = useEditor((state) => state.patchTrack)
+  const reorderTrack = useEditor((state) => state.reorderTrack)
   const addTrack = useEditor((state) => state.addTrack)
   const rippleTrack = useEditor((state) => state.rippleTrack)
   const splitAtPlayhead = useEditor((state) => state.splitAtPlayhead)
@@ -84,6 +85,8 @@ export function Timeline(): JSX.Element | null {
    *  closure state. */
   const live = useRef<{ frame: number; trackId: string; delta: number } | null>(null)
   const [dragging, setDragging] = useState<string | null>(null)
+  const [dragTrackId, setDragTrackId] = useState<string | null>(null)
+  const [dropTrackId, setDropTrackId] = useState<string | null>(null)
   /** Mirrored onto the label column so names stay against their lanes when the lanes
    *  scroll past the visible four. */
   const [laneScrollTop, setLaneScrollTop] = useState(0)
@@ -350,10 +353,24 @@ export function Timeline(): JSX.Element | null {
                 key={track.id}
                 track={track}
                 selected={selection.kind === 'track' && selection.id === track.id}
+                dragging={dragTrackId === track.id}
+                dropTarget={dropTrackId === track.id}
                 onSelect={() => select({ kind: 'track', id: track.id })}
                 onMute={() => patchTrack(track.id, { muted: !track.muted })}
                 onLock={() => patchTrack(track.id, { locked: !track.locked })}
                 onRipple={() => rippleTrack(track.id)}
+                onDragStart={() => { setDragTrackId(track.id); setDropTrackId(null) }}
+                onDragEnd={() => { setDragTrackId(null); setDropTrackId(null) }}
+                onDragOver={() => {
+                  if (dragTrackId && dragTrackId !== track.id) setDropTrackId(track.id)
+                }}
+                onDrop={(sourceTrackId) => {
+                  if (sourceTrackId && sourceTrackId !== track.id) {
+                    reorderTrack(sourceTrackId, track.id)
+                  }
+                  setDragTrackId(null)
+                  setDropTrackId(null)
+                }}
               />
             ))}
           </div>
@@ -486,25 +503,67 @@ export function Timeline(): JSX.Element | null {
 function TrackLabel({
   track,
   selected,
+  dragging,
+  dropTarget,
   onSelect,
   onMute,
   onLock,
-  onRipple
+  onRipple,
+  onDragStart,
+  onDragEnd,
+  onDragOver,
+  onDrop
 }: {
   track: VideoTrack
   selected: boolean
+  dragging: boolean
+  dropTarget: boolean
   onSelect: () => void
   onMute: () => void
   onLock: () => void
   onRipple: () => void
+  onDragStart: () => void
+  onDragEnd: () => void
+  onDragOver: () => void
+  onDrop: (sourceTrackId: string) => void
 }): JSX.Element {
+  const canReorder = track.kind !== 'audio'
   return (
     <div
-      className={`ve-label${selected ? ' is-selected' : ''}`}
+      className={`ve-label${selected ? ' is-selected' : ''}${dragging ? ' is-dragging' : ''}${dropTarget ? ' is-drop-target' : ''}`}
       style={{ height: TRACK_HEIGHT, marginBottom: TRACK_GAP }}
       onClick={onSelect}
+      onDragOver={(event) => {
+        if (!canReorder || dragging) return
+        event.preventDefault()
+        event.dataTransfer.dropEffect = 'move'
+        onDragOver()
+      }}
+      onDrop={(event) => {
+        if (!canReorder) return
+        event.preventDefault()
+        onDrop(event.dataTransfer.getData('text/plain'))
+      }}
       role="presentation"
     >
+      <button
+        type="button"
+        className="ve-label-grip"
+        draggable={canReorder}
+        disabled={!canReorder}
+        onClick={(event) => event.stopPropagation()}
+        onDragStart={(event) => {
+          event.stopPropagation()
+          event.dataTransfer.effectAllowed = 'move'
+          event.dataTransfer.setData('text/plain', track.id)
+          onDragStart()
+        }}
+        onDragEnd={onDragEnd}
+        title={canReorder ? `Drag ${track.name} to change its layer order` : 'Audio lanes do not affect visual layering'}
+        aria-label={`Reorder ${track.name}`}
+      >
+        ⠿
+      </button>
       <span className="ve-label-name me-ellipsis" title={track.name}>{track.name}</span>
       {/* State is the chip's fill, not the letter's case. `m` vs `M` and `l` vs `L` at 10px
           asked the eye to read capitalisation to know whether a lane was muted — two

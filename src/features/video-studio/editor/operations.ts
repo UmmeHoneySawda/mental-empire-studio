@@ -405,8 +405,8 @@ export function patchClip(
   return mapScene(project, sceneId, (current) => ({ ...current, ...patch, id: current.id }))
 }
 
-/** Appends a lane. Order runs low-to-high the way the engine already reads it, with audio
- *  negative so voice-over sits above the visual lanes in the UI. */
+/** Appends a visual lane at the front of the compositor. Audio is always drawn last in the
+ *  timeline, independently of its compositor order. */
 export function addTrack(
   project: VideoProject,
   kind: VideoTrack['kind'],
@@ -451,6 +451,39 @@ export function patchTrack(
     return { ...track, ...patch, id: track.id }
   })
   return touched ? { ...project, tracks } : project
+}
+
+/** Moves one visual lane to another lane's displayed position.
+ *
+ * Timeline rows run foreground-to-background, so the first row receives the greatest
+ * compositor order. Audio is excluded because it has no visual stacking relationship. */
+export function reorderTrack(
+  project: VideoProject,
+  trackId: string,
+  targetTrackId: string
+): VideoProject {
+  if (trackId === targetTrackId) return project
+  const ordered = project.tracks
+    .filter((track) => track.kind !== 'audio')
+    .sort((left, right) => right.order - left.order || left.name.localeCompare(right.name))
+  const fromIndex = ordered.findIndex((track) => track.id === trackId)
+  const targetIndex = ordered.findIndex((track) => track.id === targetTrackId)
+  if (fromIndex < 0 || targetIndex < 0) return project
+
+  const [moved] = ordered.splice(fromIndex, 1)
+  if (!moved) return project
+  const shiftedTargetIndex = ordered.findIndex((track) => track.id === targetTrackId)
+  ordered.splice(fromIndex < targetIndex ? shiftedTargetIndex + 1 : shiftedTargetIndex, 0, moved)
+  const orderById = new Map(
+    ordered.map((track, index) => [track.id, ordered.length - index - 1])
+  )
+  return {
+    ...project,
+    tracks: project.tracks.map((track) => {
+      const order = orderById.get(track.id)
+      return order === undefined || order === track.order ? track : { ...track, order }
+    })
+  }
 }
 
 /** The last frame any clip occupies. */

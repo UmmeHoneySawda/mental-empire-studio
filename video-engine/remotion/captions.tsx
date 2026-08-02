@@ -24,6 +24,19 @@ import {
   type VideoScene,
 } from '../../shared/video-engine'
 import { sceneTransformStyle } from './asset'
+import { sceneLayerStyle } from './scene'
+
+export function captionLayerZIndex(
+  project: VideoProject,
+  scene: VideoScene | null | undefined,
+): number {
+  if (scene) return Number(sceneLayerStyle(project, scene).zIndex ?? 0)
+  const highestVisualOrder = Math.max(
+    0,
+    ...project.tracks.filter((track) => track.kind !== 'audio').map((track) => track.order),
+  )
+  return (highestVisualOrder + 1) * 100_000
+}
 
 function activeCaptionScene(
   project: VideoProject,
@@ -310,7 +323,7 @@ export function CaptionLayer({ project }: { readonly project: VideoProject }) {
         ...outerStyle(style, metrics),
         ...(scene ? sceneTransformStyle(scene) : {}),
         pointerEvents: 'none',
-        zIndex: 1_000_000,
+        zIndex: captionLayerZIndex(project, scene),
       }}
     >
       <div

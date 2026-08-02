@@ -147,6 +147,7 @@ interface EditorActions {
   addTrack: (kind: VideoTrack['kind']) => void
   removeTrack: (trackId: string) => void
   patchTrack: (trackId: string, patch: Partial<VideoTrack>) => void
+  reorderTrack: (trackId: string, targetTrackId: string) => void
   rippleTrack: (trackId: string) => void
 
   /** Engine-computed operations. Each replaces the project with what the engine saved. */
@@ -469,6 +470,8 @@ export const useEditor = create<EditorStore>((set, get) => {
     addTrack: (kind) => get().edit((project) => ops.addTrack(project, kind)),
     removeTrack: (trackId) => get().edit((project) => ops.removeTrack(project, trackId)),
     patchTrack: (trackId, patch) => get().edit((project) => ops.patchTrack(project, trackId, patch)),
+    reorderTrack: (trackId, targetTrackId) =>
+      get().edit((project) => ops.reorderTrack(project, trackId, targetTrackId)),
     rippleTrack: (trackId) => get().edit((project) => ops.rippleTrack(project, trackId)),
 
     splitAtPlayhead: () => {
@@ -847,13 +850,12 @@ export const useEditor = create<EditorStore>((set, get) => {
 
 // -------------------------------------------------------------------- selectors
 
-/** The lane order the timeline draws top-to-bottom: audio last, so voice-over sits
- *  under the visual lanes the way every NLE does it. */
+/** The lane order the timeline draws top-to-bottom: foreground first and audio last. */
 export function orderedTracks(project: VideoProject | null): VideoTrack[] {
   if (!project) return []
   return [...project.tracks].sort((left, right) => {
     const audio = Number(left.kind === 'audio') - Number(right.kind === 'audio')
-    return audio || left.order - right.order || left.name.localeCompare(right.name)
+    return audio || right.order - left.order || left.name.localeCompare(right.name)
   })
 }
 

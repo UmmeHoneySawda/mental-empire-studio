@@ -13,7 +13,7 @@ import type { VideoProject } from '@shared/video-engine'
  * protocol handler re-`resolve()`s whatever it decodes, so separator style is forgiving. */
 
 /** `mestudio://` is registered privileged in electron/main.ts and serves only files
- *  inside the engine's data root, with real Range support so `<video>` can seek. */
+ *  inside approved engine/B-roll roots, with real Range support so `<video>` can seek. */
 const PREVIEW_PROTOCOL = 'mestudio'
 
 /** base64url of the path's UTF-8 bytes — what `Buffer.from(p,'utf8').toString('base64url')`

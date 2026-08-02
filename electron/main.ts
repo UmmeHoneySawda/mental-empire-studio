@@ -1769,8 +1769,8 @@ function sweepTempArtifacts(): void {
 }
 
 /** Serves `mestudio://asset/<b64 path>` and `mestudio://hf/<projectId>/<file>` from
- *  inside the video engine's data root. `resolvePreviewRequest` throws for anything
- *  that escapes it, which becomes a 403 rather than a disk read.
+ *  approved engine/B-roll roots. `resolvePreviewRequest` throws for anything outside
+ *  them, which becomes a 403 rather than a disk read.
  *
  *  The file is streamed with real Range support: `<video>`/`<audio>` in the preview
  *  seek by requesting byte ranges, and a 200-with-whole-file response makes scrubbing

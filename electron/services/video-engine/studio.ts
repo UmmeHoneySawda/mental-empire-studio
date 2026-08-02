@@ -675,8 +675,8 @@ export async function patchCanvas(projectId: string, patch: VideoCanvasPatch): P
 // ------------------------------------------------------------------ previewing
 
 /* Assets live outside the renderer's origin, and `file:` is not reachable under the
- * app CSP. `mestudio://` (registered in main.ts) serves anything inside the engine's
- * own data root, so the preview sees the real media. Two hosts:
+ * app CSP. `mestudio://` (registered in main.ts) serves approved engine and B-roll
+ * media roots, so the preview sees the real media. Two hosts:
  *
  *   mestudio://asset/<base64url absolute path>   one file, no relative resolution
  *   mestudio://hf/<projectId>/<relative path>    a staged HyperFrames workspace,
@@ -705,15 +705,31 @@ export function hyperframesPreviewUrl(projectId: string, stamp: string): string 
 }
 
 /** Resolves a `mestudio://` request to a real file, or throws. Both hosts are
- *  confined: `asset` to the engine data root, `hf` to that project's staged
- *  workspace, so a crafted URL cannot read arbitrary disk. */
-export function resolvePreviewRequest(url: string): string {
+ *  confined: `asset` to the engine data root or persistent B-roll library, `hf` to
+ *  that project's staged workspace, so a crafted URL cannot read arbitrary disk. */
+export function resolvePreviewRequest(
+  url: string,
+  assetRoots: readonly string[] = [videoEngineDataRoot(), brollLibraryDir()]
+): string {
   const parsed = new URL(url)
   const segments = parsed.pathname.split('/').filter(Boolean).map((part) => decodeURIComponent(part))
   if (parsed.hostname === 'asset') {
     const token = segments[0]
     if (!token) throw new VideoEngineError('PATH_OUTSIDE_WORKSPACE', 'Empty preview path')
-    return resolveInside(videoEngineDataRoot(), resolve(decodePreviewPath(token)))
+    const absolutePath = resolve(decodePreviewPath(token))
+    for (const root of assetRoots) {
+      try {
+        return resolveInside(root, absolutePath)
+      } catch (error) {
+        if (!(error instanceof VideoEngineError) || error.code !== 'PATH_OUTSIDE_WORKSPACE') {
+          throw error
+        }
+      }
+    }
+    throw new VideoEngineError(
+      'PATH_OUTSIDE_WORKSPACE',
+      `Preview asset is outside approved preview roots: ${absolutePath}`
+    )
   }
   if (parsed.hostname === 'hf') {
     const [projectId, stamp, ...rest] = segments

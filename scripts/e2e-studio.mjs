@@ -7,8 +7,8 @@
  * emitting, a panel that threw on mount. Unit tests cannot see any of that, and the
  * production build passes regardless. This boots the thing and looks.
  *
- * SAFETY: runs against a throwaway userData directory via ME_USERDATA_DIR, so it can
- * never read or damage the real library. The run asserts that at the end.
+ * SAFETY: runs against throwaway userData and B-roll directories, so it can never read
+ * or damage the real library. The run asserts that at the end.
  *
  *   node scripts/e2e-studio.mjs            # headless-ish, exits non-zero on failure
  *   node scripts/e2e-studio.mjs --keep     # leave the scratch profile for inspection
@@ -24,7 +24,7 @@
  */
 import { _electron as electron } from 'playwright'
 import { copyFileSync, existsSync, mkdirSync, rmSync } from 'node:fs'
-import { join, resolve } from 'node:path'
+import { isAbsolute, join, relative, resolve } from 'node:path'
 import { fileURLToPath } from 'node:url'
 import { tmpdir } from 'node:os'
 
@@ -66,7 +66,9 @@ if (!existsSync(MAIN)) {
 }
 
 const scratch = join(tmpdir(), `me-e2e-${Date.now()}`)
+const scratchBrollLibrary = join(tmpdir(), `me-e2e-broll-${Date.now()}`)
 mkdirSync(scratch, { recursive: true })
+mkdirSync(scratchBrollLibrary, { recursive: true })
 console.log(`scratch profile: ${scratch}\n`)
 
 let app
@@ -77,6 +79,9 @@ try {
     env: {
       ...process.env,
       ME_USERDATA_DIR: scratch,
+      // Production keeps its durable library outside userData. Mirroring that boundary
+      // here catches preview-protocol regressions without ever touching the real D: pool.
+      ME_BROLL_LIBRARY_DIR: scratchBrollLibrary,
       // One downloaded clip in the scratch database, so there is something to edit.
       // ~12s of real audio: long enough for several clips and a hook, short enough that
       // a HyperFrames compile finishes in seconds.
@@ -129,6 +134,13 @@ try {
   check(
     !resolve(userDataPath).toLowerCase().includes('appdata\\roaming\\mental empire studio'),
     'userData is NOT the real profile'
+  )
+  check(
+    (() => {
+      const fromUserData = relative(resolve(userDataPath), resolve(scratchBrollLibrary))
+      return fromUserData.startsWith('..') || isAbsolute(fromUserData)
+    })(),
+    'B-roll library is an isolated root outside userData'
   )
 
   // --- the bridge ---------------------------------------------------------------
@@ -925,11 +937,11 @@ try {
   }
   check(captioned.ok && captioned.words > 0, `seeded a ${captioned.words ?? 0}-word transcript from SRT`, captioned.message)
 
-  // Seed the warmed local library the scratch profile ships empty, named so the recorded
-  // answer's queries match. This is the provider Auto B-roll fans out to with no API key.
+  // Seed the isolated external library, named so the recorded answer's queries match.
+  // This is the provider Auto B-roll fans out to with no API key.
   for (const [file, keyword] of FIXTURE_BROLL) {
     const source = join(ROOT, 'test', 'fixtures', 'broll', 'local', file)
-    const target = join(userDataPath, 'broll-library', 'e2e', keyword)
+    const target = join(scratchBrollLibrary, 'e2e', keyword)
     if (!existsSync(source)) continue
     mkdirSync(target, { recursive: true })
     copyFileSync(source, join(target, file))
@@ -977,6 +989,23 @@ try {
       const onDisk = auto.placements.every((placement) =>
         placement.uri.startsWith('file:') && existsSync(fileURLToPath(placement.uri)))
       check(onDisk, 'every planned clip is really on disk in the cache')
+
+      if (auto.placements.length > 0) {
+        const firstBrollPath = fileURLToPath(auto.placements[0].uri)
+        const firstBrollPreviewUrl = `mestudio://asset/${Buffer.from(resolve(firstBrollPath), 'utf8').toString('base64url')}`
+        const firstBrollStatus = await app.evaluate(async ({ net }, url) => {
+          try {
+            return (await net.fetch(url, { headers: { Range: 'bytes=0-1023' } })).status
+          } catch {
+            return 0
+          }
+        }, firstBrollPreviewUrl)
+        check(
+          firstBrollStatus === 206,
+          'the ranged preview protocol serves B-roll outside userData',
+          `status ${firstBrollStatus}`
+        )
+      }
 
       // The engine has to accept what the renderer will splice in, or the debounced save
       // after the run would be rejected and the user would lose the whole thing. The
@@ -1116,8 +1145,11 @@ try {
   failures.push('harness')
 } finally {
   await app?.close().catch(() => undefined)
-  if (!KEEP) rmSync(scratch, { recursive: true, force: true })
-  else console.log(`\nscratch profile kept at ${scratch}`)
+  if (!KEEP) {
+    rmSync(scratch, { recursive: true, force: true })
+    rmSync(scratchBrollLibrary, { recursive: true, force: true })
+  }
+  else console.log(`\nscratch profile kept at ${scratch}\nscratch B-roll kept at ${scratchBrollLibrary}`)
 }
 
 console.log('')

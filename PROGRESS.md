@@ -1,11 +1,155 @@
 # Current Objective
 
+Make Remotion timeline tracks draggable in compositor order and make the caption layer honor
+its track order, so opaque Auto B-roll cannot cover captions and the user can move captions
+to the foreground.
+
+# Verified Completed
+
+- Loaded the requested feature-dev, Karpathy, and codebase-memory instructions; the graph is
+  already indexed and responsive as `D-Work-mental-empire-studio`.
+- Inspected both supplied screenshots. Captions appear only during a transparent fade while
+  the caption lane sits below Auto B-roll, establishing a stacking-order failure.
+- Traced the exact cause: ordinary Remotion scenes use `track.order * 100_000 + scene.zIndex`,
+  but `CaptionLayer` hard-codes `1_000_000`. Auto B-roll order 10 therefore ties or exceeds
+  the caption layer and opaque clips cover it.
+- Confirmed the B-roll answer independently: Auto B-roll requests `localFirst`; local search
+  matches relative path plus metadata title, description, and tags; remote providers are
+  called only when local search returns no candidate.
+- Sentry preflight is blocked because neither a Sentry connector nor `sentry-cli` is
+  available in this task. No retries were made; direct renderer evidence is conclusive.
+- Implemented foreground-first timeline ordering, a dedicated track drag grip, and one
+  atomic `reorderTrack` transform through the existing undo/save funnel. Audio remains last
+  in the timeline and is excluded from visual stacking edits.
+- Replaced the caption layer's fixed z-index with the active caption scene's persisted
+  track-derived z-index; caption-only legacy projects use a safe foreground fallback.
+- Added focused regressions for the exact Auto B-roll/caption collision and for dragging a
+  caption lane above Auto B-roll while preserving audio order.
+
+# Current Problem
+
+No remaining failure in scope. The implementation and verification are complete.
+
+# Relevant Files
+
+- `video-engine/remotion/captions.tsx`
+- `src/features/video-studio/editor/operations.ts`
+- `src/features/video-studio/editor/useEditor.ts`
+- `src/features/video-studio/editor/Timeline.tsx`
+- `src/features/video-studio/editor/editor.css`
+- `test/unit/video-engine/editor-operations.test.ts`
+
+# Do Not Modify
+
+- Existing external B-roll preview-path repair in `electron/main.ts`,
+  `electron/services/video-engine/studio.ts`, `src/features/video-studio/editor/assetUrl.ts`,
+  `scripts/e2e-studio.mjs`, and `test/unit/video-engine/preview-path.test.ts`.
+- B-roll search/download behavior, caption styling/timing, and generated output.
+
+# Next Action
+
+None. Do not commit or push unless the user authorizes it.
+
+# Verification
+
+- `npx vitest run test/unit/video-engine/editor-operations.test.ts --reporter=dot`: **53/53 passed**.
+- Caption styles, renderers, and transition chains: **44/44 passed**.
+- `npm run typecheck -- --pretty false`: passed.
+- `npm run build`: passed (only existing Vite mixed static/dynamic import warnings).
+- `git diff --check` on the six implementation/test files: passed (only expected
+  LF-to-CRLF notices).
+
+# Protected Prior Work — External B-roll Preview
+
+# Prior Objective
+
+Fix the Remotion Video Studio preview so persisted Auto B-roll clips visibly render at their
+timeline positions instead of leaving the canvas black behind otherwise-correct captions.
+
+# Verified Completed
+
+- Read the requested `feature-dev`, `karpathy-guidelines`, `codebase-memory`, and
+  `remotion-best-practices` skills in full, including the relevant feature patterns and
+  Remotion Player/video-markup references.
+- Inspected `Screenshot_20260802143456.png`: at frame 997, captions render and the Auto
+  B-roll lane has clips across the timeline, but the visual canvas is black. This proves
+  the Player/composition/caption path is alive and narrows the fault to visual-scene
+  selection, asset resolution, or video decoding.
+- Confirmed branch `build/mental-empire-studio` starts clean and codebase-memory is already
+  indexed and responsive as `D-Work-mental-empire-studio`.
+- Traced the preview path through `EditorPlayer` -> `projectForPlayer` -> `RemotionVideo` ->
+  `SceneContent` -> `VisualAsset`; local `file:` assets are rewritten to the ranged
+  `mestudio://asset/...` preview protocol before Remotion receives them.
+- Read the exact persisted project from the screenshot without mutating it. At frame 997,
+  the unmuted Auto B-roll scene starts at frame 900, lasts 240 frames, references an
+  existing video, and should be visible. All 127 Auto B-roll assets exist, but all 127 live
+  outside the video-engine data root in the durable B-roll library.
+- Root cause reproduced: `projectForPlayer` rewrote those external `file:` URIs to
+  `mestudio://asset/...`, while `resolvePreviewRequest` confined every asset request to
+  `<userData>/video-engine`. The protocol returned 403 for the entire D-drive library;
+  captions were unaffected because they do not load through that asset route.
+- Fixed the resolver to admit only two approved local roots: the existing video-engine
+  data root and the configured persistent B-roll library. Arbitrary local paths remain
+  rejected with `PATH_OUTSIDE_WORKSPACE`; HyperFrames resolution is unchanged.
+- Added a focused regression that failed against the old one-root resolver and now proves
+  an external approved B-roll path resolves while a path outside both roots is rejected.
+- Hardened the real Electron E2E so its disposable B-roll library is outside disposable
+  userData, matching production, and so a generated clip must return ranged HTTP 206 from
+  the custom protocol. The guarded Remotion run passed that assertion and every existing
+  editor/caption/Auto B-roll check with no renderer console errors.
+- Before launching Electron, the required backup copied the live database/settings to
+  `Mental Empire Studio - CLAUDE-BACKUP-20260802-145625`. PowerShell again lacked
+  `Get-FileHash`, so both source/copy pairs were independently SHA-256 verified with .NET;
+  both match.
+- Sentry preflight could not run because this task has no Sentry connector or CLI. Direct
+  persisted-project and protocol evidence established the failure without relying on logs.
+
+# Current Problem
+
+No remaining failure in scope. The fix is implemented and executable verification passes.
+
+# Relevant Files
+
+- `src/features/video-studio/editor/assetUrl.ts`
+- `electron/main.ts`
+- `electron/services/video-engine/studio.ts`
+- `scripts/e2e-studio.mjs`
+- `test/unit/video-engine/preview-path.test.ts`
+
+# Do Not Modify
+
+- HyperFrames or Classic Video Studio behavior.
+- Auto B-roll planning, provider, cache, job-resume, or placement semantics unless concrete
+  evidence shows one of them creates the bad preview state.
+- Caption styles, hooks, image cycling, unrelated timeline geometry, or generated output.
+
+# Next Action
+
+None. Do not commit or push unless the user authorizes it.
+
+# Verification
+
+- `npx vitest run test/unit/video-engine/preview-path.test.ts`: **2/2 passed** after failing
+  **2/2** before the resolver patch.
+- Preview-path, B-roll-library-path, and caption-style focused suites: **26/26 passed**.
+- `npm run typecheck -- --pretty false`: passed.
+- `npm run build`: passed.
+- `node --check scripts/e2e-studio.mjs`: passed.
+- `node scripts/e2e-studio.mjs --engine remotion`: **E2E OK**, including external-root
+  ranged preview 206, four persisted muted B-roll clips, captions, preflight, and zero
+  renderer console errors.
+- `git diff --check`: passed (only expected LF-to-CRLF notices).
+
+# Protected Prior Work — Auto B-roll Persistence and Library
+
+# Prior Objective
+
 Fix the 2026-08-02 Remotion Video Studio Auto B-roll regressions: bounded asset fields,
 caption-template changes that preserve generated B-roll and caption visibility, a searchable
 D-drive media library with useful metadata, and crash-safe persisted progress with automatic
 resume after application restart.
 
-# Verified Completed
+# Prior Verified Completed
 
 - Read the requested `feature-dev`, `karpathy-guidelines`, and `codebase-memory` skills,
   including the feature workflow's referenced `PATTERNS.md`.
@@ -52,13 +196,13 @@ resume after application restart.
   live preview, and preflight all passed with no renderer console errors. The D-drive helper
   deliberately keeps smoke/E2E media inside the throwaway profile.
 
-# Current Problem
+# Prior Outcome
 
 - No remaining failure in this objective. The repository-wide suite retains one known,
   unrelated baseline failure in `test/unit/settings-secrets.test.ts` (clearing a readable
   transcription key); this repair does not modify the settings/secrets subsystem.
 
-# Relevant Files
+# Prior Relevant Files
 
 - `shared/video-engine/auto-broll.ts`
 - `electron/services/video-engine/broll/auto-plan.ts`
@@ -82,7 +226,7 @@ resume after application restart.
 - `test/unit/video-engine/editor-operations.test.ts`
 - `AUTO_BROLL_MAINTENANCE_GUIDE.md`
 
-# Do Not Modify
+# Prior Do Not Modify
 
 - HyperFrames or Classic Video Studio behavior.
 - Manual `placeBroll` / `fetchBrollBatch` semantics unless shared cache reuse requires a
@@ -92,11 +236,11 @@ resume after application restart.
 - The user's untracked maintenance guide except for a verified Local Application Map or
   Change Log update required by this repair.
 
-# Next Action
+# Prior Next Action
 
 None for this objective. Do not commit or push unless the user authorizes it.
 
-# Verification
+# Prior Verification
 
 - `npx vitest run` over the five changed Video Studio suites: **149/149 passed**.
 - `npm run typecheck -- --pretty false`: passed.
