@@ -1,5 +1,7 @@
-import { existsSync } from 'node:fs'
-import { mkdir } from 'node:fs/promises'
+import { createReadStream, existsSync } from 'node:fs'
+import { mkdir, stat } from 'node:fs/promises'
+import { createServer, type ServerResponse } from 'node:http'
+import type { AddressInfo } from 'node:net'
 import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 import { bundle } from '@remotion/bundler'
@@ -95,6 +97,17 @@ interface RemotionPreparedPayload {
   readonly serveUrl: string
   readonly inputProps: { readonly project: VideoProject }
   readonly composition: VideoConfig
+  readonly localAssetServer?: LocalAssetServer
+}
+
+interface LocalAssetServer {
+  readonly urls: ReadonlyMap<string, string>
+  readonly close: () => Promise<void>
+}
+
+interface LocalAssetRoute {
+  readonly filePath: string
+  readonly mimeType: string
 }
 
 const bundleCache = new Map<string, Promise<string>>()
@@ -297,6 +310,152 @@ function localAssetPath(
   return path.resolve(rootDirectory, uri)
 }
 
+function requestedByteRange(
+  value: string | undefined,
+  size: number,
+): { readonly start: number; readonly end: number } | null | 'invalid' {
+  if (!value) return null
+  const match = /^bytes=(\d*)-(\d*)$/u.exec(value.trim())
+  if (!match || (!match[1] && !match[2]) || size <= 0) return 'invalid'
+
+  if (!match[1]) {
+    const suffixLength = Number(match[2])
+    if (!Number.isSafeInteger(suffixLength) || suffixLength <= 0) return 'invalid'
+    return { start: Math.max(0, size - suffixLength), end: size - 1 }
+  }
+
+  const start = Number(match[1])
+  const requestedEnd = match[2] ? Number(match[2]) : size - 1
+  if (
+    !Number.isSafeInteger(start)
+    || !Number.isSafeInteger(requestedEnd)
+    || start < 0
+    || start >= size
+    || requestedEnd < start
+  ) {
+    return 'invalid'
+  }
+  return { start, end: Math.min(requestedEnd, size - 1) }
+}
+
+function sendLocalAsset(
+  response: ServerResponse,
+  route: LocalAssetRoute,
+  method: string,
+  rangeHeader: string | undefined,
+): void {
+  void stat(route.filePath).then((metadata) => {
+    if (!metadata.isFile()) {
+      response.writeHead(404).end()
+      return
+    }
+    const range = requestedByteRange(rangeHeader, metadata.size)
+    if (range === 'invalid') {
+      response.writeHead(416, { 'Content-Range': `bytes */${metadata.size}` }).end()
+      return
+    }
+    const start = range?.start ?? 0
+    const end = range?.end ?? Math.max(0, metadata.size - 1)
+    const headers = {
+      'Accept-Ranges': 'bytes',
+      'Access-Control-Allow-Origin': '*',
+      'Cache-Control': 'no-store',
+      'Content-Length': String(metadata.size === 0 ? 0 : end - start + 1),
+      'Content-Type': route.mimeType,
+      ...(range
+        ? { 'Content-Range': `bytes ${start}-${end}/${metadata.size}` }
+        : {}),
+    }
+    response.writeHead(range ? 206 : 200, headers)
+    if (method === 'HEAD' || metadata.size === 0) {
+      response.end()
+      return
+    }
+    createReadStream(route.filePath, { start, end })
+      .on('error', (error) => response.destroy(error))
+      .pipe(response)
+  }).catch((error: NodeJS.ErrnoException) => {
+    if (response.headersSent) {
+      response.destroy(error)
+      return
+    }
+    response.writeHead(error.code === 'ENOENT' ? 404 : 500).end()
+  })
+}
+
+async function startLocalAssetServer(
+  project: VideoProject,
+  rootDirectory: string,
+): Promise<LocalAssetServer | undefined> {
+  const localAssets = project.assets.flatMap((asset) => {
+    const filePath = localAssetPath(asset.uri, rootDirectory)
+    return filePath ? [{ asset, filePath }] : []
+  })
+  if (localAssets.length === 0) return undefined
+
+  const routes = new Map<string, LocalAssetRoute>()
+  const pathByAssetId = new Map<string, string>()
+  for (const [index, { asset, filePath }] of localAssets.entries()) {
+    const candidateExtension = path.extname(filePath)
+    const extension = /^\.[A-Za-z0-9]{1,10}$/u.test(candidateExtension)
+      ? candidateExtension.toLowerCase()
+      : ''
+    const requestPath = `/asset/${index}${extension}`
+    routes.set(requestPath, {
+      filePath,
+      mimeType: asset.mimeType ?? 'application/octet-stream',
+    })
+    pathByAssetId.set(asset.id, requestPath)
+  }
+
+  const server = createServer((request, response) => {
+    const method = request.method ?? 'GET'
+    if (method !== 'GET' && method !== 'HEAD') {
+      response.writeHead(405, { Allow: 'GET, HEAD' }).end()
+      return
+    }
+    const requestPath = new URL(request.url ?? '/', 'http://127.0.0.1').pathname
+    const route = routes.get(requestPath)
+    if (!route) {
+      response.writeHead(404).end()
+      return
+    }
+    sendLocalAsset(response, route, method, request.headers.range)
+  })
+  server.keepAliveTimeout = 1_000
+  await new Promise<void>((resolve, reject) => {
+    const onError = (error: Error): void => reject(error)
+    server.once('error', onError)
+    server.listen(0, '127.0.0.1', () => {
+      server.off('error', onError)
+      resolve()
+    })
+  })
+
+  const address = server.address() as AddressInfo | null
+  if (!address) {
+    server.close()
+    throw new Error('Remotion local asset server did not bind to a port')
+  }
+  const baseUrl = `http://127.0.0.1:${address.port}`
+  const urls = new Map(
+    [...pathByAssetId].map(([assetId, requestPath]) => [assetId, `${baseUrl}${requestPath}`]),
+  )
+  let closed = false
+  return {
+    urls,
+    close: async () => {
+      if (closed) return
+      closed = true
+      await new Promise<void>((resolve) => {
+        server.close(() => resolve())
+        server.closeIdleConnections()
+        server.closeAllConnections()
+      })
+    },
+  }
+}
+
 function browserAssetUri(uri: string, rootDirectory: string): string {
   const localPath = localAssetPath(uri, rootDirectory)
   return localPath ? pathToFileURL(localPath).href : uri
@@ -305,12 +464,15 @@ function browserAssetUri(uri: string, rootDirectory: string): string {
 function projectForBrowser(
   project: VideoProject,
   rootDirectory: string,
+  localAssetServer?: LocalAssetServer,
 ): VideoProject {
   return {
     ...project,
     assets: project.assets.map((asset) => ({
       ...asset,
-      uri: browserAssetUri(asset.uri, rootDirectory),
+      uri:
+        localAssetServer?.urls.get(asset.id)
+        ?? browserAssetUri(asset.uri, rootDirectory),
     })),
   }
 }
@@ -365,6 +527,13 @@ function videoBitrateFor(height: number): string {
   if (height >= 1080) return '14M'
   if (height >= 720) return '8M'
   return '5M'
+}
+
+function binariesSource(binariesDirectory: string | null): string {
+  if (!binariesDirectory) return 'remotion-default'
+  return /app\.asar\.unpacked/i.test(binariesDirectory)
+    ? 'asar-unpacked'
+    : 'custom'
 }
 
 export function clearRemotionRuntimeCaches(): void {
@@ -645,6 +814,7 @@ export class RemotionRendererAdapter implements RendererAdapter {
     context: PrepareContext,
   ): Promise<PreparedRender> {
     const startedAt = Date.now()
+    let localAssetServer: LocalAssetServer | undefined
     throwIfAborted(context.signal)
     report(context, {
       stage: 'preflighting',
@@ -674,8 +844,15 @@ export class RemotionRendererAdapter implements RendererAdapter {
       const serveUrl = await bundleCached(this.options, context)
       throwIfAborted(context.signal)
 
+      localAssetServer = await startLocalAssetServer(project, this.options.rootDirectory)
+      throwIfAborted(context.signal)
+
       const inputProps = {
-        project: projectForBrowser(project, this.options.rootDirectory),
+        project: projectForBrowser(
+          project,
+          this.options.rootDirectory,
+          localAssetServer,
+        ),
       }
       report(context, {
         stage: 'preparing',
@@ -720,9 +897,11 @@ export class RemotionRendererAdapter implements RendererAdapter {
           serveUrl,
           inputProps,
           composition,
+          localAssetServer,
         } satisfies RemotionPreparedPayload,
       }
     } catch (error) {
+      await localAssetServer?.close().catch(() => undefined)
       if (context.signal.aborted || error instanceof Error && error.name === 'AbortError') {
         this.options.telemetry.info('Remotion render preparation canceled', {
           renderer_id: this.id,
@@ -815,6 +994,7 @@ export class RemotionRendererAdapter implements RendererAdapter {
       this.options.telemetry.info('Remotion render completed', {
         renderer_id: this.id,
         project_id: payload.projectId,
+        binaries_source: binariesSource(this.options.binariesDirectory),
         duration_frames: prepared.durationFrames,
         width: prepared.width,
         height: prepared.height,
@@ -843,6 +1023,7 @@ export class RemotionRendererAdapter implements RendererAdapter {
       this.options.telemetry.error('Remotion render failed', {
         renderer_id: this.id,
         project_id: payload.projectId,
+        binaries_source: binariesSource(this.options.binariesDirectory),
         duration_frames: prepared.durationFrames,
         elapsed_ms: Date.now() - startedAt,
       })
@@ -853,7 +1034,8 @@ export class RemotionRendererAdapter implements RendererAdapter {
     }
   }
 
-  public async cleanup(_prepared: PreparedRender): Promise<void> {
+  public async cleanup(prepared: PreparedRender): Promise<void> {
     // Bundles and the browser are intentionally process-cached for future jobs.
+    await preparedPayload(prepared).localAssetServer?.close()
   }
 }

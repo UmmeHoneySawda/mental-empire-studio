@@ -5,6 +5,10 @@ import type { BrollCandidate, BrollProvider, BrollSearchQuery, CachedBrollAsset 
 
 const VIDEO_EXTENSIONS = new Set(['.mp4', '.mov', '.mkv', '.webm', '.m4v'])
 
+function words(value: string): string[] {
+  return value.toLocaleLowerCase().match(/[\p{L}\p{N}]+/gu) ?? []
+}
+
 async function readMetadata(path: string): Promise<Partial<CachedBrollAsset> | null> {
   try {
     const value = JSON.parse(await readFile(`${path}.license.json`, 'utf8')) as Partial<CachedBrollAsset>
@@ -40,7 +44,7 @@ export class LocalBrollProvider implements BrollProvider {
   }
 
   async search(query: BrollSearchQuery, signal?: AbortSignal): Promise<BrollCandidate[]> {
-    const tokens = query.query.toLocaleLowerCase().split(/\s+/u).filter(Boolean)
+    const tokens = [...new Set(words(query.query))]
     const files = await walk(this.root, signal)
     const indexed = await Promise.all(files.map(async (path) => ({ path, metadata: await readMetadata(path) })))
     const ranked = indexed
@@ -54,16 +58,16 @@ export class LocalBrollProvider implements BrollProvider {
           .slice(0, relativePath.length - extname(relativePath).length)
           .toLocaleLowerCase()
           .replace(/[\\/_-]+/gu, ' ')
-        const haystack = [
+        const haystack = new Set(words([
           pathWords,
           typeof metadata?.title === 'string' ? metadata.title : '',
           typeof metadata?.description === 'string' ? metadata.description : '',
           ...(Array.isArray(metadata?.tags) ? metadata.tags.filter((tag): tag is string => typeof tag === 'string') : [])
-        ].join(' ').toLocaleLowerCase()
+        ].join(' ')))
         return {
           path,
           metadata,
-          score: tokens.reduce((score, token) => score + (haystack.includes(token) ? 1 : 0), 0)
+          score: tokens.reduce((score, token) => score + (haystack.has(token) ? 1 : 0), 0)
         }
       })
       .filter(({ score }) => tokens.length === 0 || score > 0)

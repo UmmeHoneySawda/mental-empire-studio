@@ -14,6 +14,7 @@ import { CoverrBrollProvider } from './broll/providers/coverr'
 import { PexelsBrollProvider } from './broll/providers/pexels'
 import { PixabayBrollProvider } from './broll/providers/pixabay'
 import type { BrollProviderCredentials } from './broll/types'
+import { packagedRemotionBinariesDirectory } from './remotion-binaries'
 import { VideoEngineService } from './service'
 
 export interface CreateVideoEngineOptions {
@@ -49,10 +50,14 @@ export async function createVideoEngine(
     providers.push(new LocalBrollProvider(directory, `local-${index + 1}`))
   }
   const broll = new BrollService(new BrollCache(brollCacheRoot), providers)
+  const resourcesPath = (process as NodeJS.Process & { resourcesPath?: string }).resourcesPath
   const remotionOptions: RemotionRendererAdapterOptions = {
     ...options.remotion,
     prebuiltBundlePath:
       options.remotion?.prebuiltBundlePath ?? packagedRemotionBundle(),
+    binariesDirectory:
+      options.remotion?.binariesDirectory ??
+      packagedRemotionBinariesDirectory(resourcesPath),
     telemetry: options.remotion?.telemetry ?? {
       info: (message, attributes) => sentryLog.info(message, attributes),
       error: (message, attributes) => sentryLog.error(message, attributes),

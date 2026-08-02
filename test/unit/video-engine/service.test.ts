@@ -727,13 +727,21 @@ describe('B-roll cache and provider service', () => {
       downloadUrl: sourceUrl,
       title: 'Mountain lake at dawn',
       description: 'Mist drifts above a quiet alpine lake during sunrise.',
-      tags: ['mountain', 'lake', 'sunrise'],
+      tags: ['mountain', 'lake', 'sunrise', 'waterscape'],
     })
     await new BrollCache(cacheRoot).store(candidate)
 
-    const results = await new LocalBrollProvider(cacheRoot).search({ query: 'alpine sunrise' })
+    const provider = new LocalBrollProvider(cacheRoot)
+    const [titleResults, tagResults, descriptionResults] = await Promise.all([
+      provider.search({ query: 'dawn' }),
+      provider.search({ query: 'waterscape' }),
+      provider.search({ query: 'alpine' }),
+    ])
+    const results = titleResults
 
     expect(results).toHaveLength(1)
+    expect(tagResults).toHaveLength(1)
+    expect(descriptionResults).toHaveLength(1)
     expect(results[0]).toMatchObject({
       id: candidate.id,
       provider: candidate.provider,
@@ -780,7 +788,7 @@ describe('B-roll cache and provider service', () => {
     expect(results).toEqual([duplicate, unique])
   })
 
-  it('uses a local match without calling remote providers when local-first is requested', async () => {
+  it('uses a local match before explicitly selected remote providers', async () => {
     const root = await temporaryRoot('broll-local-first')
     const local = brollCandidate({ id: 'cached', provider: 'pexels' })
     const localSearch = vi.fn(async () => [local])
@@ -790,11 +798,30 @@ describe('B-roll cache and provider service', () => {
       { id: 'pexels', search: remoteSearch },
     ])
 
-    const results = await service.search({ query: 'city skyline' }, { localFirst: true })
+    const results = await service.search(
+      { query: 'city skyline' },
+      { providers: ['pexels'], localFirst: true },
+    )
 
     expect(results).toEqual([local])
     expect(localSearch).toHaveBeenCalledTimes(1)
     expect(remoteSearch).not.toHaveBeenCalled()
+  })
+
+  it('falls back remotely when a local path contains only a substring of the keyword', async () => {
+    const root = await temporaryRoot('broll-local-whole-keyword')
+    const libraryRoot = join(root, 'library')
+    await mkdir(libraryRoot, { recursive: true })
+    await writeFile(join(libraryRoot, 'location-scouting.mp4'), 'local substring fixture')
+    const remote = brollCandidate({ id: 'cat', provider: 'pixabay', title: 'Cat by a window' })
+    const remoteSearch = vi.fn(async () => [remote])
+    const service = new BrollService(new BrollCache(join(root, 'cache')), [
+      new LocalBrollProvider(libraryRoot, 'local-1'),
+      { id: 'pixabay', search: remoteSearch },
+    ])
+
+    expect(await service.search({ query: 'cat' }, { localFirst: true })).toEqual([remote])
+    expect(remoteSearch).toHaveBeenCalledTimes(1)
   })
 
   it('falls back to remote providers when a local-first search has no match', async () => {

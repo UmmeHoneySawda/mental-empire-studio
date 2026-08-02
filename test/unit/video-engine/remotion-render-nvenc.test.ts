@@ -1,4 +1,4 @@
-import { rm, mkdtemp } from 'node:fs/promises'
+import { mkdir, mkdtemp, rm, writeFile } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
 import { join } from 'node:path'
 import { afterEach, describe, expect, it, vi } from 'vitest'
@@ -14,6 +14,7 @@ vi.mock('@remotion/renderer', async () => {
 
 import { RemotionRendererAdapter } from '../../../video-engine/remotion/adapter'
 import { DEFAULT_GRADE_ENCODER_ARGS } from '../../../electron/services/video-engine/render/postprocess/ffmpeg-grade'
+import { packagedRemotionBinariesDirectory } from '../../../electron/services/video-engine/remotion-binaries'
 
 let scratchDirectory: string | undefined
 
@@ -59,5 +60,27 @@ describe('Remotion render NVENC policy', () => {
   it('uses h264_nvenc for the grading re-encode with no libx264 fallback', () => {
     expect(DEFAULT_GRADE_ENCODER_ARGS).toContain('h264_nvenc')
     expect(DEFAULT_GRADE_ENCODER_ARGS).not.toContain('libx264')
+  })
+
+  it('uses the unpacked Remotion executables in a packaged Electron app', async () => {
+    scratchDirectory = await mkdtemp(join(tmpdir(), 'mental-empire-remotion-binaries-'))
+    const resourcesPath = join(scratchDirectory, 'resources')
+    const binariesDirectory = join(
+      resourcesPath,
+      'app.asar.unpacked',
+      'node_modules',
+      '@remotion',
+      'compositor-win32-x64-msvc'
+    )
+    await mkdir(binariesDirectory, { recursive: true })
+    await Promise.all(
+      ['remotion.exe', 'ffmpeg.exe', 'ffprobe.exe'].map((name) =>
+        writeFile(join(binariesDirectory, name), '')
+      )
+    )
+
+    expect(
+      packagedRemotionBinariesDirectory(resourcesPath, 'win32', 'x64')
+    ).toBe(binariesDirectory)
   })
 })

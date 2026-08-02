@@ -46,7 +46,16 @@ export class BrollService {
     options: { providers?: string[]; signal?: AbortSignal; localFirst?: boolean } = {}
   ): Promise<BrollCandidate[]> {
     if (!query.query.trim()) throw new VideoEngineError('BROLL_PROVIDER_ERROR', 'B-roll query cannot be empty')
-    const ids = options.providers ?? this.listProviders()
+    const registeredIds = this.listProviders()
+    const selectedIds = options.providers ?? registeredIds
+    // `providers` selects remote sources, but local-first must always inspect every
+    // registered library before a network provider is allowed to run.
+    const ids = options.localFirst
+      ? [...new Set([
+          ...registeredIds.filter((id) => /^local(?:-|$)/u.test(id)),
+          ...selectedIds,
+        ])]
+      : selectedIds
     const startedAt = performance.now()
     sentryLog.info('Video engine B-roll search started', {
       provider_count: ids.length,
