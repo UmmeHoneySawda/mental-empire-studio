@@ -1,6 +1,9 @@
 import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
-import { HyperframesRendererAdapter, type HyperframesAdapterOptions } from '../../../video-engine/hyperframes'
+import {
+  GpuHyperframesRendererAdapter,
+  type HyperframesAdapterOptions
+} from '../../../video-engine/hyperframes'
 import {
   RemotionRendererAdapter,
   type RemotionRendererAdapterOptions
@@ -66,6 +69,9 @@ export async function createVideoEngine(
   }
   const hyperframesOptions: HyperframesAdapterOptions = {
     ...options.hyperframes,
+    // One capture worker keeps Chromium's GPU command stream coherent and avoids four
+    // browser processes competing for the same VRAM. Advanced callers can still override.
+    workers: options.hyperframes?.workers ?? 1,
     telemetry: options.hyperframes?.telemetry ?? {
       info: (message, attributes) => sentryLog.info(message, attributes),
       warn: (message, attributes) => sentryLog.warn(message, attributes),
@@ -79,7 +85,7 @@ export async function createVideoEngine(
     brollCache: brollCacheRoot
   }, [
     new RemotionRendererAdapter(remotionOptions),
-    new HyperframesRendererAdapter(hyperframesOptions)
+    new GpuHyperframesRendererAdapter(hyperframesOptions)
   ], {
     renderConcurrency: options.renderConcurrency ?? 1,
     broll
