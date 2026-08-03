@@ -1,4 +1,4 @@
-import { useMemo, type CSSProperties } from 'react'
+import { Fragment, useMemo, type CSSProperties } from 'react'
 import {
   AbsoluteFill,
   interpolate,
@@ -39,16 +39,15 @@ export function captionLayerZIndex(
 }
 
 function activeCaptionScene(
-  project: VideoProject,
+  captionScenes: readonly VideoScene[],
+  mutedTrackIds: ReadonlySet<string>,
   frame: number,
 ): VideoScene | null | undefined {
-  const captionScenes = project.scenes.filter((scene) => scene.kind === 'caption')
   if (captionScenes.length === 0) return undefined
-  const tracks = new Map(project.tracks.map((track) => [track.id, track]))
   return (
     captionScenes.find(
       (scene) =>
-        !tracks.get(scene.trackId)?.muted &&
+        !mutedTrackIds.has(scene.trackId) &&
         frame >= scene.startFrame &&
         frame < scene.startFrame + scene.durationFrames,
     ) ?? null
@@ -94,6 +93,8 @@ function pageStyle(
     textTransform: style.uppercase ? 'uppercase' : undefined,
     textShadow: '0 0.08em 0.24em rgba(0,0,0,.9)',
     transformOrigin: '50% 70%',
+    contain: 'layout style',
+    isolation: 'isolate',
   }
   if (style.id === 'clip-wipe') {
     return {
@@ -239,13 +240,12 @@ function CaptionToken({
         textDecorationThickness: important ? '0.1em' : undefined,
         textUnderlineOffset: important ? '0.12em' : undefined,
         textShadow: active && style.activeTreatment === 'neon'
-          ? `0 0 0.14em ${activeColor}, 0 0 0.36em ${activeColor}`
+          ? `0 0 0.14em ${activeColor}, 0 0 0.28em ${activeColor}`
           : active && style.activeTreatment !== 'clean'
-            ? `0 0 0.24em ${hexColorWithAlpha(activeColor, 0.53)}, 0 0.08em 0.24em rgba(0,0,0,.9)`
+            ? `0 0 0.18em ${hexColorWithAlpha(activeColor, 0.45)}, 0 0.08em 0.24em rgba(0,0,0,.9)`
             : undefined,
         transform: `translate3d(0, ${active && (style.activeTreatment === 'punch' || style.activeTreatment === 'burst') ? -attack * 0.08 : 0}em, 0) scale(${scale})`,
         transformOrigin: '50% 75%',
-        transition: 'none',
       }}
     >
       {(isPill || isUnderline) && active && (
@@ -279,7 +279,7 @@ function CaptionToken({
           }}
         />
       ))}
-      <span style={{ position: 'relative', zIndex: 1 }}>{word.text}</span>
+      {word.text}
     </span>
   )
 }
@@ -288,7 +288,15 @@ export function CaptionLayer({ project }: { readonly project: VideoProject }) {
   const frame = useCurrentFrame()
   const { fps, width, height } = useVideoConfig()
   const document = project.captions
-  const scene = document && document.words.length > 0 ? activeCaptionScene(project, frame) : null
+  const captionContext = useMemo(() => ({
+    scenes: project.scenes.filter((scene) => scene.kind === 'caption'),
+    mutedTrackIds: new Set(
+      project.tracks.filter((track) => track.muted).map((track) => track.id),
+    ),
+  }), [project.scenes, project.tracks])
+  const scene = document && document.words.length > 0
+    ? activeCaptionScene(captionContext.scenes, captionContext.mutedTrackIds, frame)
+    : null
   const templateId = scene?.template?.id ?? document?.templateId
   const templateProps = scene?.template?.props
   const style = useMemo(
@@ -324,6 +332,8 @@ export function CaptionLayer({ project }: { readonly project: VideoProject }) {
         ...(scene ? sceneTransformStyle(scene) : {}),
         pointerEvents: 'none',
         zIndex: captionLayerZIndex(project, scene),
+        contain: 'layout style',
+        isolation: 'isolate',
       }}
     >
       <div
@@ -342,12 +352,15 @@ export function CaptionLayer({ project }: { readonly project: VideoProject }) {
               key={`${cue.id}:line:${lineIndex}`}
               style={{ display: 'block', maxWidth: '100%', overflowWrap: 'anywhere', textWrap: 'balance' }}
             >
-              {words.map((word, wordIndex) => (
-                <span key={word.id}>
-                  {wordIndex > 0 && captionNeedsLeadingSpace(word.text) ? ' ' : null}
-                  <CaptionToken word={word} style={style} frame={frame} fps={fps} />
-                </span>
-              ))}
+              {words.map((word, wordIndex) => {
+                const leadingSpace = wordIndex > 0 && captionNeedsLeadingSpace(word.text) ? ' ' : null
+                return (
+                  <Fragment key={word.id}>
+                    {leadingSpace}
+                    <CaptionToken word={word} style={style} frame={frame} fps={fps} />
+                  </Fragment>
+                )
+              })}
             </div>
           )
         })}
