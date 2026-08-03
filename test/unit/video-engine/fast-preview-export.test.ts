@@ -5,7 +5,10 @@ import { pathToFileURL } from 'node:url'
 import { afterEach, describe, expect, it, vi } from 'vitest'
 import type { VideoProject } from '../../../shared/video-engine'
 
-vi.mock('electron', () => ({ BrowserWindow: class BrowserWindow {} }))
+vi.mock('electron', () => ({
+  app: { getPath: () => tmpdir() },
+  BrowserWindow: class BrowserWindow {},
+}))
 
 import {
   buildFastPreviewFfmpegArgs,
