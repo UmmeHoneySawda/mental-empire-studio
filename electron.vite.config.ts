@@ -10,7 +10,10 @@ export default defineConfig({
     build: {
       outDir: 'out/main',
       lib: { entry: resolve(__dirname, 'electron/main.ts') },
-      rollupOptions: { output: { format: 'es' } }
+      rollupOptions: {
+        external: ['canvas', 'linkedom'],
+        output: { format: 'es' }
+      }
     }
   },
   preload: {

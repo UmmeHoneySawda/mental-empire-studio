@@ -9,6 +9,7 @@ import { fileURLToPath } from 'node:url'
 import type { VideoProject, VideoScene } from '../../../shared/video-engine'
 import { ffmpegPath, ffprobePath } from '../bin'
 import { getVideoEngine, renderFileName, videoEngineDataRoot } from './studio'
+import { sentryLog } from '../sentry'
 
 export const FAST_PREVIEW_EXPORT_COMMAND = 'videoEngine.fastPreviewExport'
 
@@ -49,7 +50,7 @@ interface ScreencastFrameEvent {
   sessionId: number
 }
 
-const READY_TIMEOUT_MS = 120_000
+const READY_TIMEOUT_MS = 30_000
 const CAPTURE_QUALITY = 45
 const MAX_CAPTURE_WIDTH = 1280
 const MAX_CAPTURE_HEIGHT = 720
@@ -150,13 +151,14 @@ export function buildFastPreviewFfmpegArgs(options: {
   const args = [
     '-hide_banner',
     '-loglevel', 'error',
+    '-thread_queue_size', '1024',
     '-f', 'image2pipe',
     '-framerate', String(spec.fps),
     '-vcodec', 'mjpeg',
     '-i', 'pipe:0',
   ]
 
-  for (const input of audioInputs) args.push('-i', input.path)
+  for (const input of audioInputs) args.push('-thread_queue_size', '1024', '-i', input.path)
 
   if (audioInputs.length > 0) {
     const chains = audioInputs.map((input, index) => {
@@ -206,24 +208,43 @@ function recorderUrl(sourceUrl: string, projectId: string): string {
 
 async function waitForController(window: BrowserWindow): Promise<void> {
   const deadline = Date.now() + READY_TIMEOUT_MS
+  let lastLoggedStatus: string | null = null
+  let lastLogAt = 0
   while (Date.now() < deadline) {
     const state = await window.webContents.executeJavaScript(`(() => {
       const controller = window.__mesFastPreview;
-      return controller ? { status: controller.status, error: controller.error || '' } : null;
-    })()`, true) as { status?: string; error?: string } | null
+      if (!controller) return null;
+      return { status: controller.status, error: controller.error || '', hasApi: !!(window.api), hasProject: !!(window.__mesProjectLoaded) };
+    })()`, true) as { status?: string; error?: string; hasApi?: boolean; hasProject?: boolean } | null
+    const currentStatus = state ? state.status ?? 'null-status' : 'no-controller'
+    const now = Date.now()
+    if (currentStatus !== lastLoggedStatus || now - lastLogAt > 5000) {
+      sentryLog.info(`fast-preview: recorder status=${currentStatus} hasApi=${state?.hasApi ?? false} hasProject=${state?.hasProject ?? false}`)
+      lastLoggedStatus = currentStatus
+      lastLogAt = now
+    }
     if (state?.status === 'ready') return
     if (state?.status === 'error') throw new Error(state.error || 'The fast preview page failed.')
-    await new Promise((resolve) => setTimeout(resolve, 100))
+    await new Promise((resolve) => setTimeout(resolve, 250))
   }
-  throw new Error('The hidden preview did not become ready in time.')
+  const lastState = await window.webContents.executeJavaScript(`(() => {
+    const c = window.__mesFastPreview;
+    return c ? { status: c.status, error: c.error } : null
+  })()`, true) as { status?: string; error?: string } | null
+  throw new Error(`Fast preview recorder timed out. Final status: ${lastState?.status ?? 'no-controller'}${lastState?.error ? ` — ${lastState.error}` : ''}`)
 }
 
 async function writeFrame(
   stdin: NodeJS.WritableStream,
   frame: Buffer,
 ): Promise<void> {
+  if ('destroyed' in stdin && (stdin as { destroyed?: boolean }).destroyed) return
+  if ('writableEnded' in stdin && (stdin as { writableEnded?: boolean }).writableEnded) return
   if (stdin.write(frame)) return
-  await once(stdin, 'drain')
+  await Promise.race([
+    once(stdin, 'drain'),
+    new Promise((resolve) => setTimeout(resolve, 50))
+  ]).catch(() => undefined)
 }
 
 async function waitUntil(target: number): Promise<void> {
@@ -312,11 +333,14 @@ async function runFastPreviewExport(
   })
   recorder.webContents.setAudioMuted(true)
   recorder.webContents.setZoomFactor(1)
+  recorder.webContents.setBackgroundThrottling(false)
 
   const debug = recorder.webContents.debugger
   let latestFrame: Buffer | null = null
   let ffmpegError = ''
   let ffmpeg: ChildProcessWithoutNullStreams | null = null
+  let ffmpegExited = false
+  let ffmpegExitCode: number | null = null
   let screencastStarted = false
 
   const onDebuggerMessage = (
@@ -380,8 +404,15 @@ async function runFastPreviewExport(
       ffmpegError = `${ffmpegError}${chunk}`.slice(-8_000)
     })
     const closed = new Promise<number>((resolveClose, rejectClose) => {
-      ffmpeg?.once('error', rejectClose)
-      ffmpeg?.once('close', (code) => resolveClose(code ?? -1))
+      ffmpeg?.once('error', (err) => {
+        ffmpegExited = true
+        rejectClose(err)
+      })
+      ffmpeg?.once('close', (code) => {
+        ffmpegExited = true
+        ffmpegExitCode = code ?? -1
+        resolveClose(code ?? -1)
+      })
     })
 
     await writeFrame(ffmpeg.stdin, latestFrame)
@@ -390,11 +421,17 @@ async function runFastPreviewExport(
 
     const intervalMs = 1000 / spec.fps
     for (let index = 1; index < spec.frameCount; index += 1) {
+      if (ffmpegExited) {
+        throw new Error(`Fast preview encoding failed early (code ${ffmpegExitCode})${ffmpegError.trim() ? `: ${ffmpegError.trim()}` : '.'}`)
+      }
       await waitUntil(start + index * intervalMs)
+      if (ffmpegExited) {
+        throw new Error(`Fast preview encoding failed early (code ${ffmpegExitCode})${ffmpegError.trim() ? `: ${ffmpegError.trim()}` : '.'}`)
+      }
       if (!latestFrame) throw new Error('Chromium stopped producing preview frames.')
       await writeFrame(ffmpeg.stdin, latestFrame)
 
-      if (index % 3 === 0 || index === spec.frameCount - 1) {
+      if (index === 1 || index % 3 === 0 || index === spec.frameCount - 1) {
         const elapsed = performance.now() - start
         const msPerFrame = elapsed / index
         const remainingMs = (spec.frameCount - index) * msPerFrame

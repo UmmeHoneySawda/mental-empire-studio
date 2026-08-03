@@ -28,7 +28,15 @@ declare global {
 
 function nextPaint(): Promise<void> {
   return new Promise((resolve) => {
-    requestAnimationFrame(() => requestAnimationFrame(() => resolve()))
+    let done = false
+    const finish = () => {
+      if (!done) {
+        done = true
+        resolve()
+      }
+    }
+    requestAnimationFrame(() => requestAnimationFrame(finish))
+    setTimeout(finish, 200)
   })
 }
 
@@ -91,6 +99,7 @@ export function FastPreviewPage({ projectId }: { projectId: string }): JSX.Eleme
       if (loaded.rendererId !== 'remotion') {
         throw new Error('Fast preview export is only available for Remotion projects.')
       }
+      ;(window as unknown as { __mesProjectLoaded?: boolean }).__mesProjectLoaded = true
       setProject(projectForPlayer(loaded))
     }).catch((error: unknown) => {
       const message = error instanceof Error ? error.message : String(error)
@@ -99,6 +108,7 @@ export function FastPreviewPage({ projectId }: { projectId: string }): JSX.Eleme
     })
     return () => {
       canceled = true
+      delete (window as unknown as { __mesProjectLoaded?: boolean }).__mesProjectLoaded
     }
   }, [projectId])
 
