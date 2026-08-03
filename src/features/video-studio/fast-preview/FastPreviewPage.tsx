@@ -122,12 +122,7 @@ export function FastPreviewPage({ projectId }: { projectId: string }): JSX.Eleme
         current.status = 'finished'
       }
     }
-    const onEnded = (): void => {
-      current.frame = Math.max(0, project.canvas.durationFrames - 1)
-      current.status = 'finished'
-    }
     instance.addEventListener('frameupdate', onFrame)
-    instance.addEventListener('ended', onEnded)
 
     void Promise.resolve(document.fonts.ready)
       .then(nextPaint)
@@ -140,7 +135,6 @@ export function FastPreviewPage({ projectId }: { projectId: string }): JSX.Eleme
 
     return () => {
       instance.removeEventListener('frameupdate', onFrame)
-      instance.removeEventListener('ended', onEnded)
     }
   }, [project])
 
