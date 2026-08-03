@@ -1,4 +1,4 @@
-import type { CSSProperties } from 'react'
+import { useMemo, type CSSProperties } from 'react'
 import {
   AbsoluteFill,
   interpolate,
@@ -6,14 +6,13 @@ import {
   useCurrentFrame,
   useVideoConfig,
 } from 'remotion'
-import { AnimatedText } from 'remotion-bits'
 import type {
   JsonValue,
+  VideoAsset,
   VideoProject,
   VideoScene,
 } from '../../shared/video-engine'
 import { AudioAsset, sceneTransformStyle, VisualAsset } from './asset'
-import { HOOK_TEMPLATE_IDS } from './constants'
 import { hasValidHookPlan, HookTemplate } from './hook'
 import {
   resolveTextMotion,
@@ -23,6 +22,12 @@ import {
   textMotionUnitCount,
 } from './textMotion'
 
+export interface PreparedSceneRenderData {
+  readonly asset?: VideoAsset
+  readonly muted: boolean
+  readonly trackOrder: number
+}
+
 function stringProp(value: JsonValue | undefined): string | undefined {
   return typeof value === 'string' ? value : undefined
 }
@@ -31,15 +36,6 @@ function numberProp(value: JsonValue | undefined): number | undefined {
   return typeof value === 'number' && Number.isFinite(value) ? value : undefined
 }
 
-/** A text clip. Style comes from the `remotion-text-*` template the editor attaches; with
- *  no template it falls back to the heading look this scene has always used, so projects
- *  written before the styles existed keep rendering identically.
- *
- *  Motion comes from `textMotion.ts`. A motion that splits the copy renders one span per
- *  unit; the seven that do not keep the single-element output — and the exact numbers —
- *  this scene has always produced. The per-unit styles are plain function calls, never
- *  hooks, because the unit count changes on every keystroke in the inspector's text box and
- *  a hook inside that loop would break React's hook order and blank the composition. */
 function TextScene({ scene }: { readonly scene: VideoScene }) {
   const frame = useCurrentFrame()
   const { fps } = useVideoConfig()
@@ -47,9 +43,22 @@ function TextScene({ scene }: { readonly scene: VideoScene }) {
   const motion = resolveTextMotion(stringProp(props?.['animation']))
   const fontSize = numberProp(props?.['fontSize'])
   const split = textMotionSplit(motion)
-  const groups = splitForTextMotion(scene.text ?? '', split)
-  const unitCount = textMotionUnitCount(groups)
+  const { groups, unitCount } = useMemo(() => {
+    const nextGroups = splitForTextMotion(scene.text ?? '', split)
+    return {
+      groups: nextGroups,
+      unitCount: textMotionUnitCount(nextGroups),
+    }
+  }, [scene.text, split])
   const entrance = textMotionStyle(motion, frame, fps)
+  const typewriterReveal = motion === 'typewriter'
+    ? interpolate(
+        frame,
+        [0, Math.max(1, fps * 1.2)],
+        [0, 1],
+        { extrapolateLeft: 'clamp', extrapolateRight: 'clamp' },
+      )
+    : 1
 
   return (
     <AbsoluteFill
@@ -57,6 +66,8 @@ function TextScene({ scene }: { readonly scene: VideoScene }) {
         alignItems: 'center',
         justifyContent: 'center',
         padding: '7%',
+        contain: 'layout style',
+        isolation: 'isolate',
         ...sceneTransformStyle(scene),
       }}
     >
@@ -65,8 +76,6 @@ function TextScene({ scene }: { readonly scene: VideoScene }) {
           maxWidth: '92%',
           color: stringProp(props?.['color']) ?? scene.color ?? '#FFFFFF',
           fontFamily: `"${stringProp(props?.['fontFamily']) ?? 'Space Grotesk'}", "Arial Black", Arial, sans-serif`,
-          // An explicit size is in composition pixels; without one keep the viewport-
-          // relative default so the text scales with the canvas.
           fontSize: fontSize === undefined ? '7vw' : `${fontSize}px`,
           fontWeight: numberProp(props?.['fontWeight']) ?? 800,
           fontStyle: stringProp(props?.['fontStyle']) ?? 'normal',
@@ -78,21 +87,22 @@ function TextScene({ scene }: { readonly scene: VideoScene }) {
           textAlign: (stringProp(props?.['align']) ?? 'center') as CSSProperties['textAlign'],
           whiteSpace: 'pre-wrap',
           textShadow: '0 10px 45px rgba(0,0,0,.55)',
-          // A split motion animates its units, so the block itself stays neutral.
           ...(split === 'none'
             ? {
                 opacity: entrance.opacity,
                 transform: entrance.transform,
                 ...(entrance.filter ? { filter: entrance.filter } : {}),
               }
-            : {}),
+            : motion === 'typewriter'
+              ? {
+                  clipPath: `inset(0 ${(1 - typewriterReveal) * 100}% 0 0)`,
+                }
+              : {}),
         }}
       >
-        {split === 'none'
+        {split === 'none' || motion === 'typewriter'
           ? scene.text
           : groups.map((group, groupIndex) => (
-              // The group is the unbreakable run — a word, or the whitespace after it — so
-              // per-character units still wrap at spaces instead of mid-word.
               <span
                 key={`g${groupIndex}`}
                 style={{ display: 'inline-block', whiteSpace: 'pre' }}
@@ -107,7 +117,6 @@ function TextScene({ scene }: { readonly scene: VideoScene }) {
                         whiteSpace: 'pre',
                         opacity: style.opacity,
                         transform: style.transform,
-                        ...(style.filter ? { filter: style.filter } : {}),
                       }}
                     >
                       {unit.text}
@@ -139,7 +148,7 @@ function TrustedTemplateFallback({ scene }: { readonly scene: VideoScene }) {
     config: { damping: 18, stiffness: 180, mass: 0.7 },
     durationInFrames: Math.max(8, Math.round(fps * 0.6)),
   })
-  const sweep = interpolate(frame, [0, fps * 2], [-35, 135], {
+  const sweep = interpolate(frame, [0, fps * 2], [-60, 60], {
     extrapolateLeft: 'clamp',
     extrapolateRight: 'extend',
   })
@@ -152,20 +161,25 @@ function TrustedTemplateFallback({ scene }: { readonly scene: VideoScene }) {
         background:
           'radial-gradient(circle at 76% 30%, rgba(91,109,255,.35), transparent 35%), linear-gradient(145deg, #080B12, #101827)',
         fontFamily: '"Space Grotesk", Arial, sans-serif',
+        contain: 'layout style',
+        isolation: 'isolate',
         ...sceneTransformStyle(scene),
       }}
     >
       <AbsoluteFill
         style={{
+          left: '-50%',
+          width: '200%',
           opacity: 0.12,
-          background: `linear-gradient(110deg, transparent ${sweep - 20}%, ${accent} ${sweep}%, transparent ${sweep + 20}%)`,
+          background: `linear-gradient(110deg, transparent 42%, ${accent} 50%, transparent 58%)`,
+          transform: `translate3d(${sweep}%, 0, 0)`,
         }}
       />
       <AbsoluteFill
         style={{
           justifyContent: 'center',
           padding: '8%',
-          transform: `translateY(${(1 - entrance) * 50}px)`,
+          transform: `translate3d(0, ${(1 - entrance) * 50}px, 0)`,
           opacity: entrance,
         }}
       >
@@ -178,14 +192,7 @@ function TrustedTemplateFallback({ scene }: { readonly scene: VideoScene }) {
             background: accent,
           }}
         />
-        <AnimatedText
-          transition={{
-            opacity: [0, 1],
-            y: [44, 0],
-            blur: [8, 0],
-            duration: Math.max(8, Math.round(fps * 0.6)),
-            easing: 'easeOutCubic',
-          }}
+        <div
           style={{
             maxWidth: '84%',
             fontSize: Math.max(52, Math.min(126, width * 0.075)),
@@ -195,7 +202,7 @@ function TrustedTemplateFallback({ scene }: { readonly scene: VideoScene }) {
           }}
         >
           {headline}
-        </AnimatedText>
+        </div>
         {body ? (
           <div
             style={{
@@ -217,9 +224,13 @@ function TrustedTemplateFallback({ scene }: { readonly scene: VideoScene }) {
 export function SceneContent({
   project,
   scene,
+  prepared,
+  assetById,
 }: {
   readonly project: VideoProject
   readonly scene: VideoScene
+  readonly prepared?: PreparedSceneRenderData
+  readonly assetById?: ReadonlyMap<string, VideoAsset>
 }) {
   if (scene.kind === 'caption') return null
 
@@ -237,30 +248,20 @@ export function SceneContent({
   if (scene.kind === 'text') return <TextScene scene={scene} />
 
   if (scene.kind === 'template') {
-    /* The PLAN decides, not the template id.
-     *
-     * This used to be `HOOK_TEMPLATE_IDS.has(id) || hasValidHookPlan(scene)`, and the id
-     * test short-circuiting first is what made the premade hooks draw nothing at all:
-     * `HookTemplate` returns null without a plan, and the only path that attaches one is
-     * the hook compiler. Placing "30s Kinetic Hook" from the templates panel goes through
-     * `instantiateTemplate`, which hands the scene its manifest defaults and no plan — so
-     * the id matched, the plan did not exist, and the fallback that would have drawn the
-     * headline was unreachable. An empty frame, and a success notice.
-     *
-     * Ordering the tests this way makes a plan-less hook degrade to the same trusted
-     * fallback every other template gets, which is what the HyperFrames compiler already
-     * did (`renderSingleHook`). Both engines now behave the same. */
     if (hasValidHookPlan(scene)) {
-      return <HookTemplate project={project} scene={scene} />
+      return <HookTemplate project={project} scene={scene} assetById={assetById} />
     }
     return <TrustedTemplateFallback scene={scene} />
   }
 
-  const asset = project.assets.find((candidate) => candidate.id === scene.assetId)
+  const asset = prepared?.asset
+    ?? (scene.assetId ? assetById?.get(scene.assetId) : undefined)
+    ?? project.assets.find((candidate) => candidate.id === scene.assetId)
   if (!asset) return null
 
-  const track = project.tracks.find((candidate) => candidate.id === scene.trackId)
-  const muted = track?.muted ?? false
+  const muted = prepared?.muted
+    ?? project.tracks.find((candidate) => candidate.id === scene.trackId)?.muted
+    ?? false
 
   if (scene.kind === 'audio' || asset.kind === 'audio') {
     return <AudioAsset asset={asset} scene={scene} muted={muted} />
@@ -272,10 +273,14 @@ export function SceneContent({
 export function sceneLayerStyle(
   project: VideoProject,
   scene: VideoScene,
+  prepared?: PreparedSceneRenderData,
 ): CSSProperties {
-  const trackOrder =
-    project.tracks.find((track) => track.id === scene.trackId)?.order ?? 0
+  const trackOrder = prepared?.trackOrder
+    ?? project.tracks.find((track) => track.id === scene.trackId)?.order
+    ?? 0
   return {
     zIndex: trackOrder * 100_000 + scene.zIndex,
+    contain: 'layout style',
+    isolation: 'isolate',
   }
 }
