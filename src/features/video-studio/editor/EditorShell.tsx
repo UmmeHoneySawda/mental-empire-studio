@@ -8,6 +8,7 @@ import { Inspector } from './Inspector'
 import { timecode } from './constants'
 import { getSelectedClipIds, useEditor, type PanelTab } from './useEditor'
 import { openRendererEditor, reseedRendererEditor } from './rendererSession'
+import { useData } from '../../../store/useData'
 
 const TABS: ReadonlyArray<{ id: PanelTab; label: string }> = [
   { id: 'media', label: 'Media' },
@@ -83,6 +84,9 @@ export function EditorShell({
   const applyJob = useEditor((state) => state.applyJob)
   const setProgressNote = useEditor((state) => state.setProgressNote)
   const [fastPreviewBusy, setFastPreviewBusy] = useState(false)
+  const fastPreviewProgress = useData((s) => s.fastPreviewProgress)
+  const isFastPreviewing = fastPreviewBusy || fastPreviewProgress?.status === 'recording' || fastPreviewProgress?.status === 'encoding'
+  const fastPreviewPct = fastPreviewProgress?.percent ?? 0
 
   useEffect(() => {
     void openRendererEditor(downloadId, rendererId)
@@ -285,11 +289,11 @@ export function EditorShell({
             <button
               type="button"
               className="ve-btn ve-btn--soft"
-              disabled={!!busy || fastPreviewBusy || !!activeJob}
+              disabled={!!busy || isFastPreviewing || !!activeJob}
               onClick={() => void exportFastPreview()}
-              title="Record the live preview in real time inside a hidden Chromium window. This is separate from the deterministic Render queue."
+              title={isFastPreviewing ? `Fast preview recording in progress (${fastPreviewPct}%)` : "Record the live preview in real time inside a hidden Chromium window."}
             >
-              {fastPreviewBusy ? 'Recording preview…' : 'Fast preview'}
+              {isFastPreviewing ? `Previewing ${fastPreviewPct}%…` : 'Fast preview'}
             </button>
           )}
           {activeJob ? (
@@ -297,7 +301,7 @@ export function EditorShell({
               {activeJob.stage} · {Math.round(activeJob.progress * 100)}%
             </button>
           ) : (
-            <button type="button" className="ve-btn ve-btn--primary" disabled={!!busy || fastPreviewBusy} onClick={() => void enqueueRender()}>
+            <button type="button" className="ve-btn ve-btn--primary" disabled={!!busy || isFastPreviewing} onClick={() => void enqueueRender()}>
               {busy === 'Queueing the render' || busy === 'Checking the project' ? busy : 'Render'}
             </button>
           )}

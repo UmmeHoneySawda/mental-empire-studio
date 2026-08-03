@@ -1076,7 +1076,7 @@ export interface PublishItem {
 
 // ---- Settings (persisted via electron-store) ----
 export interface AppSettings {
-  accent: AccentName
+    accent: AccentName
   ambientGlow: boolean
   showActivityRail: boolean
   defaultScreen: ScreenKey
@@ -1087,6 +1087,8 @@ export interface AppSettings {
    *  thumb/output) live. Empty = <Documents>/MentalEmpireStudio. Supersedes outputFolder
    *  as the single storage root; outputFolder is kept as a back-compat fallback. */
   libraryFolder?: string
+  /** custom directory for fast preview outputs; empty = <Library>/fast-preview-exports */
+  fastPreviewFolder?: string
   /** where downloads + renders are written; empty = <Downloads>/MentalEmpire_out */
   outputFolder: string
   concurrency: number
@@ -1117,6 +1119,18 @@ export interface AppSettings {
   telemetryEnabled: boolean
 }
 
+export interface FastPreviewProgress {
+  projectId: string
+  projectName?: string
+  status: 'recording' | 'encoding' | 'completed' | 'failed'
+  currentFrame: number
+  totalFrames: number
+  percent: number
+  etaSec: number
+  outputPath: string
+  error?: string
+}
+
 export interface RenderCapabilities {
   hasNvenc: boolean
   hasQsv: boolean
@@ -1142,6 +1156,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   defaultScreen: 'home',
   namingTemplate: '{channel} - {title}',
   libraryFolder: '',
+  fastPreviewFolder: '',
   outputFolder: '',
   concurrency: 2,
   quality: '1080p',
@@ -1622,13 +1637,16 @@ export interface NativeApi {
   onProviderJob(cb: (job: ProviderJob) => void): () => void
   /** subscribe to template-engine render-job changes (Remotion / HyperFrames queue) */
   onVideoEngineJob(cb: (job: VideoRenderJob) => void): () => void
-  /** subscribe to Auto B-roll progress; a run is eleven model calls plus downloads, so a
-   *  static label on it reads as a hang */
+  /** subscribe to Auto B-roll progress */
   onAutoBrollProgress(cb: (p: AutoBrollProgress) => void): () => void
-  /** subscribe to TalkingPhotos connection-status changes; this is the only source of
-   *  progress/outcome once talkingPhotos.connect()'s login window is open — the
-   *  connect() promise itself resolves as soon as the window opens. */
+  /** subscribe to TalkingPhotos connection-status changes */
   onConnectionStatusChanged(cb: (connection: ProviderConnection) => void): () => void
+  /** reveal a file or folder in OS file explorer */
+  revealPath(path: string): Promise<void>
+  /** open a file or folder directly with default application */
+  openPath(path: string): Promise<string>
+  /** subscribe to fast preview progress events */
+  onFastPreviewProgress(cb: (p: FastPreviewProgress) => void): () => void
 }
 
 declare global {

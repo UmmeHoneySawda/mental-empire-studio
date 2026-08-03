@@ -395,7 +395,10 @@ const api: NativeApi = {
   onProviderJob: (cb: (job: ProviderJob) => void) => subscribe('talkingphotos:job', cb),
   onVideoEngineJob: (cb: (job: VideoRenderJob) => void) => subscribe('videoEngine:job', cb),
   onAutoBrollProgress: (cb: (p: AutoBrollProgress) => void) => subscribe('videoEngine:autoBroll', cb),
-  onConnectionStatusChanged: (cb: (connection: ProviderConnection) => void) => subscribe('talkingphotos:connectionStatus', cb)
+  onConnectionStatusChanged: (cb: (connection: ProviderConnection) => void) => subscribe('talkingphotos:connectionStatus', cb),
+  revealPath: (path: string) => ipcRenderer.invoke('shell:revealPath', path),
+  openPath: (path: string) => ipcRenderer.invoke('shell:openPath', path),
+  onFastPreviewProgress: (cb) => subscribe('videoEngine:fastPreviewProgress', cb)
 }
 
 contextBridge.exposeInMainWorld('api', api)

@@ -16,6 +16,7 @@ export interface FastPreviewExportRequest {
   projectId: string
   sourceUrl: string
   preloadPath?: string
+  outputFolder?: string
 }
 
 export interface FastPreviewExportResult {
@@ -252,6 +253,24 @@ export function resolveFastPreviewPreloadPath(customPath?: string): string {
   return join(__dirname, '../preload/preload.cjs')
 }
 
+function broadcastProgress(progress: {
+  projectId: string
+  projectName?: string
+  status: 'recording' | 'encoding' | 'completed' | 'failed'
+  currentFrame: number
+  totalFrames: number
+  percent: number
+  etaSec: number
+  outputPath: string
+  error?: string
+}): void {
+  for (const win of BrowserWindow.getAllWindows()) {
+    if (!win.isDestroyed()) {
+      win.webContents.send('videoEngine:fastPreviewProgress', progress)
+    }
+  }
+}
+
 async function runFastPreviewExport(
   request: FastPreviewExportRequest,
 ): Promise<FastPreviewExportResult> {
@@ -267,7 +286,9 @@ async function runFastPreviewExport(
 
   const spec = fastPreviewOutputSpec(project)
   const audioInputs = collectFastPreviewAudioInputs(project)
-  const outputDirectory = join(videoEngineDataRoot(), 'fast-preview-exports')
+  const outputDirectory = request.outputFolder && existsSync(request.outputFolder)
+    ? join(request.outputFolder, 'fast-preview-exports')
+    : join(videoEngineDataRoot(), 'fast-preview-exports')
   await mkdir(outputDirectory, { recursive: true })
   const outputPath = join(outputDirectory, fastPreviewFileName(project))
   const args = buildFastPreviewFfmpegArgs({ outputPath, spec, audioInputs })
@@ -309,6 +330,17 @@ async function runFastPreviewExport(
   }
 
   try {
+    broadcastProgress({
+      projectId: request.projectId,
+      projectName: project.name,
+      status: 'recording',
+      currentFrame: 1,
+      totalFrames: spec.frameCount,
+      percent: 0,
+      etaSec: Math.round(spec.frameCount / spec.fps),
+      outputPath
+    })
+
     debug.attach('1.3')
     debug.on('message', onDebuggerMessage)
     await debug.sendCommand('Page.enable')
@@ -360,7 +392,37 @@ async function runFastPreviewExport(
       await waitUntil(start + index * intervalMs)
       if (!latestFrame) throw new Error('Chromium stopped producing preview frames.')
       await writeFrame(ffmpeg.stdin, latestFrame)
+
+      if (index % 3 === 0 || index === spec.frameCount - 1) {
+        const elapsed = performance.now() - start
+        const msPerFrame = elapsed / index
+        const remainingMs = (spec.frameCount - index) * msPerFrame
+        const etaSec = Math.max(0, Math.round(remainingMs / 1000))
+        const percent = Math.min(98, Math.round((index / spec.frameCount) * 100))
+
+        broadcastProgress({
+          projectId: request.projectId,
+          projectName: project.name,
+          status: 'recording',
+          currentFrame: index,
+          totalFrames: spec.frameCount,
+          percent,
+          etaSec,
+          outputPath
+        })
+      }
     }
+
+    broadcastProgress({
+      projectId: request.projectId,
+      projectName: project.name,
+      status: 'encoding',
+      currentFrame: spec.frameCount,
+      totalFrames: spec.frameCount,
+      percent: 99,
+      etaSec: 1,
+      outputPath
+    })
 
     await recorder.webContents.executeJavaScript('window.__mesFastPreview?.pause()', true).catch(() => undefined)
     ffmpeg.stdin.end()
@@ -368,6 +430,17 @@ async function runFastPreviewExport(
     if (code !== 0) {
       throw new Error(`Fast preview encoding failed${ffmpegError.trim() ? `: ${ffmpegError.trim()}` : '.'}`)
     }
+
+    broadcastProgress({
+      projectId: request.projectId,
+      projectName: project.name,
+      status: 'completed',
+      currentFrame: spec.frameCount,
+      totalFrames: spec.frameCount,
+      percent: 100,
+      etaSec: 0,
+      outputPath
+    })
 
     return {
       path: outputPath,
@@ -380,6 +453,19 @@ async function runFastPreviewExport(
   } catch (error) {
     ffmpeg?.kill()
     await rm(outputPath, { force: true }).catch(() => undefined)
+
+    broadcastProgress({
+      projectId: request.projectId,
+      projectName: project?.name,
+      status: 'failed',
+      currentFrame: 0,
+      totalFrames: spec.frameCount ?? 0,
+      percent: 0,
+      etaSec: 0,
+      outputPath,
+      error: String(error instanceof Error ? error.message : error)
+    })
+
     throw error
   } finally {
     if (screencastStarted && debug.isAttached()) {

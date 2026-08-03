@@ -276,6 +276,111 @@ function AssetChips({ r }: { r: RenderQueueRow }): JSX.Element {
   )
 }
 
+function FastPreviewSection(): JSX.Element | null {
+  const fastPreviewProgress = useData((s) => s.fastPreviewProgress)
+  const clearFastPreviewProgress = useData((s) => s.clearFastPreviewProgress)
+  const updateSettings = useStore((s) => s.updateSettings)
+
+  if (!fastPreviewProgress) return null
+
+  const p = fastPreviewProgress
+  const isRecording = p.status === 'recording' || p.status === 'encoding'
+  const isDone = p.status === 'completed'
+  const isFailed = p.status === 'failed'
+
+  const tone: Tone = isRecording ? 'active' : isDone ? 'ok' : 'err'
+  const statusLabel = p.status === 'recording' ? 'RECORDING' : p.status === 'encoding' ? 'ENCODING' : p.status === 'completed' ? 'COMPLETED' : 'FAILED'
+
+  const browseFastPreviewDir = async (): Promise<void> => {
+    const dir = await window.api?.chooseFolder?.()
+    if (dir) updateSettings({ fastPreviewFolder: dir })
+  }
+
+  const openFile = (): void => {
+    if (p.outputPath && window.api?.openPath) {
+      void window.api.openPath(p.outputPath)
+    }
+  }
+
+  const openFolder = (): void => {
+    if (p.outputPath && window.api?.revealPath) {
+      void window.api.revealPath(p.outputPath)
+    }
+  }
+
+  return (
+    <div className="me-card" style={{ marginBottom: 20, border: `1px solid ${isDone ? '#1e2f28' : isFailed ? '#3a2025' : '#453215'}`, borderRadius: 12, background: '#12151b', padding: '14px 16px' }}>
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '.6px', color: '#f5c860', fontWeight: 700, flex: 1 }}>
+          FAST PREVIEW · LOCAL RECORDING
+        </div>
+        <StatusPill label={statusLabel} tone={tone} />
+        {!isRecording && (
+          <button
+            type="button"
+            onClick={clearFastPreviewProgress}
+            className="me-btn"
+            style={{ border: 'none', background: 'transparent', color: '#8b93a7', fontSize: 13, cursor: 'pointer', padding: '0 4px' }}
+            title="Dismiss"
+          >
+            ✕
+          </button>
+        )}
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', gap: 12, marginBottom: 8 }}>
+        <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 15, color: '#e5e7eb' }}>
+          {p.projectName || 'Fast Preview'}
+        </div>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: '#9ca3af' }}>
+          {isRecording ? `Frame ${p.currentFrame} / ${p.totalFrames} (${p.percent}%) · ETA ~${p.etaSec}s` : isDone ? `${p.totalFrames} frames recorded (100%)` : ''}
+        </div>
+      </div>
+
+      {isRecording && (
+        <div style={{ height: 6, background: '#1f242d', borderRadius: 3, overflow: 'hidden', marginBottom: 10, border: '1px solid #2a303c' }}>
+          <div
+            style={{
+              height: '100%',
+              width: `${Math.max(2, p.percent)}%`,
+              background: 'linear-gradient(90deg, #f59e0b, #eab308)',
+              borderRadius: 3,
+              transition: 'width 0.2s ease-out'
+            }}
+          />
+        </div>
+      )}
+
+      {isFailed && p.error && (
+        <div style={{ fontSize: 12, color: '#ff8a96', fontFamily: 'var(--font-mono)', marginBottom: 10, background: 'rgba(255,90,110,0.08)', padding: '8px 10px', borderRadius: 6, border: '1px solid rgba(255,90,110,0.2)' }}>
+          {p.error}
+        </div>
+      )}
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 11, color: '#8b93a7' }}>
+        <div style={{ flex: 1, minWidth: 200, fontFamily: 'var(--font-mono)', fontSize: 10.5, color: '#aab0bb', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p.outputPath}>
+          {p.outputPath}
+        </div>
+        <div style={{ display: 'flex', gap: 6 }}>
+          <button type="button" onClick={browseFastPreviewDir} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 6, padding: '4px 9px', fontSize: 10.5, color: '#c4cad3', cursor: 'pointer' }} title="Change Fast Preview save directory">
+            Change Folder
+          </button>
+          {isDone && (
+            <>
+              <button type="button" onClick={openFile} className="me-btn" style={{ border: '1px solid var(--accent)', background: 'var(--accent-soft)', borderRadius: 6, padding: '4px 10px', fontSize: 10.5, color: 'var(--accent)', cursor: 'pointer', fontWeight: 600 }}>
+                Open File
+              </button>
+              <button type="button" onClick={openFolder} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 6, padding: '4px 10px', fontSize: 10.5, color: '#c4cad3', cursor: 'pointer' }}>
+                Open Folder
+              </button>
+            </>
+          )}
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function RenderQueue(): JSX.Element {
   const rows = useData((s) => s.renderJobs)
   const progress = useData((s) => s.renderProgress)
@@ -370,6 +475,8 @@ export function RenderQueue(): JSX.Element {
           </button>
         </div>
       </div>
+
+      <FastPreviewSection />
 
       {focusRow && (
         <PipelineRibbon

@@ -1,4 +1,6 @@
-import { ipcMain } from 'electron'
+import { ipcMain, shell } from 'electron'
+import { dirname } from 'node:path'
+import { existsSync } from 'node:fs'
 import type { AppSettings, DeepPartial, GoalsPatch, Profile, ThumbnailTemplate } from '../../shared/types'
 import { getSettings, setSettings, resetSettings } from '../store/settings'
 import { getRepos } from '../db'
@@ -75,13 +77,26 @@ export function registerIpc(): void {
     if (safeKey === FAST_PREVIEW_EXPORT_COMMAND) {
       const senderWithPrefs = event.sender as unknown as { getLastWebPreferences?: () => { preload?: string } }
       const preferences = senderWithPrefs.getLastWebPreferences?.()
+      const settings = getSettings()
       return exportFastPreview({
         projectId: reqId(value, 'projectId'),
         sourceUrl: event.sender.getURL(),
         preloadPath: preferences?.preload,
+        outputFolder: settings.fastPreviewFolder || settings.libraryFolder || settings.outputFolder || undefined
       })
     }
     getRepos().setAppMeta(safeKey, String(value))
+  })
+  ipcMain.handle('shell:revealPath', async (_e, targetPath: string) => {
+    const p = String(targetPath || '')
+    if (!p) return
+    if (existsSync(p)) shell.showItemInFolder(p)
+    else await shell.openPath(dirname(p))
+  })
+  ipcMain.handle('shell:openPath', async (_e, targetPath: string) => {
+    const p = String(targetPath || '')
+    if (!p) return ''
+    return shell.openPath(p)
   })
   // Factory reset: settings back to defaults + wipe all projects/profiles/channels/jobs.
   // Also logs out of TalkingPhotos (its connection row is wiped along with everything

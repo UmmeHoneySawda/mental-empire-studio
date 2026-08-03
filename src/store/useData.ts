@@ -8,6 +8,7 @@ import type {
   AutomationPreflight,
   DownloadProgress,
   DownloadedVideo,
+  FastPreviewProgress,
   MyChannel,
   Project,
   ProjectImage,
@@ -94,6 +95,7 @@ interface DataState {
   transcribeError: string
   renderJobs: RenderQueueRow[]
   renderProgress: Record<string, RenderProgress>
+  fastPreviewProgress: FastPreviewProgress | null
   publishItems: PublishItem[]
   publishLoading: boolean
   libraryAssets: LibraryAsset[]
@@ -183,6 +185,7 @@ interface DataState {
   assignChannelNiche: (channelId: string, nicheId: string | null) => Promise<void>
   warmNiche: (id: string) => Promise<void>
   refreshAllPools: () => Promise<void>
+  clearFastPreviewProgress: () => void
 }
 
 let subscribed = false
@@ -246,6 +249,8 @@ export const useData = create<DataState>((set, get) => ({
   transcribeError: '',
   renderJobs: [],
   renderProgress: {},
+  fastPreviewProgress: null,
+  clearFastPreviewProgress: () => set({ fastPreviewProgress: null }),
   publishItems: [],
   publishLoading: false,
   libraryAssets: [],
@@ -293,6 +298,7 @@ export const useData = create<DataState>((set, get) => ({
       if (p.done) void get().loadRenderJobs()
       else reloadRenderJobs()
     })
+    a.onFastPreviewProgress?.((p) => set({ fastPreviewProgress: p }))
     a.onAutomation((e) => {
       set((s) => ({
         automationEvents: { ...s.automationEvents, [e.profileId]: e },
