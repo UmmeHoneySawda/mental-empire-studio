@@ -38,7 +38,65 @@ import { isTransitionTimelineAligned } from './timeline'
 
 type RemotionLogLevel = 'error' | 'warn' | 'info' | 'verbose' | 'trace'
 type ChromeMode = 'headless-shell' | 'chrome-for-testing'
+type ChromiumOptions = NonNullable<
+  Parameters<typeof selectComposition>[0]['chromiumOptions']
+>
+export type GpuRenderProfile =
+  | 'automatic'
+  | 'windows-nvidia'
+  | 'linux-nvidia-angle'
+  | 'linux-nvidia-vulkan'
 type TelemetryAttributes = Record<string, string | number | boolean>
+
+const GPU_CHROMIUM_OPTIONS = {
+  'windows-nvidia': { gl: 'angle' },
+  'linux-nvidia-angle': { gl: 'angle-egl' },
+  'linux-nvidia-vulkan': { gl: 'vulkan' },
+} satisfies Record<Exclude<GpuRenderProfile, 'automatic'>, ChromiumOptions>
+
+const GPU_RENDER_PROFILES: ReadonlySet<string> = new Set<GpuRenderProfile>([
+  'automatic',
+  'windows-nvidia',
+  'linux-nvidia-angle',
+  'linux-nvidia-vulkan',
+])
+
+function gpuProfileFromEnvironment(): GpuRenderProfile | undefined {
+  const configured = process.env['MES_REMOTION_GPU_PROFILE']
+  if (!configured) return undefined
+  if (!GPU_RENDER_PROFILES.has(configured)) {
+    throw new Error(
+      `Invalid MES_REMOTION_GPU_PROFILE "${configured}". Expected automatic, windows-nvidia, linux-nvidia-angle, or linux-nvidia-vulkan.`,
+    )
+  }
+  return configured as GpuRenderProfile
+}
+
+export function defaultGpuRenderProfile(
+  platform: NodeJS.Platform = process.platform,
+): GpuRenderProfile {
+  return platform === 'win32' ? 'windows-nvidia' : 'automatic'
+}
+
+export function chromiumOptionsForGpuProfile(
+  profile: GpuRenderProfile,
+): ChromiumOptions | undefined {
+  return profile === 'automatic' ? undefined : GPU_CHROMIUM_OPTIONS[profile]
+}
+
+export function chromeModeForGpuProfile(profile: GpuRenderProfile): ChromeMode {
+  return profile === 'linux-nvidia-angle' || profile === 'linux-nvidia-vulkan'
+    ? 'chrome-for-testing'
+    : 'headless-shell'
+}
+
+function concurrencyForGpuProfile(
+  profile: GpuRenderProfile,
+): number | null {
+  // A single Chromium tab avoids duplicated decode/compositor work and GPU-memory
+  // contention. Automatic mode preserves Remotion's CPU-based heuristic.
+  return profile === 'automatic' ? null : 1
+}
 
 /**
  * Electron injects sentryLog/captureException through this boundary. Keeping
@@ -65,7 +123,9 @@ export interface RemotionRendererAdapterOptions {
   readonly prebuiltBundlePath?: string
   readonly binariesDirectory?: string | null
   readonly browserExecutable?: string | null
+  readonly gpuProfile?: GpuRenderProfile
   readonly chromeMode?: ChromeMode
+  readonly chromiumOptions?: ChromiumOptions
   readonly concurrency?: number | string | null
   readonly timeoutInMilliseconds?: number
   readonly licenseKey?: string | null
@@ -82,7 +142,9 @@ interface ResolvedAdapterOptions {
   readonly prebuiltBundlePath: string | null
   readonly binariesDirectory: string | null
   readonly browserExecutable: string | null
+  readonly gpuProfile: GpuRenderProfile
   readonly chromeMode: ChromeMode
+  readonly chromiumOptions: ChromiumOptions | undefined
   readonly concurrency: number | string | null
   readonly timeoutInMilliseconds: number
   readonly licenseKey: string | null
@@ -126,6 +188,8 @@ function resolveOptions(
   options: RemotionRendererAdapterOptions,
 ): ResolvedAdapterOptions {
   const rootDirectory = path.resolve(options.rootDirectory ?? process.cwd())
+  const gpuProfile =
+    options.gpuProfile ?? gpuProfileFromEnvironment() ?? defaultGpuRenderProfile()
   return {
     rootDirectory,
     entryPoint: absoluteFrom(
@@ -152,8 +216,12 @@ function resolveOptions(
     browserExecutable: options.browserExecutable
       ? absoluteFrom(rootDirectory, options.browserExecutable)
       : null,
-    chromeMode: options.chromeMode ?? 'headless-shell',
-    concurrency: options.concurrency ?? null,
+    gpuProfile,
+    chromeMode: options.chromeMode ?? chromeModeForGpuProfile(gpuProfile),
+    chromiumOptions:
+      options.chromiumOptions ?? chromiumOptionsForGpuProfile(gpuProfile),
+    concurrency:
+      options.concurrency ?? concurrencyForGpuProfile(gpuProfile),
     timeoutInMilliseconds: options.timeoutInMilliseconds ?? 120_000,
     licenseKey: options.licenseKey ?? null,
     logLevel: options.logLevel ?? 'warn',
@@ -207,7 +275,9 @@ async function ensureBrowserCached(
 ): Promise<void> {
   const cacheKey = JSON.stringify([
     options.browserExecutable,
+    options.gpuProfile,
     options.chromeMode,
+    options.chromiumOptions,
     options.logLevel,
   ])
   let promise = browserCache.get(cacheKey)
@@ -865,6 +935,7 @@ export class RemotionRendererAdapter implements RendererAdapter {
         inputProps,
         binariesDirectory: this.options.binariesDirectory,
         browserExecutable: this.options.browserExecutable,
+        chromiumOptions: this.options.chromiumOptions,
         chromeMode: this.options.chromeMode,
         timeoutInMilliseconds: this.options.timeoutInMilliseconds,
         logLevel: this.options.logLevel,
@@ -883,6 +954,9 @@ export class RemotionRendererAdapter implements RendererAdapter {
         width: composition.width,
         height: composition.height,
         fps: composition.fps,
+        gpu_profile: this.options.gpuProfile,
+        chrome_mode: this.options.chromeMode,
+        renderer_concurrency: String(this.options.concurrency ?? 'automatic'),
         elapsed_ms: Date.now() - startedAt,
       })
 
@@ -965,6 +1039,7 @@ export class RemotionRendererAdapter implements RendererAdapter {
         concurrency: this.options.concurrency,
         binariesDirectory: this.options.binariesDirectory,
         browserExecutable: this.options.browserExecutable,
+        chromiumOptions: this.options.chromiumOptions,
         chromeMode: this.options.chromeMode,
         timeoutInMilliseconds: this.options.timeoutInMilliseconds,
         licenseKey: this.options.licenseKey,
@@ -998,6 +1073,9 @@ export class RemotionRendererAdapter implements RendererAdapter {
         duration_frames: prepared.durationFrames,
         width: prepared.width,
         height: prepared.height,
+        gpu_profile: this.options.gpuProfile,
+        chrome_mode: this.options.chromeMode,
+        renderer_concurrency: String(this.options.concurrency ?? 'automatic'),
         elapsed_ms: Date.now() - startedAt,
       })
       return {
