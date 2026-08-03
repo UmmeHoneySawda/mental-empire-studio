@@ -36,6 +36,12 @@ function freshSettingsModule(): Promise<typeof import('../../electron/store/sett
 }
 
 beforeEach(() => {
+  vi.stubEnv('GROQ_API_KEY', '')
+  vi.stubEnv('PEXELS_API_KEY', '')
+  vi.stubEnv('PIXABAY_API_KEY', '')
+  vi.stubEnv('COVERR_API_KEY', '')
+  vi.stubEnv('GEMINI_API_KEY', '')
+  vi.stubEnv('GOOGLE_API_KEY', '')
   __resetStores()
   __setEncryptionAvailable(true)
 })

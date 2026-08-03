@@ -175,7 +175,7 @@ export function FastPreviewPage({ projectId }: { projectId: string }): JSX.Eleme
         acknowledgeRemotionLicense
         overflowVisible={false}
         numberOfSharedAudioTags={8}
-        muted
+        initialVolume={0}
         errorFallback={({ error }) => <FastPreviewPlayerError error={error} />}
       />
       {tint && <div style={{ ...tint, position: 'absolute', inset: 0, pointerEvents: 'none' }} />}

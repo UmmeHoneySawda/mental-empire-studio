@@ -283,7 +283,7 @@ function HookBeatFrame({
         .filter((word) => importantIds.has(word.id))
         .map((word) => normalizedToken(word.text)),
     )
-    const asset = beat.visual.kind === 'asset'
+    const asset = beat.visual.kind === 'asset' && beat.visual.assetId
       ? assetById?.get(beat.visual.assetId)
         ?? project.assets.find((candidate) => candidate.id === beat.visual.assetId)
       : undefined

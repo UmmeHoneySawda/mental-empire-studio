@@ -73,11 +73,12 @@ export function registerIpc(): void {
     // the normal NativeApi/video-engine contract and deterministic render queue stay
     // unchanged. It never writes this reserved key to the database.
     if (safeKey === FAST_PREVIEW_EXPORT_COMMAND) {
-      const preferences = event.sender.getLastWebPreferences()
+      const senderWithPrefs = event.sender as unknown as { getLastWebPreferences?: () => { preload?: string } }
+      const preferences = senderWithPrefs.getLastWebPreferences?.()
       return exportFastPreview({
         projectId: reqId(value, 'projectId'),
         sourceUrl: event.sender.getURL(),
-        preloadPath: preferences.preload,
+        preloadPath: preferences?.preload,
       })
     }
     getRepos().setAppMeta(safeKey, String(value))

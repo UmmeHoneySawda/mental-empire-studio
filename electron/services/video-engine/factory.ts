@@ -2,14 +2,17 @@ import { existsSync } from 'node:fs'
 import { join, resolve } from 'node:path'
 import {
   GpuHyperframesRendererAdapter,
-  type HyperframesAdapterOptions
+  type HyperframesAdapterOptions,
+  type HyperframesGpuProbe
 } from '../../../video-engine/hyperframes'
+import { detectGpuEncoder, resolveBrowserGpuMode } from '@hyperframes/engine'
 import {
   RemotionRendererAdapter,
   type RemotionRendererAdapterOptions
 } from '../../../video-engine/remotion/adapter'
 import { captureException, sentryLog } from '../sentry'
 import { configureVideoEngineBinaryEnvironment } from './binary-env'
+import { probeRenderCapabilities } from '../engine/caps'
 import { BrollCache } from './broll/cache'
 import { BrollService } from './broll/service'
 import { LocalBrollProvider } from './broll/providers/local'
@@ -77,13 +80,24 @@ export async function createVideoEngine(
       captureException
     }
   }
+  const gpuProbe: HyperframesGpuProbe = {
+    detectEncoder: async () => {
+      const caps = probeRenderCapabilities()
+      if (caps.hasNvenc) return 'nvenc'
+      if (caps.hasQsv) return 'qsv'
+      if (caps.hasAmf) return 'amf'
+      return detectGpuEncoder()
+    },
+    resolveBrowserMode: async () => resolveBrowserGpuMode('auto')
+  }
+
   const service = new VideoEngineService({
     projects: join(dataRoot, 'projects'),
     jobs: join(dataRoot, 'render-jobs'),
     brollCache: brollCacheRoot
   }, [
     new RemotionRendererAdapter(remotionOptions),
-    new GpuHyperframesRendererAdapter(hyperframesOptions)
+    new GpuHyperframesRendererAdapter(hyperframesOptions, gpuProbe)
   ], {
     renderConcurrency: options.renderConcurrency ?? 1,
     broll
