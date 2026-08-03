@@ -10,6 +10,7 @@ import type { VideoProject, VideoScene } from '../../../shared/video-engine'
 import { ffmpegPath, ffprobePath } from '../bin'
 import { getVideoEngine, renderFileName, videoEngineDataRoot } from './studio'
 import { sentryLog } from '../sentry'
+import log from 'electron-log/main'
 
 export const FAST_PREVIEW_EXPORT_COMMAND = 'videoEngine.fastPreviewExport'
 
@@ -54,6 +55,7 @@ const READY_TIMEOUT_MS = 30_000
 const CAPTURE_QUALITY = 45
 const MAX_CAPTURE_WIDTH = 1280
 const MAX_CAPTURE_HEIGHT = 720
+const PLAYBACK_RATE = 4
 let activeExport: Promise<FastPreviewExportResult> | null = null
 
 function even(value: number): number {
@@ -203,6 +205,7 @@ function recorderUrl(sourceUrl: string, projectId: string): string {
   url.hash = ''
   url.search = ''
   url.searchParams.set('mes-fast-preview', projectId)
+  if (PLAYBACK_RATE !== 1) url.searchParams.set('mes-rate', String(PLAYBACK_RATE))
   return url.toString()
 }
 
@@ -210,6 +213,7 @@ async function waitForController(window: BrowserWindow): Promise<void> {
   const deadline = Date.now() + READY_TIMEOUT_MS
   let lastLoggedStatus: string | null = null
   let lastLogAt = 0
+  log.info('[fast-preview] waitForController started, timeout=%dms', READY_TIMEOUT_MS)
   while (Date.now() < deadline) {
     const state = await window.webContents.executeJavaScript(`(() => {
       const controller = window.__mesFastPreview;
@@ -218,12 +222,15 @@ async function waitForController(window: BrowserWindow): Promise<void> {
     })()`, true) as { status?: string; error?: string; hasApi?: boolean; hasProject?: boolean } | null
     const currentStatus = state ? state.status ?? 'null-status' : 'no-controller'
     const now = Date.now()
-    if (currentStatus !== lastLoggedStatus || now - lastLogAt > 5000) {
-      sentryLog.info(`fast-preview: recorder status=${currentStatus} hasApi=${state?.hasApi ?? false} hasProject=${state?.hasProject ?? false}`)
+    if (currentStatus !== lastLoggedStatus || now - lastLogAt > 3000) {
+      log.info('[fast-preview] recorder: status=%s hasApi=%s hasProject=%s', currentStatus, state?.hasApi ?? false, state?.hasProject ?? false)
       lastLoggedStatus = currentStatus
       lastLogAt = now
     }
-    if (state?.status === 'ready') return
+    if (state?.status === 'ready') {
+      log.info('[fast-preview] recorder ready!')
+      return
+    }
     if (state?.status === 'error') throw new Error(state.error || 'The fast preview page failed.')
     await new Promise((resolve) => setTimeout(resolve, 250))
   }
@@ -366,19 +373,42 @@ async function runFastPreviewExport(
       outputPath
     })
 
+    // Timeout wrapper so CDP commands can't hang forever
+    const cdpCommand = async (method: string, params?: Record<string, unknown>): Promise<unknown> => {
+      log.info('[fast-preview] CDP >> %s', method)
+      const result = await Promise.race([
+        debug.sendCommand(method, params),
+        new Promise((_resolve, reject) => setTimeout(() => reject(new Error(`CDP command "${method}" timed out after 15s`)), 15_000)),
+      ])
+      log.info('[fast-preview] CDP << %s OK', method)
+      return result
+    }
+
+    // Load the page FIRST so the renderer has a real page context.
+    // CDP commands like Page.enable hang on about:blank.
+    const url = recorderUrl(request.sourceUrl, request.projectId)
+    log.info('[fast-preview] loading recorder URL: %s', url)
+    await recorder.loadURL(url)
+    log.info('[fast-preview] URL loaded, attaching debugger...')
+
     debug.attach('1.3')
+    log.info('[fast-preview] debugger attached OK')
     debug.on('message', onDebuggerMessage)
-    await debug.sendCommand('Page.enable')
-    await debug.sendCommand('Emulation.setDeviceMetricsOverride', {
+
+    await cdpCommand('Page.enable')
+    log.info('[fast-preview] setting device metrics %dx%d', spec.width, spec.height)
+    await cdpCommand('Emulation.setDeviceMetricsOverride', {
       width: spec.width,
       height: spec.height,
       deviceScaleFactor: 1,
       mobile: false,
     })
-    await recorder.loadURL(recorderUrl(request.sourceUrl, request.projectId))
+
+    log.info('[fast-preview] waiting for controller...')
     await waitForController(recorder)
-    await debug.sendCommand('Page.setWebLifecycleState', { state: 'active' }).catch(() => undefined)
-    await debug.sendCommand('Page.startScreencast', {
+    log.info('[fast-preview] controller ready, starting screencast...')
+    await cdpCommand('Page.setWebLifecycleState', { state: 'active' }).catch(() => undefined)
+    await cdpCommand('Page.startScreencast', {
       format: 'jpeg',
       quality: CAPTURE_QUALITY,
       maxWidth: spec.width,
@@ -386,18 +416,21 @@ async function runFastPreviewExport(
       everyNthFrame: 1,
     })
     screencastStarted = true
+    log.info('[fast-preview] screencast started, capturing initial frame...')
 
-    const initial = await debug.sendCommand('Page.captureScreenshot', {
+    const initial = await cdpCommand('Page.captureScreenshot', {
       format: 'jpeg',
       quality: CAPTURE_QUALITY,
       fromSurface: true,
     }) as { data: string }
     latestFrame = Buffer.from(initial.data, 'base64')
+    log.info('[fast-preview] initial frame captured (%d bytes), spawning ffmpeg...', latestFrame.length)
 
     ffmpeg = spawn(ffmpegPath(), args, {
       windowsHide: true,
       stdio: ['pipe', 'pipe', 'pipe'],
     })
+    ffmpeg.stdin.setMaxListeners(0)
     ffmpeg.stdout.resume()
     ffmpeg.stderr.setEncoding('utf8')
     ffmpeg.stderr.on('data', (chunk: string) => {
@@ -405,10 +438,12 @@ async function runFastPreviewExport(
     })
     const closed = new Promise<number>((resolveClose, rejectClose) => {
       ffmpeg?.once('error', (err) => {
+        log.error('[fast-preview] ffmpeg error event: %s', err.message)
         ffmpegExited = true
         rejectClose(err)
       })
       ffmpeg?.once('close', (code) => {
+        log.info('[fast-preview] ffmpeg closed with code=%d', code ?? -1)
         ffmpegExited = true
         ffmpegExitCode = code ?? -1
         resolveClose(code ?? -1)
@@ -416,10 +451,13 @@ async function runFastPreviewExport(
     })
 
     await writeFrame(ffmpeg.stdin, latestFrame)
+    log.info('[fast-preview] first frame written, calling play()...')
     await recorder.webContents.executeJavaScript('window.__mesFastPreview?.play()', true)
+    const effectiveInterval = 1000 / spec.fps / PLAYBACK_RATE
+    log.info('[fast-preview] play() called, entering capture loop (%d frames @ %dfps, rate=%dx, interval=%.1fms)', spec.frameCount, spec.fps, PLAYBACK_RATE, effectiveInterval)
     const start = performance.now()
 
-    const intervalMs = 1000 / spec.fps
+    const intervalMs = effectiveInterval
     for (let index = 1; index < spec.frameCount; index += 1) {
       if (ffmpegExited) {
         throw new Error(`Fast preview encoding failed early (code ${ffmpegExitCode})${ffmpegError.trim() ? `: ${ffmpegError.trim()}` : '.'}`)
@@ -437,6 +475,10 @@ async function runFastPreviewExport(
         const remainingMs = (spec.frameCount - index) * msPerFrame
         const etaSec = Math.max(0, Math.round(remainingMs / 1000))
         const percent = Math.min(98, Math.round((index / spec.frameCount) * 100))
+
+        if (index <= 10 || index % 300 === 0) {
+          log.info('[fast-preview] frame %d/%d (%d%%) eta=%ds', index, spec.frameCount, percent, etaSec)
+        }
 
         broadcastProgress({
           projectId: request.projectId,

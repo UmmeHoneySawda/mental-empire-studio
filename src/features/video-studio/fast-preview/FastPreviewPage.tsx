@@ -57,6 +57,10 @@ function FastPreviewPlayerError({ error }: { error: Error }): JSX.Element {
 
 export function FastPreviewPage({ projectId }: { projectId: string }): JSX.Element {
   const player = useRef<PlayerRef>(null)
+  const playbackRate = useMemo(() => {
+    const rate = Number(new URLSearchParams(window.location.search).get('mes-rate'))
+    return rate > 0 ? rate : 1
+  }, [])
   const controller = useRef<FastPreviewController>({
     status: 'loading',
     frame: 0,
@@ -198,6 +202,7 @@ export function FastPreviewPage({ projectId }: { projectId: string }): JSX.Eleme
         overflowVisible={false}
         numberOfSharedAudioTags={8}
         initialVolume={0}
+        playbackRate={playbackRate}
         errorFallback={({ error }) => <FastPreviewPlayerError error={error} />}
       />
       {tint && <div style={{ ...tint, position: 'absolute', inset: 0, pointerEvents: 'none' }} />}
