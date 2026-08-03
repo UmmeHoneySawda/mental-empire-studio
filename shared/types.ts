@@ -1232,6 +1232,53 @@ export interface WorkItem {
   archived: boolean
 }
 
+export interface VisualTemplate {
+  id: string
+  name: string
+  mode: 'Auto B-roll' | 'Image slideshow'
+  density: 'Full' | 'Sparse' | 'Keywords'
+  clipMin: number
+  clipMax: number
+  order: 'In order' | 'Shuffle'
+  motion: 'Static' | 'Subtle' | 'Cinematic'
+  transition: 'Cut' | 'Crossfade' | 'Wipe' | 'Dip'
+  effects: string[]
+  grade: 'Noir' | 'Cinematic' | 'Intense' | 'Heartfelt' | 'Clean' | 'Gold'
+  fineGrade: {
+    exposure: number
+    contrast: number
+    saturation: number
+    temperature: number
+    vignette: number
+    grain: number
+  }
+  captionStyle: 'Hormozi' | 'Beast' | 'Karaoke' | 'Boxed' | 'Word' | 'Neon' | 'Minimal' | 'Podcast'
+  aspectRatio: '9:16' | '1:1' | '16:9'
+  hookAngle: 'question' | 'bold-claim' | 'curiosity' | 'stat'
+  hookTemplate: 'Rise' | 'Typewriter' | 'Blur in' | 'Stagger'
+  hookLine: string
+  hookSec: number
+  hookBackdrop: 'Blurred clip' | 'Grain field' | 'Dark overlay'
+  hookPosition: 'top' | 'middle' | 'bottom'
+  zoomAtStart: boolean
+  createdAt?: string
+  updatedAt?: string
+}
+
+export interface BatchRenderInput {
+  channelId: string
+  sourceIds: string[]
+  count: number
+  templateId: string
+  renderMode: 'normal' | 'fast'
+  playbackSpeed: number
+}
+
+export interface BatchRenderResult {
+  projectIds: string[]
+  renderJobCount: number
+}
+
 export interface NativeApi {
   platform: NodeJS.Platform | 'web'
   /** the running app version (from package.json / app.getVersion()) */
@@ -1270,6 +1317,14 @@ export interface NativeApi {
   }
   looks: {
     list(): Promise<import('./looks').LookPreset[]>
+  }
+  visualTemplates: {
+    list(): Promise<VisualTemplate[]>
+    save(template: VisualTemplate): Promise<VisualTemplate[]>
+    delete(id: string): Promise<VisualTemplate[]>
+  }
+  batch: {
+    send(input: BatchRenderInput): Promise<BatchRenderResult>
   }
   db: {
     myChannels(): Promise<MyChannel[]>
@@ -1327,6 +1382,8 @@ export interface NativeApi {
     setLinkedMyChannel(id: string, myChannelId: string | null): Promise<SourceChannel[]>
     /** update the source-owned automation defaults/cursor settings */
     setAutomation(id: string, patch: SourceAutomationPatch): Promise<SourceChannel[]>
+    /** count cached videos from source channels that are not uploaded/processed */
+    unpublishedCount(sourceIds: string[]): Promise<number>
   }
   reminders: {
     /** evaluate behind-pace channels, firing desktop notifications */

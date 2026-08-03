@@ -29,7 +29,8 @@ import type {
   Niche,
   NichePoolHealth,
   SourceAutomationPatch,
-  SourceChannel
+  SourceChannel,
+  VisualTemplate
 } from '@shared/types'
 import type { GpuRenderSpec } from '@shared/renderSpec'
 import { dropIdleRenderProgress } from '../lib/renderProgress'
@@ -110,9 +111,13 @@ interface DataState {
   nichePools: NichePoolHealth[]
   sourceChannels: SourceChannel[]
   pendingSources: PendingSource[]
+  visualTemplates: VisualTemplate[]
   ready: boolean
 
   init: () => Promise<void>
+  loadVisualTemplates: () => Promise<void>
+  saveVisualTemplate: (t: VisualTemplate) => Promise<void>
+  deleteVisualTemplate: (id: string) => Promise<void>
   loadChannels: () => Promise<void>
   loadDownloads: () => Promise<void>
   loadActivity: () => Promise<void>
@@ -265,6 +270,7 @@ export const useData = create<DataState>((set, get) => ({
   nichePools: [],
   sourceChannels: [],
   pendingSources: [],
+  visualTemplates: [],
   ready: false,
 
   init: async () => {
@@ -273,7 +279,7 @@ export const useData = create<DataState>((set, get) => ({
       set({ ready: true })
       return
     }
-    await Promise.all([get().loadChannels(), get().loadDownloads(), get().loadActivity(), get().loadProfiles(), get().loadRenderJobs(), get().loadWorkItems(), get().loadNiches(), get().loadSources(), get().loadAutomationJobs()])
+    await Promise.all([get().loadChannels(), get().loadDownloads(), get().loadActivity(), get().loadProfiles(), get().loadRenderJobs(), get().loadWorkItems(), get().loadNiches(), get().loadSources(), get().loadAutomationJobs(), get().loadVisualTemplates()])
     set({ ready: true })
     a.reminders.check().catch(() => {})
 
@@ -308,6 +314,23 @@ export const useData = create<DataState>((set, get) => ({
       }))
     })
     a.onAutomationJob(() => { void get().loadAutomationJobs() })
+  },
+
+  loadVisualTemplates: async () => {
+    const a = api()
+    if (a) set({ visualTemplates: await a.visualTemplates.list() })
+  },
+  saveVisualTemplate: async (t) => {
+    const a = api()
+    if (!a) return
+    const visualTemplates = await a.visualTemplates.save(t)
+    set({ visualTemplates })
+  },
+  deleteVisualTemplate: async (id) => {
+    const a = api()
+    if (!a) return
+    const visualTemplates = await a.visualTemplates.delete(id)
+    set({ visualTemplates })
   },
 
   loadChannels: async () => {

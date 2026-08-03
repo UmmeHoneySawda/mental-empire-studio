@@ -2,6 +2,7 @@ import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'ele
 import type {
   ActivityRow,
   AppSettings,
+  BatchRenderInput,
   DeepPartial,
   DownloadOptions,
   DownloadProgress,
@@ -19,7 +20,8 @@ import type {
   RenderProgress,
   AutomationEvent,
   AutomationJobDraft,
-  AutomationJob
+  AutomationJob,
+  VisualTemplate
 } from '../shared/types'
 import type { ProviderConnection, ProviderJob, ProviderMotionQuery, TalkingPhotosAspectRatio, TalkingPhotosCreateInput, TalkingPhotosScriptCreateInput } from '../shared/talkingphotos'
 import type {
@@ -56,8 +58,6 @@ function subscribe<T>(channel: string, cb: (payload: T) => void): () => void {
   return () => ipcRenderer.removeListener(channel, listener)
 }
 
-// All native capability is exposed here behind a typed `window.api`. The renderer
-// never touches Node directly (contextIsolation on, nodeIntegration off).
 const api: NativeApi = {
   platform: process.platform,
   appVersion: (ipcRenderer.sendSync('app:version') as string) ?? '',
@@ -93,6 +93,16 @@ const api: NativeApi = {
 
   looks: {
     list: () => ipcRenderer.invoke('looks:list')
+  },
+
+  visualTemplates: {
+    list: () => ipcRenderer.invoke('visualTemplates:list'),
+    save: (t: VisualTemplate) => ipcRenderer.invoke('visualTemplates:save', t),
+    delete: (id: string) => ipcRenderer.invoke('visualTemplates:delete', id)
+  },
+
+  batch: {
+    send: (input: BatchRenderInput) => ipcRenderer.invoke('batch:send', input)
   },
 
   db: {
@@ -137,7 +147,9 @@ const api: NativeApi = {
     setLinkedMyChannel: (id: string, myChannelId: string | null) =>
       ipcRenderer.invoke('sources:setLinkedMyChannel', id, myChannelId),
     setAutomation: (id: string, patch: SourceAutomationPatch) =>
-      ipcRenderer.invoke('sources:setAutomation', id, patch)
+      ipcRenderer.invoke('sources:setAutomation', id, patch),
+    unpublishedCount: (sourceIds: string[]) =>
+      ipcRenderer.invoke('sources:unpublishedCount', sourceIds)
   } satisfies NativeApi['sources'],
 
   reminders: {
@@ -256,13 +268,11 @@ const api: NativeApi = {
 
   chooseFolder: () => ipcRenderer.invoke('fs:chooseFolder'),
 
-  // Master library: dry-run the reorganize-existing migration, then execute it.
   library: {
     previewReorg: () => ipcRenderer.invoke('library:previewReorg'),
     reorganize: () => ipcRenderer.invoke('library:reorganize')
   },
 
-  // Niche b-roll pools (P3)
   niche: {
     list: () => ipcRenderer.invoke('niche:list'),
     poolHealth: () => ipcRenderer.invoke('niche:poolHealth'),
@@ -273,7 +283,6 @@ const api: NativeApi = {
     warm: (id: string) => ipcRenderer.invoke('niche:warm', id)
   },
 
-  // Template video engine (Remotion + HyperFrames) driving the Compose studio.
   videoEngine: {
     status: () => ipcRenderer.invoke('videoEngine:status'),
     templates: (filter?: VideoTemplateFilter) => ipcRenderer.invoke('videoEngine:templates', filter),
@@ -374,9 +383,6 @@ const api: NativeApi = {
     assetUrl: (absolutePath: string) => ipcRenderer.invoke('videoEngine:assetUrl', absolutePath)
   } satisfies NativeApi['videoEngine'],
 
-  // Electron 32 removed the File.path property; webUtils.getPathForFile is the
-  // supported way to get the absolute path of a dropped/picked file for the main
-  // process (used to import images/audio in Compose).
   pathForFile: (file: File) => {
     try {
       return webUtils.getPathForFile(file)

@@ -21,7 +21,8 @@ import type {
   NichePoolHealth,
   ScrapeOrder,
   ScrapedVideo,
-  VideoStyle
+  VideoStyle,
+  VisualTemplate
 } from '@shared/types'
 
 type SourceKind = AutomationJobDraft['config']['sourceKind']
@@ -34,132 +35,7 @@ const inputStyle: CSSProperties = {
   color: 'var(--text-bright)', padding: '9px 11px', fontSize: 12, outline: 'none'
 }
 
-export interface Template {
-  id: string
-  name: string
-  mode: 'Auto B-roll' | 'Image slideshow'
-  density: 'Full' | 'Sparse' | 'Keywords'
-  clipMin: number
-  clipMax: number
-  order: 'In order' | 'Shuffle'
-  motion: 'Static' | 'Subtle' | 'Cinematic'
-  transition: 'Cut' | 'Crossfade' | 'Wipe' | 'Dip'
-  effects: string[]
-  grade: 'Noir' | 'Cinematic' | 'Intense' | 'Heartfelt' | 'Clean' | 'Gold'
-  fineGrade: {
-    exposure: number
-    contrast: number
-    saturation: number
-    temperature: number
-    vignette: number
-    grain: number
-  }
-  captionStyle: 'Hormozi' | 'Beast' | 'Karaoke' | 'Boxed' | 'Word' | 'Neon' | 'Minimal' | 'Podcast'
-  aspectRatio: '9:16' | '1:1' | '16:9'
-  hookAngle: 'question' | 'bold-claim' | 'curiosity' | 'stat'
-  hookTemplate: 'Rise' | 'Typewriter' | 'Blur in' | 'Stagger'
-  hookLine: string
-  hookSec: number
-  hookBackdrop: 'Blurred clip' | 'Grain field' | 'Dark overlay'
-  hookPosition: 'top' | 'middle' | 'bottom'
-  zoomAtStart: boolean
-}
 
-const INITIAL_TEMPLATES: Template[] = [
-  {
-    id: 'tpl-dark-stoic',
-    name: 'Dark Stoic Shorts',
-    mode: 'Auto B-roll',
-    density: 'Full',
-    clipMin: 3,
-    clipMax: 5,
-    order: 'Shuffle',
-    motion: 'Cinematic',
-    transition: 'Crossfade',
-    effects: ['Film grain', 'Speed ramp'],
-    grade: 'Cinematic',
-    fineGrade: { exposure: 0, contrast: 15, saturation: -20, temperature: -10, vignette: 35, grain: 20 },
-    captionStyle: 'Hormozi',
-    aspectRatio: '9:16',
-    hookAngle: 'bold-claim',
-    hookTemplate: 'Rise',
-    hookLine: 'THE UNCOMFORTABLE TRUTH ABOUT BEING ALONE',
-    hookSec: 3,
-    hookBackdrop: 'Blurred clip',
-    hookPosition: 'middle',
-    zoomAtStart: true,
-  },
-  {
-    id: 'tpl-high-contrast-faceless',
-    name: 'High-Contrast Faceless',
-    mode: 'Auto B-roll',
-    density: 'Sparse',
-    clipMin: 4,
-    clipMax: 8,
-    order: 'In order',
-    motion: 'Subtle',
-    transition: 'Cut',
-    effects: ['Glitch cut'],
-    grade: 'Noir',
-    fineGrade: { exposure: -10, contrast: 40, saturation: -100, temperature: 0, vignette: 50, grain: 40 },
-    captionStyle: 'Beast',
-    aspectRatio: '9:16',
-    hookAngle: 'question',
-    hookTemplate: 'Typewriter',
-    hookLine: 'WHY 99% OF PEOPLE FAIL AT THIS ONE HABIT',
-    hookSec: 2.5,
-    hookBackdrop: 'Dark overlay',
-    hookPosition: 'top',
-    zoomAtStart: false,
-  },
-  {
-    id: 'tpl-documentary-horizontal',
-    name: 'Documentary Horizontal',
-    mode: 'Image slideshow',
-    density: 'Full',
-    clipMin: 5,
-    clipMax: 10,
-    order: 'In order',
-    motion: 'Cinematic',
-    transition: 'Dip',
-    effects: ['Light leaks'],
-    grade: 'Gold',
-    fineGrade: { exposure: 5, contrast: 10, saturation: 15, temperature: 20, vignette: 20, grain: 10 },
-    captionStyle: 'Podcast',
-    aspectRatio: '16:9',
-    hookAngle: 'stat',
-    hookTemplate: 'Stagger',
-    hookLine: 'HOW EMPIRES FALL IN SILENCE',
-    hookSec: 4,
-    hookBackdrop: 'Grain field',
-    hookPosition: 'middle',
-    zoomAtStart: true,
-  },
-]
-
-const SAMPLE_TITLES = [
-  'Why Silence is Your Strongest Weapon Against Noise',
-  'The Brutal Truth About Discipline in 2026',
-  'How Minimalists Outperform Everyone Else',
-  'Mastering Emotional Control in High Stress',
-  'The Daily Ritual of Exceptional Thinkers',
-  'Stop Explaining Yourself to People Who Do Not Matter',
-  'The Architecture of Unshakeable Focus',
-  'Why Slow Progress is Still Crushing the Competition',
-  'Building Financial Freedom Without The Hype',
-  'The Psychology of People Who Never Give Up',
-  'How to Eliminate Brain Fog in 24 Hours',
-  'The Power of Saying No Without Feeling Guilty'
-]
-
-function rand(seed: number) {
-  let s = seed + 0x6d2b79f5
-  return () => {
-    s = Math.imul(s ^ (s >>> 15), s | 1)
-    s ^= s + Math.imul(s ^ (s >>> 7), s | 61)
-    return ((s ^ (s >>> 14)) >>> 0) / 4294967296
-  }
-}
 
 function fileName(path: string): string { return path.split(/[\\/]/).pop() || path }
 
@@ -268,9 +144,13 @@ function JobDetails({ detail, onOpenProject }: { detail: AutomationJobDetail; on
 }
 
 export function Profiles(): JSX.Element {
+  const myChannels = useData((state) => state.channels)
   const sourceChannels = useData((state) => state.sourceChannels)
   const automationJobs = useData((state) => state.automationJobs)
   const workItems = useData((state) => state.workItems)
+  const templates = useData((state) => state.visualTemplates)
+  const saveVisualTemplate = useData((state) => state.saveVisualTemplate)
+  const deleteVisualTemplate = useData((state) => state.deleteVisualTemplate)
   const loadSources = useData((state) => state.loadSources)
   const loadAutomationJobs = useData((state) => state.loadAutomationJobs)
   const preflightAutomation = useData((state) => state.preflightAutomation)
@@ -289,8 +169,7 @@ export function Profiles(): JSX.Element {
   const [mainTab, setMainTab] = useState<'channels' | 'templates' | 'jobs'>('channels')
 
   // Templates state
-  const [templates, setTemplates] = useState<Template[]>(INITIAL_TEMPLATES)
-  const [editingTemplate, setEditingTemplate] = useState<Template | null>(null)
+  const [editingTemplate, setEditingTemplate] = useState<VisualTemplate | null>(null)
   const [wizardStep, setWizardStep] = useState<0 | 1>(0)
   const [toastMessage, setToastMessage] = useState<string>('')
 
@@ -298,8 +177,11 @@ export function Profiles(): JSX.Element {
   const [selectedChannelId, setSelectedChannelId] = useState<string>('')
   const [activeSourceIds, setActiveSourceIds] = useState<string[]>([])
   const [batchCount, setBatchCount] = useState<number>(5)
-  const [drawSeed, setDrawSeed] = useState<number>(42)
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('tpl-dark-stoic')
+  const [renderMode, setRenderMode] = useState<'normal' | 'fast'>('normal')
+  const [playbackSpeed, setPlaybackSpeed] = useState<number>(4)
+  const [unpublishedAvailable, setUnpublishedAvailable] = useState<number>(0)
+  const [sendingBatch, setSendingBatch] = useState<boolean>(false)
 
   const showToast = (msg: string) => {
     setToastMessage(msg)
@@ -533,30 +415,44 @@ export function Profiles(): JSX.Element {
 
   const activeJob = automationJobs.find((job) => job.status === 'running' || job.status === 'pausing')
 
-  // Channels & Batch calculated draw items
-  const drawnVideos = useMemo(() => {
-    const rng = rand(drawSeed)
-    const count = batchCount
-    const list: Array<{ title: string; duration: string; fresh: boolean }> = []
-    for (let i = 0; i < count; i++) {
-      const titleIndex = Math.floor(rng() * SAMPLE_TITLES.length)
-      const durMins = Math.floor(rng() * 8) + 2
-      const durSecs = Math.floor(rng() * 60)
-      list.push({
-        title: SAMPLE_TITLES[titleIndex],
-        duration: `${durMins}:${durSecs < 10 ? '0' : ''}${durSecs}`,
-        fresh: rng() > 0.3
-      })
+  useEffect(() => {
+    if (myChannels.length > 0 && !selectedChannelId) {
+      setSelectedChannelId(myChannels[0].id)
     }
-    return list
-  }, [batchCount, drawSeed])
+  }, [myChannels, selectedChannelId])
+
+  const linkedSources = useMemo(() => {
+    if (!selectedChannelId) return []
+    const ch = myChannels.find((c) => c.id === selectedChannelId)
+    return sourceChannels.filter(
+      (s) => s.linkedMyChannelId === selectedChannelId || (ch && s.id === ch.linkedSourceId)
+    )
+  }, [sourceChannels, selectedChannelId, myChannels])
+
+  useEffect(() => {
+    if (linkedSources.length > 0) {
+      setActiveSourceIds(linkedSources.map((s) => s.id))
+    } else {
+      setActiveSourceIds([])
+    }
+  }, [linkedSources])
+
+  useEffect(() => {
+    if (activeSourceIds.length === 0) {
+      setUnpublishedAvailable(0)
+      return
+    }
+    window.api.sources.unpublishedCount(activeSourceIds)
+      .then((count) => setUnpublishedAvailable(count))
+      .catch(() => setUnpublishedAvailable(0))
+  }, [activeSourceIds])
 
   const selectedTemplate = useMemo(() => {
-    return templates.find(t => t.id === selectedTemplateId) || templates[0]
+    return templates.find((t) => t.id === selectedTemplateId) || templates[0]
   }, [templates, selectedTemplateId])
 
   const openNewTemplateEditor = () => {
-    const newTpl: Template = {
+    const newTpl: VisualTemplate = {
       id: `tpl-${Date.now()}`,
       name: 'New Visual System',
       mode: 'Auto B-roll',
@@ -583,40 +479,55 @@ export function Profiles(): JSX.Element {
     setWizardStep(0)
   }
 
-  const handleSaveTemplate = (saved: Template) => {
-    setTemplates(prev => {
-      const idx = prev.findIndex(t => t.id === saved.id)
-      if (idx >= 0) {
-        const next = [...prev]
-        next[idx] = saved
-        return next
-      }
-      return [...prev, saved]
-    })
+  const handleSaveTemplate = async (saved: VisualTemplate) => {
+    await saveVisualTemplate(saved)
     setEditingTemplate(null)
     showToast(`Saved template "${saved.name}"`)
   }
 
-  const handleDuplicateTemplate = (t: Template) => {
-    const dup: Template = {
+  const handleDuplicateTemplate = async (t: VisualTemplate) => {
+    const dup: VisualTemplate = {
       ...t,
       id: `tpl-${Date.now()}`,
       name: `${t.name} (Copy)`
     }
-    setTemplates(prev => [...prev, dup])
+    await saveVisualTemplate(dup)
     showToast(`Duplicated "${t.name}"`)
   }
 
-  const handleDeleteTemplate = (id: string) => {
-    setTemplates(prev => prev.filter(t => t.id !== id))
+  const handleDeleteTemplate = async (id: string) => {
+    await deleteVisualTemplate(id)
     showToast('Template deleted')
   }
 
-  const handleSendToRender = () => {
-    showToast(`Queued ${batchCount} videos for automated render!`)
-    setMainTab('jobs')
-    setView('setup')
-    setStage(0)
+  const handleSendToRender = async () => {
+    if (!selectedChannelId) {
+      showToast('Please select a target channel.')
+      return
+    }
+    if (activeSourceIds.length === 0) {
+      showToast('Please enable at least one rotation source.')
+      return
+    }
+    setSendingBatch(true)
+    try {
+      const res = await window.api.batch.send({
+        channelId: selectedChannelId,
+        sourceIds: activeSourceIds,
+        count: Math.min(batchCount, Math.max(1, unpublishedAvailable || batchCount)),
+        templateId: selectedTemplateId || templates[0]?.id || '',
+        renderMode,
+        playbackSpeed
+      })
+      showToast(`Queued ${res.renderJobCount} videos for automated render!`)
+      setMainTab('jobs')
+      setView('setup')
+      setStage(0)
+    } catch (err) {
+      showToast(`Error: ${(err as Error).message}`)
+    } finally {
+      setSendingBatch(false)
+    }
   }
 
   return (
@@ -684,67 +595,70 @@ export function Profiles(): JSX.Element {
                 <span className="at-step-number">01</span>
                 <div>
                   <h2>Pick target channel</h2>
-                  <p>Choose which channel receive this automated video batch.</p>
+                  <p>Choose which owned channel receives this automated video batch.</p>
                 </div>
               </div>
 
-              <div className="at-channel-cards">
-                {(sourceChannels.length > 0 ? sourceChannels : [
-                  { id: 'ch-mentalempire', name: 'Mental Empire Studio', handle: '@mentalempire', avatar: '' },
-                  { id: 'ch-stoicsignal', name: 'Stoic Signal', handle: '@stoicsignal', avatar: '' },
-                  { id: 'ch-quietleverage', name: 'Quiet Leverage', handle: '@quietleverage', avatar: '' }
-                ]).map((ch) => {
-                  const selected = selectedChannelId === ch.id || (!selectedChannelId && ch.id === sourceChannels[0]?.id)
-                  return (
-                    <button
-                      key={ch.id}
-                      className={`at-my-channel ${selected ? 'selected' : ''}`}
-                      onClick={() => setSelectedChannelId(ch.id)}
-                    >
-                      <div className="at-channel-avatar">
-                        {'avatar' in ch && ch.avatar ? (
-                          <img src={mediaSrc(ch.avatar)} alt="" />
-                        ) : (
-                          ch.name.substring(0, 2).toUpperCase()
-                        )}
-                      </div>
-                      <div className="at-channel-info">
-                        <b>{ch.name}</b>
-                        <small>{'handle' in ch ? ch.handle : '@channel'}</small>
-                      </div>
-                      <div className="at-check-mark">{selected ? '✓' : ''}</div>
-                    </button>
-                  )
-                })}
-              </div>
+              {myChannels.length === 0 ? (
+                <div style={{ padding: 16, background: 'var(--bg-inset)', borderRadius: 10, border: '1px solid var(--border)' }}>
+                  <p style={{ margin: 0, fontSize: 12, color: 'var(--text-dim)' }}>No owned channels found. Add a channel in Channel Studio to target renders.</p>
+                </div>
+              ) : (
+                <div className="at-channel-cards">
+                  {myChannels.map((ch) => {
+                    const selected = selectedChannelId === ch.id
+                    return (
+                      <button
+                        key={ch.id}
+                        type="button"
+                        className={`at-my-channel ${selected ? 'selected' : ''}`}
+                        onClick={() => setSelectedChannelId(ch.id)}
+                      >
+                        <div className="at-channel-avatar">
+                          {ch.avatar ? (
+                            <img src={mediaSrc(ch.avatar)} alt="" />
+                          ) : (
+                            ch.name.substring(0, 2).toUpperCase()
+                          )}
+                        </div>
+                        <div className="at-channel-info">
+                          <b>{ch.name}</b>
+                          <small>{ch.handle || '@channel'}</small>
+                        </div>
+                        <div className="at-check-mark">{selected ? '✓' : ''}</div>
+                      </button>
+                    )
+                  })}
+                </div>
+              )}
 
               {/* Source Rotation pool */}
               <div className="at-source-section">
                 <label>Rotation Sources</label>
                 <div className="at-source-list">
-                  {[
-                    { id: 'src-1', name: 'YouTube Shorts Pool', count: '48 clips' },
-                    { id: 'src-2', name: 'Stoic B-Roll Library', count: '124 clips' },
-                    { id: 'src-3', name: 'Podcast Speech Clips', count: '18 audios' }
-                  ].map((src) => {
-                    const active = activeSourceIds.includes(src.id)
-                    return (
-                      <div
-                        key={src.id}
-                        className={`at-source-row ${active ? 'active' : ''}`}
-                        onClick={() => {
-                          setActiveSourceIds(prev =>
-                            prev.includes(src.id) ? prev.filter(id => id !== src.id) : [...prev, src.id]
-                          )
-                        }}
-                      >
-                        <span>
-                          <b>{src.name}</b> <small>· {src.count}</small>
-                        </span>
-                        <div className="at-mini-check">{active ? '✓' : ''}</div>
-                      </div>
-                    )
-                  })}
+                  {linkedSources.length === 0 ? (
+                    <p style={{ fontSize: 11, color: 'var(--text-faint)', margin: 0 }}>No sources linked to this channel. Link a source in Channel Settings.</p>
+                  ) : (
+                    linkedSources.map((src) => {
+                      const active = activeSourceIds.includes(src.id)
+                      return (
+                        <div
+                          key={src.id}
+                          className={`at-source-row ${active ? 'active' : ''}`}
+                          onClick={() => {
+                            setActiveSourceIds((prev) =>
+                              prev.includes(src.id) ? prev.filter((id) => id !== src.id) : [...prev, src.id]
+                            )
+                          }}
+                        >
+                          <span>
+                            <b>{src.name || src.handle}</b> <small>· {src.cachedVideoCount || 0} cached videos</small>
+                          </span>
+                          <div className="at-mini-check">{active ? '✓' : ''}</div>
+                        </div>
+                      )
+                    })
+                  )}
                 </div>
               </div>
             </div>
@@ -755,14 +669,14 @@ export function Profiles(): JSX.Element {
                 <span className="at-step-number">02</span>
                 <div>
                   <h2>Set batch count & draw</h2>
-                  <p>Select how many random unpublished videos to draw for this batch.</p>
+                  <p>Select how many unpublished videos to draw for this batch. ({unpublishedAvailable} available)</p>
                 </div>
               </div>
 
               <div className="at-quantity">
-                <button className="at-quantity-btn" onClick={() => setBatchCount(Math.max(1, batchCount - 1))}>−</button>
+                <button type="button" className="at-quantity-btn" onClick={() => setBatchCount(Math.max(1, batchCount - 1))}>−</button>
                 <span className="at-quantity-num">{batchCount}</span>
-                <button className="at-quantity-btn" onClick={() => setBatchCount(Math.min(12, batchCount + 1))}>＋</button>
+                <button type="button" className="at-quantity-btn" onClick={() => setBatchCount(Math.min(50, batchCount + 1))}>＋</button>
                 <span className="at-quantity-unit">videos in batch</span>
               </div>
 
@@ -770,6 +684,7 @@ export function Profiles(): JSX.Element {
                 {[1, 3, 5, 8, 12].map((num) => (
                   <button
                     key={num}
+                    type="button"
                     className={`at-scale-btn ${batchCount === num ? 'active' : ''}`}
                     onClick={() => setBatchCount(num)}
                   >
@@ -780,19 +695,17 @@ export function Profiles(): JSX.Element {
 
               {/* Drawn items preview */}
               <div className="at-draw-header">
-                <h3>Drawn Videos Preview</h3>
-                <button className="at-reroll-btn" onClick={() => setDrawSeed(Math.floor(Math.random() * 100000))}>
-                  <span>⤨</span> Re-roll seed
-                </button>
+                <h3>Batch Renders ({batchCount})</h3>
+                <span style={{ fontSize: 10, color: 'var(--text-dim)' }}>{unpublishedAvailable} unpublished available</span>
               </div>
 
               <div className="at-draw-list">
-                {drawnVideos.map((item, idx) => (
+                {Array.from({ length: batchCount }).map((_, idx) => (
                   <div key={idx} className="at-draw-item">
                     <span className="at-draw-index">{idx + 1 < 10 ? `0${idx + 1}` : idx + 1}</span>
-                    <span className="at-draw-title">{item.title}</span>
-                    <span className="at-draw-meta">{item.duration}</span>
-                    {item.fresh && <span className="at-tag-new">NEW</span>}
+                    <span className="at-draw-title">Video #{idx + 1} from rotation pool</span>
+                    <span className="at-draw-meta">Ready</span>
+                    <span className="at-tag-new">NEW</span>
                   </div>
                 ))}
               </div>
@@ -848,20 +761,75 @@ export function Profiles(): JSX.Element {
               <div className="at-summary-table">
                 <span className="at-summary-label">Target Channel:</span>
                 <span className="at-summary-val">
-                  {sourceChannels.find(s => s.id === selectedChannelId)?.name || 'Mental Empire Studio'}
+                  {myChannels.find((c) => c.id === selectedChannelId)?.name || 'Select a channel'}
                 </span>
 
                 <span className="at-summary-label">Batch Count:</span>
-                <span className="at-summary-val">{batchCount} videos <small>(Unpublished)</small></span>
+                <span className="at-summary-val">{batchCount} videos <small>({unpublishedAvailable} available)</small></span>
 
                 <span className="at-summary-label">Visual Template:</span>
-                <span className="at-summary-val">{selectedTemplate?.name}</span>
+                <span className="at-summary-val">{selectedTemplate?.name || 'Default'}</span>
 
                 <span className="at-summary-label">Format & Ratio:</span>
-                <span className="at-summary-val">{selectedTemplate?.aspectRatio} · {selectedTemplate?.mode}</span>
+                <span className="at-summary-val">{selectedTemplate?.aspectRatio || '9:16'} · {selectedTemplate?.mode || 'Auto B-roll'}</span>
 
                 <span className="at-summary-label">Caption Style:</span>
-                <span className="at-summary-val">{selectedTemplate?.captionStyle}</span>
+                <span className="at-summary-val">{selectedTemplate?.captionStyle || 'Hormozi'}</span>
+              </div>
+
+              {/* Render Mode & Speed Control */}
+              <div style={{ marginTop: 14, marginBottom: 14, borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+                <span className="at-summary-label" style={{ display: 'block', marginBottom: 8 }}>Render Mode:</span>
+                <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
+                  <button
+                    type="button"
+                    style={{
+                      flex: 1,
+                      padding: '7px 10px',
+                      borderRadius: 6,
+                      fontSize: 11,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      border: '1px solid var(--border)',
+                      background: renderMode === 'normal' ? 'var(--accent)' : 'var(--bg-inset)',
+                      color: renderMode === 'normal' ? '#fff' : 'var(--text-muted)'
+                    }}
+                    onClick={() => setRenderMode('normal')}
+                  >
+                    Normal Render
+                  </button>
+                  <button
+                    type="button"
+                    style={{
+                      flex: 1,
+                      padding: '7px 10px',
+                      borderRadius: 6,
+                      fontSize: 11,
+                      fontWeight: 600,
+                      cursor: 'pointer',
+                      border: '1px solid var(--border)',
+                      background: renderMode === 'fast' ? 'var(--accent)' : 'var(--bg-inset)',
+                      color: renderMode === 'fast' ? '#fff' : 'var(--text-muted)'
+                    }}
+                    onClick={() => setRenderMode('fast')}
+                  >
+                    Fast Render
+                  </button>
+                </div>
+                {renderMode === 'fast' && (
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--bg-inset)', padding: '8px 10px', borderRadius: 6 }}>
+                    <span style={{ fontSize: 10.5, color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>Playback Speed:</span>
+                    <input
+                      type="range"
+                      min="1"
+                      max="8"
+                      value={playbackSpeed}
+                      onChange={(e) => setPlaybackSpeed(Number(e.target.value))}
+                      style={{ flex: 1 }}
+                    />
+                    <span style={{ fontSize: 11, color: 'var(--text-bright)', fontWeight: 700, minWidth: 24, textAlign: 'right' }}>{playbackSpeed}x</span>
+                  </div>
+                )}
               </div>
 
               {/* Queue Filmstrip Visual */}
@@ -870,20 +838,20 @@ export function Profiles(): JSX.Element {
                   Queue Sequence Preview:
                 </span>
                 <div className="at-filmstrip">
-                  {drawnVideos.map((item, idx) => (
+                  {Array.from({ length: batchCount }).map((_, idx) => (
                     <div
                       key={idx}
                       className={`at-filmstrip-item at-grade-${(selectedTemplate?.grade || 'Cinematic').toLowerCase()}`}
                     >
                       <span className="at-filmstrip-num">#{idx + 1}</span>
-                      <span style={{ fontSize: 8, color: '#fff', fontWeight: 600 }}>{selectedTemplate?.aspectRatio}</span>
+                      <span style={{ fontSize: 8, color: '#fff', fontWeight: 600 }}>{selectedTemplate?.aspectRatio || '9:16'}</span>
                     </div>
                   ))}
                 </div>
               </div>
 
-              <button className="at-launch-btn" onClick={handleSendToRender}>
-                <span>▶</span> Send {batchCount} videos to render pipeline →
+              <button type="button" className="at-launch-btn" onClick={handleSendToRender} disabled={sendingBatch}>
+                <span>▶</span> {sendingBatch ? 'Enqueuing renders…' : `Send ${batchCount} videos to render pipeline →`}
               </button>
             </div>
           </div>

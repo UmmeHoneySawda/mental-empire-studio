@@ -7,6 +7,7 @@ import type {
   Profile,
   SourceChannel,
   ThumbnailTemplate,
+  VisualTemplate,
   ActivityRow,
   Upload,
   ScrapedVideo,
@@ -70,6 +71,9 @@ CREATE TABLE IF NOT EXISTS profiles (
 );
 CREATE TABLE IF NOT EXISTS thumbnail_templates (
   id TEXT PRIMARY KEY, name TEXT, layers TEXT
+);
+CREATE TABLE IF NOT EXISTS visual_templates (
+  id TEXT PRIMARY KEY, name TEXT, data TEXT, createdAt TEXT, updatedAt TEXT
 );
 CREATE TABLE IF NOT EXISTS render_jobs (
   id TEXT PRIMARY KEY, title TEXT, channel TEXT, status TEXT,
@@ -416,6 +420,7 @@ function migrate(d: Database.Database): void {
   purgeLegacyDemoSeed(d)
   migrateProfilesToSources(d)
   installDefaultThumbnailTemplates(d)
+  installDefaultVisualTemplates(d)
   enforceProviderJobFingerprintUniqueness(d)
 }
 
@@ -491,6 +496,87 @@ function installDefaultThumbnailTemplates(d: Database.Database): void {
     d.prepare("INSERT OR REPLACE INTO app_meta (key,value) VALUES ('default_thumb_templates_v2','1')").run()
   })
   tx()
+}
+
+function installDefaultVisualTemplates(d: Database.Database): void {
+  const count = d.prepare('SELECT COUNT(*) AS c FROM visual_templates').get() as { c: number }
+  if (count.c > 0) return
+  const defaults: VisualTemplate[] = [
+    {
+      id: 'tpl-dark-stoic',
+      name: 'Dark Stoic Shorts',
+      mode: 'Auto B-roll',
+      density: 'Full',
+      clipMin: 3,
+      clipMax: 5,
+      order: 'Shuffle',
+      motion: 'Cinematic',
+      transition: 'Crossfade',
+      effects: ['Film grain', 'Speed ramp'],
+      grade: 'Cinematic',
+      fineGrade: { exposure: 0, contrast: 15, saturation: -20, temperature: -10, vignette: 35, grain: 20 },
+      captionStyle: 'Hormozi',
+      aspectRatio: '9:16',
+      hookAngle: 'bold-claim',
+      hookTemplate: 'Rise',
+      hookLine: 'THE UNCOMFORTABLE TRUTH ABOUT BEING ALONE',
+      hookSec: 3,
+      hookBackdrop: 'Blurred clip',
+      hookPosition: 'middle',
+      zoomAtStart: true
+    },
+    {
+      id: 'tpl-high-contrast-faceless',
+      name: 'High-Contrast Faceless',
+      mode: 'Auto B-roll',
+      density: 'Sparse',
+      clipMin: 4,
+      clipMax: 8,
+      order: 'In order',
+      motion: 'Subtle',
+      transition: 'Cut',
+      effects: ['Glitch cut'],
+      grade: 'Noir',
+      fineGrade: { exposure: -10, contrast: 40, saturation: -100, temperature: 0, vignette: 50, grain: 40 },
+      captionStyle: 'Beast',
+      aspectRatio: '9:16',
+      hookAngle: 'question',
+      hookTemplate: 'Typewriter',
+      hookLine: 'WHY 99% OF PEOPLE FAIL AT THIS ONE HABIT',
+      hookSec: 2.5,
+      hookBackdrop: 'Dark overlay',
+      hookPosition: 'top',
+      zoomAtStart: false
+    },
+    {
+      id: 'tpl-documentary-horizontal',
+      name: 'Documentary Horizontal',
+      mode: 'Image slideshow',
+      density: 'Full',
+      clipMin: 5,
+      clipMax: 10,
+      order: 'In order',
+      motion: 'Cinematic',
+      transition: 'Dip',
+      effects: ['Light leaks'],
+      grade: 'Gold',
+      fineGrade: { exposure: 5, contrast: 10, saturation: 15, temperature: 20, vignette: 20, grain: 10 },
+      captionStyle: 'Podcast',
+      aspectRatio: '16:9',
+      hookAngle: 'stat',
+      hookTemplate: 'Stagger',
+      hookLine: 'HOW EMPIRES FALL IN SILENCE',
+      hookSec: 4,
+      hookBackdrop: 'Grain field',
+      hookPosition: 'middle',
+      zoomAtStart: true
+    }
+  ]
+  const ins = d.prepare('INSERT OR IGNORE INTO visual_templates (id,name,data,createdAt,updatedAt) VALUES (@id,@name,@data,@createdAt,@updatedAt)')
+  const now = new Date().toISOString()
+  defaults.forEach((t) => {
+    ins.run({ id: t.id, name: t.name, data: JSON.stringify(t), createdAt: now, updatedAt: now })
+  })
 }
 
 /** One-time guarded fold from legacy profile-owned automation into source rows.
@@ -611,12 +697,18 @@ export interface Repositories {
   deleteTemplate(id: string): ThumbnailTemplate[]
   getTemplate(id: string): ThumbnailTemplate | undefined
   assignTemplateToProfile(profileId: string, templateId: string): Profile[]
+  visualTemplates(): VisualTemplate[]
+  saveVisualTemplate(t: VisualTemplate): VisualTemplate[]
+  deleteVisualTemplate(id: string): VisualTemplate[]
+  getVisualTemplate(id: string): VisualTemplate | undefined
   // ---- M3 scraping writes ----
   replaceUploads(channelId: string, rows: Upload[]): void
   getUploads(channelId: string): Upload[]
   recentUploads(limit: number): RecentUpload[]
   replaceSourceVideos(sourceId: string, rows: ScrapedVideo[]): void
   getSourceVideos(sourceId: string): ScrapedVideo[]
+  countUnpublishedSourceVideos(sourceIds: string[]): number
+  getUnpublishedSourceVideos(sourceIds: string[], limit: number): Array<ScrapedVideo & { sourceId: string }>
   setChannelStats(id: string, patch: ChannelStatsPatch): void
   setChannelMapping(id: string, mapDone: number, mapTotal: number): void
   setChannelGoalProgress(id: string, weekDone: number, monthDone: number): void
@@ -960,6 +1052,17 @@ function buildRepositories(d: Database.Database): Repositories {
     (d.prepare('SELECT * FROM thumbnail_templates').all() as Array<{ id: string; name: string; layers: string }>).map(
       (r) => ({ id: r.id, name: r.name, layers: JSON.parse(r.layers) })
     )
+  const allVisualTemplates = (): VisualTemplate[] =>
+    (d.prepare('SELECT * FROM visual_templates').all() as Array<{ id: string; name: string; data: string }>).map(
+      (r) => {
+        try {
+          const parsed = JSON.parse(r.data)
+          return { ...parsed, id: r.id, name: r.name }
+        } catch {
+          return { id: r.id, name: r.name } as VisualTemplate
+        }
+      }
+    )
   const allProfiles = (): Profile[] =>
     (d.prepare('SELECT * FROM profiles').all() as Array<Record<string, unknown>>).map(rowToProfile)
   const allSources = (): SourceChannel[] =>
@@ -1109,6 +1212,32 @@ function buildRepositories(d: Database.Database): Repositories {
       return allProfiles()
     },
 
+    visualTemplates: allVisualTemplates,
+    saveVisualTemplate: (t) => {
+      const now = new Date().toISOString()
+      const data = JSON.stringify({ ...t, updatedAt: now })
+      d.prepare(
+        `INSERT INTO visual_templates (id,name,data,createdAt,updatedAt) VALUES (@id,@name,@data,@createdAt,@updatedAt)
+         ON CONFLICT(id) DO UPDATE SET name=@name, data=@data, updatedAt=@updatedAt`
+      ).run({ id: t.id, name: t.name, data, createdAt: t.createdAt || now, updatedAt: now })
+      return allVisualTemplates()
+    },
+    deleteVisualTemplate: (id) => {
+      d.prepare('DELETE FROM visual_templates WHERE id=?').run(id)
+      return allVisualTemplates()
+    },
+    getVisualTemplate: (id) => {
+      const r = d.prepare('SELECT * FROM visual_templates WHERE id=?').get(id) as
+        | { id: string; name: string; data: string }
+        | undefined
+      if (!r) return undefined
+      try {
+        return { ...JSON.parse(r.data), id: r.id, name: r.name }
+      } catch {
+        return undefined
+      }
+    },
+
     // ---- M3 scraping writes ----
     replaceUploads: (channelId, rows) => {
       const tx = d.transaction(() => {
@@ -1147,6 +1276,26 @@ function buildRepositories(d: Database.Database): Repositories {
     },
     getSourceVideos: (sourceId) =>
       d.prepare('SELECT id,title,durationSec,views,uploadDate,thumb FROM source_videos WHERE sourceId=? ORDER BY COALESCE(ord,999999), scrapedAt DESC').all(sourceId) as ScrapedVideo[],
+    countUnpublishedSourceVideos: (sourceIds) => {
+      if (!sourceIds || sourceIds.length === 0) return 0
+      const placeholders = sourceIds.map(() => '?').join(',')
+      const row = d.prepare(
+        `SELECT COUNT(*) AS c FROM source_videos sv
+         WHERE sv.sourceId IN (${placeholders})
+         AND sv.id NOT IN (SELECT videoId FROM work_item_state WHERE uploaded = 1)`
+      ).get(...sourceIds) as { c: number } | undefined
+      return row?.c ?? 0
+    },
+    getUnpublishedSourceVideos: (sourceIds, limit) => {
+      if (!sourceIds || sourceIds.length === 0) return []
+      const placeholders = sourceIds.map(() => '?').join(',')
+      return d.prepare(
+        `SELECT id,sourceId,title,durationSec,views,uploadDate,thumb FROM source_videos sv
+         WHERE sv.sourceId IN (${placeholders})
+         AND sv.id NOT IN (SELECT videoId FROM work_item_state WHERE uploaded = 1)
+         ORDER BY COALESCE(ord,999999), scrapedAt DESC LIMIT ?`
+      ).all(...sourceIds, limit) as Array<ScrapedVideo & { sourceId: string }>
+    },
 
     setChannelStats: (id, patch) => {
       d.prepare('UPDATE my_channels SET views=@views, subs=@subs, total=@total, lastScrapedAt=@lastScrapedAt WHERE id=@id').run({ id, ...patch })

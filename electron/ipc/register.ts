@@ -1,7 +1,8 @@
 import { ipcMain, shell } from 'electron'
 import { dirname } from 'node:path'
 import { existsSync } from 'node:fs'
-import type { AppSettings, DeepPartial, GoalsPatch, Profile, ThumbnailTemplate } from '../../shared/types'
+import type { AppSettings, BatchRenderInput, DeepPartial, GoalsPatch, Profile, ThumbnailTemplate, VisualTemplate } from '../../shared/types'
+import { countUnpublishedVideos, executeBatchRender } from './batch'
 import { getSettings, setSettings, resetSettings } from '../store/settings'
 import { getRepos } from '../db'
 import { registerScrapeIpc } from './scrape'
@@ -123,6 +124,11 @@ export function registerIpc(): void {
   ipcMain.handle('db:activity', () => getRepos().activity())
   ipcMain.handle('db:upsertProfile', (_e, p: Profile) => upsertProfileAndWarm(p))
   ipcMain.handle('db:saveTemplate', (_e, t: ThumbnailTemplate) => getRepos().saveTemplate(t))
+  ipcMain.handle('visualTemplates:list', () => getRepos().visualTemplates())
+  ipcMain.handle('visualTemplates:save', (_e, t: VisualTemplate) => getRepos().saveVisualTemplate(t))
+  ipcMain.handle('visualTemplates:delete', (_e, id: string) => getRepos().deleteVisualTemplate(reqId(id)))
+  ipcMain.handle('sources:unpublishedCount', (_e, sourceIds: string[]) => countUnpublishedVideos(sourceIds))
+  ipcMain.handle('batch:send', (_e, input: BatchRenderInput) => executeBatchRender(input))
   ipcMain.handle('db:recentUploads', (_e, limit?: number) => getRepos().recentUploads(limit ?? 8))
   ipcMain.handle('db:updateChannelGoals', (_e, id: string, patch: GoalsPatch) => {
     getRepos().updateChannelGoals(reqId(id), patch)
