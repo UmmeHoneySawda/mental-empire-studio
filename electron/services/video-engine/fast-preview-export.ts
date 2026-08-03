@@ -320,8 +320,9 @@ async function runFastPreviewExport(
 
     ffmpeg = spawn(ffmpegPath(), args, {
       windowsHide: true,
-      stdio: ['pipe', 'ignore', 'pipe'],
+      stdio: ['pipe', 'pipe', 'pipe'],
     })
+    ffmpeg.stdout.resume()
     ffmpeg.stderr.setEncoding('utf8')
     ffmpeg.stderr.on('data', (chunk: string) => {
       ffmpegError = `${ffmpegError}${chunk}`.slice(-8_000)
