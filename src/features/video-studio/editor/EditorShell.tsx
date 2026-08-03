@@ -1,4 +1,4 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import type { RendererId, VideoProject } from '@shared/video-engine'
 import { Banner } from '../../../components/ui/kit'
 import { PreviewStage } from './PreviewStage'
@@ -22,7 +22,17 @@ const TABS: ReadonlyArray<{ id: PanelTab; label: string }> = [
   { id: 'export', label: 'Export' }
 ]
 
+const FAST_PREVIEW_EXPORT_COMMAND = 'videoEngine.fastPreviewExport'
+
 type HyperframesWorkerChoice = 'auto' | '1' | '2' | '4'
+
+interface FastPreviewExportResult {
+  path: string
+  width: number
+  height: number
+  fps: number
+  durationSec: number
+}
 
 function hyperframesWorkerChoice(project: VideoProject): HyperframesWorkerChoice {
   const value = project.metadata?.tags?.find((tag) => tag.startsWith('hf-workers:'))?.slice(11)
@@ -38,6 +48,12 @@ function withHyperframesWorkers(project: VideoProject, choice: HyperframesWorker
       tags: [...tags, `hf-workers:${choice}`]
     }
   }
+}
+
+function readableError(error: unknown): string {
+  return (error instanceof Error ? error.message : String(error))
+    .replace(/^Error invoking remote method '[^']*':\s*/u, '')
+    .replace(/^Error:\s*/u, '')
 }
 
 export function EditorShell({
@@ -58,11 +74,15 @@ export function EditorShell({
   const past = useEditor((state) => state.past)
   const future = useEditor((state) => state.future)
   const edit = useEditor((state) => state.edit)
+  const flush = useEditor((state) => state.flush)
   const setTab = useEditor((state) => state.setTab)
   const clearMessages = useEditor((state) => state.clearMessages)
+  const setError = useEditor((state) => state.setError)
+  const setNotice = useEditor((state) => state.setNotice)
   const enqueueRender = useEditor((state) => state.enqueueRender)
   const applyJob = useEditor((state) => state.applyJob)
   const setProgressNote = useEditor((state) => state.setProgressNote)
+  const [fastPreviewBusy, setFastPreviewBusy] = useState(false)
 
   useEffect(() => {
     void openRendererEditor(downloadId, rendererId)
@@ -163,6 +183,26 @@ export function EditorShell({
     (job) => job.projectId === project?.id && !['completed', 'failed', 'canceled'].includes(job.stage)
   )
 
+  const exportFastPreview = async (): Promise<void> => {
+    if (!project || rendererId !== 'remotion' || fastPreviewBusy) return
+    setFastPreviewBusy(true)
+    setError('')
+    try {
+      if (!(await flush())) throw new Error('The latest edits could not be saved before recording.')
+      const result = await window.api.appMeta.set(
+        FAST_PREVIEW_EXPORT_COMMAND,
+        project.id
+      ) as unknown as FastPreviewExportResult
+      setNotice(
+        `Fast preview saved · ${result.width}×${result.height} · ${result.fps}fps · ${result.durationSec.toFixed(1)}s · ${result.path}`
+      )
+    } catch (recordingError) {
+      setError(readableError(recordingError))
+    } finally {
+      setFastPreviewBusy(false)
+    }
+  }
+
   if (loading && !project) {
     return (
       <div className="ve">
@@ -241,12 +281,23 @@ export function EditorShell({
           >
             ↷
           </button>
+          {rendererId === 'remotion' && (
+            <button
+              type="button"
+              className="ve-btn ve-btn--soft"
+              disabled={!!busy || fastPreviewBusy || !!activeJob}
+              onClick={() => void exportFastPreview()}
+              title="Record the live preview in real time inside a hidden Chromium window. This is separate from the deterministic Render queue."
+            >
+              {fastPreviewBusy ? 'Recording preview…' : 'Fast preview'}
+            </button>
+          )}
           {activeJob ? (
             <button type="button" className="ve-btn ve-btn--soft" onClick={() => setTab('export')}>
               {activeJob.stage} · {Math.round(activeJob.progress * 100)}%
             </button>
           ) : (
-            <button type="button" className="ve-btn ve-btn--primary" disabled={!!busy} onClick={() => void enqueueRender()}>
+            <button type="button" className="ve-btn ve-btn--primary" disabled={!!busy || fastPreviewBusy} onClick={() => void enqueueRender()}>
               {busy === 'Queueing the render' || busy === 'Checking the project' ? busy : 'Render'}
             </button>
           )}
@@ -295,7 +346,7 @@ export function EditorShell({
           </div>
           <footer className="ve-foot">
             <span className="me-ellipsis" title={project.id}>{project.id}</span>
-            <span>{progressNote || busy || `${project.scenes.length} clips`}</span>
+            <span>{progressNote || busy || (fastPreviewBusy ? 'Recording fast preview' : `${project.scenes.length} clips`)}</span>
           </footer>
         </aside>
       </div>
