@@ -180,13 +180,13 @@ export function splitClip(project: VideoProject, sceneId: string, atFrame: numbe
  *  the engine's schema, so this can never be left to the caller. */
 export function removeClip(project: VideoProject, sceneId: string): VideoProject {
   if (!project.scenes.some((scene) => scene.id === sceneId)) return project
-  return {
+  return fitCanvasDurationToContent({
     ...project,
     scenes: project.scenes.filter((scene) => scene.id !== sceneId),
     transitions: project.transitions.filter(
       (transition) => transition.fromSceneId !== sceneId && transition.toSceneId !== sceneId
     )
-  }
+  })
 }
 
 /** Copies a clip immediately after itself.
@@ -488,29 +488,38 @@ export function reorderTrack(
 
 /** The last frame any clip occupies. */
 export function contentEndFrame(project: VideoProject): number {
-  return project.scenes.reduce(
+  const sceneEnd = project.scenes.reduce(
     (end, scene) => Math.max(end, scene.startFrame + scene.durationFrames),
     0
   )
+  const captionEnd =
+    project.captions?.words.reduce(
+      (end, word) => Math.max(end, word.endFrame),
+      0
+    ) ?? 0
+  return Math.max(sceneEnd, captionEnd)
 }
 
-/** Grows the canvas so it covers `frame`, never shrinking it.
- *
- *  Shrinking is the user's call (the Canvas panel's Length field); growing is a correctness
- *  requirement, because the Remotion composition's `durationInFrames` IS
- *  `canvas.durationFrames`. A clip that ends past it is on the timeline, in the inspector
- *  and in the saved document, but simply absent from the render — the timeline and the
- *  rendered video disagreeing with nothing on screen to say so. */
+/** Grows the canvas so it covers `frame`, never shrinking it. */
 export function withCanvasCoveringFrame(project: VideoProject, frame: number): VideoProject {
   const wanted = Math.max(1, Math.ceil(frame))
   if (wanted <= project.canvas.durationFrames) return project
   return { ...project, canvas: { ...project.canvas, durationFrames: wanted } }
 }
 
-/** Grows the canvas to cover every clip. Applied after each local edit as a safety net, so
- *  no operation can leave content the renderer would silently truncate. */
+/** Grows the canvas to cover every clip. Applied after each local edit as a safety net. */
 export function withCanvasCoveringContent(project: VideoProject): VideoProject {
   return withCanvasCoveringFrame(project, contentEndFrame(project))
+}
+
+/** Trims canvas duration to fit actual content (minimum 10s), called on clip removal. */
+export function fitCanvasDurationToContent(project: VideoProject, minDurationSec = 10): VideoProject {
+  const fps = project.canvas.fps ?? 30
+  const minFrames = Math.max(1, Math.round(fps * minDurationSec))
+  const end = contentEndFrame(project)
+  const wanted = Math.max(minFrames, end)
+  if (wanted === project.canvas.durationFrames) return project
+  return { ...project, canvas: { ...project.canvas, durationFrames: wanted } }
 }
 
 /** Clips that share a lane with another clip and overlap it in time.
@@ -651,4 +660,76 @@ export function snapFrame(frame: number, candidates: number[], toleranceFrames: 
     }
   }
   return bestDistance <= toleranceFrames ? best : frame
+}
+
+/** Moves multiple clips together in lockstep across time and tracks. */
+export function moveClips(
+  project: VideoProject,
+  sceneIds: readonly string[],
+  deltaFrames: number,
+  trackOffset = 0
+): VideoProject {
+  if (sceneIds.length === 0 || (deltaFrames === 0 && trackOffset === 0)) return project
+  const idSet = new Set(sceneIds)
+  const scenesToMove = project.scenes.filter((scene) => idSet.has(scene.id))
+  if (scenesToMove.length === 0) return project
+
+  const maxLeftShift = Math.min(...scenesToMove.map((scene) => scene.startFrame))
+  const actualDeltaFrames = Math.max(-maxLeftShift, Math.round(deltaFrames))
+
+  const tracks = [...project.tracks].sort((left, right) => right.order - left.order || left.name.localeCompare(right.name))
+  const trackIndexById = new Map(tracks.map((track, idx) => [track.id, idx]))
+
+  const updatedScenes = project.scenes.map((scene) => {
+    if (!idSet.has(scene.id)) return scene
+    const currentIdx = trackIndexById.get(scene.trackId) ?? 0
+    const targetIdx = Math.max(0, Math.min(tracks.length - 1, currentIdx + trackOffset))
+    const targetTrack = tracks[targetIdx]
+    const nextTrackId = targetTrack && !targetTrack.locked && trackAcceptsScene(targetTrack, scene)
+      ? targetTrack.id
+      : scene.trackId
+
+    return {
+      ...scene,
+      startFrame: Math.max(0, scene.startFrame + actualDeltaFrames),
+      trackId: nextTrackId
+    }
+  })
+
+  return withCanvasCoveringContent({ ...project, scenes: updatedScenes })
+}
+
+/** Removes multiple clips and any orphaned transitions. */
+export function removeClips(project: VideoProject, sceneIds: readonly string[]): VideoProject {
+  const idSet = new Set(sceneIds)
+  if (idSet.size === 0) return project
+  return fitCanvasDurationToContent({
+    ...project,
+    scenes: project.scenes.filter((scene) => !idSet.has(scene.id)),
+    transitions: project.transitions.filter(
+      (transition) => !idSet.has(transition.fromSceneId) && !idSet.has(transition.toSceneId)
+    )
+  })
+}
+
+/** Duplicates multiple clips immediately following the latest clip end frame. */
+export function duplicateClips(project: VideoProject, sceneIds: readonly string[]): VideoProject {
+  const idSet = new Set(sceneIds)
+  const scenesToDup = project.scenes.filter((scene) => idSet.has(scene.id))
+  if (scenesToDup.length === 0) return project
+
+  const maxEndFrame = Math.max(...scenesToDup.map((scene) => scene.startFrame + scene.durationFrames))
+  const minStartFrame = Math.min(...scenesToDup.map((scene) => scene.startFrame))
+  const shift = Math.max(1, maxEndFrame - minStartFrame)
+
+  const newScenes: VideoScene[] = scenesToDup.map((scene) => ({
+    ...scene,
+    id: uid('scene'),
+    startFrame: scene.startFrame + shift
+  }))
+
+  return withCanvasCoveringContent({
+    ...project,
+    scenes: [...project.scenes, ...newScenes]
+  })
 }

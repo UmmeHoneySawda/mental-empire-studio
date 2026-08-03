@@ -40,8 +40,21 @@ import * as ops from './operations'
 export type Selection =
   | { kind: 'none' }
   | { kind: 'clip'; id: string }
+  | { kind: 'clips'; ids: string[] }
   | { kind: 'track'; id: string }
   | { kind: 'captions' }
+
+export function getSelectedClipIds(selection: Selection): string[] {
+  if (selection.kind === 'clip') return [selection.id]
+  if (selection.kind === 'clips') return selection.ids
+  return []
+}
+
+export function isClipSelected(selection: Selection, sceneId: string): boolean {
+  if (selection.kind === 'clip') return selection.id === sceneId
+  if (selection.kind === 'clips') return selection.ids.includes(sceneId)
+  return false
+}
 
 export type PanelTab =
   | 'media'
@@ -138,10 +151,13 @@ interface EditorActions {
   redo: () => void
 
   moveClip: (sceneId: string, startFrame: number, trackId?: string) => void
+  moveClips: (sceneIds: string[], frameDelta: number, trackOffset?: number) => void
   trimClip: (sceneId: string, edge: 'start' | 'end', frameDelta: number) => void
   splitAtPlayhead: () => void
   removeClip: (sceneId: string) => void
+  removeSelectedClips: () => void
   duplicateClip: (sceneId: string) => void
+  duplicateSelectedClips: () => void
   patchClip: (sceneId: string, patch: Partial<VideoScene>) => void
   cycleImages: (assetIds: string[], intervalSeconds: ops.ImageCycleInterval, shuffle: boolean) => void
   addTrack: (kind: VideoTrack['kind']) => void
@@ -436,15 +452,28 @@ export const useEditor = create<EditorStore>((set, get) => {
 
     moveClip: (sceneId, startFrame, trackId) =>
       get().edit((project) => ops.moveClip(project, sceneId, startFrame, trackId)),
+    moveClips: (sceneIds, frameDelta, trackOffset) =>
+      get().edit((project) => ops.moveClips(project, sceneIds, frameDelta, trackOffset)),
     trimClip: (sceneId, edge, frameDelta) =>
       get().edit((project) => ops.trimClip(project, sceneId, edge, frameDelta)),
     removeClip: (sceneId) => {
-      get().edit((project) => ops.removeClip(project, sceneId))
-      if (get().selection.kind === 'clip' && (get().selection as { id: string }).id === sceneId) {
-        set({ selection: { kind: 'none' } })
-      }
+      const selected = getSelectedClipIds(get().selection)
+      const idsToRemove = selected.includes(sceneId) && selected.length > 1 ? selected : [sceneId]
+      get().edit((project) => ops.removeClips(project, idsToRemove))
+      set({ selection: { kind: 'none' } })
+    },
+    removeSelectedClips: () => {
+      const selected = getSelectedClipIds(get().selection)
+      if (selected.length === 0) return
+      get().edit((project) => ops.removeClips(project, selected))
+      set({ selection: { kind: 'none' } })
     },
     duplicateClip: (sceneId) => get().edit((project) => ops.duplicateClip(project, sceneId)),
+    duplicateSelectedClips: () => {
+      const selected = getSelectedClipIds(get().selection)
+      if (selected.length === 0) return
+      get().edit((project) => ops.duplicateClips(project, selected))
+    },
     patchClip: (sceneId, patch) => get().edit((project) => ops.patchClip(project, sceneId, patch)),
     cycleImages: (assetIds, intervalSeconds, shuffle) => {
       const uniqueImages = [...new Set(assetIds)].filter((id) =>

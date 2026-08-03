@@ -17,28 +17,36 @@ import {
   zoomLabel
 } from './constants'
 import { overlappingSceneIds, snapCandidates, snapFrame, trackAcceptsScene } from './operations'
-import { orderedTracks, useEditor } from './useEditor'
+import { getSelectedClipIds, isClipSelected, orderedTracks, useEditor } from './useEditor'
 
-/* The timeline surface: ruler, lanes, clips, playhead.
- *
- * The interaction model is lifted from trykimu/videoeditor and it is the reason this feels
- * different from the old studio's static bars. A drag does NOT go through React state per
- * mousemove — it writes `transform` straight to the dragged element and commits one store
- * edit on release. Sixty state updates a second through a store that owns the whole
- * project is exactly what made the old editor lag.
- *
- * Clip geometry is stored in FRAMES and converted to pixels here, per render. kimu stores
- * zoomed pixels, which means every zoom change has to rewrite every clip and repeated
- * zooming drifts on float error. Frames stay authoritative; `zoom` is a view concern. */
+/* The timeline surface: ruler, lanes, clips, playhead. */
 
-/* `element` is captured at pointerdown rather than re-queried on each move. Looking it up
-   by `[data-clip=…]` meant the inline transform/width could land on whichever node matched
-   after a re-render — with two clips briefly sharing a position that wrote a stale width
-   onto the wrong clip and left it there. */
 type Gesture =
-  | { kind: 'move'; sceneId: string; startFrame: number; trackId: string; pointerX: number; pointerY: number; element: HTMLElement }
-  | { kind: 'trim'; sceneId: string; edge: 'start' | 'end'; pointerX: number; element: HTMLElement }
+  | {
+      kind: 'move'
+      sceneId: string
+      startFrame: number
+      trackId: string
+      pointerX: number
+      pointerY: number
+      elements: HTMLElement[]
+      selectedIds: string[]
+    }
+  | {
+      kind: 'trim'
+      sceneId: string
+      edge: 'start' | 'end'
+      pointerX: number
+      element: HTMLElement
+    }
   | { kind: 'scrub' }
+  | {
+      kind: 'marquee'
+      startX: number
+      startY: number
+      currentX: number
+      currentY: number
+    }
 
 /** The colour a clip takes, by what it shows. Audio reads cool, visuals warm, text and
  *  templates accent — so a glance at the lanes tells you the shape of the video. */
@@ -70,6 +78,7 @@ export function Timeline(): JSX.Element | null {
   const snapEnabled = useEditor((state) => state.snapEnabled)
   const toggleSnap = useEditor((state) => state.toggleSnap)
   const moveClip = useEditor((state) => state.moveClip)
+  const moveClips = useEditor((state) => state.moveClips)
   const trimClip = useEditor((state) => state.trimClip)
   const patchTrack = useEditor((state) => state.patchTrack)
   const reorderTrack = useEditor((state) => state.reorderTrack)
@@ -77,18 +86,17 @@ export function Timeline(): JSX.Element | null {
   const rippleTrack = useEditor((state) => state.rippleTrack)
   const splitAtPlayhead = useEditor((state) => state.splitAtPlayhead)
   const removeClip = useEditor((state) => state.removeClip)
+  const removeSelectedClips = useEditor((state) => state.removeSelectedClips)
   const duplicateClip = useEditor((state) => state.duplicateClip)
+  const duplicateSelectedClips = useEditor((state) => state.duplicateSelectedClips)
 
   const laneRef = useRef<HTMLDivElement>(null)
   const gesture = useRef<Gesture | null>(null)
-  /** Mirrors the live gesture result so `pointerup` can commit without reading stale
-   *  closure state. */
-  const live = useRef<{ frame: number; trackId: string; delta: number } | null>(null)
+  const live = useRef<{ frame: number; trackId: string; delta: number; rows: number } | null>(null)
   const [dragging, setDragging] = useState<string | null>(null)
   const [dragTrackId, setDragTrackId] = useState<string | null>(null)
   const [dropTrackId, setDropTrackId] = useState<string | null>(null)
-  /** Mirrored onto the label column so names stay against their lanes when the lanes
-   *  scroll past the visible four. */
+  const [marquee, setMarquee] = useState<{ startX: number; startY: number; currentX: number; currentY: number } | null>(null)
   const [laneScrollTop, setLaneScrollTop] = useState(0)
 
   const fps = project?.canvas.fps ?? 30
@@ -137,7 +145,17 @@ export function Timeline(): JSX.Element | null {
       gesture.current = null
       live.current = null
       setDragging(null)
+      setMarquee(null)
       if (!active || active.kind === 'scrub') return null
+      if (active.kind === 'marquee') return { active, result: null }
+      if (active.kind === 'move') {
+        for (const element of active.elements) {
+          element.style.transform = ''
+          element.style.opacity = ''
+          delete element.dataset['dropTrack']
+        }
+        return { active, result }
+      }
       const scene = project.scenes.find((candidate) => candidate.id === active.sceneId)
       const { element } = active
       element.style.transform = ''
@@ -151,11 +169,6 @@ export function Timeline(): JSX.Element | null {
       const active = gesture.current
       if (!active) return
 
-      // No button held means the release happened somewhere we never heard about — the
-      // pointer left the window, the OS took focus, a context menu opened. Without this the
-      // gesture stayed armed: the clip followed the bare cursor around the timeline, and
-      // the next click ANYWHERE in the app — a tab, a button — fired the pointerup that
-      // committed it to wherever the mouse happened to be.
       if (event.buttons === 0) {
         if (active.kind !== 'scrub') release()
         else {
@@ -170,19 +183,28 @@ export function Timeline(): JSX.Element | null {
         return
       }
 
+      if (active.kind === 'marquee') {
+        active.currentX = event.clientX
+        active.currentY = event.clientY
+        setMarquee({
+          startX: active.startX,
+          startY: active.startY,
+          currentX: event.clientX,
+          currentY: event.clientY
+        })
+        return
+      }
+
       const toleranceFrames = pxToFrames(SNAP_PX, fps, zoom)
-      const { element } = active
-      const scene = project.scenes.find((candidate) => candidate.id === active.sceneId)
 
       if (active.kind === 'move') {
+        const scene = project.scenes.find((candidate) => candidate.id === active.sceneId)
         const deltaFrames = pxToFrames(event.clientX - active.pointerX, fps, zoom)
         const duration = scene?.durationFrames ?? 1
-        let next = Math.max(0, Math.min(total - duration, active.startFrame + deltaFrames))
+        let nextDelta = deltaFrames
+
         if (snapEnabled && scene) {
-          // Snap whichever edge is closer, so butting a clip up against its neighbour
-          // works from either side. Each edge gets its own candidate list — see
-          // `snapCandidates`, which is what keeps a same-lane drag from landing exactly on
-          // top of a neighbour.
+          const next = Math.max(0, Math.min(total - duration, active.startFrame + deltaFrames))
           const dragged = { id: scene.id, trackId: active.trackId }
           const snappedStart = snapFrame(
             next,
@@ -195,13 +217,10 @@ export function Timeline(): JSX.Element | null {
               snapCandidates(project, dragged, playheadFrame, 'end'),
               toleranceFrames
             ) - duration
-          next = Math.abs(snappedStart - next) <= Math.abs(snappedEnd - next) ? snappedStart : snappedEnd
-          next = Math.max(0, Math.min(total - duration, next))
+          const bestNext = Math.abs(snappedStart - next) <= Math.abs(snappedEnd - next) ? snappedStart : snappedEnd
+          nextDelta = bestNext - active.startFrame
         }
-        // Vertical travel picks the lane; each lane is one row plus its gap. Only lanes
-        // that can actually hold this clip are candidates, so dragging a still past the
-        // voice-over lane skips it rather than dropping onto a lane that would never
-        // render it.
+
         const rows = Math.round((event.clientY - active.pointerY) / (TRACK_HEIGHT + TRACK_GAP))
         const eligible = scene ? tracks.filter((track) => trackAcceptsScene(track, scene) && !track.locked) : []
         const fromEligible = eligible.findIndex((track) => track.id === active.trackId)
@@ -210,15 +229,18 @@ export function Timeline(): JSX.Element | null {
           : eligible[Math.max(0, Math.min(eligible.length - 1, fromEligible + rows))]
         const trackId = target?.id ?? active.trackId
 
-        live.current = { frame: next, trackId, delta: 0 }
-        // Written straight to the DOM: no React render, so a drag stays smooth however
-        // large the project is.
-        element.style.transform = `translateX(${framesToPx(next - active.startFrame, fps, zoom)}px)`
-        element.style.opacity = '0.85'
-        element.dataset['dropTrack'] = trackId
+        live.current = { frame: active.startFrame + nextDelta, trackId, delta: nextDelta, rows }
+        const translateX = framesToPx(nextDelta, fps, zoom)
+        for (const el of active.elements) {
+          el.style.transform = `translateX(${translateX}px)`
+          el.style.opacity = '0.85'
+          el.dataset['dropTrack'] = trackId
+        }
         return
       }
 
+      const { element } = active
+      const scene = project.scenes.find((candidate) => candidate.id === active.sceneId)
       const deltaFrames = pxToFrames(event.clientX - active.pointerX, fps, zoom)
       if (!scene) return
       let delta = deltaFrames
@@ -231,8 +253,7 @@ export function Timeline(): JSX.Element | null {
             toleranceFrames
           ) - edgeFrame
       }
-      live.current = { frame: 0, trackId: scene.trackId, delta }
-      // Preview the trim by resizing in place; the real clamping happens on commit.
+      live.current = { frame: 0, trackId: scene.trackId, delta, rows: 0 }
       const px = framesToPx(Math.abs(delta), fps, zoom) * Math.sign(delta)
       const base = clipWidthPx(scene.durationFrames, fps, zoom)
       if (active.edge === 'start') {
@@ -245,16 +266,46 @@ export function Timeline(): JSX.Element | null {
 
     const onUp = (): void => {
       const ended = release()
-      if (!ended?.result) return
+      if (!ended) return
       const { active, result } = ended
-      if (active.kind === 'move') moveClip(active.sceneId, result.frame, result.trackId)
-      else if (active.kind === 'trim' && result.delta !== 0) {
+      if (active.kind === 'move' && result) {
+        if (active.selectedIds.length > 1) {
+          moveClips(active.selectedIds, result.delta, result.rows)
+        } else {
+          moveClip(active.sceneId, result.frame, result.trackId)
+        }
+      } else if (active.kind === 'trim' && result && result.delta !== 0) {
         trimClip(active.sceneId, active.edge, result.delta)
+      } else if (active.kind === 'marquee') {
+        const boxLeft = Math.min(active.startX, active.currentX)
+        const boxRight = Math.max(active.startX, active.currentX)
+        const boxTop = Math.min(active.startY, active.currentY)
+        const boxBottom = Math.max(active.startY, active.currentY)
+
+        if (laneRef.current && boxRight - boxLeft > 5 && boxBottom - boxTop > 5) {
+          const clipEls = laneRef.current.querySelectorAll<HTMLElement>('[data-clip]')
+          const selectedIds: string[] = []
+          clipEls.forEach((el) => {
+            const rect = el.getBoundingClientRect()
+            if (
+              rect.left < boxRight &&
+              rect.right > boxLeft &&
+              rect.top < boxBottom &&
+              rect.bottom > boxTop
+            ) {
+              const id = el.dataset['clip']
+              if (id) selectedIds.push(id)
+            }
+          })
+          if (selectedIds.length > 1) {
+            select({ kind: 'clips', ids: selectedIds })
+          } else if (selectedIds.length === 1) {
+            select({ kind: 'clip', id: selectedIds[0] })
+          }
+        }
       }
     }
 
-    // A gesture must not survive the window losing focus. Alt-Tab mid-drag delivers no
-    // pointerup at all, and an armed gesture then commits on the user's next click.
     const onBlur = (): void => {
       if (gesture.current) {
         if (gesture.current.kind === 'scrub') gesture.current = null
@@ -272,14 +323,13 @@ export function Timeline(): JSX.Element | null {
       document.removeEventListener('pointercancel', onUp)
       window.removeEventListener('blur', onBlur)
     }
-  }, [project, fps, zoom, total, tracks, snapEnabled, playheadFrame, frameAtClientX, setPlayhead, moveClip, trimClip])
+  }, [project, fps, zoom, total, tracks, snapEnabled, playheadFrame, frameAtClientX, setPlayhead, moveClip, moveClips, trimClip, select])
 
   if (!project) return null
 
   const ticks = tickSeconds(zoom)
-  // Never draw a label beyond the project end. At fit zoom that out-of-range label sat
-  // outside the inner lane and recreated a horizontal scrollbar all by itself.
   const majorCount = Math.floor(total / fps / ticks.major) + 1
+  const selectedCount = getSelectedClipIds(selection).length
 
   const zoomBy = (direction: 1 | -1): void => {
     const ordered = direction === 1 ? ZOOM_STEPS : [...ZOOM_STEPS].reverse()
@@ -305,20 +355,20 @@ export function Timeline(): JSX.Element | null {
         <button
           type="button"
           className="ve-btn ve-btn--ghost"
-          disabled={selection.kind !== 'clip'}
-          onClick={() => selection.kind === 'clip' && duplicateClip(selection.id)}
-          title="Duplicate the selected clip (D)"
+          disabled={selectedCount === 0}
+          onClick={() => duplicateSelectedClips()}
+          title="Duplicate selected clips (D)"
         >
           Duplicate
         </button>
         <button
           type="button"
           className="ve-btn ve-btn--ghost"
-          disabled={selection.kind !== 'clip'}
-          onClick={() => selection.kind === 'clip' && removeClip(selection.id)}
-          title="Delete the selected clip (Del)"
+          disabled={selectedCount === 0}
+          onClick={() => removeSelectedClips()}
+          title="Delete selected clips (Del)"
         >
-          Delete
+          Delete {selectedCount > 1 ? `(${selectedCount})` : ''}
         </button>
         <span className="ve-spacer" />
         <button
@@ -343,10 +393,6 @@ export function Timeline(): JSX.Element | null {
       <div className="ve-timeline-body">
         <div className="ve-labels" style={{ width: TRACK_LABEL_WIDTH }}>
           <div className="ve-labels-spacer" style={{ height: RULER_HEIGHT }} />
-          {/* Translated rather than scrolled. The label column has no scrollbar of its own
-              — it mirrors the lanes' vertical offset, which is the only way the two stay
-              row-aligned. Before this, `.ve-labels` was `overflow: hidden` and simply never
-              moved: scroll to a fifth lane and every name was against the wrong lane. */}
           <div className="ve-labels-inner" style={{ transform: `translateY(${-laneScrollTop}px)` }}>
             {tracks.map((track) => (
               <TrackLabel
@@ -380,6 +426,26 @@ export function Timeline(): JSX.Element | null {
           className="ve-lanes ed-scroll"
           ref={laneRef}
           onScroll={(event) => setLaneScrollTop(event.currentTarget.scrollTop)}
+          onPointerDown={(event) => {
+            const target = event.target as HTMLElement
+            if (target.closest('.ve-clip') || target.closest('.ve-playhead') || target.closest('.ve-ruler') || target.closest('.ve-btn')) return
+            if (!event.shiftKey && !event.metaKey && !event.ctrlKey) {
+              select({ kind: 'none' })
+            }
+            gesture.current = {
+              kind: 'marquee',
+              startX: event.clientX,
+              startY: event.clientY,
+              currentX: event.clientX,
+              currentY: event.clientY
+            }
+            setMarquee({
+              startX: event.clientX,
+              startY: event.clientY,
+              currentX: event.clientX,
+              currentY: event.clientY
+            })
+          }}
         >
           <div className="ve-lanes-inner" style={{ width: Math.max(width, 320) }}>
             <div
@@ -416,10 +482,7 @@ export function Timeline(): JSX.Element | null {
                   .filter((scene) => scene.trackId === track.id)
                   .map((scene) => {
                     const asset = scene.assetId ? assetsById.get(scene.assetId) : undefined
-                    const isSelected = selection.kind === 'clip' && selection.id === scene.id
-                    // Under about three handle-widths the two trim handles leave no body to
-                    // grab, so the clip becomes impossible to move. Drop them and let the
-                    // whole clip drag; trimming stays available by zooming in.
+                    const isSelected = isClipSelected(selection, scene.id)
                     const tiny = clipWidthPx(scene.durationFrames, fps, zoom) < CLIP_HANDLE_PX * 3
                     return (
                       <div
@@ -434,8 +497,41 @@ export function Timeline(): JSX.Element | null {
                         onPointerDown={(event) => {
                           if (track.locked) return
                           event.stopPropagation()
-                          select({ kind: 'clip', id: scene.id })
+
+                          const currentSelected = getSelectedClipIds(selection)
+                          let nextSelectedIds: string[] = []
+
+                          if (event.shiftKey || event.ctrlKey || event.metaKey) {
+                            if (currentSelected.includes(scene.id)) {
+                              nextSelectedIds = currentSelected.filter((id) => id !== scene.id)
+                            } else {
+                              nextSelectedIds = [...currentSelected, scene.id]
+                            }
+                          } else if (currentSelected.includes(scene.id) && currentSelected.length > 1) {
+                            nextSelectedIds = currentSelected
+                          } else {
+                            nextSelectedIds = [scene.id]
+                          }
+
+                          if (nextSelectedIds.length > 1) {
+                            select({ kind: 'clips', ids: nextSelectedIds })
+                          } else if (nextSelectedIds.length === 1) {
+                            select({ kind: 'clip', id: nextSelectedIds[0] })
+                          } else {
+                            select({ kind: 'none' })
+                          }
+
                           setDragging(scene.id)
+
+                          const elements: HTMLElement[] = []
+                          if (laneRef.current) {
+                            for (const id of nextSelectedIds) {
+                              const el = laneRef.current.querySelector<HTMLElement>(`[data-clip="${id}"]`)
+                              if (el) elements.push(el)
+                            }
+                          }
+                          if (elements.length === 0) elements.push(event.currentTarget)
+
                           gesture.current = {
                             kind: 'move',
                             sceneId: scene.id,
@@ -443,7 +539,8 @@ export function Timeline(): JSX.Element | null {
                             trackId: track.id,
                             pointerX: event.clientX,
                             pointerY: event.clientY,
-                            element: event.currentTarget
+                            elements,
+                            selectedIds: nextSelectedIds
                           }
                         }}
                         onDoubleClick={() => useEditor.getState().soloSelection()}
@@ -460,7 +557,6 @@ export function Timeline(): JSX.Element | null {
                               sceneId: scene.id,
                               edge: 'start',
                               pointerX: event.clientX,
-                              // The clip, not the handle — the preview resizes the clip.
                               element: event.currentTarget.parentElement as HTMLElement
                             }
                           }}
@@ -496,6 +592,24 @@ export function Timeline(): JSX.Element | null {
           </div>
         </div>
       </div>
+
+      {marquee && (
+        <div
+          className="ve-marquee-box"
+          style={{
+            position: 'fixed',
+            left: Math.min(marquee.startX, marquee.currentX),
+            top: Math.min(marquee.startY, marquee.currentY),
+            width: Math.abs(marquee.currentX - marquee.startX),
+            height: Math.abs(marquee.currentY - marquee.startY),
+            border: '1px dashed #eab308',
+            background: 'rgba(234, 179, 8, 0.18)',
+            pointerEvents: 'none',
+            zIndex: 9999,
+            borderRadius: 2
+          }}
+        />
+      )}
     </section>
   )
 }

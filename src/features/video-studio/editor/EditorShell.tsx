@@ -6,7 +6,7 @@ import { Timeline } from './Timeline'
 import { MediaBin } from './MediaBin'
 import { Inspector } from './Inspector'
 import { timecode } from './constants'
-import { useEditor, type PanelTab } from './useEditor'
+import { getSelectedClipIds, useEditor, type PanelTab } from './useEditor'
 import { openRendererEditor, reseedRendererEditor } from './rendererSession'
 
 const TABS: ReadonlyArray<{ id: PanelTab; label: string }> = [
@@ -160,16 +160,16 @@ export function EditorShell({
           return
         case 'd':
         case 'D':
-          if (state.selection.kind === 'clip') {
+          if (getSelectedClipIds(state.selection).length > 0) {
             event.preventDefault()
-            state.duplicateClip(state.selection.id)
+            state.duplicateSelectedClips()
           }
           return
         case 'Delete':
         case 'Backspace':
-          if (state.selection.kind === 'clip') {
+          if (getSelectedClipIds(state.selection).length > 0) {
             event.preventDefault()
-            state.removeClip(state.selection.id)
+            state.removeSelectedClips()
           }
           return
         default:

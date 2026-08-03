@@ -1,4 +1,4 @@
-import { BrowserWindow } from 'electron'
+import { app, BrowserWindow } from 'electron'
 import { spawn, spawnSync, type ChildProcessWithoutNullStreams } from 'node:child_process'
 import { once } from 'node:events'
 import { existsSync } from 'node:fs'
@@ -236,10 +236,29 @@ function fastPreviewFileName(project: VideoProject): string {
   return `${base}-fast-preview-${stamp}.mp4`
 }
 
+export function resolveFastPreviewPreloadPath(customPath?: string): string {
+  if (customPath && existsSync(customPath)) return customPath
+  const appPath = app?.getAppPath ? app.getAppPath() : process.cwd()
+  const candidates = [
+    join(__dirname, '../preload/preload.cjs'),
+    join(__dirname, '../../preload/preload.cjs'),
+    join(appPath, 'out/preload/preload.cjs'),
+    join(appPath, 'preload/preload.cjs'),
+  ]
+  for (const candidate of candidates) {
+    if (existsSync(candidate)) return candidate
+  }
+  if (customPath) return customPath
+  return join(__dirname, '../preload/preload.cjs')
+}
+
 async function runFastPreviewExport(
   request: FastPreviewExportRequest,
 ): Promise<FastPreviewExportResult> {
-  if (!request.preloadPath) throw new Error('The recorder window could not resolve the Electron preload.')
+  const preloadPath = resolveFastPreviewPreloadPath(request.preloadPath)
+  if (!existsSync(preloadPath)) {
+    throw new Error('The recorder window could not resolve the Electron preload.')
+  }
   const engine = await getVideoEngine()
   const project = await engine.openProject(request.projectId)
   if (project.rendererId !== 'remotion') {
@@ -262,7 +281,7 @@ async function runFastPreviewExport(
     backgroundColor: '#000000',
     paintWhenInitiallyHidden: true,
     webPreferences: {
-      preload: request.preloadPath,
+      preload: preloadPath,
       sandbox: false,
       contextIsolation: true,
       nodeIntegration: false,

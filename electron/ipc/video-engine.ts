@@ -844,18 +844,42 @@ async function updateScene(
   )
 }
 
+function fitCanvasDuration(project: VideoProject): VideoProject {
+  const fps = project.canvas.fps ?? 30
+  const minFrames = Math.max(1, Math.round(fps * 10))
+  const sceneEnd = project.scenes.reduce(
+    (end, scene) => Math.max(end, scene.startFrame + scene.durationFrames),
+    0
+  )
+  const captionEnd =
+    project.captions?.words.reduce(
+      (end, word) => Math.max(end, word.endFrame),
+      0
+    ) ?? 0
+  const durationFrames = Math.max(minFrames, sceneEnd, captionEnd)
+  if (durationFrames === project.canvas.durationFrames) return project
+  return {
+    ...project,
+    canvas: {
+      ...project.canvas,
+      durationFrames
+    }
+  }
+}
+
 async function removeScene(projectId: string, sceneId: string): Promise<VideoProject> {
   const engine = await getVideoEngine()
   const project = await engine.openProject(projectId)
+  const next = fitCanvasDuration({
+    ...project,
+    scenes: project.scenes.filter((scene) => scene.id !== sceneId),
+    // Transitions reference scenes by id, so orphans have to go with them.
+    transitions: project.transitions.filter(
+      (transition) => transition.fromSceneId !== sceneId && transition.toSceneId !== sceneId
+    )
+  })
   return engine.saveProject(
-    VideoProjectSchema.parse({
-      ...project,
-      scenes: project.scenes.filter((scene) => scene.id !== sceneId),
-      // Transitions reference scenes by id, so orphans have to go with them.
-      transitions: project.transitions.filter(
-        (transition) => transition.fromSceneId !== sceneId && transition.toSceneId !== sceneId
-      )
-    }),
+    VideoProjectSchema.parse(next),
     { expectedRevision: project.revision }
   )
 }
@@ -866,18 +890,19 @@ async function removeAsset(projectId: string, assetId: string): Promise<VideoPro
   const sceneIds = new Set(
     project.scenes.filter((scene) => scene.assetId === assetId).map((scene) => scene.id)
   )
+  const next = fitCanvasDuration({
+    ...project,
+    assets: project.assets.filter((asset) => asset.id !== assetId),
+    scenes: project.scenes.filter((scene) => !sceneIds.has(scene.id)),
+    transitions: project.transitions.filter(
+      (transition) => !sceneIds.has(transition.fromSceneId) && !sceneIds.has(transition.toSceneId)
+    ),
+    grading: project.grading.lutAssetId === assetId
+      ? { ...project.grading, lutAssetId: undefined }
+      : project.grading
+  })
   return engine.saveProject(
-    VideoProjectSchema.parse({
-      ...project,
-      assets: project.assets.filter((asset) => asset.id !== assetId),
-      scenes: project.scenes.filter((scene) => !sceneIds.has(scene.id)),
-      transitions: project.transitions.filter(
-        (transition) => !sceneIds.has(transition.fromSceneId) && !sceneIds.has(transition.toSceneId)
-      ),
-      grading: project.grading.lutAssetId === assetId
-        ? { ...project.grading, lutAssetId: undefined }
-        : project.grading
-    }),
+    VideoProjectSchema.parse(next),
     { expectedRevision: project.revision }
   )
 }
