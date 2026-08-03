@@ -22,6 +22,10 @@ import { registerTalkingPhotosIpc } from './talkingphotos'
 import { registerVideoEngineIpc } from './video-engine'
 import { clearProviderSessionStorage } from '../providers/talkingphotos/partition'
 import { resetVideoEngine } from '../services/video-engine/studio'
+import {
+  FAST_PREVIEW_EXPORT_COMMAND,
+  exportFastPreview,
+} from '../services/video-engine/fast-preview-export'
 
 // All native capability the renderer can reach is registered here as invoke
 // handlers and exposed through the typed preload bridge (window.api.*).
@@ -63,8 +67,20 @@ export function registerIpc(): void {
     }
   })
   ipcMain.handle('appMeta:get', (_e, key: string) => getRepos().appMeta(reqId(key, 'key')) ?? '')
-  ipcMain.handle('appMeta:set', (_e, key: string, value: string) => {
-    getRepos().setAppMeta(reqId(key, 'key'), String(value))
+  ipcMain.handle('appMeta:set', (event, key: string, value: string) => {
+    const safeKey = reqId(key, 'key')
+    // A deliberately isolated recorder command reuses the tiny appMeta invoke bridge so
+    // the normal NativeApi/video-engine contract and deterministic render queue stay
+    // unchanged. It never writes this reserved key to the database.
+    if (safeKey === FAST_PREVIEW_EXPORT_COMMAND) {
+      const preferences = event.sender.getLastWebPreferences()
+      return exportFastPreview({
+        projectId: reqId(value, 'projectId'),
+        sourceUrl: event.sender.getURL(),
+        preloadPath: preferences.preload,
+      })
+    }
+    getRepos().setAppMeta(safeKey, String(value))
   })
   // Factory reset: settings back to defaults + wipe all projects/profiles/channels/jobs.
   // Also logs out of TalkingPhotos (its connection row is wiped along with everything
