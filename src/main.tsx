@@ -31,6 +31,8 @@ import type { ThumbnailLayer } from '@shared/types'
 }
 
 async function bootstrap(): Promise<void> {
+  const fastPreviewProjectId = new URLSearchParams(window.location.search).get('mes-fast-preview')
+
   // Browser-QA only: when there's no Electron preload-provided API, install the
   // in-memory mock backend. Dynamic import keeps this ~500-line mock OUT of the
   // packaged Electron renderer's main chunk — it's a separate lazy chunk that the
@@ -39,7 +41,7 @@ async function bootstrap(): Promise<void> {
   let telemetryOn = false
   if (!window.api) {
     await import('./mockApi')
-  } else {
+  } else if (!fastPreviewProjectId) {
     try {
       telemetryOn = !!(await window.api.settings.get())?.telemetryEnabled
     } catch {
@@ -48,6 +50,15 @@ async function bootstrap(): Promise<void> {
   }
 
   const root = ReactDOM.createRoot(document.getElementById('root')!)
+
+  // The hidden real-time recorder gets a deliberately tiny renderer entry: one Player,
+  // no editor state, no panels, and no normal app bootstrap. It is loaded only by the
+  // main-process fast-preview service through this query parameter.
+  if (fastPreviewProjectId) {
+    const { FastPreviewPage } = await import('./features/video-studio/fast-preview/FastPreviewPage')
+    root.render(<FastPreviewPage projectId={fastPreviewProjectId} />)
+    return
+  }
 
   // Sentry's renderer SDK (and its bundle chunk) only ever loads when the user's
   // telemetry switch is on — flipping it off in Settings removes Sentry from the
