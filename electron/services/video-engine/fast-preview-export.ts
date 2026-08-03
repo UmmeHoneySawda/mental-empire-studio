@@ -260,13 +260,13 @@ async function runFastPreviewExport(
     show: false,
     frame: false,
     backgroundColor: '#000000',
+    paintWhenInitiallyHidden: true,
     webPreferences: {
       preload: request.preloadPath,
       sandbox: false,
       contextIsolation: true,
       nodeIntegration: false,
       backgroundThrottling: false,
-      paintWhenInitiallyHidden: true,
     },
   })
   recorder.webContents.setAudioMuted(true)
