@@ -55,7 +55,7 @@ const READY_TIMEOUT_MS = 30_000
 const CAPTURE_QUALITY = 45
 const MAX_CAPTURE_WIDTH = 1280
 const MAX_CAPTURE_HEIGHT = 720
-const PLAYBACK_RATE = 4
+const PLAYBACK_RATE: number = 4
 let activeExport: Promise<FastPreviewExportResult> | null = null
 
 function even(value: number): number {
