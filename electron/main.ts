@@ -47,6 +47,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 // Set a stable app name so userData (DB + settings) lands in a dedicated folder
 // rather than the generic "Electron" dir shared with other dev apps.
 app.setName('Mental Empire Studio')
+app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
 
 // Windows toast identity: without an explicit AppUserModelID, Windows attributes
 // desktop notifications to the derived "electron.app.<name>" id, so toasts read

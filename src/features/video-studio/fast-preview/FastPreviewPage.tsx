@@ -104,17 +104,27 @@ export function FastPreviewPage({ projectId }: { projectId: string }): JSX.Eleme
 
   useEffect(() => {
     if (!project) return
-    const instance = player.current
-    if (!instance) return
     const current = controller.current
     current.play = () => {
-      instance.seekTo(0)
+      const activePlayer = player.current
+      if (!activePlayer) return
+      try {
+        activePlayer.seekTo(0)
+      } catch {}
       current.frame = 0
       current.error = undefined
       current.status = 'playing'
-      instance.play()
+      try {
+        activePlayer.play()
+      } catch (err: unknown) {
+        current.error = err instanceof Error ? err.message : String(err)
+      }
     }
-    current.pause = () => instance.pause()
+    current.pause = () => {
+      try {
+        player.current?.pause()
+      } catch {}
+    }
 
     const onFrame = (event: { detail: { frame: number } }): void => {
       current.frame = event.detail.frame
@@ -122,7 +132,9 @@ export function FastPreviewPage({ projectId }: { projectId: string }): JSX.Eleme
         current.status = 'finished'
       }
     }
-    instance.addEventListener('frameupdate', onFrame)
+
+    const activePlayer = player.current
+    activePlayer?.addEventListener('frameupdate', onFrame)
 
     void Promise.resolve(document.fonts.ready)
       .then(nextPaint)
@@ -134,7 +146,7 @@ export function FastPreviewPage({ projectId }: { projectId: string }): JSX.Eleme
       })
 
     return () => {
-      instance.removeEventListener('frameupdate', onFrame)
+      activePlayer?.removeEventListener('frameupdate', onFrame)
     }
   }, [project])
 

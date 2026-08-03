@@ -307,6 +307,7 @@ async function runFastPreviewExport(
       contextIsolation: true,
       nodeIntegration: false,
       backgroundThrottling: false,
+      autoplayPolicy: 'no-user-gesture-required',
     },
   })
   recorder.webContents.setAudioMuted(true)
