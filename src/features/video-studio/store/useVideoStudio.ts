@@ -38,6 +38,7 @@ import type {
 export type StudioSelection =
   | { kind: 'project' }
   | { kind: 'scene'; id: string }
+  | { kind: 'scenes'; ids: string[] }
   | { kind: 'transition'; id: string }
   | { kind: 'asset'; id: string }
   | { kind: 'captions' }

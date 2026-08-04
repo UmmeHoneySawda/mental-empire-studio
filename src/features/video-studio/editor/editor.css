@@ -456,6 +456,15 @@ textarea.ve-input { resize: vertical; min-height: 52px; }
   background: rgb(var(--ve-timeline-bg));
 }
 
+.ve-marquee-box {
+  position: fixed;
+  border: 1px dashed #6366f1;
+  background: rgba(99, 102, 241, 0.2);
+  border-radius: 3px;
+  pointer-events: none;
+  z-index: 9999;
+}
+
 .ve-timeline-bar {
   display: flex;
   align-items: center;

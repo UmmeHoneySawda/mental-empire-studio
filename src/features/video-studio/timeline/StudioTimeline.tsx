@@ -123,7 +123,25 @@ export function StudioTimeline(): JSX.Element | null {
 
     event.preventDefault()
     event.stopPropagation()
-    setSelection({ kind: 'scene', id: scene.id })
+    const currentIds = selection.kind === 'scene' ? [selection.id] : selection.kind === 'scenes' ? selection.ids : []
+    let nextIds: string[] = []
+    if (event.shiftKey || event.ctrlKey || event.metaKey) {
+      if (currentIds.includes(scene.id)) {
+        nextIds = currentIds.filter((id) => id !== scene.id)
+      } else {
+        nextIds = [...currentIds, scene.id]
+      }
+    } else {
+      nextIds = [scene.id]
+    }
+
+    if (nextIds.length > 1) {
+      setSelection({ kind: 'scenes', ids: nextIds })
+    } else if (nextIds.length === 1) {
+      setSelection({ kind: 'scene', id: nextIds[0] })
+    } else {
+      setSelection({ kind: 'project' })
+    }
 
     const originFrame = (event.clientX - lane.getBoundingClientRect().left) * perPixel
     const started: Drag = {
@@ -138,7 +156,7 @@ export function StudioTimeline(): JSX.Element | null {
     dragRef.current = started
     setDrag(started)
     element.setPointerCapture(event.pointerId)
-  }, [busy, framesPerPixel, setSelection])
+  }, [busy, framesPerPixel, selection, setSelection])
 
   const onClipPointerMove = useCallback((event: ReactPointerEvent<HTMLDivElement>): void => {
     const current = dragRef.current
@@ -289,7 +307,9 @@ export function StudioTimeline(): JSX.Element | null {
                 </div>
                 <div className="vs-track-lane" onPointerDown={seekFromEvent} role="presentation">
                   {scenes.map((scene) => {
-                    const selected = selection.kind === 'scene' && selection.id === scene.id
+                    const selected =
+                      (selection.kind === 'scene' && selection.id === scene.id) ||
+                      (selection.kind === 'scenes' && selection.ids.includes(scene.id))
                     const geometry = geometryFor(scene)
                     const dragging = drag?.sceneId === scene.id
                     return (

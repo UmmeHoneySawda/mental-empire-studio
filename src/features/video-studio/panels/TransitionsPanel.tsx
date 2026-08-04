@@ -156,9 +156,9 @@ export function TransitionsPanel(): JSX.Element {
   const isCut = type === 'cut'
   const unsupportedType = supportedTypes !== null && type !== '' && !supportedTypes.includes(type)
 
-  // The engine rejects a transition longer than either clip it joins, so the ceiling
-  // is the shorter side, not just the template's own range.
-  const sceneCap = pair ? Math.min(pair.from.durationFrames, pair.to.durationFrames) : 0
+  // The engine rejects a transition longer than or equal to either clip it joins, so the ceiling
+  // is the shorter side minus 1 frame, not just the template's own range.
+  const sceneCap = pair ? Math.max(0, Math.min(pair.from.durationFrames, pair.to.durationFrames) - 1) : 0
   const minFrames = template ? Math.max(1, template.duration.minimumFrames) : 1
   const maxFrames = template ? Math.min(template.duration.maximumFrames, sceneCap) : 0
   const capBites = template !== null && sceneCap < template.duration.maximumFrames
@@ -178,21 +178,29 @@ export function TransitionsPanel(): JSX.Element {
     return scene ? sceneLabel(project, scene) : sceneId
   }
 
+  const selectedPairs = useMemo(() => {
+    if (selection.kind !== 'scenes' || selection.ids.length === 0) return []
+    const set = new Set(selection.ids)
+    const matches = pairs.filter((p) => set.has(p.from.id) && set.has(p.to.id))
+    return matches.length > 0 ? matches : pairs.filter((p) => set.has(p.from.id) || set.has(p.to.id))
+  }, [pairs, selection])
+
   const selectTemplate = (next: VideoTemplate): void => {
     setTemplateId(next.id)
     setDurationDraft(next.duration.defaultFrames)
   }
 
-  const add = async (): Promise<void> => {
-    if (!pair || !template) return
+  const add = async (targetPair?: Pair): Promise<void> => {
+    const target = targetPair ?? pair
+    if (!target || !template) return
     setPending(true)
     try {
       await applyTransition({
         templateId: template.id,
         templateVersion: template.version,
-        fromSceneId: pair.from.id,
-        toSceneId: pair.to.id,
-        startFrame: pair.to.startFrame,
+        fromSceneId: target.from.id,
+        toSceneId: target.to.id,
+        startFrame: target.to.startFrame,
         // Always explicit: leaving this out falls back to the template default, which
         // is non-zero and would make a cut fail validation.
         durationFrames,
@@ -204,9 +212,37 @@ export function TransitionsPanel(): JSX.Element {
     }
   }
 
+  const addAll = async (): Promise<void> => {
+    const targets = pairKey === '__selected__' && selectedPairs.length > 0 ? selectedPairs : pairs
+    if (targets.length === 0 || !template) return
+    setPending(true)
+    try {
+      for (const target of targets) {
+        const pairCap = Math.max(0, Math.min(target.from.durationFrames, target.to.durationFrames) - 1)
+        if (!isCut && pairCap < 1) continue
+        const targetDuration = isCut ? 0 : Math.min(durationFrames, pairCap)
+        await applyTransition({
+          templateId: template.id,
+          templateVersion: template.version,
+          fromSceneId: target.from.id,
+          toSceneId: target.to.id,
+          startFrame: target.to.startFrame,
+          durationFrames: targetDuration,
+          direction: DIRECTIONAL.has(type) ? direction : undefined,
+          easing: isCut ? undefined : easing
+        })
+      }
+    } finally {
+      setPending(false)
+    }
+  }
+
   const ordered = [...project.transitions].sort(
     (left, right) => left.startFrame - right.startFrame || left.type.localeCompare(right.type)
   )
+
+  const isAllSelected = pairKey === '__all__'
+  const isMultiSelected = pairKey === '__selected__'
 
   return (
     <>
@@ -231,17 +267,23 @@ export function TransitionsPanel(): JSX.Element {
             <Row>
               <Labeled label="Between" hint={`${pairs.length} join${pairs.length === 1 ? '' : 's'} available`} wide>
                 <SelectField
-                  value={pair ? pair.key : ''}
-                  options={pairs.map((candidate) => ({
-                    value: candidate.key,
-                    label: `${multiTrack ? `${candidate.trackName}: ` : ''}${candidate.fromLabel} → ${candidate.toLabel}`
-                  }))}
+                  value={pairKey || (pair ? pair.key : '')}
+                  options={[
+                    { value: '__all__', label: `All joins (${pairs.length} joins)` },
+                    ...(selectedPairs.length > 0
+                      ? [{ value: '__selected__', label: `Selected clips (${selectedPairs.length} joins)` }]
+                      : []),
+                    ...pairs.map((candidate) => ({
+                      value: candidate.key,
+                      label: `${multiTrack ? `${candidate.trackName}: ` : ''}${candidate.fromLabel} → ${candidate.toLabel}`
+                    }))
+                  ]}
                   onChange={setPairKey}
                 />
               </Labeled>
             </Row>
 
-            {pair && (
+            {!isAllSelected && !isMultiSelected && pair && (
               <p className="vs-hint">
                 Lands at frame <span className="vs-mono">{pair.to.startFrame}</span> · {timecode(pair.to.startFrame)} —
                 where <b>{pair.toLabel}</b> starts. Shorter side is{' '}
@@ -253,6 +295,18 @@ export function TransitionsPanel(): JSX.Element {
                     tight.
                   </>
                 )}
+              </p>
+            )}
+
+            {isAllSelected && (
+              <p className="vs-hint">
+                Applying transition to <b>all {pairs.length} joins</b> across the project tracks.
+              </p>
+            )}
+
+            {isMultiSelected && (
+              <p className="vs-hint">
+                Applying transition to <b>{selectedPairs.length} joins</b> between selected clips.
               </p>
             )}
 
@@ -346,14 +400,33 @@ export function TransitionsPanel(): JSX.Element {
               </>
             )}
 
-            <Row>
-              <Btn
-                variant="primary"
-                disabled={busy !== '' || !pair || !template || unsupportedType || (!isCut && !fitsPair)}
-                onClick={() => void add()}
-              >
-                {working ? busy : 'Add transition'}
-              </Btn>
+            <Row style={{ gap: 8 }}>
+              {isAllSelected || isMultiSelected ? (
+                <Btn
+                  variant="primary"
+                  disabled={busy !== '' || !template || unsupportedType}
+                  onClick={() => void addAll()}
+                >
+                  {working ? busy : `Apply to ${isMultiSelected ? 'selected' : 'all'} joins (${isMultiSelected ? selectedPairs.length : pairs.length})`}
+                </Btn>
+              ) : (
+                <>
+                  <Btn
+                    variant="primary"
+                    disabled={busy !== '' || !pair || !template || unsupportedType || (!isCut && !fitsPair)}
+                    onClick={() => void add()}
+                  >
+                    {working ? busy : 'Add transition'}
+                  </Btn>
+                  <Btn
+                    variant="soft"
+                    disabled={busy !== '' || !template || unsupportedType}
+                    onClick={() => void addAll()}
+                  >
+                    Apply to all joins ({pairs.length})
+                  </Btn>
+                </>
+              )}
               {!template && kinds.length > 0 && (
                 <span className="vs-hint">Pick a transition type above.</span>
               )}

@@ -1,4 +1,4 @@
-import { useState } from 'react'
+import { useMemo, useState } from 'react'
 import {
   AUTO_BROLL_DENSITY_PER_MINUTE,
   REMOTION_CUSTOM_HOOK_TEMPLATE_ID,
@@ -21,7 +21,7 @@ import {
 import { addClip, clipsOnTrack, placementFrame } from './operations'
 import { gradePreviewCaveat } from './gradePreview'
 import { defaultHookPlan } from './hookPlan'
-import { hookPlanFromProject, hookSceneId, selectedClip, useEditor } from './useEditor'
+import { getSelectedClipIds, hookPlanFromProject, hookSceneId, selectedClip, useEditor } from './useEditor'
 import { timecode } from './constants'
 
 /* The inspector. One panel per tab, each small because every preset is a row of data
@@ -987,74 +987,113 @@ function TransitionsPanel(): JSX.Element {
   const project = useEditor((state) => state.project)
   const selection = useEditor((state) => state.selection)
   const busy = useEditor((state) => state.busy)
+  const [applyToAll, setApplyToAll] = useState(false)
 
-  /** A transition needs two clips that touch on the same lane. Finding the pair for the
-   *  selected clip is what makes this one click instead of a form. */
-  const pair = (() => {
-    if (!project || selection.kind !== 'clip') return null
-    const clip = project.scenes.find((scene) => scene.id === selection.id)
-    if (!clip) return null
-    const ordered = clipsOnTrack(project, clip.trackId)
-    const index = ordered.findIndex((scene) => scene.id === clip.id)
-    const next = ordered[index + 1]
-    if (!next) return null
-    return { from: clip, to: next, touching: next.startFrame <= clip.startFrame + clip.durationFrames }
-  })()
+  const allPairs = useMemo(() => {
+    if (!project) return []
+    const results: Array<{ from: VideoScene; to: VideoScene; touching: boolean }> = []
+    for (const track of project.tracks) {
+      const ordered = clipsOnTrack(project, track.id)
+      for (let i = 0; i + 1 < ordered.length; i += 1) {
+        const from = ordered[i]!
+        const to = ordered[i + 1]!
+        results.push({
+          from,
+          to,
+          touching: to.startFrame <= from.startFrame + from.durationFrames
+        })
+      }
+    }
+    return results
+  }, [project])
 
-  /** A cut has no template — it is recorded directly on the project as a zero-duration
-   *  marker. Everything else goes through the engine, which computes the overlap between
-   *  the two clips itself; hand-computing `startFrame` is what used to fail preflight. */
+  const selectedClipIds = useMemo(() => getSelectedClipIds(selection), [selection])
+
+  const selectedPairs = useMemo(() => {
+    if (selectedClipIds.length === 0) return []
+    type PairItem = { from: VideoScene; to: VideoScene; touching: boolean }
+    if (selectedClipIds.length === 1) {
+      const pair = allPairs.find((p: PairItem) => p.from.id === selectedClipIds[0])
+      return pair ? [pair] : []
+    }
+    const set = new Set(selectedClipIds)
+    const bothSelected = allPairs.filter((p: PairItem) => set.has(p.from.id) && set.has(p.to.id))
+    if (bothSelected.length > 0) return bothSelected
+    return allPairs.filter((p: PairItem) => set.has(p.from.id) || set.has(p.to.id))
+  }, [allPairs, selectedClipIds])
+
+  const pair = selectedPairs.length === 1 ? selectedPairs[0] : null
+  const targetPairs = applyToAll ? allPairs : (selectedPairs.length > 0 ? selectedPairs : allPairs)
+
   const apply = async (preset: (typeof TRANSITION_PRESETS)[number]): Promise<void> => {
-    if (!pair || !project) return
+    if (targetPairs.length === 0 || !project) return
     const state = useEditor.getState()
+
     if (!preset.templateId) {
-      state.edit((draft) => ({
-        ...draft,
-        transitions: [
-          ...draft.transitions.filter(
-            (existing) => !(existing.fromSceneId === pair.from.id && existing.toSceneId === pair.to.id)
-          ),
-          {
-            id: `transition-${pair.from.id.slice(0, 8)}-${pair.to.id.slice(0, 8)}`,
-            fromSceneId: pair.from.id,
-            toSceneId: pair.to.id,
-            startFrame: pair.from.startFrame + pair.from.durationFrames,
+      state.edit((draft) => {
+        let newTransitions = [...draft.transitions]
+        for (const target of targetPairs) {
+          newTransitions = newTransitions.filter(
+            (existing) => !(existing.fromSceneId === target.from.id && existing.toSceneId === target.to.id)
+          )
+          newTransitions.push({
+            id: `transition-${target.from.id.slice(0, 8)}-${target.to.id.slice(0, 8)}`,
+            fromSceneId: target.from.id,
+            toSceneId: target.to.id,
+            startFrame: target.from.startFrame + target.from.durationFrames,
             durationFrames: 0,
             type: 'cut' as const
-          }
-        ]
-      }))
-      state.setNotice('Cut added.')
+          })
+        }
+        return { ...draft, transitions: newTransitions }
+      })
+      state.setNotice(`Cut added to ${targetPairs.length} join${targetPairs.length === 1 ? '' : 's'}.`)
       return
     }
-    // Local edits must reach disk BEFORE the engine is asked to change the same document,
-    // or the next debounced save writes our stale copy back over the engine's version.
+
     if (!(await state.flush())) return
     const native = window.api
     if (!native) return
-    // A junction holds exactly one transition. Without dropping the previous one first the
-    // engine happily stacked a second, and preflight then refused the project for having
-    // multiple outgoing animated transitions on one scene.
-    for (const existing of project.transitions) {
-      if (existing.fromSceneId !== pair.from.id && existing.toSceneId !== pair.to.id) continue
+
+    let currentProject = useEditor.getState().project
+    if (!currentProject) return
+
+    let count = 0
+    for (const target of targetPairs) {
+      const freshFrom = currentProject.scenes.find((s) => s.id === target.from.id)
+      const freshTo = currentProject.scenes.find((s) => s.id === target.to.id)
+      if (!freshFrom || !freshTo) continue
+
+      for (const existing of [...currentProject.transitions]) {
+        if (existing.fromSceneId !== freshFrom.id && existing.toSceneId !== freshTo.id) continue
+        try {
+          currentProject = await native.videoEngine.removeTransition(currentProject.id, existing.id)
+        } catch {
+          /* Already gone */
+        }
+      }
+
       try {
-        const pruned = await native.videoEngine.removeTransition(project.id, existing.id)
-        useEditor.setState({ project: pruned, dirty: false })
-      } catch {
-        /* Already gone, or never persisted — either way there is nothing to replace. */
+        currentProject = await native.videoEngine.applyTransition(currentProject.id, {
+          templateId: preset.templateId,
+          fromSceneId: freshFrom.id,
+          toSceneId: freshTo.id,
+          durationFrames: preset.durationFrames,
+          ...(preset.direction ? { direction: preset.direction } : {})
+        })
+        count += 1
+      } catch (error) {
+        console.warn('Failed to apply transition to pair', target, error)
       }
     }
-    try {
-      const updated = await native.videoEngine.applyTransition(project.id, {
-        templateId: preset.templateId,
-        fromSceneId: pair.from.id,
-        toSceneId: pair.to.id,
-        durationFrames: preset.durationFrames,
-        ...(preset.direction ? { direction: preset.direction } : {})
+
+    if (currentProject) {
+      useEditor.setState({
+        project: currentProject,
+        projectId: currentProject.id,
+        dirty: false,
+        notice: `${preset.label} added to ${count} join${count === 1 ? '' : 's'}.`
       })
-      useEditor.setState({ project: updated, projectId: updated.id, dirty: false, notice: `${preset.label} added.` })
-    } catch (error) {
-      useEditor.setState({ error: (error as Error).message.replace(/^Error invoking remote method '[^']*':\s*/u, '') })
     }
   }
 
@@ -1066,17 +1105,33 @@ function TransitionsPanel(): JSX.Element {
         title="Add a transition"
         blurb="A transition plays where two clips meet on the same lane. It borrows frames from both sides, so it can never run longer than the shorter clip."
       >
-        {!pair ? (
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer', userSelect: 'none' }}>
+            <input
+              type="checkbox"
+              checked={applyToAll}
+              onChange={(e) => setApplyToAll(e.target.checked)}
+            />
+            <span>Apply transition to all joins ({allPairs.length})</span>
+          </label>
+        </div>
+
+        {targetPairs.length === 0 ? (
           <p className="ve-hint">
             {selection.kind === 'clip'
-              ? 'The selected clip has nothing after it on its lane. Select a clip that is followed by another.'
-              : 'Select a clip on the timeline. The transition is added between it and the next clip on the same lane.'}
+              ? 'The selected clip has nothing after it on its lane. Select clips that are followed by another or check "Apply transition to all joins".'
+              : 'Select one or more clips on the timeline or check "Apply transition to all joins".'}
           </p>
         ) : (
           <>
             <p className="ve-hint">
-              Between <b>{pair.from.id.slice(0, 12)}</b> and <b>{pair.to.id.slice(0, 12)}</b>
-              {pair.touching ? '' : ' — these clips do not touch yet, so the engine will close the gap.'}
+              {applyToAll
+                ? `Applying to all ${allPairs.length} join${allPairs.length === 1 ? '' : 's'} in the project.`
+                : selectedClipIds.length > 1
+                  ? `Applying to ${selectedPairs.length} join${selectedPairs.length === 1 ? '' : 's'} between ${selectedClipIds.length} selected clips.`
+                  : pair
+                    ? `Between ${pair.from.id.slice(0, 12)} and ${pair.to.id.slice(0, 12)}${pair.touching ? '' : ' — closing gap.'}`
+                    : `Applying to ${targetPairs.length} join${targetPairs.length === 1 ? '' : 's'}.`}
             </p>
             <div className="ve-list">
               {TRANSITION_PRESETS.map((preset) => (
