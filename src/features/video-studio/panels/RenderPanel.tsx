@@ -35,6 +35,7 @@ export function RenderPanel(): JSX.Element {
   const problems = useVideoStudio((state) => state.problems)
   const busy = useVideoStudio((state) => state.busy)
   const preflight = useVideoStudio((state) => state.preflight)
+  const fixProject = useVideoStudio((state) => state.fixProject)
   const enqueueRender = useVideoStudio((state) => state.enqueueRender)
   const cancelRender = useVideoStudio((state) => state.cancelRender)
   const retryRender = useVideoStudio((state) => state.retryRender)
@@ -120,7 +121,7 @@ export function RenderPanel(): JSX.Element {
         hint="Errors stop the render. Warnings do not — they are things worth a look, not blockers."
         headerRight={checked && errors.length === 0 ? <span className="vs-pill vs-pill--ok">Ready to render</span> : undefined}
       >
-        <Row>
+        <Row style={{ gap: 8 }}>
           <Btn
             variant="soft"
             size="sm"
@@ -129,6 +130,16 @@ export function RenderPanel(): JSX.Element {
           >
             {busy === 'Checking the project' ? 'Checking the project…' : 'Check this project'}
           </Btn>
+          {errors.length > 0 && (
+            <Btn
+              variant="primary"
+              size="sm"
+              disabled={!!busy}
+              onClick={() => { setChecked(true); void fixProject() }}
+            >
+              {busy === 'Auto-fixing project' ? 'Fixing…' : 'Auto-fix project'}
+            </Btn>
+          )}
         </Row>
         {problems.length > 0 && (
           <div className="vs-list">

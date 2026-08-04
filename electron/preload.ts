@@ -297,6 +297,8 @@ const api: NativeApi = {
     setCanvas: (projectId: string, patch: VideoCanvasPatch) => ipcRenderer.invoke('videoEngine:setCanvas', projectId, patch),
     saveProject: (projectId: string, project: VideoProject) =>
       ipcRenderer.invoke('videoEngine:saveProject', projectId, project),
+    fixProject: (projectId: string) =>
+      ipcRenderer.invoke('videoEngine:fixProject', projectId),
 
     binding: (downloadId: string) => ipcRenderer.invoke('videoEngine:binding', downloadId),
     bindDownload: (downloadId: string, rendererId: RendererId, reseed?: boolean) =>

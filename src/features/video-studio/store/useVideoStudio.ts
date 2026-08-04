@@ -191,6 +191,7 @@ interface VideoStudioState {
   placeBroll: (candidate: VideoBrollCandidate, startFrame: number, durationFrames: number) => Promise<void>
 
   preflight: () => Promise<VideoRenderProblem[]>
+  fixProject: () => Promise<void>
   enqueueRender: (container?: '.mp4' | '.mov' | '.webm') => Promise<void>
   cancelRender: (jobId: string) => Promise<void>
   retryRender: (jobId: string) => Promise<void>
@@ -808,6 +809,16 @@ export const useVideoStudio = create<VideoStudioState>((set, get) => {
       }
       set({ problems })
       return problems
+    },
+
+    fixProject: async () => {
+      const { projectId } = get()
+      if (!projectId) return
+      const project = await run('Auto-fixing project', (native) => native.videoEngine.fixProject(projectId))
+      if (project) {
+        commit(project, 'Auto-fixed transitions and alignment.')
+        await get().preflight()
+      }
     },
 
     enqueueRender: async (container) => {

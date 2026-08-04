@@ -1249,6 +1249,11 @@ export function registerVideoEngineIpc(): void {
         { expectedRevision: current.revision }
       )
     }))
+  ipcMain.handle('videoEngine:fixProject', (_e, projectId: string) =>
+    guard('fixProject', async () => {
+      const engine = await getVideoEngine()
+      return engine.fixProject(reqString(projectId, 'projectId'))
+    }))
 
   // ---- binding a downloaded clip to a per-renderer engine project ----
   ipcMain.handle('videoEngine:binding', (_e, downloadId: string): VideoStudioBinding =>

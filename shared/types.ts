@@ -1586,6 +1586,8 @@ export interface NativeApi {
      *  `id`, `rendererId`, `revision` and `createdAt` are taken from disk, so a stale
      *  renderer copy cannot rewind the file. */
     saveProject(projectId: string, project: VideoProject): Promise<VideoProject>
+    /** Auto-fix timeline transition alignment and prune invalid or orphaned transitions */
+    fixProject(projectId: string): Promise<VideoProject>
 
     /** which engine project backs a downloaded clip, per renderer */
     binding(downloadId: string): Promise<VideoStudioBinding>

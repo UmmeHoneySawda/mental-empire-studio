@@ -27,25 +27,77 @@ export interface SaveProjectOptions {
   incrementRevision?: boolean
 }
 
-function sanitizeProjectTransitions<T extends Record<string, any>>(input: T): T {
+export function sanitizeAndAlignTransitions<T extends Record<string, any>>(input: T): T {
   if (!input || !Array.isArray(input.transitions) || !Array.isArray(input.scenes)) return input
-  const sceneMap = new Map(input.scenes.map((s) => [s.id, s]))
-  const sanitizedTransitions = input.transitions.map((trans) => {
+
+  const scenes = input.scenes.map((s) => ({ ...s }))
+  const sceneMap = new Map(scenes.map((s) => [s.id, s]))
+  const visualSceneIds = new Set(
+    scenes
+      .filter((s) => s.kind !== 'audio' && s.kind !== 'caption')
+      .map((s) => s.id)
+  )
+
+  const seenIncoming = new Set<string>()
+  const seenOutgoing = new Set<string>()
+  const sanitizedTransitions: any[] = []
+
+  for (const trans of input.transitions) {
+    if (!trans || typeof trans !== 'object') continue
     const from = sceneMap.get(trans.fromSceneId)
     const to = sceneMap.get(trans.toSceneId)
-    if (!from || !to) return trans
-    const maxAllowed = Math.min(from.durationFrames, to.durationFrames)
-    if (trans.durationFrames > maxAllowed) {
-      const durationFrames = Math.max(0, maxAllowed)
-      return {
-        ...trans,
-        durationFrames,
-        startFrame: Math.max(0, from.startFrame + from.durationFrames - durationFrames)
-      }
+
+    if (
+      !from ||
+      !to ||
+      !visualSceneIds.has(from.id) ||
+      !visualSceneIds.has(to.id) ||
+      from.trackId !== to.trackId
+    ) {
+      continue
     }
-    return trans
-  })
-  return { ...input, transitions: sanitizedTransitions }
+
+    if (seenOutgoing.has(from.id) || seenIncoming.has(to.id)) {
+      continue
+    }
+
+    if (trans.type === 'cut') {
+      seenOutgoing.add(from.id)
+      seenIncoming.add(to.id)
+      sanitizedTransitions.push({
+        ...trans,
+        startFrame: to.startFrame,
+        durationFrames: 0
+      })
+      continue
+    }
+
+    const maxFit = Math.max(1, Math.min(from.durationFrames - 1, to.durationFrames - 1))
+    const durationFrames = Math.max(1, Math.min(trans.durationFrames ?? 1, maxFit))
+    const overlapStart = Math.max(0, from.startFrame + from.durationFrames - durationFrames)
+
+    if (to.startFrame !== overlapStart) {
+      to.startFrame = overlapStart
+      sceneMap.set(to.id, to)
+    }
+
+    seenOutgoing.add(from.id)
+    seenIncoming.add(to.id)
+
+    sanitizedTransitions.push({
+      ...trans,
+      durationFrames,
+      startFrame: overlapStart
+    })
+  }
+
+  const updatedScenes = scenes.map((s) => sceneMap.get(s.id) ?? s)
+
+  return {
+    ...input,
+    scenes: updatedScenes,
+    transitions: sanitizedTransitions
+  }
 }
 
 export class VideoProjectStore {
@@ -98,7 +150,9 @@ export class VideoProjectStore {
 
   async open(id: string): Promise<VideoProject> {
     try {
-      return parseVideoProject(await readJsonFile(this.projectPath(id)))
+      const raw = await readJsonFile(this.projectPath(id))
+      const parsed = parseVideoProject(raw)
+      return sanitizeAndAlignTransitions(parsed)
     } catch (error) {
       if ((error as NodeJS.ErrnoException).code === 'ENOENT') {
         throw new VideoEngineError('PROJECT_NOT_FOUND', `Project not found: ${id}`)
@@ -109,7 +163,7 @@ export class VideoProjectStore {
   }
 
   async save(projectInput: VideoProject, options: SaveProjectOptions = {}): Promise<VideoProject> {
-    const project = VideoProjectSchema.parse(sanitizeProjectTransitions(projectInput))
+    const project = VideoProjectSchema.parse(sanitizeAndAlignTransitions(projectInput))
     let current: VideoProject | undefined
     try {
       current = await this.open(project.id)
@@ -127,7 +181,7 @@ export class VideoProjectStore {
         { expected_revision: options.expectedRevision, actual_revision: current.revision }
       )
     }
-    const next = VideoProjectSchema.parse(sanitizeProjectTransitions({
+    const next = VideoProjectSchema.parse(sanitizeAndAlignTransitions({
       ...project,
       revision: options.incrementRevision === false ? project.revision : Math.max(project.revision, current?.revision ?? 0) + 1,
       createdAt: current?.createdAt ?? project.createdAt,

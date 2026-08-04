@@ -250,6 +250,13 @@ export class VideoEngineService {
     return this.withProjectLock(project.id, () => this.projects.save(project, options))
   }
 
+  async fixProject(projectId: string): Promise<VideoProject> {
+    return this.withProjectLock(projectId, async () => {
+      const project = await this.projects.open(projectId)
+      return this.projects.save(project)
+    })
+  }
+
   listProjects(): Promise<VideoProject[]> {
     return this.projects.list()
   }
