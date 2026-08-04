@@ -287,24 +287,26 @@ export class VideoEngineService {
     projectId: string,
     input: InstantiateTemplateInput
   ): Promise<VideoProject> {
-    const project = await this.projects.open(projectId)
-    const { manifest, scene } = this.templates.instantiate(input)
-    if (manifest.kind === 'caption' || manifest.kind === 'transition') {
-      throw new VideoEngineError(
-        'INVALID_TEMPLATE',
-        `${manifest.kind} templates must be applied through their dedicated service method`
-      )
-    }
-    if (manifest.rendererId !== project.rendererId) {
-      throw new VideoEngineError('INVALID_TEMPLATE', 'Template renderer does not match the project')
-    }
-    if (!project.tracks.some((track) => track.id === scene.trackId)) {
-      throw new VideoEngineError('INVALID_TEMPLATE', `Template track does not exist: ${scene.trackId}`)
-    }
-    return this.projects.save(VideoProjectSchema.parse({
-      ...project,
-      scenes: [...project.scenes, scene]
-    }), { expectedRevision: project.revision })
+    return this.withProjectLock(projectId, async () => {
+      const project = await this.projects.open(projectId)
+      const { manifest, scene } = this.templates.instantiate(input)
+      if (manifest.kind === 'caption' || manifest.kind === 'transition') {
+        throw new VideoEngineError(
+          'INVALID_TEMPLATE',
+          `${manifest.kind} templates must be applied through their dedicated service method`
+        )
+      }
+      if (manifest.rendererId !== project.rendererId) {
+        throw new VideoEngineError('INVALID_TEMPLATE', 'Template renderer does not match the project')
+      }
+      if (!project.tracks.some((track) => track.id === scene.trackId)) {
+        throw new VideoEngineError('INVALID_TEMPLATE', `Template track does not exist: ${scene.trackId}`)
+      }
+      return this.projects.save(VideoProjectSchema.parse({
+        ...project,
+        scenes: [...project.scenes, scene]
+      }), { expectedRevision: project.revision })
+    })
   }
 
   buildHookPlanPrompt(options: HookPlanPromptOptions): string {
@@ -332,10 +334,12 @@ export class VideoEngineService {
   }
 
   async importHookPlan(projectId: string, json: string | unknown): Promise<CompiledHook> {
-    const project = await this.projects.open(projectId)
-    const compiled = compileHookPlan(project, parseHookPlan(json), this.templates)
-    const saved = await this.projects.save(compiled.project, { expectedRevision: project.revision })
-    return { ...compiled, project: saved }
+    return this.withProjectLock(projectId, async () => {
+      const project = await this.projects.open(projectId)
+      const compiled = compileHookPlan(project, parseHookPlan(json), this.templates)
+      const saved = await this.projects.save(compiled.project, { expectedRevision: project.revision })
+      return { ...compiled, project: saved }
+    })
   }
 
   buildImportantWordsPrompt(
@@ -351,11 +355,13 @@ export class VideoEngineService {
     json: string | unknown,
     options: Parameters<typeof importImportantWords>[2] = {}
   ): Promise<VideoProject> {
-    const project = await this.projects.open(projectId)
-    if (!project.captions) throw new VideoEngineError('INVALID_PROJECT', 'Project has no captions')
-    const captions = importImportantWords(json, project.captions, options)
-    return this.projects.save(VideoProjectSchema.parse({ ...project, captions }), {
-      expectedRevision: project.revision
+    return this.withProjectLock(projectId, async () => {
+      const project = await this.projects.open(projectId)
+      if (!project.captions) throw new VideoEngineError('INVALID_PROJECT', 'Project has no captions')
+      const captions = importImportantWords(json, project.captions, options)
+      return this.projects.save(VideoProjectSchema.parse({ ...project, captions }), {
+        expectedRevision: project.revision
+      })
     })
   }
 
@@ -367,26 +373,28 @@ export class VideoEngineService {
     templateProps?: JsonObject
     words: readonly CaptionWord[]
   }): Promise<VideoProject> {
-    const project = await this.projects.open(input.projectId)
-    let template: TemplateManifest | undefined
-    if (input.templateId) {
-      template = this.templates.require(input.templateId)
-      if (template.kind !== 'caption' || template.rendererId !== project.rendererId) {
-        throw new VideoEngineError('INVALID_TEMPLATE', 'Caption template is not compatible with this project')
+    return this.withProjectLock(input.projectId, async () => {
+      const project = await this.projects.open(input.projectId)
+      let template: TemplateManifest | undefined
+      if (input.templateId) {
+        template = this.templates.require(input.templateId)
+        if (template.kind !== 'caption' || template.rendererId !== project.rendererId) {
+          throw new VideoEngineError('INVALID_TEMPLATE', 'Caption template is not compatible with this project')
+        }
       }
-    }
-    const captions = createCaptionDocument({
-      id: input.id ?? `captions:${randomUUID()}`,
-      language: input.language,
-      templateId: input.templateId,
-      words: input.words
-    })
-    const withCaptions = VideoProjectSchema.parse({ ...project, captions })
-    const next = template
-      ? applyCaptionTemplateToProject(withCaptions, template, input.templateProps ?? {})
-      : withCaptions
-    return this.projects.save(next, {
-      expectedRevision: project.revision
+      const captions = createCaptionDocument({
+        id: input.id ?? `captions:${randomUUID()}`,
+        language: input.language,
+        templateId: input.templateId,
+        words: input.words
+      })
+      const withCaptions = VideoProjectSchema.parse({ ...project, captions })
+      const next = template
+        ? applyCaptionTemplateToProject(withCaptions, template, input.templateProps ?? {})
+        : withCaptions
+      return this.projects.save(next, {
+        expectedRevision: project.revision
+      })
     })
   }
 
@@ -415,23 +423,25 @@ export class VideoEngineService {
     templateId: string,
     props: JsonObject = {}
   ): Promise<VideoProject> {
-    const project = await this.projects.open(projectId)
-    if (!project.captions) throw new VideoEngineError('INVALID_PROJECT', 'Project has no captions')
-    const template = this.templates.require(templateId)
-    if (template.kind !== 'caption' || template.rendererId !== project.rendererId) {
-      throw new VideoEngineError('INVALID_TEMPLATE', 'Caption template is not compatible with this project')
-    }
-    const withTemplate = VideoProjectSchema.parse({
-      ...project,
-      captions: {
-        ...project.captions,
-        templateId: template.id
+    return this.withProjectLock(projectId, async () => {
+      const project = await this.projects.open(projectId)
+      if (!project.captions) throw new VideoEngineError('INVALID_PROJECT', 'Project has no captions')
+      const template = this.templates.require(templateId)
+      if (template.kind !== 'caption' || template.rendererId !== project.rendererId) {
+        throw new VideoEngineError('INVALID_TEMPLATE', 'Caption template is not compatible with this project')
       }
+      const withTemplate = VideoProjectSchema.parse({
+        ...project,
+        captions: {
+          ...project.captions,
+          templateId: template.id
+        }
+      })
+      return this.projects.save(
+        applyCaptionTemplateToProject(withTemplate, template, props),
+        { expectedRevision: project.revision }
+      )
     })
-    return this.projects.save(
-      applyCaptionTemplateToProject(withTemplate, template, props),
-      { expectedRevision: project.revision }
-    )
   }
 
   async applyTransitionTemplate(
@@ -566,40 +576,42 @@ export class VideoEngineService {
   }
 
   async placeBroll(projectId: string, input: PlaceBrollInput): Promise<VideoProject> {
-    const project = await this.projects.open(projectId)
-    if (!Number.isInteger(input.startFrame) || !Number.isInteger(input.durationFrames) || input.durationFrames < 1) {
-      throw new VideoEngineError('INVALID_PROJECT', 'B-roll placement must use positive integer frame timing')
-    }
-    const trackId = input.trackId ?? 'video-engine-broll'
-    const asset = brollAssetForProject(project, input.candidate, input.cached)
-    const assetId = asset.id
-    const sceneId = `broll-scene:${randomUUID()}`
-    const track = project.tracks.find((item) => item.id === trackId) ?? {
-      id: trackId,
-      name: 'B-roll',
-      kind: 'video' as const,
-      order: 0,
-      muted: false,
-      locked: false
-    }
-    const scene = VideoSceneSchema.parse({
-      id: sceneId,
-      trackId,
-      kind: 'media',
-      startFrame: input.startFrame,
-      durationFrames: input.durationFrames,
-      zIndex: input.zIndex ?? 1,
-      assetId,
-      fit: 'cover',
-      opacity: 1
+    return this.withProjectLock(projectId, async () => {
+      const project = await this.projects.open(projectId)
+      if (!Number.isInteger(input.startFrame) || !Number.isInteger(input.durationFrames) || input.durationFrames < 1) {
+        throw new VideoEngineError('INVALID_PROJECT', 'B-roll placement must use positive integer frame timing')
+      }
+      const trackId = input.trackId ?? 'video-engine-broll'
+      const asset = brollAssetForProject(project, input.candidate, input.cached)
+      const assetId = asset.id
+      const sceneId = `broll-scene:${randomUUID()}`
+      const track = project.tracks.find((item) => item.id === trackId) ?? {
+        id: trackId,
+        name: 'B-roll',
+        kind: 'video' as const,
+        order: 0,
+        muted: false,
+        locked: false
+      }
+      const scene = VideoSceneSchema.parse({
+        id: sceneId,
+        trackId,
+        kind: 'media',
+        startFrame: input.startFrame,
+        durationFrames: input.durationFrames,
+        zIndex: input.zIndex ?? 1,
+        assetId,
+        fit: 'cover',
+        opacity: 1
+      })
+      const next = VideoProjectSchema.parse({
+        ...project,
+        assets: [...project.assets.filter((item) => item.id !== assetId), asset],
+        tracks: project.tracks.some((item) => item.id === trackId) ? project.tracks : [...project.tracks, track],
+        scenes: [...project.scenes, scene]
+      })
+      return this.projects.save(next, { expectedRevision: project.revision })
     })
-    const next = VideoProjectSchema.parse({
-      ...project,
-      assets: [...project.assets.filter((item) => item.id !== assetId), asset],
-      tracks: project.tracks.some((item) => item.id === trackId) ? project.tracks : [...project.tracks, track],
-      scenes: [...project.scenes, scene]
-    })
-    return this.projects.save(next, { expectedRevision: project.revision })
   }
 
   async resolveHookBroll(input: {
@@ -608,42 +620,44 @@ export class VideoEngineService {
     candidate: BrollCandidate
     cached: CachedBrollAsset
   }): Promise<VideoProject> {
-    const project = await this.projects.open(input.projectId)
-    const hookScene = project.scenes.find((scene) => scene.id === 'video-engine-hook-plan')
-    const planResult = HookPlanSchema.safeParse(hookScene?.template?.props['hookPlan'])
-    if (!hookScene?.template || !planResult.success) {
-      throw new VideoEngineError('INVALID_HOOK_PLAN', 'Project does not contain a compiled hook plan')
-    }
-    const beatIndex = planResult.data.beats.findIndex((beat) => beat.id === input.beatId)
-    if (beatIndex < 0) throw new VideoEngineError('INVALID_HOOK_PLAN', `Unknown hook beat: ${input.beatId}`)
-    const asset = brollAssetForProject(project, input.candidate, input.cached)
-    const beats = planResult.data.beats.map((beat, index) => index === beatIndex
-      ? {
-          ...beat,
-          visual: {
-            kind: 'asset' as const,
-            assetId: asset.id
-          }
-        }
-      : beat)
-    const hookPlan = HookPlanSchema.parse({ ...planResult.data, beats })
-    const scenes = project.scenes.map((scene) => scene.id === hookScene.id
-      ? VideoSceneSchema.parse({
-          ...scene,
-          template: {
-            ...scene.template!,
-            props: {
-              ...scene.template!.props,
-              hookPlan
+    return this.withProjectLock(input.projectId, async () => {
+      const project = await this.projects.open(input.projectId)
+      const hookScene = project.scenes.find((scene) => scene.id === 'video-engine-hook-plan')
+      const planResult = HookPlanSchema.safeParse(hookScene?.template?.props['hookPlan'])
+      if (!hookScene?.template || !planResult.success) {
+        throw new VideoEngineError('INVALID_HOOK_PLAN', 'Project does not contain a compiled hook plan')
+      }
+      const beatIndex = planResult.data.beats.findIndex((beat) => beat.id === input.beatId)
+      if (beatIndex < 0) throw new VideoEngineError('INVALID_HOOK_PLAN', `Unknown hook beat: ${input.beatId}`)
+      const asset = brollAssetForProject(project, input.candidate, input.cached)
+      const beats = planResult.data.beats.map((beat, index) => index === beatIndex
+        ? {
+            ...beat,
+            visual: {
+              kind: 'asset' as const,
+              assetId: asset.id
             }
           }
-        })
-      : scene)
-    return this.projects.save(VideoProjectSchema.parse({
-      ...project,
-      assets: [...project.assets.filter((item) => item.id !== asset.id), asset],
-      scenes
-    }), { expectedRevision: project.revision })
+        : beat)
+      const hookPlan = HookPlanSchema.parse({ ...planResult.data, beats })
+      const scenes = project.scenes.map((scene) => scene.id === hookScene.id
+        ? VideoSceneSchema.parse({
+            ...scene,
+            template: {
+              ...scene.template!,
+              props: {
+                ...scene.template!.props,
+                hookPlan
+              }
+            }
+          })
+        : scene)
+      return this.projects.save(VideoProjectSchema.parse({
+        ...project,
+        assets: [...project.assets.filter((item) => item.id !== asset.id), asset],
+        scenes
+      }), { expectedRevision: project.revision })
+    })
   }
 
   /**

@@ -221,16 +221,20 @@ export function TransitionsPanel(): JSX.Element {
         const pairCap = Math.max(0, Math.min(target.from.durationFrames, target.to.durationFrames) - 1)
         if (!isCut && pairCap < 1) continue
         const targetDuration = isCut ? 0 : Math.min(durationFrames, pairCap)
-        await applyTransition({
-          templateId: template.id,
-          templateVersion: template.version,
-          fromSceneId: target.from.id,
-          toSceneId: target.to.id,
-          startFrame: target.to.startFrame,
-          durationFrames: targetDuration,
-          direction: DIRECTIONAL.has(type) ? direction : undefined,
-          easing: isCut ? undefined : easing
-        })
+        try {
+          await applyTransition({
+            templateId: template.id,
+            templateVersion: template.version,
+            fromSceneId: target.from.id,
+            toSceneId: target.to.id,
+            startFrame: target.to.startFrame,
+            durationFrames: targetDuration,
+            direction: DIRECTIONAL.has(type) ? direction : undefined,
+            easing: isCut ? undefined : easing
+          })
+        } catch {
+          // If a specific pair fails validation or has already been shifted/removed, continue with remaining pairs
+        }
       }
     } finally {
       setPending(false)
