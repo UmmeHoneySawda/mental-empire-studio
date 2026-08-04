@@ -808,6 +808,8 @@ export const useVideoStudio = create<VideoStudioState>((set, get) => {
         return [failure]
       }
       set({ problems })
+      const refreshed = await api()?.videoEngine.project(projectId)
+      if (refreshed) commit(refreshed)
       return problems
     },
 

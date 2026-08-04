@@ -30,17 +30,17 @@ export interface SaveProjectOptions {
 export function sanitizeAndAlignTransitions<T extends Record<string, any>>(input: T): T {
   if (!input || !Array.isArray(input.transitions) || !Array.isArray(input.scenes)) return input
 
-  const scenes = input.scenes.map((s) => ({ ...s }))
-  const sceneMap = new Map(scenes.map((s) => [s.id, s]))
+  const rawScenes = input.scenes.map((s) => ({ ...s }))
+  const sceneMap = new Map(rawScenes.map((s) => [s.id, s]))
   const visualSceneIds = new Set(
-    scenes
+    rawScenes
       .filter((s) => s.kind !== 'audio' && s.kind !== 'caption')
       .map((s) => s.id)
   )
 
-  const seenIncoming = new Set<string>()
-  const seenOutgoing = new Set<string>()
-  const sanitizedTransitions: any[] = []
+  const validTransitionsMap = new Map<string, any>()
+  const outgoingMap = new Map<string, any>()
+  const incomingMap = new Map<string, any>()
 
   for (const trans of input.transitions) {
     if (!trans || typeof trans !== 'object') continue
@@ -57,46 +57,67 @@ export function sanitizeAndAlignTransitions<T extends Record<string, any>>(input
       continue
     }
 
-    if (seenOutgoing.has(from.id) || seenIncoming.has(to.id)) {
+    if (outgoingMap.has(from.id) || incomingMap.has(to.id)) {
       continue
     }
 
-    if (trans.type === 'cut') {
-      seenOutgoing.add(from.id)
-      seenIncoming.add(to.id)
-      sanitizedTransitions.push({
-        ...trans,
-        startFrame: to.startFrame,
-        durationFrames: 0
-      })
-      continue
-    }
-
-    const maxFit = Math.max(1, Math.min(from.durationFrames - 1, to.durationFrames - 1))
-    const durationFrames = Math.max(1, Math.min(trans.durationFrames ?? 1, maxFit))
-    const overlapStart = Math.max(0, from.startFrame + from.durationFrames - durationFrames)
-
-    if (to.startFrame !== overlapStart) {
-      to.startFrame = overlapStart
-      sceneMap.set(to.id, to)
-    }
-
-    seenOutgoing.add(from.id)
-    seenIncoming.add(to.id)
-
-    sanitizedTransitions.push({
-      ...trans,
-      durationFrames,
-      startFrame: overlapStart
-    })
+    outgoingMap.set(from.id, trans)
+    incomingMap.set(to.id, trans)
+    validTransitionsMap.set(`${from.id}:${to.id}`, trans)
   }
 
-  const updatedScenes = scenes.map((s) => sceneMap.get(s.id) ?? s)
+  const scenesByTrack = new Map<string, any[]>()
+  for (const scene of rawScenes) {
+    const list = scenesByTrack.get(scene.trackId) ?? []
+    list.push(scene)
+    scenesByTrack.set(scene.trackId, list)
+  }
+
+  const alignedTransitionsList: any[] = []
+
+  for (const [, trackScenes] of scenesByTrack) {
+    const visualScenes = trackScenes.filter((s) => visualSceneIds.has(s.id))
+    if (visualScenes.length === 0) continue
+
+    visualScenes.sort((a, b) => a.startFrame - b.startFrame)
+
+    for (let i = 0; i < visualScenes.length - 1; i++) {
+      const from = visualScenes[i]!
+      const to = visualScenes[i + 1]!
+
+      const trans = validTransitionsMap.get(`${from.id}:${to.id}`)
+      if (!trans) continue
+
+      if (trans.type === 'cut') {
+        alignedTransitionsList.push({
+          ...trans,
+          startFrame: to.startFrame,
+          durationFrames: 0
+        })
+        continue
+      }
+
+      const maxFit = Math.max(1, Math.min(from.durationFrames - 1, to.durationFrames - 1))
+      const durationFrames = Math.max(1, Math.min(trans.durationFrames ?? 1, maxFit))
+      const overlapStart = Math.max(0, from.startFrame + from.durationFrames - durationFrames)
+
+      to.startFrame = overlapStart
+      sceneMap.set(to.id, to)
+
+      alignedTransitionsList.push({
+        ...trans,
+        durationFrames,
+        startFrame: overlapStart
+      })
+    }
+  }
+
+  const updatedScenes = rawScenes.map((s) => sceneMap.get(s.id) ?? s)
 
   return {
     ...input,
     scenes: updatedScenes,
-    transitions: sanitizedTransitions
+    transitions: alignedTransitionsList
   }
 }
 

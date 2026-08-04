@@ -713,16 +713,19 @@ export class VideoEngineService {
   }
 
   async preflightRender(projectId: string): Promise<RenderProblem[]> {
-    const project = await this.projects.open(projectId)
-    const adapter = this.adapters.get(project.rendererId)
-    if (!adapter) {
-      return [{
-        severity: 'error',
-        code: 'renderer-unavailable',
-        message: `Renderer is not installed: ${project.rendererId}`
-      }]
-    }
-    return preflightProject(project, adapter, this.templates)
+    return this.withProjectLock(projectId, async () => {
+      const raw = await this.projects.open(projectId)
+      const project = await this.projects.save(raw)
+      const adapter = this.adapters.get(project.rendererId)
+      if (!adapter) {
+        return [{
+          severity: 'error',
+          code: 'renderer-unavailable',
+          message: `Renderer is not installed: ${project.rendererId}`
+        }]
+      }
+      return preflightProject(project, adapter, this.templates)
+    })
   }
 
   async enqueueRender(projectId: string, outputFileName?: string): Promise<RenderJobRecord> {
