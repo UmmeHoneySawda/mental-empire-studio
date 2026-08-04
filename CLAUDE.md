@@ -28,6 +28,34 @@ Run the built app locally: `xvfb-run -a node_modules/electron/dist/electron --no
   `src/store/useData.ts` (live DB/IPC data), `src/features/thumbnail-editor/*` (Konva).
 - **Shared**: `shared/types.ts` (domain + IPC types), `shared/thumbnail.ts` (pure auto-arrange).
 
+## Feature map — screen → what it does → backend
+
+Each `src/screens/*.tsx` is a nav destination; each pairs with specific `electron/services/*` +
+`electron/ipc/*` files. Use this to find the right subsystem before grepping blind.
+
+| Screen | Does | Backend |
+|---|---|---|
+| `Home.tsx` | Dashboard/overview | `useData.ts` (aggregates) |
+| `MyChannels.tsx` | Owned-channel ↔ source-channel mapping | `ipc/library.ts`; see `mental-empire-channels` skill |
+| `Niches.tsx` | Browse/pick niches, discover source channels | `services/niche.ts`, `services/scraper.ts`, `ipc/niche.ts` |
+| `Profiles.tsx` | Automation profiles (what to scrape/generate on a schedule) | `services/automation-supervisor.ts`, `services/scheduler.ts`, `ipc/automation.ts` |
+| `Download.tsx` | Source-video download queue | `services/downloader.ts`, `services/ytdlp.ts`, `ipc/download.ts` |
+| `Compose.tsx` | Video timeline editor entry point, 3 engines: Classic, HyperFrames, Remotion | `src/features/compose/`, `src/features/video-studio/` (Classic/HyperFrames), `src/features/video-studio/editor/` (Remotion-only, see "Compose → Remotion" below); `ipc/compose.ts`, `ipc/video-engine.ts` |
+| `Thumbnails.tsx` | Konva-based thumbnail editor + batch generation | `src/features/thumbnail-editor/`, `shared/thumbnail.ts` (auto-arrange), `ipc/thumbnails.ts` |
+| `RenderQueue.tsx` | Batch/queued GPU render jobs | `services/render.ts`, `services/engine/` — GPU-only by design, no CPU fallback: encode failures must fail visibly, not silently degrade — `ipc/batch.ts`, `ipc/render.ts` |
+| `TalkingVideo.tsx` + `talking-video/` | Talking-photo/avatar video generation | `ipc/talkingphotos.ts`; see `docs/TALKING_VIDEO_REDESIGN.md` |
+| `Publish.tsx` | Upload/publish finished videos to YouTube | `services/uploads-detect.ts`, `services/webhook.ts`, `ipc/publish.ts` |
+| `Settings.tsx` | App settings, API keys | `store/settings.ts` (electron-store) |
+| `src/features/automation/` | Batch execution + template-creator UI for automations | `ipc/automation.ts`, `ipc/batch.ts` |
+
+Cross-cutting pipeline services (not screen-specific): `services/audio.ts`/`transcribe.ts`/`captions.ts`
+(caption pipeline), `services/broll.ts`/`images.ts`/`effects.ts`/`sfx.ts` (b-roll/visual assets),
+`services/asset-library.ts`/`asset-hash.ts`/`storage.ts` (asset dedup + storage), `services/sentry.ts`
+(observability, see Sentry note above).
+
+Prefer `codebase-memory-mcp` (`search_code`, `get_architecture`, `trace_path`) over raw grep for finding
+where a feature actually lives — it's indexed and kept current via a SessionStart hook.
+
 ## Conventions
 
 - **Adding an IPC method**: add to `NativeApi` (`shared/types.ts`) → handler in `electron/ipc/*` (register

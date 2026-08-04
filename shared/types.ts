@@ -1242,7 +1242,10 @@ export interface VisualTemplate {
   clipMax: number
   order: 'In order' | 'Shuffle'
   motion: 'Static' | 'Subtle' | 'Cinematic'
-  transition: 'Cut' | 'Crossfade' | 'Wipe' | 'Dip'
+  /** A `TRANSITION_PRESETS` id. Rows written before the automation UI offered the full
+   *  table hold one of the old `Cut | Crossfade | Wipe | Dip` labels; both resolve through
+   *  `resolveTransitionPreset`. */
+  transition: string
   effects: string[]
   grade: 'Noir' | 'Cinematic' | 'Intense' | 'Heartfelt' | 'Clean' | 'Gold'
   fineGrade: {
@@ -1256,7 +1259,9 @@ export interface VisualTemplate {
   captionStyle: CaptionStyleId
   aspectRatio: '9:16' | '1:1' | '16:9'
   hookAngle: 'question' | 'bold-claim' | 'curiosity' | 'stat'
-  hookTemplate: 'Rise' | 'Typewriter' | 'Blur in' | 'Stagger'
+  /** A Remotion hook template id (`remotion-hook-*`). Legacy rows hold one of the old
+   *  `Rise | Typewriter | Blur in | Stagger` animation labels. */
+  hookTemplate: string
   hookLine: string
   hookSec: number
   hookBackdrop: 'Blurred clip' | 'Grain field' | 'Dark overlay'

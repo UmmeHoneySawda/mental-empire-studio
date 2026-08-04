@@ -1,5 +1,6 @@
 import { BrowserWindow } from 'electron'
 import type { BatchRenderInput, BatchRenderResult } from '../../shared/types'
+import { resolveTransitionPreset, transitionTypeOf } from '../../shared/video-engine/transition-presets'
 import { getRepos } from '../db'
 import { bindDownload, getVideoEngine, renderFileName } from '../services/video-engine/studio'
 import { exportFastPreview } from '../services/video-engine/fast-preview-export'
@@ -120,18 +121,18 @@ export async function executeBatchRender(input: BatchRenderInput): Promise<Batch
           .filter((s) => s.kind === 'media')
           .sort((a, b) => a.startFrame - b.startFrame)
         const transitions = [...currentProject.transitions]
-        if (template.transition && template.transition !== 'Cut' && mediaScenes.length > 1) {
-          const transType = template.transition === 'Crossfade'
-            ? 'fade'
-            : template.transition === 'Wipe'
-            ? 'wipe'
-            : 'dip-to-black'
+        // The Visual System stores a `TRANSITION_PRESETS` id — the same table the Remotion
+        // editor's Transitions panel offers — so its duration and direction come from the
+        // preset rather than being re-derived here. Legacy label rows resolve too.
+        const transPreset = resolveTransitionPreset(template.transition)
+        const transType = transitionTypeOf(transPreset)
+        if (transType && mediaScenes.length > 1) {
           for (let i = 0; i < mediaScenes.length - 1; i++) {
             const from = mediaScenes[i]
             const to = mediaScenes[i + 1]
             const transId = `trans-${from.id}-${to.id}`
             if (!transitions.some((t) => t.id === transId)) {
-              const maxDur = Math.min(30, from.durationFrames, to.durationFrames)
+              const maxDur = Math.min(transPreset.durationFrames, from.durationFrames, to.durationFrames)
               if (maxDur > 0) {
                 transitions.push({
                   id: transId,
@@ -139,9 +140,9 @@ export async function executeBatchRender(input: BatchRenderInput): Promise<Batch
                   toSceneId: to.id,
                   startFrame: Math.max(0, from.startFrame + from.durationFrames - maxDur),
                   durationFrames: maxDur,
-                  type: transType as any,
+                  type: transType,
                   easing: 'ease-in-out' as const,
-                  direction: template.transition === 'Wipe' ? ('left' as const) : undefined
+                  direction: transPreset.direction
                 })
               }
             }

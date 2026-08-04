@@ -221,9 +221,10 @@ try {
   await page.waitForTimeout(600)
   check(await page.getByText('Video studio').first().isVisible(), 'Compose screen renders')
 
-  // The engine switch is the entry point to the studio; clicking a renderer engine must
-  // not blow up even with no clip open.
-  for (const engine of ['Remotion', 'HyperFrames']) {
+  // The engine switch is the entry point to the studio; clicking it must not blow up even
+  // with no clip open. Compose offers one engine now — the Remotion editor, labelled
+  // "Editor" — though `--engine hyperframes` still drives that renderer over IPC below.
+  for (const engine of ['Editor']) {
     const button = page.getByRole('button', { name: new RegExp(engine, 'i') }).first()
     if (await button.count() > 0 && await button.isEnabled()) {
       await button.click()
@@ -950,6 +951,13 @@ try {
   if (captioned.ok && captioned.words > 0) {
     const auto = await page.evaluate(async ([id, clipId]) => {
       try {
+        const p = await window.api.videoEngine.project(id)
+        if (p.scenes.some((s) => s.trackId === 'auto-broll')) {
+          await window.api.videoEngine.saveProject(id, {
+            ...p,
+            scenes: p.scenes.filter((s) => s.trackId !== 'auto-broll')
+          })
+        }
         const result = await window.api.videoEngine.autoBroll(id, clipId, {
           density: 'dense', minClipSeconds: 2, maxClipSeconds: 4
         })
@@ -1015,11 +1023,14 @@ try {
         try {
           const project = await window.api.videoEngine.project(id)
           const known = new Set(project.assets.map((asset) => asset.id))
+          const hasTrack = project.tracks.some((t) => t.id === 'auto-broll')
           const next = {
             ...project,
-            tracks: [...project.tracks, { id: 'auto-broll', name: 'Auto B-roll', kind: 'video', order: 10, muted: false, locked: false }],
+            tracks: hasTrack
+              ? project.tracks
+              : [...project.tracks, { id: 'auto-broll', name: 'Auto B-roll', kind: 'video', order: 10, muted: false, locked: false }],
             assets: [...project.assets],
-            scenes: [...project.scenes]
+            scenes: project.scenes.filter((scene) => scene.trackId !== 'auto-broll')
           }
           for (const [index, placement] of placements.entries()) {
             if (!known.has(placement.assetId)) {

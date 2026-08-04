@@ -1,50 +1,24 @@
-import { useEffect, useMemo, useReducer, useRef, useState, type CSSProperties, type Dispatch, type SetStateAction } from 'react'
+import { useEffect, useMemo, useState } from 'react'
 import { useStore } from '../store/useStore'
 import { useData } from '../store/useData'
-import { useTalkingPhotos } from '../store/useTalkingPhotos'
 import { ScreenPad } from '../components/primitives'
-import { Banner, Btn, EmptyState, Panel, Section, SectionLabel, ToggleRow } from '../components/ui/kit'
-import { AUTOMATION_GOALS, buildAutomationWorkflow, formatGoal } from '@shared/automation'
-import { DEFAULT_AUTOMATION_RULES, DEFAULT_AUTOMATION_STYLE, DEFAULT_TALKINGPHOTOS_AUTOMATION } from '@shared/automationConfig'
-import { automationDraftReducer, createDefaultDraft } from '@shared/automationDraft'
-import { SourcePickerModal } from '../features/automation/SourcePickerModal'
-import { AssetLibraryModal } from '../features/automation/AssetLibraryModal'
+import { Banner, Btn, EmptyState, SectionLabel } from '../components/ui/kit'
+import { REMOTION_CUSTOM_HOOK_TEMPLATE_ID } from '@shared/video-engine/hook-style'
+import { resolveTransitionPreset, TRANSITION_PRESETS } from '@shared/video-engine/transition-presets'
 import { mediaSrc } from '../lib/media'
-import type {
-  AutomationGoal,
-  AutomationJob,
-  AutomationJobDetail,
-  AutomationJobDraft,
-  AutomationPreflight,
-  LibraryAsset,
-  Niche,
-  NichePoolHealth,
-  ScrapeOrder,
-  ScrapedVideo,
-  VideoStyle,
-  VisualTemplate
-} from '@shared/types'
+import type { CaptionStyleId } from '@shared/video-engine/caption-style'
+import type { VideoTemplate } from '@shared/video-engine/ipc'
+import type { AutomationJob, AutomationJobDetail, VisualTemplate } from '@shared/types'
 
-type SourceKind = AutomationJobDraft['config']['sourceKind']
-type AspectRatio = AutomationJobDraft['config']['aspectRatios'][number]
-
-const SETUP_STEPS = ['Choose goal', 'Source & content', 'Assets & style', 'Automation rules', 'Review & run']
-const STYLES: VideoStyle[] = ['Clean', 'Cinematic', 'Intense', 'Heartfelt', 'None']
-const inputStyle: CSSProperties = {
-  width: '100%', border: '1px solid var(--border-2)', borderRadius: 9, background: 'var(--bg-inset)',
-  color: 'var(--text-bright)', padding: '9px 11px', fontSize: 12, outline: 'none'
-}
-
-
-
-function fileName(path: string): string { return path.split(/[\\/]/).pop() || path }
-
-function validYoutubeUrl(value: string): boolean {
-  try {
-    const url = new URL(value.trim())
-    return url.protocol === 'https:' && ['youtube.com', 'www.youtube.com', 'm.youtube.com', 'youtu.be'].includes(url.hostname.toLowerCase())
-  } catch { return false }
-}
+/* The Automations screen: Channels & Batch, the Visual System (template) gallery, and Jobs
+ * & History. The step-by-step "New automation" wizard used to live under Jobs & History and
+ * is gone — a batch is configured and launched from Channels & Batch, and this screen's job
+ * list reports what the supervisor is doing with it.
+ *
+ * The Visual System editor's hook, caption, and transition lists are the SAME lists the
+ * Compose editor offers: hooks and captions come from the renderer's own template manifests
+ * over `videoEngine.templates`, transitions from the shared `TRANSITION_PRESETS` table. A
+ * template that promises a look the editor cannot produce is worse than no template. */
 
 function jobEta(job?: AutomationJob): string {
   if (!job?.startedAt || job.progress < 2) return 'Estimating…'
@@ -74,32 +48,20 @@ function JobStatus({ status }: { status: AutomationJob['status'] }): JSX.Element
   return <span style={{ fontFamily: 'var(--font-mono)', fontSize: 8.5, fontWeight: 800, letterSpacing: '.5px', color: value.color, background: value.bg, borderRadius: 999, padding: '4px 8px' }}>{value.label}</span>
 }
 
-function Field({ label, children, hint }: { label: string; children: React.ReactNode; hint?: string }): JSX.Element {
-  return <label><span style={{ display: 'block', color: 'var(--text-dim)', fontSize: 10.5, marginBottom: 6 }}>{label}</span>{children}{hint && <span style={{ display: 'block', color: 'var(--text-faint)', fontSize: 9.5, marginTop: 5, lineHeight: 1.4 }}>{hint}</span>}</label>
+/** `remotion-caption-motivation-bold` → `motivation-bold`, the id a Visual System stores and
+ *  the batch pipeline re-prefixes for whichever renderer runs it. */
+function captionStyleIdOf(templateId: string): CaptionStyleId {
+  return templateId.replace(/^(?:remotion|hyperframes)-caption-/, '') as CaptionStyleId
 }
 
-function SourceRuleFields({ count, setCount, order, setOrder }: {
-  count: number
-  setCount: Dispatch<SetStateAction<number>>
-  order: ScrapeOrder
-  setOrder: Dispatch<SetStateAction<ScrapeOrder>>
-}): JSX.Element {
-  return <>
-    <Field label="Videos to process"><input type="number" min={1} max={50} value={count} onChange={(event) => setCount(Math.max(1, Math.min(50, Number(event.target.value) || 1)))} style={inputStyle} /></Field>
-    <Field label="Selection order"><select value={order} onChange={(event) => setOrder(event.target.value as ScrapeOrder)} style={inputStyle}><option>Latest</option><option>Popular</option><option>Oldest</option></select></Field>
-  </>
-}
-
-function WorkflowPreview({ draft }: { draft: AutomationJobDraft }): JSX.Element {
-  const steps = buildAutomationWorkflow('preview', draft.config, draft.goal)
-  return <div className="automation-workflow-preview">
-    {steps.map((step, index) => <div key={step.key} style={{ display: 'flex', alignItems: 'center', gap: 6, flex: 'none' }}>
-      <div title={step.description} style={{ border: '1px solid var(--border-2)', background: 'var(--bg-inset)', color: 'var(--text-muted)', borderRadius: 8, padding: '7px 10px', fontSize: 10.5, whiteSpace: 'nowrap' }}>
-        <span style={{ color: step.runsOn === 'online-service' ? '#7ca6ff' : 'var(--ok-2)', marginRight: 5 }}>●</span>{step.label}
-      </div>
-      {index < steps.length - 1 && <span aria-hidden="true" style={{ color: 'var(--text-fainter)' }}>→</span>}
-    </div>)}
-  </div>
+/** One preset row — name over description — matching the Compose editor's `ve-listitem`. */
+function PresetRow({ title, sub, on, onClick }: { title: string; sub: string; on: boolean; onClick: () => void }): JSX.Element {
+  return (
+    <button type="button" className={`at-preset-item ${on ? 'active' : ''}`} onClick={onClick} title={sub}>
+      <span className="at-preset-title">{title}</span>
+      <span className="at-preset-sub">{sub}</span>
+    </button>
+  )
 }
 
 function JobDetails({ detail, onOpenProject }: { detail: AutomationJobDetail; onOpenProject: (projectId: string) => void }): JSX.Element {
@@ -147,23 +109,15 @@ export function Profiles(): JSX.Element {
   const myChannels = useData((state) => state.channels)
   const sourceChannels = useData((state) => state.sourceChannels)
   const automationJobs = useData((state) => state.automationJobs)
-  const workItems = useData((state) => state.workItems)
   const templates = useData((state) => state.visualTemplates)
   const saveVisualTemplate = useData((state) => state.saveVisualTemplate)
   const deleteVisualTemplate = useData((state) => state.deleteVisualTemplate)
   const loadSources = useData((state) => state.loadSources)
   const loadAutomationJobs = useData((state) => state.loadAutomationJobs)
-  const preflightAutomation = useData((state) => state.preflightAutomation)
-  const createAutomationJob = useData((state) => state.createAutomationJob)
   const pauseJob = useData((state) => state.pauseAutomationJob)
   const resumeJob = useData((state) => state.resumeAutomationJob)
-  const cancelJob = useData((state) => state.cancelAutomationJob)
-  const retryJob = useData((state) => state.retryAutomationJob)
   const openProjectById = useData((state) => state.openProjectById)
   const setActive = useStore((state) => state.setActive)
-  const settings = useStore((state) => state.settings)
-  const talkingPhotosEnabled = settings.integrations.talkingPhotos.enabled
-  const talkingPhotosStatus = useTalkingPhotos((state) => state.connection?.status ?? 'disconnected')
 
   // Top level tab navigation
   const [mainTab, setMainTab] = useState<'channels' | 'templates' | 'jobs'>('channels')
@@ -172,6 +126,8 @@ export function Profiles(): JSX.Element {
   const [editingTemplate, setEditingTemplate] = useState<VisualTemplate | null>(null)
   const [wizardStep, setWizardStep] = useState<0 | 1>(0)
   const [toastMessage, setToastMessage] = useState<string>('')
+  /** The renderer's own template manifests — the hook and caption lists Compose shows. */
+  const [engineTemplates, setEngineTemplates] = useState<VideoTemplate[]>([])
 
   // Channels & Batch state
   const [selectedChannelId, setSelectedChannelId] = useState<string>('')
@@ -188,106 +144,32 @@ export function Profiles(): JSX.Element {
     window.setTimeout(() => setToastMessage(''), 3000)
   }
 
-  // Automation goals patch for TalkingPhotos
-  const automationGoals = useMemo(() => AUTOMATION_GOALS.map((definition) => {
-    if (definition.id !== 'talkingphotos-video' || !definition.available) return definition
-    if (!talkingPhotosEnabled) return { ...definition, available: false, availabilityNote: 'Enable TalkingPhotos in Settings → Integrations first.' }
-    if (talkingPhotosStatus !== 'connected') return { ...definition, available: false, availabilityNote: 'Connect your TalkingPhotos account in Settings or Talking Video first.' }
-    return definition
-  }), [talkingPhotosEnabled, talkingPhotosStatus])
-
-  // Existing setup state
-  const [view, setView] = useState<'setup' | 'jobs'>('setup')
-  const [stage, setStage] = useState(0)
-  const [draftState, dispatchDraft] = useReducer(automationDraftReducer, settings, () => createDefaultDraft(settings))
-  const [availableVideos, setAvailableVideos] = useState<ScrapedVideo[]>([])
-  const [libraryAssets, setLibraryAssets] = useState<LibraryAsset[]>([])
-  const [niches, setNiches] = useState<Niche[]>([])
-  const [poolHealth, setPoolHealth] = useState<NichePoolHealth[]>([])
-  const [preflight, setPreflight] = useState<AutomationPreflight | null>(null)
-  const [starting, setStarting] = useState(false)
+  // Jobs & History state
   const [expanded, setExpanded] = useState<AutomationJobDetail | null>(null)
-  const [setupError, setSetupError] = useState('')
-  const [sourceModalOpen, setSourceModalOpen] = useState(false)
-  const [assetModalOpen, setAssetModalOpen] = useState(false)
-  const [sourceLoadError, setSourceLoadError] = useState('')
+  const [jobsError, setJobsError] = useState('')
   const [jobActionPending, setJobActionPending] = useState<Record<string, boolean>>({})
-  const sourceBrowseRef = useRef<HTMLButtonElement>(null)
-  const assetBrowseRef = useRef<HTMLButtonElement>(null)
-  const activeDraftId = useRef(draftState.id)
-  activeDraftId.current = draftState.id
 
-  const config = draftState.draft.config
-  const talkingPhotos = config.talkingPhotos ?? DEFAULT_TALKINGPHOTOS_AUTOMATION
-  const goal = draftState.draft.goal
-  const sourceKind = config.sourceKind
-  const sourceId = config.sourceId
-  const sourceUrl = config.sourceUrl
-  const localMediaPaths = config.localMediaPaths
-  const sourceCount = config.sourceCount
-  const sourceOrder = config.sourceOrder
-  const selectedVideoIds = config.selectedVideoIds
-  const assets = config.assetPaths
-  const style = config.styleConfig.videoStyle
-  const captionPreset = config.styleConfig.captionPreset
-  const aspectRatio = config.styleConfig.aspectRatio
-  const captions = config.rules.captions
-  const autoBroll = config.rules.autoBroll
-  const continueOnError = config.rules.continueOnError
-  const skipDownloaded = config.rules.skipDownloaded
-  const minDuration = config.rules.minDurationSec
-  const retries = config.rules.maxRetries
-  const reserveGb = config.rules.minimumFreeSpaceGb
-  const desktopNotify = config.notify.desktop
-  const webhookNotify = config.notify.webhook
-
-  const updateConfig = <K extends keyof typeof config>(key: K, value: SetStateAction<(typeof config)[K]>): void => {
-    const next = typeof value === 'function' ? (value as (previous: (typeof config)[K]) => (typeof config)[K])(config[key]) : value
-    dispatchDraft({ type: 'patch-config', patch: { [key]: next } })
-  }
-  const updateRule = <K extends keyof typeof config.rules>(key: K, value: SetStateAction<(typeof config.rules)[K]>): void => {
-    const next = typeof value === 'function' ? (value as (previous: (typeof config.rules)[K]) => (typeof config.rules)[K])(config.rules[key]) : value
-    dispatchDraft({ type: 'patch-rules', patch: { [key]: next } })
-  }
-  const updateStyle = <K extends keyof typeof config.styleConfig>(key: K, value: (typeof config.styleConfig)[K]): void => dispatchDraft({ type: 'patch-style', patch: { [key]: value } })
-  const updateTalkingPhotos = <K extends keyof typeof talkingPhotos>(key: K, value: (typeof talkingPhotos)[K]): void => updateConfig('talkingPhotos', { ...talkingPhotos, [key]: value })
-  const setGoal = (value: AutomationGoal): void => dispatchDraft({ type: 'goal', goal: value })
-  const setSourceKind = (value: SetStateAction<SourceKind>): void => updateConfig('sourceKind', value)
-  const setSourceUrl = (value: SetStateAction<string>): void => updateConfig('sourceUrl', value)
-  const setLocalMediaPaths: Dispatch<SetStateAction<string[]>> = (value) => updateConfig('localMediaPaths', value)
-  const setSourceCount: Dispatch<SetStateAction<number>> = (value) => updateConfig('sourceCount', value)
-  const setSourceOrder: Dispatch<SetStateAction<ScrapeOrder>> = (value) => updateConfig('sourceOrder', value)
-  const setSelectedVideoIds: Dispatch<SetStateAction<string[]>> = (value) => updateConfig('selectedVideoIds', value)
-  const setAssets: Dispatch<SetStateAction<string[]>> = (value) => updateConfig('assetPaths', value)
-  const setStyle = (value: VideoStyle): void => updateStyle('videoStyle', value)
-  const setCaptionPreset = (value: string): void => updateStyle('captionPreset', value)
-  const setAspectRatio = (value: AspectRatio): void => updateStyle('aspectRatio', value)
-  const setCaptions = (value: SetStateAction<boolean>): void => updateRule('captions', value)
-  const setAutoBroll = (value: SetStateAction<boolean>): void => {
-    const next = typeof value === 'function' ? value(autoBroll) : value
-    updateRule('autoBroll', next)
-    updateStyle('brollMode', next && config.styleConfig.brollMode === 'off' ? 'full' : next ? config.styleConfig.brollMode : 'off')
-  }
-  const setContinueOnError = (value: SetStateAction<boolean>): void => updateRule('continueOnError', value)
-  const setSkipDownloaded = (value: SetStateAction<boolean>): void => updateRule('skipDownloaded', value)
-  const setMinDuration = (value: number): void => updateRule('minDurationSec', value)
-  const setRetries = (value: number): void => updateRule('maxRetries', value)
-  const setReserveGb = (value: number): void => updateRule('minimumFreeSpaceGb', value)
-  const setDesktopNotify = (value: SetStateAction<boolean>): void => {
-    const next = typeof value === 'function' ? value(desktopNotify) : value
-    dispatchDraft({ type: 'patch-config', patch: { notify: { ...config.notify, desktop: next, sound: next } } })
-  }
-  const setWebhookNotify = (value: SetStateAction<boolean>): void => {
-    const next = typeof value === 'function' ? value(webhookNotify) : value
-    dispatchDraft({ type: 'patch-config', patch: { notify: { ...config.notify, webhook: next } } })
-  }
+  /* The hook and caption lists are the renderer's registered templates, fetched once. The
+   * Remotion renderer is the one Compose edits with, so a Visual System can only promise a
+   * hook or caption style that engine actually ships. */
+  const hookTemplates = useMemo(
+    () => engineTemplates.filter((template) => template.kind === 'hook' && template.id !== REMOTION_CUSTOM_HOOK_TEMPLATE_ID),
+    [engineTemplates]
+  )
+  const captionTemplates = useMemo(() => engineTemplates.filter((template) => template.kind === 'caption'), [engineTemplates])
 
   useEffect(() => {
-    const requestId = draftState.id
-    void Promise.all([loadSources(), loadAutomationJobs(), window.api.assets.list(), window.api.niche.list(), window.api.niche.poolHealth()])
-      .then(([, , assetRows, nicheRows, healthRows]) => { if (activeDraftId.current === requestId) { setLibraryAssets(assetRows); setNiches(nicheRows); setPoolHealth(healthRows) } })
-      .catch((error) => setSetupError(error instanceof Error ? error.message : String(error)))
-  }, [loadSources, loadAutomationJobs, draftState.id])
+    let live = true
+    void window.api.videoEngine
+      .templates({ rendererId: 'remotion' })
+      .then((rows) => { if (live) setEngineTemplates(rows) })
+      .catch(() => { if (live) setEngineTemplates([]) })
+    return () => { live = false }
+  }, [])
+  useEffect(() => {
+    void Promise.all([loadSources(), loadAutomationJobs()])
+      .catch((error) => setJobsError(error instanceof Error ? error.message : String(error)))
+  }, [loadSources, loadAutomationJobs])
 
   useEffect(() => {
     if (sourceChannels.length > 0 && !selectedChannelId) {
@@ -297,103 +179,24 @@ export function Profiles(): JSX.Element {
   }, [sourceChannels, selectedChannelId])
 
   useEffect(() => {
-    if (sourceKind !== 'saved-source' || !sourceId) { setAvailableVideos([]); return }
-    const requestId = draftState.id
-    void window.api.sources.videos(sourceId).then((rows) => { if (activeDraftId.current === requestId) setAvailableVideos(rows) }).catch((error) => { if (activeDraftId.current === requestId) { setAvailableVideos([]); setSourceLoadError(error instanceof Error ? error.message : String(error)) } })
-  }, [sourceId, sourceKind, draftState.id])
-
-  useEffect(() => {
     if (!expanded?.id) return
     void window.api.automation.job(expanded.id).then((next) => { if (next) setExpanded(next) })
   }, [automationJobs, expanded?.id])
 
-  const source = sourceChannels.find((candidate) => candidate.id === sourceId)
-  const sourceReady = sourceKind === 'saved-source' ? !!source : sourceKind === 'youtube-url' ? validYoutubeUrl(sourceUrl) : localMediaPaths.length > 0
-  const sourceLabel = sourceKind === 'saved-source'
-    ? source?.name || source?.handle || 'Saved source'
-    : sourceKind === 'youtube-url' ? sourceUrl.trim() || 'YouTube URL'
-      : localMediaPaths.length === 1 ? fileName(localMediaPaths[0]) : `${localMediaPaths.length} local files`
-
-  const draft = useMemo<AutomationJobDraft>(() => ({
-    name: `${sourceLabel} · ${formatGoal(goal)}`,
-    goal,
-    config: {
-      ...config,
-      sourceId: sourceKind === 'saved-source' ? source?.id ?? '' : '',
-      sourceUrl: sourceKind === 'saved-source' ? source?.url ?? '' : sourceKind === 'youtube-url' ? sourceUrl.trim() : '',
-      sourceName: sourceLabel,
-      sourceCount: sourceKind === 'local-files' ? Math.max(1, localMediaPaths.length) : sourceCount,
-      selectedVideoIds: sourceKind === 'saved-source' ? selectedVideoIds : []
-    }
-  }), [config, sourceLabel, goal, sourceKind, source, sourceUrl, sourceCount, localMediaPaths, selectedVideoIds])
-
-  const chooseGoal = (next: AutomationGoal): void => {
-    const definition = automationGoals.find((candidate) => candidate.id === next)
-    if (!definition?.available) return
-    setGoal(next)
-    if (next === 'transcribe-subtitle') setCaptions(true)
-    if (next === 'talkingphotos-video') { setCaptions(false); setAutoBroll(false) }
-    if (next === 'batch-source') setSourceCount((current) => Math.max(5, current))
-    setSetupError('')
-  }
-
-  const chooseFiles = (files: FileList | null, setter: Dispatch<SetStateAction<string[]>>): void => {
-    if (!files) return
-    const paths = Array.from(files).map((file) => window.api.pathForFile(file)).filter(Boolean)
-    setter((current) => [...new Set([...current, ...paths])])
-  }
-
-  const chooseAssetFiles = async (files: FileList | null): Promise<void> => {
-    if (!files) return
-    const paths = Array.from(files).map((file) => window.api.pathForFile(file)).filter(Boolean)
-    if (!paths.length) return
-    const requestId = draftState.id
-    try {
-      const imported = await window.api.assets.import(paths, { sourceId: source?.id, channel: source?.name || sourceLabel || 'Unsorted', channelHandle: source?.handle, channelAvatar: source?.avatar })
-      if (activeDraftId.current !== requestId) return
-      setAssets((current) => [...new Set([...current, ...imported.filter((asset) => !asset.missing).map((asset) => asset.canonicalPath)])])
-      setLibraryAssets(await window.api.assets.list())
-    } catch (error) { if (activeDraftId.current === requestId) setSetupError(error instanceof Error ? error.message : String(error)) }
-  }
-
-  const goReview = async (): Promise<void> => {
-    setSetupError(''); setPreflight(null); setStage(4)
-    const requestId = draftState.id
-    try { const result = await preflightAutomation(draft); if (activeDraftId.current === requestId) setPreflight(result) }
-    catch (error) { setSetupError(error instanceof Error ? error.message : String(error)) }
-  }
-
-  const start = async (): Promise<void> => {
-    setStarting(true); setSetupError('')
-    try {
-      const checked = await preflightAutomation(draft)
-      setPreflight(checked)
-      if (!checked?.ok) return
-      const job = await createAutomationJob(draft)
-      if (job) { setExpanded(job); setView('jobs'); setMainTab('jobs') }
-    } catch (error) { setSetupError(error instanceof Error ? error.message : String(error)) }
-    finally { setStarting(false) }
-  }
-
   const showDetails = async (job: AutomationJob): Promise<void> => {
     if (expanded?.id === job.id) { setExpanded(null); return }
     try { setExpanded(await window.api.automation.job(job.id)) }
-    catch (error) { setSetupError(error instanceof Error ? error.message : String(error)) }
-  }
-
-  const duplicate = (job: AutomationJob): void => {
-    dispatchDraft({ type: 'duplicate', job })
-    setAvailableVideos([]); setSourceModalOpen(false); setAssetModalOpen(false); setStage(0); setPreflight(null); setSetupError(''); setView('setup'); setMainTab('jobs')
+    catch (error) { setJobsError(error instanceof Error ? error.message : String(error)) }
   }
 
   const runJobAction = async (jobId: string, action: (id: string) => Promise<void>): Promise<void> => {
     if (jobActionPending[jobId]) return
     setJobActionPending((prev) => ({ ...prev, [jobId]: true }))
-    setSetupError('')
+    setJobsError('')
     try {
       await action(jobId)
     } catch (error) {
-      setSetupError(error instanceof Error ? error.message : String(error))
+      setJobsError(error instanceof Error ? error.message : String(error))
     } finally {
       setJobActionPending((prev) => { const next = { ...prev }; delete next[jobId]; return next })
     }
@@ -404,13 +207,8 @@ export function Profiles(): JSX.Element {
       await openProjectById(projectId)
       setActive('compose')
     } catch (error) {
-      setSetupError(error instanceof Error ? error.message : String(error))
+      setJobsError(error instanceof Error ? error.message : String(error))
     }
-  }
-
-  const newAutomation = (): void => {
-    dispatchDraft({ type: 'new', settings })
-    setAvailableVideos([]); setPreflight(null); setExpanded(null); setStarting(false); setSourceModalOpen(false); setAssetModalOpen(false); setSourceLoadError(''); setSetupError(''); setStage(0); setView('setup'); setMainTab('jobs')
   }
 
   const activeJob = automationJobs.find((job) => job.status === 'running' || job.status === 'pausing')
@@ -451,6 +249,10 @@ export function Profiles(): JSX.Element {
     return templates.find((t) => t.id === selectedTemplateId) || templates[0]
   }, [templates, selectedTemplateId])
 
+  /* Legacy rows hold a `Crossfade`-style label rather than a preset id, so the chip that
+     lights up is the preset the value resolves to — the same one the batch will apply. */
+  const activeTransitionId = editingTemplate ? resolveTransitionPreset(editingTemplate.transition).id : ''
+
   const openNewTemplateEditor = () => {
     const newTpl: VisualTemplate = {
       id: `tpl-${Date.now()}`,
@@ -461,14 +263,14 @@ export function Profiles(): JSX.Element {
       clipMax: 6,
       order: 'Shuffle',
       motion: 'Cinematic',
-      transition: 'Crossfade',
+      transition: 'crossfade',
       effects: ['Film grain'],
       grade: 'Cinematic',
       fineGrade: { exposure: 0, contrast: 10, saturation: 0, temperature: 0, vignette: 20, grain: 15 },
       captionStyle: 'motivation-bold',
       aspectRatio: '9:16',
       hookAngle: 'bold-claim',
-      hookTemplate: 'Rise',
+      hookTemplate: hookTemplates[0]?.id ?? 'remotion-hook-kinetic-30',
       hookLine: 'YOUR HOOK TEXT GOES HERE',
       hookSec: 3,
       hookBackdrop: 'Blurred clip',
@@ -522,7 +324,6 @@ export function Profiles(): JSX.Element {
       })
       showToast(`Queued ${res.renderJobCount} videos for ${channelName}! Select another channel to queue more.`)
       setMainTab('jobs')
-      setView('jobs')
     } catch (err) {
       showToast(`Error: ${(err as Error).message}`)
     } finally {
@@ -892,7 +693,7 @@ export function Profiles(): JSX.Element {
                       <span>•</span>
                       <span>{tpl.captionStyle} captions</span>
                       <span>•</span>
-                      <span>{tpl.transition}</span>
+                      <span>{resolveTransitionPreset(tpl.transition).label}</span>
                     </div>
                   </div>
                   <div className="at-card-actions">
@@ -921,7 +722,7 @@ export function Profiles(): JSX.Element {
       )}
 
       {/* =========================================================================
-          TAB 3: JOBS & HISTORY (Preserves all existing Jobs dashboard + Setup)
+          TAB 3: JOBS & HISTORY — what the supervisor is doing with the queued batches
           ========================================================================= */}
       {mainTab === 'jobs' && (
         <>
@@ -934,307 +735,22 @@ export function Profiles(): JSX.Element {
                 Durable Unattended Execution
               </h1>
             </div>
-            <div role="tablist" aria-label="Automation views" className="automation-view-tabs">
-              <button type="button" role="tab" aria-selected={view === 'setup'} onClick={() => setView('setup')} className={view === 'setup' ? 'active' : ''}>
-                New automation
-              </button>
-              <button type="button" role="tab" aria-selected={view === 'jobs'} onClick={() => setView('jobs')} className={view === 'jobs' ? 'active' : ''}>
-                Jobs {automationJobs.length ? `(${automationJobs.length})` : ''}
-              </button>
-            </div>
           </div>
 
           <Banner kind="info" style={{ marginBottom: 16, whiteSpace: 'normal' }}>
             <b style={{ color: 'var(--text-bright)' }}>Local background execution:</b> you can leave this tab, and with tray mode enabled you can close the window.
           </Banner>
 
-          {view === 'setup' ? (
-            <>
-              <nav aria-label="Automation setup progress" className="automation-setup-steps">
-                {SETUP_STEPS.map((label, index) => (
-                  <button type="button" key={label} aria-current={index === stage ? 'step' : undefined} onClick={() => { if (index <= stage) { setStage(index); setSetupError('') } }} disabled={index > stage}>
-                    <div className={index < stage ? 'done' : index === stage ? 'current' : ''} />
-                    <span>{index + 1}. {label}</span>
-                  </button>
-                ))}
-              </nav>
-
-              {stage === 0 && (
-                <Panel>
-                  <SectionLabel>What do you want to finish?</SectionLabel>
-                  <div className="automation-goal-grid">
-                    {automationGoals.map((definition) => {
-                      const selected = goal === definition.id
-                      return (
-                        <button type="button" key={definition.id} onClick={() => chooseGoal(definition.id)} disabled={!definition.available} aria-pressed={selected} className="automation-goal-card" style={{ borderColor: selected ? 'var(--accent)' : undefined, background: selected ? 'var(--accent-soft)' : undefined }}>
-                          <div>
-                            <strong style={{ color: selected ? 'var(--accent)' : 'var(--text-bright)' }}>{definition.title}</strong>
-                            <span>{definition.available ? 'READY' : 'LATER'}</span>
-                          </div>
-                          <p>{definition.description}</p>
-                          {definition.availabilityNote && <small>{definition.availabilityNote}</small>}
-                        </button>
-                      )
-                    })}
-                  </div>
-                </Panel>
-              )}
-
-              {stage === 1 && (
-                <>
-                  <Panel>
-                    <SectionLabel>Choose source and content</SectionLabel>
-                    <div role="radiogroup" aria-label="Content source type" className="automation-source-types">
-                      {([['saved-source','Saved source'],['youtube-url','YouTube URL'],['local-files','Local files']] as const).map(([kind, label]) => (
-                        <button type="button" role="radio" aria-checked={sourceKind === kind} key={kind} onClick={() => { dispatchDraft({ type: 'patch-config', patch: { sourceKind: kind, sourceId: kind === 'saved-source' ? sourceId : '', sourceUrl: '', selectedVideoIds: [], localMediaPaths: [] } }); setPreflight(null); setSetupError('') }} className={sourceKind === kind ? 'active' : ''}>
-                          {label}
-                        </button>
-                      ))}
-                    </div>
-                    {sourceKind === 'saved-source' && (sourceChannels.length === 0 ? (
-                      <EmptyState title="No saved sources yet" body="Add a source in Sources, paste a YouTube link here, or choose local media." action={<Btn variant="soft" onClick={() => setActive('sources')}>Open Sources</Btn>} />
-                    ) : (
-                      <div className="automation-source-grid">
-                        <div>
-                          <span style={{ display: 'block', color: 'var(--text-dim)', fontSize: 10.5, marginBottom: 6 }}>Saved source</span>
-                          {source ? (
-                            <div className="automation-selected-source">
-                              {source.avatar ? <img src={mediaSrc(source.avatar)} alt="" /> : <i aria-hidden="true">{(source.name || source.handle).slice(0, 2).toUpperCase()}</i>}
-                              <div>
-                                <strong>{source.name || source.handle}</strong>
-                                <span>{source.handle}</span>
-                                <small>{source.videoCount || 0} cached videos</small>
-                              </div>
-                              <button ref={sourceBrowseRef} type="button" onClick={() => setSourceModalOpen(true)}>Change source</button>
-                            </div>
-                          ) : (
-                            <button ref={sourceBrowseRef} type="button" className="automation-browse-source" onClick={() => setSourceModalOpen(true)}>Browse saved sources</button>
-                          )}
-                        </div>
-                        <SourceRuleFields count={sourceCount} setCount={setSourceCount} order={sourceOrder} setOrder={setSourceOrder} />
-                      </div>
-                    ))}
-                    {sourceKind === 'youtube-url' && (
-                      <div className="automation-source-grid">
-                        <Field label="Channel, playlist, or video URL" hint="HTTPS YouTube links only.">
-                          <input type="url" aria-invalid={sourceUrl.trim() ? !validYoutubeUrl(sourceUrl) : undefined} value={sourceUrl} onChange={(event) => setSourceUrl(event.target.value)} placeholder="https://www.youtube.com/watch?v=…" style={{ ...inputStyle, borderColor: sourceUrl.trim() && !validYoutubeUrl(sourceUrl) ? 'var(--err)' : undefined }} />
-                        </Field>
-                        <SourceRuleFields count={sourceCount} setCount={setSourceCount} order={sourceOrder} setOrder={setSourceOrder} />
-                      </div>
-                    )}
-                    {sourceKind === 'local-files' && (
-                      <div style={{ marginTop: 13 }}>
-                        <label className="automation-file-picker">
-                          <input type="file" accept="audio/*,video/*,.mkv,.webm" multiple onChange={(event) => chooseFiles(event.target.files, setLocalMediaPaths)} />
-                          ＋ Choose local audio or video files
-                        </label>
-                        <div style={{ marginTop: 9, color: localMediaPaths.length ? 'var(--ok-2)' : 'var(--text-faint)', fontSize: 10.5 }}>
-                          {localMediaPaths.length ? `${localMediaPaths.length} local files selected` : 'MP3, WAV, MP4, MOV supported'}
-                        </div>
-                      </div>
-                    )}
-                  </Panel>
-                </>
-              )}
-
-              {stage === 2 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
-                  {/* Visual Engine & Material Mode */}
-                  <Panel>
-                    <SectionLabel>Visual Material Engine</SectionLabel>
-                    <div className="at-choice-row" style={{ marginTop: 8, marginBottom: 12 }}>
-                      <button
-                        type="button"
-                        className={`at-choice-btn ${autoBroll && config.styleConfig.brollMode !== 'off' ? 'active' : ''}`}
-                        onClick={() => setAutoBroll(true)}
-                      >
-                        <b>Auto B-roll Engine</b>
-                        <small>Relevant video clips cut automatically from stock library based on transcript.</small>
-                      </button>
-                      <button
-                        type="button"
-                        className={`at-choice-btn ${!autoBroll || config.styleConfig.brollMode === 'off' ? 'active' : ''}`}
-                        onClick={() => setAutoBroll(false)}
-                      >
-                        <b>Image Slideshow & Custom Assets</b>
-                        <small>Ken-burns animated image pool or local background media.</small>
-                      </button>
-                    </div>
-
-                    {/* Image Selector & Asset Library */}
-                    <div style={{ marginTop: 12, padding: 12, background: 'var(--bg-inset)', borderRadius: 9, border: '1px solid var(--border)' }}>
-                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
-                        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-bright)' }}>
-                          Selected Images & Assets ({assets.length})
-                        </span>
-                        <div style={{ display: 'flex', gap: 8 }}>
-                          <button ref={assetBrowseRef} type="button" className="at-card-btn" onClick={() => setAssetModalOpen(true)}>
-                            📚 Browse Asset Library
-                          </button>
-                          <label className="at-card-btn" style={{ cursor: 'pointer', margin: 0 }}>
-                            <input
-                              type="file"
-                              accept="image/*,video/*"
-                              multiple
-                              style={{ display: 'none' }}
-                              onChange={(e) => void chooseAssetFiles(e.target.files)}
-                            />
-                            ＋ Upload Local Files
-                          </label>
-                        </div>
-                      </div>
-
-                      {assets.length === 0 ? (
-                        <div style={{ fontSize: 10.5, color: 'var(--text-dim)', textAlign: 'center', padding: '12px 8px' }}>
-                          No custom images selected yet. Click "Browse Asset Library" to choose from channel folders, or upload local image files.
-                        </div>
-                      ) : (
-                        <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 6 }}>
-                          {assets.slice(0, 10).map((path, idx) => (
-                            <div key={idx} style={{ flex: 'none', width: 60, height: 60, borderRadius: 6, overflow: 'hidden', background: 'var(--bg-card)', border: '1px solid var(--border)', position: 'relative' }}>
-                              <img src={mediaSrc(path)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
-                            </div>
-                          ))}
-                          {assets.length > 10 && (
-                            <div style={{ flex: 'none', width: 60, height: 60, borderRadius: 6, background: 'var(--bg-card)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: 'var(--text-dim)', fontWeight: 700 }}>
-                              +{assets.length - 10} more
-                            </div>
-                          )}
-                        </div>
-                      )}
-
-                      <div style={{ display: 'flex', gap: 12, marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 10 }}>
-                        <div style={{ flex: 1 }}>
-                          <Field label="Image Sequence Mode">
-                            <select value={config.styleConfig.imageMode} onChange={(e) => updateStyle('imageMode', e.target.value as any)} style={inputStyle}>
-                              <option value="sequence">Ordered Sequence</option>
-                              <option value="pool">Random Pool</option>
-                            </select>
-                          </Field>
-                        </div>
-                        <div style={{ flex: 1 }}>
-                          <Field label="Motion Preset">
-                            <select value={config.styleConfig.motionPreset} onChange={(e) => updateStyle('motionPreset', e.target.value as any)} style={inputStyle}>
-                              <option value="subtle">Subtle Ken-Burns</option>
-                              <option value="cinematic">Cinematic Zoom & Pan</option>
-                              <option value="off">Static (No Motion)</option>
-                            </select>
-                          </Field>
-                        </div>
-                        <div style={{ flex: 1 }}>
-                          <Field label="Crossfade Duration (sec)">
-                            <input type="number" min={0} max={5} step={0.1} value={config.styleConfig.crossfadeSec} onChange={(e) => updateStyle('crossfadeSec', Number(e.target.value))} style={inputStyle} />
-                          </Field>
-                        </div>
-                      </div>
-                    </div>
-                  </Panel>
-
-                  {/* Captions & Typography */}
-                  <Panel>
-                    <SectionLabel>Caption Engine & Typography</SectionLabel>
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
-                      <Field label="Caption Style Preset">
-                        <select value={captionPreset} onChange={(e) => setCaptionPreset(e.target.value)} style={inputStyle}>
-                          {['Hormozi', 'emoji-pop', 'clip-wipe', 'highlight', 'neon-accent', 'particle-burst', 'weight-shift', 'motivation-bold', 'mindset-pill', 'progress-underline', 'coach-clean'].map((preset) => (
-                            <option key={preset} value={preset}>{preset}</option>
-                          ))}
-                        </select>
-                      </Field>
-                      <Field label="Font Family">
-                        <select value={config.styleConfig.captionFont} onChange={(e) => updateStyle('captionFont', e.target.value)} style={inputStyle}>
-                          {['Montserrat', 'Inter', 'Roboto', 'Anton', 'Outfit'].map((font) => (
-                            <option key={font} value={font}>{font}</option>
-                          ))}
-                        </select>
-                      </Field>
-                    </div>
-
-                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
-                      <Field label="Caption Position">
-                        <select value={config.styleConfig.captionPosition} onChange={(e) => updateStyle('captionPosition', e.target.value as any)} style={inputStyle}>
-                          <option value="bottom">Bottom</option>
-                          <option value="middle">Middle / Center</option>
-                          <option value="top">Top</option>
-                        </select>
-                      </Field>
-                      <Field label="Max Words per Line">
-                        <select value={config.styleConfig.wordsPerCaption} onChange={(e) => updateStyle('wordsPerCaption', Number(e.target.value) as any)} style={inputStyle}>
-                          <option value={1}>1 Word (Impact)</option>
-                          <option value={2}>2 Words (Standard)</option>
-                          <option value={3}>3 Words (Phrase)</option>
-                        </select>
-                      </Field>
-                      <Field label="Highlight Color">
-                        <input type="color" value={config.styleConfig.highlightColor} onChange={(e) => updateStyle('highlightColor', e.target.value)} style={{ ...inputStyle, padding: 2, height: 36, cursor: 'pointer' }} />
-                      </Field>
-                    </div>
-                  </Panel>
-
-                  {/* Overall Video Style & Aspect Ratio */}
-                  <Panel>
-                    <SectionLabel>Video Style & Aspect Ratio</SectionLabel>
-                    <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 12 }}>
-                      <div style={{ flex: 1 }}>
-                        <span style={{ display: 'block', color: 'var(--text-dim)', fontSize: 10.5, marginBottom: 6 }}>Color Grade Filter</span>
-                        <div className="automation-style-grid">
-                          {STYLES.map((candidate) => (
-                            <button type="button" key={candidate} onClick={() => setStyle(candidate)} className={style === candidate ? 'active' : ''}>
-                              {candidate}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
-                      <div style={{ width: 140 }}>
-                        <Field label="Aspect Ratio">
-                          <select value={aspectRatio} onChange={(e) => setAspectRatio(e.target.value as any)} style={inputStyle}>
-                            <option value="9:16">9:16 (Shorts/Reels)</option>
-                            <option value="16:9">16:9 (Landscape)</option>
-                            <option value="1:1">1:1 (Square)</option>
-                          </select>
-                        </Field>
-                      </div>
-                    </div>
-                  </Panel>
-                </div>
-              )}
-
-              {stage === 3 && (
-                <Panel>
-                  <SectionLabel>Supervisor Behavior</SectionLabel>
-                  <ToggleRow label="Continue when one item fails" hint="Mark it failed and continue remaining batch." on={continueOnError} onToggle={() => setContinueOnError((v) => !v)} />
-                  <ToggleRow label="Reuse completed downloads" hint="Validated finished files bypass network requests." on={skipDownloaded} onToggle={() => setSkipDownloaded((v) => !v)} />
-                </Panel>
-              )}
-
-              {stage === 4 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
-                  <Panel>
-                    <SectionLabel>Generated workflow preview</SectionLabel>
-                    <WorkflowPreview draft={draft} />
-                  </Panel>
-                </div>
-              )}
-
-              {setupError && <div role="alert" style={{ marginTop: 12 }}><Banner kind="error">{setupError}</Banner></div>}
-
-              <div className="automation-footer-actions">
-                <Btn disabled={stage === 0} onClick={() => { setStage(Math.max(0, stage - 1)); setSetupError('') }}>Back</Btn>
-                <div style={{ flex: 1 }} />
-                {stage < 3 && <Btn variant="primary" disabled={(stage === 0 && !automationGoals.find((definition) => definition.id === goal)?.available) || (stage === 1 && !sourceReady)} onClick={() => { setStage(stage + 1); setSetupError('') }}>Continue</Btn>}
-                {stage === 3 && <Btn variant="primary" disabled={!sourceReady} onClick={() => void goReview()}>Review workflow</Btn>}
-                {stage === 4 && <Btn variant="primary" disabled={!preflight?.ok || starting} onClick={() => void start()}>{starting ? 'Starting…' : '▶ Start automation'}</Btn>}
-              </div>
-            </>
-          ) : (
             <>
               <div className="automation-jobs-heading">
                 <div>
                   <h2>Automation jobs</h2>
                   <p>Durable production goals loaded from SQLite.</p>
                 </div>
-                <Btn variant="soft" onClick={newAutomation}>＋ New automation</Btn>
+                <Btn variant="soft" onClick={() => setMainTab('channels')}>Open Channels &amp; Batch</Btn>
               </div>
+
+              {jobsError && <div role="alert" style={{ marginBottom: 12 }}><Banner kind="error">{jobsError}</Banner></div>}
 
               {activeJob && (
                 <div className="automation-live-strip">
@@ -1244,7 +760,7 @@ export function Profiles(): JSX.Element {
               )}
 
               {automationJobs.length === 0 ? (
-                <EmptyState title="No automation jobs yet" body="Choose a goal to build your first unattended workflow." action={<Btn variant="primary" onClick={newAutomation}>Create automation</Btn>} />
+                <EmptyState title="No automation jobs yet" body="Queue a batch from Channels & Batch — a target channel, its rotation sources, and a visual system — and the supervisor's progress shows up here." action={<Btn variant="primary" onClick={() => setMainTab('channels')}>Open Channels &amp; Batch</Btn>} />
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
                   {automationJobs.map((job) => (
@@ -1269,7 +785,6 @@ export function Profiles(): JSX.Element {
                 </div>
               )}
             </>
-          )}
         </>
       )}
 
@@ -1347,14 +862,17 @@ export function Profiles(): JSX.Element {
 
                       <div style={{ flex: 1 }}>
                         <span className="at-summary-label">Transition Style</span>
+                        {/* The editor's own transition table. The batch pipeline reads the
+                            preset's duration and direction, so a wipe direction survives. */}
                         <div className="at-chip-row" style={{ marginTop: 6 }}>
-                          {(['Cut', 'Crossfade', 'Wipe', 'Dip'] as const).map((trans) => (
+                          {TRANSITION_PRESETS.map((preset) => (
                             <button
-                              key={trans}
-                              className={`at-chip ${editingTemplate.transition === trans ? 'active' : ''}`}
-                              onClick={() => setEditingTemplate({ ...editingTemplate, transition: trans })}
+                              key={preset.id}
+                              className={`at-chip ${activeTransitionId === preset.id ? 'active' : ''}`}
+                              title={preset.hint}
+                              onClick={() => setEditingTemplate({ ...editingTemplate, transition: preset.id })}
                             >
-                              {trans}
+                              {preset.label}
                             </button>
                           ))}
                         </div>
@@ -1416,20 +934,25 @@ export function Profiles(): JSX.Element {
                     </div>
                   </div>
 
-                  {/* Caption Engine */}
+                  {/* Caption Engine — the renderer's registered caption templates, the same
+                      list (name and description) the Compose editor's Captions tab shows. */}
                   <div className="at-editor-section">
                     <span className="at-field-label">Caption Style Engine</span>
-                    <div className="at-chip-row">
-                      {(['emoji-pop', 'clip-wipe', 'highlight', 'neon-accent', 'particle-burst', 'weight-shift', 'motivation-bold', 'mindset-pill', 'progress-underline', 'coach-clean'] as const).map((cap) => (
-                        <button
-                          key={cap}
-                          className={`at-chip ${editingTemplate.captionStyle === cap ? 'active' : ''}`}
-                          onClick={() => setEditingTemplate({ ...editingTemplate, captionStyle: cap })}
-                        >
-                          {cap}
-                        </button>
-                      ))}
-                    </div>
+                    {captionTemplates.length === 0 ? (
+                      <p className="at-preset-empty">The renderer reported no caption templates, so there is nothing to choose here.</p>
+                    ) : (
+                      <div className="at-preset-list">
+                        {captionTemplates.map((template) => (
+                          <PresetRow
+                            key={template.id}
+                            title={template.name}
+                            sub={template.description || template.id}
+                            on={captionStyleIdOf(template.id) === editingTemplate.captionStyle}
+                            onClick={() => setEditingTemplate({ ...editingTemplate, captionStyle: captionStyleIdOf(template.id) })}
+                          />
+                        ))}
+                      </div>
+                    )}
                   </div>
                 </>
               ) : (
@@ -1457,39 +980,41 @@ export function Profiles(): JSX.Element {
                     </div>
                   </div>
 
-                  {/* Hook Position & Template */}
+                  {/* Hook Template — the renderer's registered hook templates, the same list
+                      the Compose editor's Hook tab offers (the custom-JSON hook excluded:
+                      it needs a hand-written plan, which a batch has no author for). */}
                   <div className="at-editor-section">
-                    <span className="at-field-label">Hook Animation & Position</span>
-                    <div style={{ display: 'flex', gap: 12 }}>
-                      <div style={{ flex: 1 }}>
-                        <span className="at-summary-label">Animation Preset</span>
-                        <div className="at-chip-row" style={{ marginTop: 6 }}>
-                          {(['Rise', 'Typewriter', 'Blur in', 'Stagger'] as const).map((anim) => (
-                            <button
-                              key={anim}
-                              className={`at-chip ${editingTemplate.hookTemplate === anim ? 'active' : ''}`}
-                              onClick={() => setEditingTemplate({ ...editingTemplate, hookTemplate: anim })}
-                            >
-                              {anim}
-                            </button>
-                          ))}
-                        </div>
+                    <span className="at-field-label">Hook Template</span>
+                    {hookTemplates.length === 0 ? (
+                      <p className="at-preset-empty">The renderer reported no hook templates, so there is nothing to choose here.</p>
+                    ) : (
+                      <div className="at-preset-list">
+                        {hookTemplates.map((template) => (
+                          <PresetRow
+                            key={template.id}
+                            title={template.name}
+                            sub={template.description || template.id}
+                            on={editingTemplate.hookTemplate === template.id}
+                            onClick={() => setEditingTemplate({ ...editingTemplate, hookTemplate: template.id })}
+                          />
+                        ))}
                       </div>
+                    )}
+                  </div>
 
-                      <div style={{ flex: 1 }}>
-                        <span className="at-summary-label">Screen Position</span>
-                        <div className="at-chip-row" style={{ marginTop: 6 }}>
-                          {(['top', 'middle', 'bottom'] as const).map((pos) => (
-                            <button
-                              key={pos}
-                              className={`at-chip ${editingTemplate.hookPosition === pos ? 'active' : ''}`}
-                              onClick={() => setEditingTemplate({ ...editingTemplate, hookPosition: pos })}
-                            >
-                              {pos}
-                            </button>
-                          ))}
-                        </div>
-                      </div>
+                  {/* Hook Position */}
+                  <div className="at-editor-section">
+                    <span className="at-field-label">Hook Position</span>
+                    <div className="at-chip-row">
+                      {(['top', 'middle', 'bottom'] as const).map((pos) => (
+                        <button
+                          key={pos}
+                          className={`at-chip ${editingTemplate.hookPosition === pos ? 'active' : ''}`}
+                          onClick={() => setEditingTemplate({ ...editingTemplate, hookPosition: pos })}
+                        >
+                          {pos}
+                        </button>
+                      ))}
                     </div>
                   </div>
 
@@ -1534,45 +1059,6 @@ export function Profiles(): JSX.Element {
       {/* Toast popup */}
       {toastMessage && <div className="at-toast">{toastMessage}</div>}
 
-      {/* Existing modals */}
-      {sourceModalOpen && (
-        <SourcePickerModal
-          sources={sourceChannels}
-          selectedId={sourceId}
-          error={sourceLoadError}
-          opener={sourceBrowseRef.current}
-          onClose={() => setSourceModalOpen(false)}
-          onRefresh={async (candidate) => {
-            setSourceLoadError('')
-            await window.api.sources.refresh(candidate.id)
-            await loadSources()
-            if (candidate.id === sourceId) setAvailableVideos(await window.api.sources.videos(candidate.id))
-          }}
-          onSelect={(candidate) => {
-            if (candidate.id !== sourceId && selectedVideoIds.length > 0 && !window.confirm(`Changing sources will clear ${selectedVideoIds.length} video selection(s). Continue?`)) return
-            dispatchDraft({ type: 'change-source', source: candidate })
-            setAvailableVideos([])
-            setPreflight(null)
-            setSourceModalOpen(false)
-            setSetupError('')
-          }}
-        />
-      )}
-
-      {assetModalOpen && (
-        <AssetLibraryModal
-          key={`assets-${draftState.id}`}
-          assets={libraryAssets}
-          selectedPaths={assets}
-          opener={assetBrowseRef.current}
-          onClose={() => setAssetModalOpen(false)}
-          onApply={(paths) => {
-            setAssets(paths)
-            setAssetModalOpen(false)
-            setPreflight(null)
-          }}
-        />
-      )}
     </ScreenPad>
   )
 }

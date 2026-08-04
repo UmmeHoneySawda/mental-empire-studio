@@ -982,6 +982,61 @@
   font-weight: 600;
 }
 
+/* Preset List — hook and caption templates, read from the renderer's own manifests. Name
+   over description, scrollable, so the list reads the same here as in the Compose editor. */
+.at-preset-list {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  max-height: 260px;
+  overflow-y: auto;
+  padding-right: 2px;
+}
+
+.at-preset-item {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+  text-align: left;
+  padding: 9px 11px;
+  border: 1px solid var(--border-2);
+  border-radius: 8px;
+  background: var(--bg-inset);
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease;
+}
+
+.at-preset-item:hover {
+  border-color: var(--border-3, #3a4150);
+}
+
+.at-preset-item.active {
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+
+.at-preset-title {
+  font-size: 12px;
+  font-weight: 600;
+  color: var(--text-bright);
+}
+
+.at-preset-item.active .at-preset-title {
+  color: var(--accent);
+}
+
+.at-preset-sub {
+  font-size: 10.5px;
+  line-height: 1.45;
+  color: var(--text-dim);
+}
+
+.at-preset-empty {
+  margin: 0;
+  font-size: 11px;
+  color: var(--text-faint);
+}
+
 /* Slider Cell */
 .at-slider-cell {
   display: flex;

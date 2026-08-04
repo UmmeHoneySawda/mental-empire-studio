@@ -15,43 +15,13 @@ import type { TextMotionId } from '../../../../video-engine/remotion/textMotion'
 
 // --------------------------------------------------------------------- transitions
 
-/* The engine applies a transition by TEMPLATE, not by type: `applyTransition` takes a
- * `templateId` and derives the overlap between the two clips itself, which is what stops a
- * hand-computed `startFrame` from failing preflight. The six animated templates registered
- * for Remotion are `remotion-transition-{fade,slide,wipe,zoom,blur,dip-to-black}`; `cut`
- * is the one type with no template, applied with a zero duration.
- *
- * Durations and the fast/slow split are the timings from editor-pro-max's
- * `TRANSITION_PRESETS`; direction values are the engine's own `left|right|up|down`. */
+/* The transition table now lives in `shared/video-engine/transition-presets.ts`: the
+ * automation batch pipeline (main process) offers the same list, so it cannot import it
+ * from here. Re-exported so the panels keep their existing import. */
 
-export type TransitionDirection = 'left' | 'right' | 'up' | 'down'
-
-export interface TransitionPreset {
-  id: string
-  label: string
-  hint: string
-  /** Registered template id, or null for a hard cut. */
-  templateId: string | null
-  /** Frames the transition borrows from each side. A cut is always 0. */
-  durationFrames: number
-  direction?: TransitionDirection
-}
-
-export const TRANSITION_PRESETS: readonly TransitionPreset[] = [
-  { id: 'cut', label: 'Cut', hint: 'A hard cut. No frames borrowed.', templateId: null, durationFrames: 0 },
-  { id: 'crossfade', label: 'Crossfade', hint: 'The classic dissolve. One second.', templateId: 'remotion-transition-fade', durationFrames: 30 },
-  { id: 'fade-quick', label: 'Quick fade', hint: 'Half a second — keeps the pace up.', templateId: 'remotion-transition-fade', durationFrames: 15 },
-  { id: 'fade-slow', label: 'Slow fade', hint: 'A second and a half. Reads as a scene change.', templateId: 'remotion-transition-fade', durationFrames: 45 },
-  { id: 'slide-left', label: 'Slide left', hint: 'The new clip pushes in leftward.', templateId: 'remotion-transition-slide', durationFrames: 30, direction: 'left' },
-  { id: 'slide-right', label: 'Slide right', hint: 'The new clip pushes in rightward.', templateId: 'remotion-transition-slide', durationFrames: 30, direction: 'right' },
-  { id: 'slide-up', label: 'Slide up', hint: 'Pushes upward. Good for lists.', templateId: 'remotion-transition-slide', durationFrames: 30, direction: 'up' },
-  { id: 'slide-down', label: 'Slide down', hint: 'Pushes downward.', templateId: 'remotion-transition-slide', durationFrames: 30, direction: 'down' },
-  { id: 'wipe-left', label: 'Wipe left', hint: 'A hard edge travels across the frame.', templateId: 'remotion-transition-wipe', durationFrames: 30, direction: 'left' },
-  { id: 'wipe-right', label: 'Wipe right', hint: 'Same, the other way.', templateId: 'remotion-transition-wipe', durationFrames: 30, direction: 'right' },
-  { id: 'zoom', label: 'Zoom', hint: 'Punches through the cut. Energetic.', templateId: 'remotion-transition-zoom', durationFrames: 24 },
-  { id: 'blur', label: 'Blur', hint: 'Defocus and resolve. Dreamlike.', templateId: 'remotion-transition-blur', durationFrames: 30 },
-  { id: 'dip-to-black', label: 'Dip to black', hint: 'Through black. The strongest break you can make.', templateId: 'remotion-transition-dip-to-black', durationFrames: 36 }
-] as const
+export type { TransitionPreset } from '@shared/video-engine/transition-presets'
+export type { TransitionDirection } from '@shared/video-engine/transitions'
+export { TRANSITION_PRESETS } from '@shared/video-engine/transition-presets'
 
 // -------------------------------------------------------------------- colour grades
 

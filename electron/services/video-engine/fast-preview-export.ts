@@ -260,6 +260,28 @@ async function waitUntil(target: number): Promise<void> {
   if (remaining > 1) await new Promise((resolve) => setTimeout(resolve, remaining))
 }
 
+async function waitForPlayerFrame(
+  window: BrowserWindow,
+  targetFrame: number,
+  timeoutMs = 5000,
+): Promise<void> {
+  const deadline = Date.now() + timeoutMs
+  while (Date.now() < deadline) {
+    const state = await window.webContents.executeJavaScript(`(() => {
+      const c = window.__mesFastPreview;
+      return c ? { frame: c.frame, status: c.status, error: c.error } : null;
+    })()`, true).catch(() => null) as { frame?: number; status?: string; error?: string } | null
+
+    if (state?.status === 'error') {
+      throw new Error(state.error || 'Fast preview recorder encountered an error.')
+    }
+    if ((state?.frame ?? 0) >= targetFrame || state?.status === 'finished') {
+      return
+    }
+    await new Promise((resolve) => setTimeout(resolve, 10))
+  }
+}
+
 function fastPreviewFileName(project: VideoProject): string {
   const base = basename(renderFileName(project, '.mp4'), '.mp4')
   const stamp = new Date().toISOString().replace(/[-:]/gu, '').replace(/\..+$/u, '')
@@ -465,6 +487,13 @@ async function runFastPreviewExport(
         throw new Error(`Fast preview encoding failed early (code ${ffmpegExitCode})${ffmpegError.trim() ? `: ${ffmpegError.trim()}` : '.'}`)
       }
       await waitUntil(start + index * intervalMs)
+
+      const targetPlayerFrame = Math.min(
+        project.canvas.durationFrames - 1,
+        Math.floor((index / spec.frameCount) * project.canvas.durationFrames),
+      )
+      await waitForPlayerFrame(recorder, targetPlayerFrame)
+
       if (ffmpegExited) {
         throw new Error(`Fast preview encoding failed early (code ${ffmpegExitCode})${ffmpegError.trim() ? `: ${ffmpegError.trim()}` : '.'}`)
       }
