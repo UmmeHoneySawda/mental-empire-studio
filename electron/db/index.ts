@@ -515,7 +515,7 @@ function installDefaultVisualTemplates(d: Database.Database): void {
       effects: ['Film grain', 'Speed ramp'],
       grade: 'Cinematic',
       fineGrade: { exposure: 0, contrast: 15, saturation: -20, temperature: -10, vignette: 35, grain: 20 },
-      captionStyle: 'Hormozi',
+      captionStyle: 'motivation-bold',
       aspectRatio: '9:16',
       hookAngle: 'bold-claim',
       hookTemplate: 'Rise',
@@ -538,7 +538,7 @@ function installDefaultVisualTemplates(d: Database.Database): void {
       effects: ['Glitch cut'],
       grade: 'Noir',
       fineGrade: { exposure: -10, contrast: 40, saturation: -100, temperature: 0, vignette: 50, grain: 40 },
-      captionStyle: 'Beast',
+      captionStyle: 'coach-clean',
       aspectRatio: '9:16',
       hookAngle: 'question',
       hookTemplate: 'Typewriter',
@@ -561,7 +561,7 @@ function installDefaultVisualTemplates(d: Database.Database): void {
       effects: ['Light leaks'],
       grade: 'Gold',
       fineGrade: { exposure: 5, contrast: 10, saturation: 15, temperature: 20, vignette: 20, grain: 10 },
-      captionStyle: 'Podcast',
+      captionStyle: 'highlight',
       aspectRatio: '16:9',
       hookAngle: 'stat',
       hookTemplate: 'Stagger',
@@ -1282,7 +1282,11 @@ function buildRepositories(d: Database.Database): Repositories {
       const row = d.prepare(
         `SELECT COUNT(*) AS c FROM source_videos sv
          WHERE sv.sourceId IN (${placeholders})
-         AND sv.id NOT IN (SELECT videoId FROM work_item_state WHERE uploaded = 1)`
+         AND sv.id NOT IN (
+           SELECT videoId FROM work_item_state
+           WHERE manualUploaded = 1
+              OR (manualUploaded IS NULL AND uploadedTo IS NOT NULL AND uploadedTo != '[]' AND uploadedTo != '' AND COALESCE(uploadConfidence, '') != 'pending')
+         )`
       ).get(...sourceIds) as { c: number } | undefined
       return row?.c ?? 0
     },
@@ -1292,7 +1296,11 @@ function buildRepositories(d: Database.Database): Repositories {
       return d.prepare(
         `SELECT id,sourceId,title,durationSec,views,uploadDate,thumb FROM source_videos sv
          WHERE sv.sourceId IN (${placeholders})
-         AND sv.id NOT IN (SELECT videoId FROM work_item_state WHERE uploaded = 1)
+         AND sv.id NOT IN (
+           SELECT videoId FROM work_item_state
+           WHERE manualUploaded = 1
+              OR (manualUploaded IS NULL AND uploadedTo IS NOT NULL AND uploadedTo != '[]' AND uploadedTo != '' AND COALESCE(uploadConfidence, '') != 'pending')
+         )
          ORDER BY COALESCE(ord,999999), scrapedAt DESC LIMIT ?`
       ).all(...sourceIds, limit) as Array<ScrapedVideo & { sourceId: string }>
     },

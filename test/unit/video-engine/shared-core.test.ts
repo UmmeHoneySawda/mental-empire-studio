@@ -582,4 +582,28 @@ describe('template registry', () => {
       }),
     ).toThrow(/between 30 and 900 frames/i)
   })
+
+  it('automatically clamps transition duration when it exceeds connected scene duration', () => {
+    const base = completeProject()
+    const projectWithOverlongTransition = {
+      ...base,
+      scenes: [
+        { id: 'scene-1', trackId: base.tracks[0].id, assetId: 'asset-video', startFrame: 0, durationFrames: 15, kind: 'media' as const, zIndex: 0 },
+        { id: 'scene-2', trackId: base.tracks[0].id, assetId: 'asset-video', startFrame: 15, durationFrames: 60, kind: 'media' as const, zIndex: 0 },
+      ],
+      transitions: [
+        {
+          id: 'trans-1-2',
+          fromSceneId: 'scene-1',
+          toSceneId: 'scene-2',
+          startFrame: 0,
+          durationFrames: 30, // Exceeds scene-1 duration (15 frames)
+          type: 'fade' as const,
+        },
+      ],
+    }
+
+    const parsed = parseVideoProject(projectWithOverlongTransition)
+    expect(parsed.transitions[0].durationFrames).toBe(15)
+  })
 })

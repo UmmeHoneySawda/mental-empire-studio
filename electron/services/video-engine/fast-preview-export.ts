@@ -19,6 +19,7 @@ export interface FastPreviewExportRequest {
   sourceUrl: string
   preloadPath?: string
   outputFolder?: string
+  playbackSpeed?: number
 }
 
 export interface FastPreviewExportResult {
@@ -200,12 +201,12 @@ export function buildFastPreviewFfmpegArgs(options: {
   return args
 }
 
-function recorderUrl(sourceUrl: string, projectId: string): string {
+function recorderUrl(sourceUrl: string, projectId: string, rate: number = PLAYBACK_RATE): string {
   const url = new URL(sourceUrl)
   url.hash = ''
   url.search = ''
   url.searchParams.set('mes-fast-preview', projectId)
-  if (PLAYBACK_RATE !== 1) url.searchParams.set('mes-rate', String(PLAYBACK_RATE))
+  if (rate !== 1) url.searchParams.set('mes-rate', String(rate))
   return url.toString()
 }
 
@@ -386,8 +387,9 @@ async function runFastPreviewExport(
 
     // Load the page FIRST so the renderer has a real page context.
     // CDP commands like Page.enable hang on about:blank.
-    const url = recorderUrl(request.sourceUrl, request.projectId)
-    log.info('[fast-preview] loading recorder URL: %s', url)
+    const playbackRate = request.playbackSpeed && request.playbackSpeed > 0 ? request.playbackSpeed : PLAYBACK_RATE
+    const url = recorderUrl(request.sourceUrl, request.projectId, playbackRate)
+    log.info('[fast-preview] loading recorder URL: %s (rate=%dx)', url, playbackRate)
     await recorder.loadURL(url)
     log.info('[fast-preview] URL loaded, attaching debugger...')
 
@@ -453,8 +455,8 @@ async function runFastPreviewExport(
     await writeFrame(ffmpeg.stdin, latestFrame)
     log.info('[fast-preview] first frame written, calling play()...')
     await recorder.webContents.executeJavaScript('window.__mesFastPreview?.play()', true)
-    const effectiveInterval = 1000 / spec.fps / PLAYBACK_RATE
-    log.info('[fast-preview] play() called, entering capture loop (%d frames @ %dfps, rate=%dx, interval=%.1fms)', spec.frameCount, spec.fps, PLAYBACK_RATE, effectiveInterval)
+    const effectiveInterval = 1000 / spec.fps / playbackRate
+    log.info('[fast-preview] play() called, entering capture loop (%d frames @ %dfps, rate=%dx, interval=%.1fms)', spec.frameCount, spec.fps, playbackRate, effectiveInterval)
     const start = performance.now()
 
     const intervalMs = effectiveInterval

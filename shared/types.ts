@@ -27,6 +27,7 @@ import type {
   CaptionCueList,
   BrollBatch,
   CaptionImportSummary,
+  CaptionStyleId,
   CreateVideoProjectInput,
   FetchBrollBatchInput,
   FetchBrollBatchResult,
@@ -1252,7 +1253,7 @@ export interface VisualTemplate {
     vignette: number
     grain: number
   }
-  captionStyle: 'Hormozi' | 'Beast' | 'Karaoke' | 'Boxed' | 'Word' | 'Neon' | 'Minimal' | 'Podcast'
+  captionStyle: CaptionStyleId
   aspectRatio: '9:16' | '1:1' | '16:9'
   hookAngle: 'question' | 'bold-claim' | 'curiosity' | 'stat'
   hookTemplate: 'Rise' | 'Typewriter' | 'Blur in' | 'Stagger'

@@ -465,7 +465,7 @@ export function Profiles(): JSX.Element {
       effects: ['Film grain'],
       grade: 'Cinematic',
       fineGrade: { exposure: 0, contrast: 10, saturation: 0, temperature: 0, vignette: 20, grain: 15 },
-      captionStyle: 'Hormozi',
+      captionStyle: 'motivation-bold',
       aspectRatio: '9:16',
       hookAngle: 'bold-claim',
       hookTemplate: 'Rise',
@@ -511,6 +511,7 @@ export function Profiles(): JSX.Element {
     }
     setSendingBatch(true)
     try {
+      const channelName = myChannels.find((c) => c.id === selectedChannelId)?.name || 'target channel'
       const res = await window.api.batch.send({
         channelId: selectedChannelId,
         sourceIds: activeSourceIds,
@@ -519,10 +520,9 @@ export function Profiles(): JSX.Element {
         renderMode,
         playbackSpeed
       })
-      showToast(`Queued ${res.renderJobCount} videos for automated render!`)
+      showToast(`Queued ${res.renderJobCount} videos for ${channelName}! Select another channel to queue more.`)
       setMainTab('jobs')
-      setView('setup')
-      setStage(0)
+      setView('jobs')
     } catch (err) {
       showToast(`Error: ${(err as Error).message}`)
     } finally {
@@ -774,7 +774,7 @@ export function Profiles(): JSX.Element {
                 <span className="at-summary-val">{selectedTemplate?.aspectRatio || '9:16'} · {selectedTemplate?.mode || 'Auto B-roll'}</span>
 
                 <span className="at-summary-label">Caption Style:</span>
-                <span className="at-summary-val">{selectedTemplate?.captionStyle || 'Hormozi'}</span>
+                <span className="at-summary-val">{selectedTemplate?.captionStyle || 'motivation-bold'}</span>
               </div>
 
               {/* Render Mode & Speed Control */}
@@ -1038,15 +1038,162 @@ export function Profiles(): JSX.Element {
               )}
 
               {stage === 2 && (
-                <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+                <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+                  {/* Visual Engine & Material Mode */}
                   <Panel>
-                    <SectionLabel>Visual assets & style</SectionLabel>
-                    <div className="automation-style-grid">
-                      {STYLES.map((candidate) => (
-                        <button type="button" key={candidate} onClick={() => setStyle(candidate)} className={style === candidate ? 'active' : ''}>
-                          {candidate}
-                        </button>
-                      ))}
+                    <SectionLabel>Visual Material Engine</SectionLabel>
+                    <div className="at-choice-row" style={{ marginTop: 8, marginBottom: 12 }}>
+                      <button
+                        type="button"
+                        className={`at-choice-btn ${autoBroll && config.styleConfig.brollMode !== 'off' ? 'active' : ''}`}
+                        onClick={() => setAutoBroll(true)}
+                      >
+                        <b>Auto B-roll Engine</b>
+                        <small>Relevant video clips cut automatically from stock library based on transcript.</small>
+                      </button>
+                      <button
+                        type="button"
+                        className={`at-choice-btn ${!autoBroll || config.styleConfig.brollMode === 'off' ? 'active' : ''}`}
+                        onClick={() => setAutoBroll(false)}
+                      >
+                        <b>Image Slideshow & Custom Assets</b>
+                        <small>Ken-burns animated image pool or local background media.</small>
+                      </button>
+                    </div>
+
+                    {/* Image Selector & Asset Library */}
+                    <div style={{ marginTop: 12, padding: 12, background: 'var(--bg-inset)', borderRadius: 9, border: '1px solid var(--border)' }}>
+                      <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 10 }}>
+                        <span style={{ fontSize: 11, fontWeight: 700, color: 'var(--text-bright)' }}>
+                          Selected Images & Assets ({assets.length})
+                        </span>
+                        <div style={{ display: 'flex', gap: 8 }}>
+                          <button ref={assetBrowseRef} type="button" className="at-card-btn" onClick={() => setAssetModalOpen(true)}>
+                            📚 Browse Asset Library
+                          </button>
+                          <label className="at-card-btn" style={{ cursor: 'pointer', margin: 0 }}>
+                            <input
+                              type="file"
+                              accept="image/*,video/*"
+                              multiple
+                              style={{ display: 'none' }}
+                              onChange={(e) => void chooseAssetFiles(e.target.files)}
+                            />
+                            ＋ Upload Local Files
+                          </label>
+                        </div>
+                      </div>
+
+                      {assets.length === 0 ? (
+                        <div style={{ fontSize: 10.5, color: 'var(--text-dim)', textAlign: 'center', padding: '12px 8px' }}>
+                          No custom images selected yet. Click "Browse Asset Library" to choose from channel folders, or upload local image files.
+                        </div>
+                      ) : (
+                        <div style={{ display: 'flex', gap: 8, overflowX: 'auto', paddingBottom: 6 }}>
+                          {assets.slice(0, 10).map((path, idx) => (
+                            <div key={idx} style={{ flex: 'none', width: 60, height: 60, borderRadius: 6, overflow: 'hidden', background: 'var(--bg-card)', border: '1px solid var(--border)', position: 'relative' }}>
+                              <img src={mediaSrc(path)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                            </div>
+                          ))}
+                          {assets.length > 10 && (
+                            <div style={{ flex: 'none', width: 60, height: 60, borderRadius: 6, background: 'var(--bg-card)', border: '1px solid var(--border)', display: 'flex', alignItems: 'center', justifyContent: 'center', fontSize: 10, color: 'var(--text-dim)', fontWeight: 700 }}>
+                              +{assets.length - 10} more
+                            </div>
+                          )}
+                        </div>
+                      )}
+
+                      <div style={{ display: 'flex', gap: 12, marginTop: 12, borderTop: '1px solid var(--border)', paddingTop: 10 }}>
+                        <div style={{ flex: 1 }}>
+                          <Field label="Image Sequence Mode">
+                            <select value={config.styleConfig.imageMode} onChange={(e) => updateStyle('imageMode', e.target.value as any)} style={inputStyle}>
+                              <option value="sequence">Ordered Sequence</option>
+                              <option value="pool">Random Pool</option>
+                            </select>
+                          </Field>
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <Field label="Motion Preset">
+                            <select value={config.styleConfig.motionPreset} onChange={(e) => updateStyle('motionPreset', e.target.value as any)} style={inputStyle}>
+                              <option value="subtle">Subtle Ken-Burns</option>
+                              <option value="cinematic">Cinematic Zoom & Pan</option>
+                              <option value="off">Static (No Motion)</option>
+                            </select>
+                          </Field>
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <Field label="Crossfade Duration (sec)">
+                            <input type="number" min={0} max={5} step={0.1} value={config.styleConfig.crossfadeSec} onChange={(e) => updateStyle('crossfadeSec', Number(e.target.value))} style={inputStyle} />
+                          </Field>
+                        </div>
+                      </div>
+                    </div>
+                  </Panel>
+
+                  {/* Captions & Typography */}
+                  <Panel>
+                    <SectionLabel>Caption Engine & Typography</SectionLabel>
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginBottom: 12 }}>
+                      <Field label="Caption Style Preset">
+                        <select value={captionPreset} onChange={(e) => setCaptionPreset(e.target.value)} style={inputStyle}>
+                          {['Hormozi', 'emoji-pop', 'clip-wipe', 'highlight', 'neon-accent', 'particle-burst', 'weight-shift', 'motivation-bold', 'mindset-pill', 'progress-underline', 'coach-clean'].map((preset) => (
+                            <option key={preset} value={preset}>{preset}</option>
+                          ))}
+                        </select>
+                      </Field>
+                      <Field label="Font Family">
+                        <select value={config.styleConfig.captionFont} onChange={(e) => updateStyle('captionFont', e.target.value)} style={inputStyle}>
+                          {['Montserrat', 'Inter', 'Roboto', 'Anton', 'Outfit'].map((font) => (
+                            <option key={font} value={font}>{font}</option>
+                          ))}
+                        </select>
+                      </Field>
+                    </div>
+
+                    <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 12 }}>
+                      <Field label="Caption Position">
+                        <select value={config.styleConfig.captionPosition} onChange={(e) => updateStyle('captionPosition', e.target.value as any)} style={inputStyle}>
+                          <option value="bottom">Bottom</option>
+                          <option value="middle">Middle / Center</option>
+                          <option value="top">Top</option>
+                        </select>
+                      </Field>
+                      <Field label="Max Words per Line">
+                        <select value={config.styleConfig.wordsPerCaption} onChange={(e) => updateStyle('wordsPerCaption', Number(e.target.value) as any)} style={inputStyle}>
+                          <option value={1}>1 Word (Impact)</option>
+                          <option value={2}>2 Words (Standard)</option>
+                          <option value={3}>3 Words (Phrase)</option>
+                        </select>
+                      </Field>
+                      <Field label="Highlight Color">
+                        <input type="color" value={config.styleConfig.highlightColor} onChange={(e) => updateStyle('highlightColor', e.target.value)} style={{ ...inputStyle, padding: 2, height: 36, cursor: 'pointer' }} />
+                      </Field>
+                    </div>
+                  </Panel>
+
+                  {/* Overall Video Style & Aspect Ratio */}
+                  <Panel>
+                    <SectionLabel>Video Style & Aspect Ratio</SectionLabel>
+                    <div style={{ display: 'flex', gap: 12, alignItems: 'center', marginBottom: 12 }}>
+                      <div style={{ flex: 1 }}>
+                        <span style={{ display: 'block', color: 'var(--text-dim)', fontSize: 10.5, marginBottom: 6 }}>Color Grade Filter</span>
+                        <div className="automation-style-grid">
+                          {STYLES.map((candidate) => (
+                            <button type="button" key={candidate} onClick={() => setStyle(candidate)} className={style === candidate ? 'active' : ''}>
+                              {candidate}
+                            </button>
+                          ))}
+                        </div>
+                      </div>
+                      <div style={{ width: 140 }}>
+                        <Field label="Aspect Ratio">
+                          <select value={aspectRatio} onChange={(e) => setAspectRatio(e.target.value as any)} style={inputStyle}>
+                            <option value="9:16">9:16 (Shorts/Reels)</option>
+                            <option value="16:9">16:9 (Landscape)</option>
+                            <option value="1:1">1:1 (Square)</option>
+                          </select>
+                        </Field>
+                      </div>
                     </div>
                   </Panel>
                 </div>
@@ -1273,7 +1420,7 @@ export function Profiles(): JSX.Element {
                   <div className="at-editor-section">
                     <span className="at-field-label">Caption Style Engine</span>
                     <div className="at-chip-row">
-                      {(['Hormozi', 'Beast', 'Karaoke', 'Boxed', 'Word', 'Neon', 'Minimal', 'Podcast'] as const).map((cap) => (
+                      {(['emoji-pop', 'clip-wipe', 'highlight', 'neon-accent', 'particle-burst', 'weight-shift', 'motivation-bold', 'mindset-pill', 'progress-underline', 'coach-clean'] as const).map((cap) => (
                         <button
                           key={cap}
                           className={`at-chip ${editingTemplate.captionStyle === cap ? 'active' : ''}`}

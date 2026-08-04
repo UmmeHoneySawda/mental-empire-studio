@@ -3,6 +3,7 @@ import { existsSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { basename, dirname, join } from 'node:path'
 import {
+  applyAutoBroll,
   AUTO_BROLL_DEFAULT_OPTIONS,
   AUTO_BROLL_TRACK_ID,
   createCaptionDocument,
@@ -689,6 +690,8 @@ async function executeAutoBroll(
       skipped,
       stats: result.stats
     }
+    const updatedProject = applyAutoBroll(project, durableResult.placements)
+    await engine.saveProject(updatedProject)
     emitProgress({ projectId, phase: 'done', message: '' })
     sentryLog.info('Studio auto b-roll completed', {
       project_id: projectId,
@@ -754,7 +757,7 @@ function runAutoBroll(
   return run
 }
 
-function autoBroll(
+export function autoBroll(
   projectId: string,
   downloadId: string,
   options?: Partial<AutoBrollOptions>

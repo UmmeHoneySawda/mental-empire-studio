@@ -27,6 +27,27 @@ export interface SaveProjectOptions {
   incrementRevision?: boolean
 }
 
+function sanitizeProjectTransitions<T extends Record<string, any>>(input: T): T {
+  if (!input || !Array.isArray(input.transitions) || !Array.isArray(input.scenes)) return input
+  const sceneMap = new Map(input.scenes.map((s) => [s.id, s]))
+  const sanitizedTransitions = input.transitions.map((trans) => {
+    const from = sceneMap.get(trans.fromSceneId)
+    const to = sceneMap.get(trans.toSceneId)
+    if (!from || !to) return trans
+    const maxAllowed = Math.min(from.durationFrames, to.durationFrames)
+    if (trans.durationFrames > maxAllowed) {
+      const durationFrames = Math.max(0, maxAllowed)
+      return {
+        ...trans,
+        durationFrames,
+        startFrame: Math.max(0, from.startFrame + from.durationFrames - durationFrames)
+      }
+    }
+    return trans
+  })
+  return { ...input, transitions: sanitizedTransitions }
+}
+
 export class VideoProjectStore {
   constructor(private readonly root: string) {}
 
@@ -88,7 +109,7 @@ export class VideoProjectStore {
   }
 
   async save(projectInput: VideoProject, options: SaveProjectOptions = {}): Promise<VideoProject> {
-    const project = VideoProjectSchema.parse(projectInput)
+    const project = VideoProjectSchema.parse(sanitizeProjectTransitions(projectInput))
     let current: VideoProject | undefined
     try {
       current = await this.open(project.id)
@@ -106,12 +127,12 @@ export class VideoProjectStore {
         { expected_revision: options.expectedRevision, actual_revision: current.revision }
       )
     }
-    const next = VideoProjectSchema.parse({
+    const next = VideoProjectSchema.parse(sanitizeProjectTransitions({
       ...project,
       revision: options.incrementRevision === false ? project.revision : Math.max(project.revision, current?.revision ?? 0) + 1,
       createdAt: current?.createdAt ?? project.createdAt,
       updatedAt: new Date().toISOString()
-    })
+    }))
     await ensureDirectory(this.projectDirectory(project.id))
     await writeJsonAtomic(this.projectPath(project.id), next)
     return next

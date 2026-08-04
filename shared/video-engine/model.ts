@@ -194,7 +194,42 @@ export const VideoProjectMetadataSchema = z.strictObject({
 })
 export type VideoProjectMetadata = z.infer<typeof VideoProjectMetadataSchema>
 
-export const VideoProjectSchema = z
+export function sanitizeTransitions(input: unknown): unknown {
+  if (!input || typeof input !== 'object' || Array.isArray(input)) {
+    return input
+  }
+  const record = input as Record<string, any>
+  if (!Array.isArray(record.transitions) || !Array.isArray(record.scenes)) {
+    return input
+  }
+  const sceneMap = new Map(record.scenes.filter((s: any) => s && typeof s.id === 'string').map((s: any) => [s.id, s]))
+  const sanitizedTransitions = record.transitions.map((trans: any) => {
+    if (!trans || typeof trans !== 'object') return trans
+    const from = sceneMap.get(trans.fromSceneId)
+    const to = sceneMap.get(trans.toSceneId)
+    if (!from || !to) return trans
+
+    let durationFrames = typeof trans.durationFrames === 'number' ? trans.durationFrames : 0
+    if (trans.type === 'cut') {
+      durationFrames = 0
+    } else if (durationFrames > 0) {
+      const maxAllowed = Math.min(from.durationFrames, to.durationFrames)
+      if (Number.isFinite(maxAllowed) && durationFrames > maxAllowed) {
+        durationFrames = Math.max(0, maxAllowed)
+      }
+    }
+
+    return {
+      ...trans,
+      durationFrames,
+      startFrame: Math.max(0, from.startFrame + from.durationFrames - durationFrames)
+    }
+  })
+
+  return { ...record, transitions: sanitizedTransitions }
+}
+
+const RawVideoProjectSchema = z
   .strictObject({
     schemaVersion: z.literal(VIDEO_PROJECT_SCHEMA_VERSION),
     id: StableIdSchema,
@@ -345,6 +380,11 @@ export const VideoProjectSchema = z
       }
     }
   })
+
+export const VideoProjectSchema = z.preprocess(
+  sanitizeTransitions,
+  RawVideoProjectSchema
+) as unknown as typeof RawVideoProjectSchema
 export type VideoProject = z.infer<typeof VideoProjectSchema>
 export type VideoProjectV1 = VideoProject
 

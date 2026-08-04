@@ -46,11 +46,15 @@ if ((Test-Path $LegacyDir) -and ($LegacyDir -cne $SourceDir)) {
   if ($sawLegacy) { Say "backed up the legacy lowercase profile too" 'DarkGray' }
 }
 
-Get-ChildItem -LiteralPath $dest -File |
-  Where-Object { $_.Name -in @('mental-empire.db','mental-empire-settings.json') } |
-  Get-FileHash -Algorithm SHA256 |
-  ForEach-Object { "{0} *{1}" -f $_.Hash.ToLower(), (Split-Path $_.Path -Leaf) } |
-  Set-Content -LiteralPath (Join-Path $dest 'SHA256SUMS.txt') -Encoding ascii
+try {
+  Get-ChildItem -LiteralPath $dest -File |
+    Where-Object { $_.Name -in @('mental-empire.db','mental-empire-settings.json') } |
+    Get-FileHash -Algorithm SHA256 |
+    ForEach-Object { "{0} *{1}" -f $_.Hash.ToLower(), (Split-Path $_.Path -Leaf) } |
+    Set-Content -LiteralPath (Join-Path $dest 'SHA256SUMS.txt') -Encoding ascii
+} catch {
+  # SHA256 checksum skipped if Get-FileHash unavailable
+}
 
 Say ''
 Say "BACKUP OK -> $dest" 'Green'

@@ -241,76 +241,7 @@ export function addClip(
  *  - `sourceRange` is clamped to the asset. The engine's schema rejects a range past
  *    `asset.durationFrames` outright, which would fail the save for the whole run.
  */
-export function applyAutoBroll(
-  project: VideoProject,
-  placements: readonly AutoBrollPlacement[]
-): VideoProject {
-  if (placements.length === 0) return project
-
-  const hasTrack = project.tracks.some((track) => track.id === AUTO_BROLL_TRACK_ID)
-  const tracks: VideoTrack[] = hasTrack
-    ? project.tracks
-    : [
-        ...project.tracks,
-        {
-          id: AUTO_BROLL_TRACK_ID,
-          name: AUTO_BROLL_TRACK_NAME,
-          kind: 'video',
-          order: AUTO_BROLL_TRACK_ORDER,
-          muted: false,
-          locked: false
-        }
-      ]
-
-  const assets = [...project.assets]
-  const knownAssets = new Set(assets.map((asset) => asset.id))
-  const existingPlacements = new Set(
-    project.scenes
-      .filter((scene) => scene.trackId === AUTO_BROLL_TRACK_ID && scene.kind === 'media')
-      .map((scene) => `${scene.assetId}:${scene.startFrame}:${scene.durationFrames}`)
-  )
-  const added: VideoScene[] = []
-
-  for (const placement of placements) {
-    if (!knownAssets.has(placement.asset.id)) {
-      knownAssets.add(placement.asset.id)
-      assets.push(placement.asset)
-    }
-    const assetFrames = placement.asset.durationFrames
-    const startFrame = Math.max(0, Math.round(placement.startFrame))
-    let durationFrames = Math.max(MIN_CLIP_FRAMES, Math.round(placement.durationFrames))
-    if (assetFrames !== undefined) durationFrames = Math.min(durationFrames, assetFrames)
-    if (durationFrames < MIN_CLIP_FRAMES) continue
-    const placementKey = `${placement.asset.id}:${startFrame}:${durationFrames}`
-    if (existingPlacements.has(placementKey)) continue
-    existingPlacements.add(placementKey)
-
-    const sourceRange = placement.sourceRange ?? (assetFrames === undefined ? undefined : { startFrame: 0, durationFrames })
-    added.push({
-      id: uid('auto-broll-scene'),
-      trackId: AUTO_BROLL_TRACK_ID,
-      kind: 'media',
-      startFrame,
-      durationFrames,
-      zIndex: 1,
-      assetId: placement.asset.id,
-      fit: 'cover',
-      opacity: 1,
-      volume: 0,
-      ...(sourceRange && assetFrames !== undefined
-        ? {
-            sourceRange: {
-              startFrame: Math.max(0, Math.min(sourceRange.startFrame, assetFrames - durationFrames)),
-              durationFrames
-            }
-          }
-        : {})
-    })
-  }
-
-  if (added.length === 0) return project
-  return { ...project, tracks, assets, scenes: [...project.scenes, ...added] }
-}
+export { applyAutoBroll } from '@shared/video-engine/auto-broll'
 
 /** Covers the complete project with selected stills on one dedicated lane.
  *
