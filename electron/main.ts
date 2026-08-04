@@ -48,6 +48,7 @@ const __dirname = dirname(fileURLToPath(import.meta.url))
 // rather than the generic "Electron" dir shared with other dev apps.
 app.setName('Mental Empire Studio')
 app.commandLine.appendSwitch('autoplay-policy', 'no-user-gesture-required')
+app.commandLine.appendSwitch('disable-gpu-shader-disk-cache')
 
 // Windows toast identity: without an explicit AppUserModelID, Windows attributes
 // desktop notifications to the derived "electron.app.<name>" id, so toasts read
