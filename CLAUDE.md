@@ -3,6 +3,33 @@
 Mental Empire Studio: Electron + React + TS desktop app for faceless-YouTube automation. Read
 `README.md` for the product and `PLAN.md` for the full milestone history (M0–M8, all complete).
 
+## The owned-channel ↔ source edge (read before touching channels, Publish, or Automation)
+
+**`source_channels.linkedMyChannelId` is the single authoritative edge.** It is the FK on the
+many side, so one owned channel may be fed by several sources, and it is the direction
+`ipc/publish.ts`, `automation-supervisor.ts`, `Download.tsx` and `SourcePickerModal.tsx` read.
+
+`my_channels.linkedSourceId` + `my_channels.source` are a **maintained primary-source cache**,
+not a source of truth. `writeSourceOwner` in `electron/db/index.ts` is the only writer of the
+edge and it refreshes that cache on both sides of a move; `migrate()` back-fills the edge from
+the cache once, idempotently. Never write either column directly — go through
+`setSourceLinkedMyChannel` (attach/detach one) or `setChannelSource` (make one the only one).
+Read with `repos.sourcesForMyChannel(id)`, not by filtering `sourceChannels()`.
+
+This replaced two independent nullable scalars with two one-way setters and no invariant, where
+the UI wrote the cache and every consumer read the edge — which had no writer at all, so it was
+permanently NULL and linking a source did nothing observable. Regression suite:
+`test/unit/channel-source-link.test.ts` (8 tests); UI: `node scripts/e2e-mychannels.mjs`.
+
+**Known remaining divergence:** `src/screens/Profiles.tsx:226` still ORs the edge with the cache
+(`s.linkedMyChannelId === id || s.id === ch.linkedSourceId`) while `MyChannels.tsx` reads only
+the edge. Now that the cache is always maintained, collapse it to the edge.
+
+**DB-backed vitest suites skip silently** — `better-sqlite3` is built for Electron ABI 128 and
+plain Node needs 127, so the guard in those files short-circuits. To actually run them:
+`npm rebuild better-sqlite3` → run vitest → `npx @electron/rebuild -f -w better-sqlite3`.
+The last step is REQUIRED; leaving the node ABI in place breaks the app.
+
 ## Commands
 
 ```bash
@@ -36,15 +63,15 @@ Each `src/screens/*.tsx` is a nav destination; each pairs with specific `electro
 | Screen | Does | Backend |
 |---|---|---|
 | `Home.tsx` | Dashboard/overview | `useData.ts` (aggregates) |
-| `MyChannels.tsx` | Owned-channel ↔ source-channel mapping | `ipc/library.ts`; see `mental-empire-channels` skill |
+| `MyChannels.tsx` | Owned-channel ↔ source-channel mapping (many sources per channel) | `electron/db/index.ts` (schema/queries/`writeSourceOwner`), `ipc/scrape.ts` (`sources:setLinkedMyChannel`, `scrape:refreshChannel`, mapping recompute), `ipc/register.ts` — NOT `ipc/library.ts` (that file only registers library file-reorg handlers); see the edge section above and the `mental-empire-channels` skill |
 | `Niches.tsx` | Browse/pick niches, discover source channels | `services/niche.ts`, `services/scraper.ts`, `ipc/niche.ts` |
 | `Profiles.tsx` | Automation profiles (what to scrape/generate on a schedule) | `services/automation-supervisor.ts`, `services/scheduler.ts`, `ipc/automation.ts` |
 | `Download.tsx` | Source-video download queue | `services/downloader.ts`, `services/ytdlp.ts`, `ipc/download.ts` |
-| `Compose.tsx` | Video timeline editor entry point, 3 engines: Classic, HyperFrames, Remotion | `src/features/compose/`, `src/features/video-studio/` (Classic/HyperFrames), `src/features/video-studio/editor/` (Remotion-only, see "Compose → Remotion" below); `ipc/compose.ts`, `ipc/video-engine.ts` |
+| `Compose.tsx` | Project library + the timeline editor. One engine, no switch: the header lamp is a readout and "← Library" (`useData.closeProject`) is the way back out (see "Compose → Remotion" below) | `src/features/video-studio/editor/` (the only live path); `src/features/video-studio/{panels,timeline,preview,store,ui}` and `src/features/compose/` are orphaned Classic code — only `store/useVideoStudio` is still live, for Compose's lamp and RenderQueue's jobs; `ipc/compose.ts`, `ipc/video-engine.ts` |
 | `Thumbnails.tsx` | Konva-based thumbnail editor + batch generation | `src/features/thumbnail-editor/`, `shared/thumbnail.ts` (auto-arrange), `ipc/thumbnails.ts` |
 | `RenderQueue.tsx` | Batch/queued GPU render jobs | `services/render.ts`, `services/engine/` — GPU-only by design, no CPU fallback: encode failures must fail visibly, not silently degrade — `ipc/batch.ts`, `ipc/render.ts` |
 | `TalkingVideo.tsx` + `talking-video/` | Talking-photo/avatar video generation | `ipc/talkingphotos.ts`; see `docs/TALKING_VIDEO_REDESIGN.md` |
-| `Publish.tsx` | Upload/publish finished videos to YouTube | `services/uploads-detect.ts`, `services/webhook.ts`, `ipc/publish.ts` |
+| `Publish.tsx` | "Ready to Upload" — hand-off, NOT an uploader. Lists finished renders + the upload status persisted by `runUploadDetection`, reveals files, and native-drags them into a browser upload tab. There is no uploader, no OAuth, no network call on this path; nav key stays `publish` because `settings.defaultScreen` persists it | `services/uploads-detect.ts` (the only upload-status writer — never recompute it here), `ipc/publish.ts` |
 | `Settings.tsx` | App settings, API keys | `store/settings.ts` (electron-store) |
 | `src/features/automation/` | Batch execution + template-creator UI for automations | `ipc/automation.ts`, `ipc/batch.ts` |
 
@@ -82,13 +109,30 @@ headlessly under `xvfb-run`:
 - `ME_SHOOT=<png>` boots the window and screenshots (`ME_BATCH=1` also drives thumbnail batch).
 - Always run `npm run typecheck` + `npm run build` + the smokes after a change. CI (`.github/workflows/
   ci.yml`) runs them all.
+- **GPU-only smokes, deliberately NOT in the CI loop** (CI is Linux under xvfb with no WebCodecs
+  hardware, so they would always fail there — run them on the real machine):
+  `ME_SMOKE=broll-gpu-real` (real NVDEC→WebCodecs→NVENC B-roll render) and `ME_SMOKE=gpu-cancel`
+  (asserts the Render Queue's Stop actually reaches the WebCodecs encoder: `cancelRender` →
+  `cancelGpuRender` → `gpu:cancel` → the worker's frame loop, and the render stops early instead
+  of finishing). `ME_SMOKE=m6` cannot cover that — it forces `renderEngine='ffmpeg'`.
+- Screen-level Playwright harnesses drive the real app against a throwaway `ME_USERDATA_DIR`:
+  `npm run e2e:studio` (the only one in CI), plus `node scripts/e2e-{renderqueue,publish,mychannels,niches}.mjs`.
+  `e2e-niches.mjs` warms a real pool offline through `ME_BROLL_LOCAL`. Note how it observes the
+  run: the local seam probes with a **synchronous** ffprobe per file, which parks the main
+  process — and CDP is served by the main process, so a harness-side poll cannot sample the DOM
+  until the run it is watching has already ended. It choreographs the clicks inside the renderer
+  and has the renderer record its own DOM instead. Reuse that trick for any main-process-bound
+  progress UI.
 
 ## Compose → Remotion is the new timeline editor
 
 `src/features/video-studio/editor/` is a from-scratch timeline editor (kimu-style layout,
-renderer-owned state, live `<Player>`, no staged preview). Compose mounts it for the
-**Remotion** engine only; Classic and HyperFrames still use the older
-`src/features/video-studio/` studio. Read `skills/video-studio-editor/SKILL.md` before
+renderer-owned state, live `<Player>`, no staged preview). It is the **only** editor: it
+has one renderer (Remotion), no `rendererId` prop and no engine branches. HyperFrames was
+removed from it in M3 along with `VideoStudio.tsx`, the last thing that mounted it that
+way. The engine's hyperframes *renderer* still exists behind
+`videoEngine.bindDownload(id, 'hyperframes')` — no UI reaches it.
+Read `skills/video-studio-editor/SKILL.md` before
 touching it — it documents the one architectural rule (an edit is local and synchronous;
 persistence is a debounced `videoEngine.saveProject`) and the traps, notably that
 `TransitionSeries` rejects any child that is not literally one of its own components.
@@ -102,8 +146,8 @@ Test it live, not with smokes: `node scripts/studio-live.mjs --port 9222` then
 profile (`ME_USERDATA_DIR`, set in `electron/main.ts` — a plain relocation, no reset). It
 catches wiring bugs unit tests and a green build cannot see: a preload method with no
 `ipcMain.handle` behind it, a panel that throws on mount, a renderer that fails to report.
-Requires `npm run build` first. `--keep` leaves the scratch profile; `--engine remotion`
-drives the other renderer (HyperFrames is the default — it compiles far faster).
+Requires `npm run build` first. `--keep` leaves the scratch profile. It drives the Remotion
+renderer — the only one Compose offers.
 
 `ME_E2E_SEED_AUDIO` (with `ME_E2E_SEED_ID` / `ME_E2E_SEED_TITLE`) puts one downloaded clip
 in the database at startup — a fixture seam like `ME_YTDLP_FIXTURE`, and it hard-exits

@@ -1,5 +1,7 @@
 import { create } from 'zustand'
 import type { ProviderCapabilities, ProviderConnection, ProviderConnectionStatus, ProviderJob, ProviderLanguage, ProviderMotion, ProviderMotionQuery, ProviderProjectSummary, ProviderVoice, TalkingPhotosAspectRatio, TalkingPhotosCreateInput, TalkingPhotosScriptCreateInput } from '@shared/talkingphotos'
+import type { CreateDraft, WizardStep, WizardTab } from '../screens/talking-video/logic'
+import { defaultCreateDraft } from '../screens/talking-video/logic'
 
 // TalkingPhotos live data — kept separate from useData.ts (the local-pipeline data
 // layer) since this is a distinct cloud-provider domain with its own connection
@@ -36,9 +38,23 @@ interface TalkingPhotosState {
   languages: ProviderLanguage[]
   languagesLoading: boolean
   voicesByLanguage: Record<string, ProviderVoice[]>
-  voicesLoading: boolean
+  voicesLoadingKeys: Set<string>
   motionsByQuery: Record<string, ProviderMotion[]>
-  motionsLoading: boolean
+  motionsLoadingKeys: Set<string>
+
+  // Create-wizard state. It lives here rather than in the screen because App.tsx
+  // mounts screens as `<Screen key={active} />` — a nav change unmounts and remounts,
+  // which would discard a half-filled 3-step form. Leaving is part of the flow (the
+  // audio picker is empty until you go to Download), so the draft has to outlive it.
+  // Module-scoped, not persisted: a reload still starts clean.
+  tab: WizardTab
+  step: WizardStep
+  draft: CreateDraft
+
+  setTab: (tab: WizardTab) => void
+  setStep: (step: WizardStep) => void
+  setDraft: (draft: CreateDraft) => void
+  patchDraft: (patch: Partial<CreateDraft>) => void
 
   init: () => Promise<void>
   refreshConnection: () => Promise<void>
@@ -65,9 +81,22 @@ interface TalkingPhotosState {
 }
 
 /** Stable cache key for a motion query — order-independent field access, so callers
- *  don't need to worry about key ordering when building the query object. */
-function motionQueryKey(query: ProviderMotionQuery): string {
+ *  don't need to worry about key ordering when building the query object. Exported so
+ *  the screen indexes `motionsByQuery` / `motionsLoadingKeys` with the same string this
+ *  store writes, instead of hand-rolling the format a second time. */
+export function motionQueryKey(query: ProviderMotionQuery): string {
   return `${query.projectType}|${query.gender ?? ''}|${query.aspectRatio ?? ''}|${query.style ?? ''}`
+}
+
+/** Immutable add/remove on a per-key in-flight set. These guards are keyed on the same
+ *  value as the cache they protect: one global boolean instead would drop a *different*
+ *  query issued while the first is still running, and nothing retries it — the effects
+ *  that trigger these fetches are keyed on the draft fields, which don't change again. */
+function withKey(keys: Set<string>, key: string, present: boolean): Set<string> {
+  const next = new Set(keys)
+  if (present) next.add(key)
+  else next.delete(key)
+  return next
 }
 
 export const useTalkingPhotos = create<TalkingPhotosState>((set, get) => ({
@@ -84,9 +113,18 @@ export const useTalkingPhotos = create<TalkingPhotosState>((set, get) => ({
   languages: [],
   languagesLoading: false,
   voicesByLanguage: {},
-  voicesLoading: false,
+  voicesLoadingKeys: new Set(),
   motionsByQuery: {},
-  motionsLoading: false,
+  motionsLoadingKeys: new Set(),
+
+  tab: 'create',
+  step: 1,
+  draft: defaultCreateDraft(),
+
+  setTab: (tab) => set({ tab }),
+  setStep: (step) => set({ step }),
+  setDraft: (draft) => set({ draft }),
+  patchDraft: (patch) => set((s) => ({ draft: { ...s.draft, ...patch } })),
 
   init: async () => {
     if (!get().subscribed) {
@@ -197,29 +235,29 @@ export const useTalkingPhotos = create<TalkingPhotosState>((set, get) => ({
   },
 
   loadVoices: async (languageCode) => {
-    if (!languageCode || get().voicesByLanguage[languageCode] || get().voicesLoading) return
-    set({ voicesLoading: true })
+    if (!languageCode || get().voicesByLanguage[languageCode] || get().voicesLoadingKeys.has(languageCode)) return
+    set((s) => ({ voicesLoadingKeys: withKey(s.voicesLoadingKeys, languageCode, true) }))
     try {
       const voices = await api()?.talkingPhotos?.voices?.(languageCode)
       if (voices) set((s) => ({ voicesByLanguage: { ...s.voicesByLanguage, [languageCode]: voices } }))
     } catch (e) {
       set({ error: (e as Error).message })
     } finally {
-      set({ voicesLoading: false })
+      set((s) => ({ voicesLoadingKeys: withKey(s.voicesLoadingKeys, languageCode, false) }))
     }
   },
 
   loadMotions: async (query) => {
     const key = motionQueryKey(query)
-    if (get().motionsByQuery[key] || get().motionsLoading) return
-    set({ motionsLoading: true })
+    if (get().motionsByQuery[key] || get().motionsLoadingKeys.has(key)) return
+    set((s) => ({ motionsLoadingKeys: withKey(s.motionsLoadingKeys, key, true) }))
     try {
       const motions = await api()?.talkingPhotos?.motions?.(query)
       if (motions) set((s) => ({ motionsByQuery: { ...s.motionsByQuery, [key]: motions } }))
     } catch (e) {
       set({ error: (e as Error).message })
     } finally {
-      set({ motionsLoading: false })
+      set((s) => ({ motionsLoadingKeys: withKey(s.motionsLoadingKeys, key, false) }))
     }
   },
 

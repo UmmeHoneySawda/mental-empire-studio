@@ -44,11 +44,11 @@ const FIXTURE_BROLL = [
 const CLIP_ID = 'e2e-clip'
 const CLIP_TITLE = 'E2E fixture clip'
 const KEEP = process.argv.includes('--keep')
-/** Engine to drive the edit loop against. HyperFrames compiles far faster than Remotion
- *  bundles, so it is the default; `--engine remotion` covers the other one. */
+/** Engine to drive the edit loop against. Remotion is the only engine Compose offers, so it
+ *  is the default; `--engine hyperframes` still reaches that renderer over IPC. */
 const ENGINE = process.argv.includes('--engine')
   ? process.argv[process.argv.indexOf('--engine') + 1]
-  : 'hyperframes'
+  : 'remotion'
 
 const failures = []
 function check(ok, label, detail = '') {
@@ -221,18 +221,19 @@ try {
   await page.waitForTimeout(600)
   check(await page.getByText('Video studio').first().isVisible(), 'Compose screen renders')
 
-  // The engine switch is the entry point to the studio; clicking it must not blow up even
-  // with no clip open. Compose offers one engine now — the Remotion editor, labelled
-  // "Editor" — though `--engine hyperframes` still drives that renderer over IPC below.
-  for (const engine of ['Editor']) {
-    const button = page.getByRole('button', { name: new RegExp(engine, 'i') }).first()
-    if (await button.count() > 0 && await button.isEnabled()) {
-      await button.click()
-      await page.waitForTimeout(400)
-      check(true, `switched to ${engine}`)
-    } else {
-      console.log(`  skip  ${engine} switch (engine unavailable in this environment)`)
-    }
+  // Compose offers one engine, so the render head is a readout, not a control: it must
+  // name the engine and report whether that renderer's runtime came up. A button here
+  // would be the old three-way switch, which had a no-op handler.
+  const head = page.locator('.vs-engine').first()
+  check(await head.count() > 0, 'render head renders')
+  if (await head.count() > 0) {
+    check((await head.innerText()).trim().toLowerCase() === 'editor', 'render head names the engine')
+    check(
+      await page.getByRole('button', { name: /^editor$/i }).count() === 0,
+      'the render head is not a fake button'
+    )
+    const lamp = await page.locator('.vs-engine-lamp').first().getAttribute('data-live')
+    console.log(`        renderer available: ${lamp === '1' ? 'yes' : 'no'}`)
   }
 
   // --- the edit loop --------------------------------------------------------------
@@ -425,10 +426,26 @@ try {
   // see the same deterministic sequence.
   if (ENGINE === 'remotion' && imported.ok && imported.images.length >= 2) {
     console.log('\nfull-timeline image cycle')
-    const switcher = page.locator('select[title="Switch project"]')
-    await switcher.selectOption(CLIP_ID)
-    const remotionButton = page.getByRole('button', { name: /Remotion/i }).first()
-    if (await remotionButton.isEnabled()) await remotionButton.click()
+    // The library is a real destination now, not a boot splash: a card opens a project and
+    // the header button comes back to the grid. The project <select> that used to be the
+    // only way to change project is gone. Nothing covered this transition before.
+    check(
+      await page.locator('select[title="Switch project"]').count() === 0,
+      'the project dropdown is gone'
+    )
+    const libraryCard = page.getByRole('button', { name: new RegExp(CLIP_TITLE, 'i') }).first()
+    const backToLibrary = page.getByRole('button', { name: /Library/ })
+    if (await backToLibrary.count() === 0) await libraryCard.click()
+    await backToLibrary.waitFor({ state: 'visible', timeout: 10_000 })
+    check(true, 'a library card opens the editor')
+
+    await backToLibrary.click()
+    await libraryCard.waitFor({ state: 'visible', timeout: 10_000 })
+    check(await backToLibrary.count() === 0, 'the back button returns to the library')
+    await libraryCard.click()
+    await backToLibrary.waitFor({ state: 'visible', timeout: 10_000 })
+    check(true, 'the library re-opens the project')
+
     await page.getByText('Full-timeline image cycle', { exact: true }).waitFor({ state: 'visible', timeout: 10_000 })
     const cycleProjectId = await page.locator('.ve-foot span[title]').first().getAttribute('title') ?? projectId
     check(cycleProjectId === projectId, 'the mounted editor uses the IPC-bound Remotion project', `${cycleProjectId} vs ${projectId}`)
@@ -792,6 +809,37 @@ try {
         return found.filter((p) => p.severity === 'error').map((p) => p.code)
       }, projectId)
       check(after.length === 0, 'the crossfade passes preflight', after.join(', '))
+
+      // 2b-ii. Removing that transition from the panel. It used to call the IPC straight
+      //   from the component and write the response in with `setState`, so it never
+      //   reached the undo stack. Re-bind the editor first — the transition above was
+      //   applied over raw IPC, so the mounted project has not seen it.
+      const backButton = page.getByRole('button', { name: /Library/ })
+      const clipCard = page.getByRole('button', { name: new RegExp(CLIP_TITLE, 'i') }).first()
+      await backButton.click()
+      await clipCard.click()
+      await backButton.waitFor({ state: 'visible', timeout: 10_000 })
+      await page.getByRole('tab', { name: 'Transitions' }).click()
+      const removeButton = page.getByRole('button', { name: 'Remove this transition' }).first()
+      await removeButton.waitFor({ state: 'visible', timeout: 10_000 })
+
+      const countTransitions = async () =>
+        page.evaluate(async (id) => (await window.api.videoEngine.project(id)).transitions.length, projectId)
+      check(await countTransitions() === 1, 'the saved transition is listed in the panel')
+
+      // The editor saves on a debounce, so every assertion below waits for the indicator
+      // to settle rather than a fixed sleep — and so the next section does not race a
+      // pending write from this one.
+      const saved = () =>
+        page.locator('.ve-save', { hasText: /^Saved$/ }).first().waitFor({ state: 'visible', timeout: 10_000 })
+
+      await removeButton.click()
+      await saved()
+      check(await countTransitions() === 0, 'the panel removes the transition')
+
+      await page.getByRole('button', { name: '↶' }).click()
+      await saved()
+      check(await countTransitions() === 1, 'removing a transition is undoable')
     }
   }
 

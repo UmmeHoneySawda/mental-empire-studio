@@ -114,6 +114,9 @@ export interface SourceChannel {
   lastScrapedAt?: string
   lastVisitedAt?: string
   lastSeenVideoId?: string
+  /** when an automation last drew videos from this source; drives the rotation pick when
+   *  several sources feed one owned channel. Separate from `lastRunAt` (auto-watch). */
+  lastDrawnAt?: string
   linkedMyChannelId?: string
   videoCount?: number
   cachedVideoCount?: number
@@ -171,6 +174,17 @@ export interface NichePoolHealth {
   clips: number
   keywords: string[]
   updatedAt?: string
+}
+
+/** Live progress of a "Warm pool" run, emitted on `niche:poolProgress` while it downloads. */
+export interface NichePoolProgress {
+  nicheId: string
+  /** clips cached so far (capped at `total`) */
+  done: number
+  /** the pool's target clip count */
+  total: number
+  /** set once the warm settles, so the renderer can drop the bar */
+  finished?: boolean
 }
 
 export interface DownloadedVideo {
@@ -447,6 +461,14 @@ export interface AutomationStyleConfig {
   gradientEdge: AutomationGradientEdge
   gradientIntensity: number
   aspectRatio: '16:9' | '1:1' | '9:16'
+  /** Intro hook card. `hookEnabled` with an empty `hookText` means the render path writes
+   *  one from the transcript's first words. Required, not optional: `normalizeAutomationStyle`
+   *  is a whitelist, and TypeScript only catches a field it forgets when that field is
+   *  required — an optional one is dropped silently on the way to SQLite, which is exactly
+   *  how these three were lost the first time. */
+  hookText: string
+  hookEnabled: boolean
+  zoomAtStart: boolean
   brollMode: 'off' | 'full' | 'overlay'
   brollDensity: BrollDensity
   brollPoolSize: number
@@ -992,7 +1014,9 @@ export interface DownloadOptions {
 }
 
 // ---- Render pipeline (M6) ----
-export type RenderStatus = 'queued' | 'rendering' | 'done' | 'error'
+/** `cancelled` is terminal: the user asked this render to stop and it stays stopped until
+ *  they explicitly retry it. Legacy rows only ever carry the first four. */
+export type RenderStatus = 'queued' | 'rendering' | 'done' | 'error' | 'cancelled'
 export type RenderStage =
   | 'queued'
   | 'rendering'
@@ -1069,9 +1093,14 @@ export interface PublishItem {
   thumbPath: string | null
   durationSec: number
   renderedAt: string
-  uploadStatus: 'uploaded' | 'not-uploaded' | 'unlinked'
-  /** the actual uploaded title it fuzzy-matched, when uploadStatus is 'uploaded' */
-  matchedTitle?: string
+  /** 'unchecked' means upload detection has never looked at this item — not "not uploaded" */
+  uploadStatus: 'uploaded' | 'maybe-uploaded' | 'not-uploaded' | 'unchecked'
+  /** names of the owned channels it was matched on, when uploaded/maybe-uploaded */
+  matchedChannels?: string[]
+  /** best fuzzy match score behind the status (for display/confidence) */
+  uploadMatchScore?: number
+  /** work-item key, so the card can set the manual "yes, I uploaded this" override */
+  videoId?: string
 }
 
 
@@ -1228,61 +1257,56 @@ export interface WorkItem {
   uploadMatchScore?: number
   /** high means asserted uploaded; pending means user should confirm before blocking */
   uploadConfidence?: 'high' | 'pending'
+  /** when upload detection last examined this item; absent means it never has */
+  detectedAt?: string
   /** user override forcing the uploaded state (null = use detection) */
   uploadedManual: boolean | null
   archived: boolean
 }
 
+/** The Automations screen's saved "visual system". Every field here reaches a rendered
+ *  video through `visualTemplateToStyleConfig` — that is the contract. This type used to
+ *  carry 13 more fields that no consumer read: the wizard offered them, SQLite stored them
+ *  as opaque JSON, and they were dropped silently (diag-automation F4). Do not add a field
+ *  here before the Supervisor can honour it. */
 export interface VisualTemplate {
   id: string
   name: string
   mode: 'Auto B-roll' | 'Image slideshow'
   density: 'Full' | 'Sparse' | 'Keywords'
-  clipMin: number
-  clipMax: number
   order: 'In order' | 'Shuffle'
   motion: 'Static' | 'Subtle' | 'Cinematic'
   /** A `TRANSITION_PRESETS` id. Rows written before the automation UI offered the full
    *  table hold one of the old `Cut | Crossfade | Wipe | Dip` labels; both resolve through
    *  `resolveTransitionPreset`. */
   transition: string
-  effects: string[]
   grade: 'Noir' | 'Cinematic' | 'Intense' | 'Heartfelt' | 'Clean' | 'Gold'
-  fineGrade: {
-    exposure: number
-    contrast: number
-    saturation: number
-    temperature: number
-    vignette: number
-    grain: number
-  }
   captionStyle: CaptionStyleId
   aspectRatio: '9:16' | '1:1' | '16:9'
-  hookAngle: 'question' | 'bold-claim' | 'curiosity' | 'stat'
-  /** A Remotion hook template id (`remotion-hook-*`). Legacy rows hold one of the old
-   *  `Rise | Typewriter | Blur in | Stagger` animation labels. */
-  hookTemplate: string
+  /** Intro text card. Empty with a template chosen means "auto from the transcript" —
+   *  `queue.ts` falls back to the first eight transcribed words. */
   hookLine: string
-  hookSec: number
-  hookBackdrop: 'Blurred clip' | 'Grain field' | 'Dark overlay'
-  hookPosition: 'top' | 'middle' | 'bottom'
   zoomAtStart: boolean
   createdAt?: string
   updatedAt?: string
 }
 
-export interface BatchRenderInput {
+/** One launch of the Automations screen: an owned channel, the sources currently linked to
+ *  it, how many videos to draw, and the visual template to apply. The Supervisor owns the
+ *  run from here — there is no second render path (diag-automation F1). */
+export interface AutomationLaunchInput {
   channelId: string
   sourceIds: string[]
   count: number
   templateId: string
-  renderMode: 'normal' | 'fast'
-  playbackSpeed: number
 }
 
-export interface BatchRenderResult {
-  projectIds: string[]
-  renderJobCount: number
+export interface AutomationLaunchResult {
+  jobId: string
+  jobName: string
+  /** the source actually drawn from, so the screen can name it honestly */
+  sourceName: string
+  itemCount: number
 }
 
 export interface NativeApi {
@@ -1330,7 +1354,7 @@ export interface NativeApi {
     delete(id: string): Promise<VisualTemplate[]>
   }
   batch: {
-    send(input: BatchRenderInput): Promise<BatchRenderResult>
+    launch(input: AutomationLaunchInput): Promise<AutomationLaunchResult>
   }
   db: {
     myChannels(): Promise<MyChannel[]>
@@ -1454,11 +1478,13 @@ export interface NativeApi {
     jobs(): Promise<RenderQueueRow[]>
     /** render every queued job, honoring the concurrency setting */
     all(): Promise<void>
-    /** cancel a queued/rendering job */
+    /** cancel a queued/rendering job — terminal, use requeue to put it back in line */
     cancel(jobId: string): Promise<void>
+    /** cancel every queued/rendering job and stop the batch from starting more */
+    cancelAll(): Promise<void>
     /** permanently remove a job from the queue */
     delete(jobId: string): Promise<void>
-    /** reset an error/blocked job back to queued so it can be retried */
+    /** reset an error/cancelled/blocked job back to queued so it can be retried */
     requeue(jobId: string): Promise<void>
     /** open the finished render in the OS default player */
     openFile(jobId: string): Promise<void>
@@ -1704,6 +1730,8 @@ export interface NativeApi {
   onVideoEngineJob(cb: (job: VideoRenderJob) => void): () => void
   /** subscribe to Auto B-roll progress */
   onAutoBrollProgress(cb: (p: AutoBrollProgress) => void): () => void
+  /** subscribe to niche b-roll pool warm progress */
+  onNichePoolProgress(cb: (p: NichePoolProgress) => void): () => void
   /** subscribe to TalkingPhotos connection-status changes */
   onConnectionStatusChanged(cb: (connection: ProviderConnection) => void): () => void
   /** reveal a file or folder in OS file explorer */

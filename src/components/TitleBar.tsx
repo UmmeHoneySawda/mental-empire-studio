@@ -14,7 +14,7 @@ const LABELS: Record<ScreenKey, string> = {
   'talking-video': 'Talking Video',
   thumb: 'Thumbnails',
   render: 'Render Queue',
-  publish: 'Publish',
+  publish: 'Ready to Upload',
   niches: 'B-roll Pools',
   profiles: 'Automations',
   settings: 'Settings'

@@ -61,6 +61,38 @@ export function titleMatchScore(a: string, b: string): number {
   return matched / Math.max(ta.length, tb.length)
 }
 
+/** The persisted-detection fields of a WorkItem — everything needed to read out a status. */
+export interface DetectedUploadState {
+  uploadedTo: string[]
+  uploadMatchScore?: number
+  uploadConfidence?: 'high' | 'pending'
+  /** when detection last examined this item; absent means it never has */
+  detectedAt?: string
+  uploadedManual: boolean | null
+}
+
+/**
+ * Read the upload status of one work item out of the detection results already persisted by
+ * `runUploadDetection`. Callers must never re-derive this by matching titles themselves: a
+ * second matcher means a second threshold, and the two answers diverge (which is exactly what
+ * the Ready-to-Upload screen used to do, with a 0.5 threshold against every upload on the
+ * channel — reporting a confident "uploaded" for videos still sitting on disk).
+ *
+ * `unchecked` is a distinct answer from `not-uploaded`, and the distinction is the point:
+ * detection may never have run (auto-detection off, or no owned channel scraped yet), and
+ * claiming "not uploaded" in that case is a guess dressed as a fact.
+ */
+export function uploadStatusOf(state: DetectedUploadState | undefined): 'uploaded' | 'maybe-uploaded' | 'not-uploaded' | 'unchecked' {
+  if (!state) return 'unchecked'
+  if (state.uploadedManual != null) return state.uploadedManual ? 'uploaded' : 'not-uploaded'
+  // A work_item_state row is not evidence that detection ran — a manual mark or an archive
+  // toggle creates one too. `detectedAt` is written only by setDetectedUploads, so it is the
+  // one signal that separates "checked, no match" from "never checked".
+  if (!state.detectedAt) return 'unchecked'
+  if (state.uploadConfidence === 'pending') return 'maybe-uploaded'
+  return state.uploadedTo.length > 0 ? 'uploaded' : 'not-uploaded'
+}
+
 export interface UploadCandidate { channelId: string; title: string }
 export interface MatchItem { videoId: string; title: string }
 export interface UploadMatch { videoId: string; uploadedTo: string[]; score: number; confidence: 'high' | 'pending' }

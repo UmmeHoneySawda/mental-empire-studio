@@ -13,11 +13,13 @@ import { registerIpc } from './ipc/register'
 import { refreshChannel, sourceVideos, checkReminders } from './ipc/scrape'
 import { startDownloads, resume as resumeDownload } from './ipc/download'
 import { createProject, setImages, runTranscribe, sendToRender } from './ipc/compose'
+import { launchAutomation } from './ipc/batch'
 import { firedNotifications } from './services/notify'
 import { channelUrl, orderVideos } from './services/scraper'
 import { probeDuration, splitRanges } from './services/audio'
 import { autoArrangeText } from '../shared/thumbnail'
-import { THUMB_W, THUMB_H, DEFAULT_BETA_OPTS, type AutomationJobDraft, type Project, type TextLayer, type ThumbnailTemplate, type TranscriptWord } from '../shared/types'
+import { THUMB_W, THUMB_H, DEFAULT_BETA_OPTS, asBetaOpts, type AutomationJobDraft, type Project, type TextLayer, type ThumbnailTemplate, type TranscriptWord } from '../shared/types'
+import { automationStyleProjectPatch } from '../shared/automationProject'
 import { buildAss } from './services/captions'
 import { resolveCaptionStyle } from '../shared/captionStyle'
 import { isAllowedExternalUrl } from '../shared/url'
@@ -1365,6 +1367,85 @@ async function runSmokeBrollGpuReal(): Promise<void> {
 }
 
 /**
+ * Real GPU-worker cancel (ME_SMOKE=gpu-cancel). The Render Queue's Stop button had no path
+ * to the WebCodecs encoder — the work runs in a hidden BrowserWindow, so there is no child
+ * process to SIGKILL, `cancelRender` returned false, and the render carried on to completion
+ * and was recorded as `done`. Nothing covered that: ME_SMOKE=m6 forces the ffmpeg engine and
+ * e2e:studio never renders a file. This drives the whole real chain — cancelRender →
+ * cancelGpuRender → gpu:cancel → the worker's frame-loop abort — and asserts the render
+ * stops early instead of finishing. Requires a real WebCodecs-capable GPU.
+ */
+async function runSmokeGpuCancel(): Promise<void> {
+  const outDir = join(app.getPath('temp'), 'me-gpu-cancel-out')
+  const jobId = 'gpu-cancel-smoke'
+  const fps = 24
+  const durationSec = 120 // long enough that a mid-render cancel is unambiguous
+  const totalFrames = fps * durationSec
+  try {
+    mkdirSync(outDir, { recursive: true })
+    const { runGpuRender, destroyGpuWorker: destroyWorker } = await import('./services/engine/gpu/host')
+    const { cancelRender, consumeCancelIntent, hasCancelIntent } = await import('./services/render')
+    const h264Path = join(outDir, `${jobId}.gpu.mp4`)
+    const finalPath = join(outDir, `${jobId}.mp4`)
+    // No stills and no B-roll: the cheapest possible frame, so what this measures is the
+    // cancel latency and not the compositor.
+    const spec = {
+      jobId,
+      width: 854,
+      height: 480,
+      fps,
+      durationSec,
+      images: [],
+      motion: { kenBurns: false, punchAtSec: [] },
+      grade: { style: 'None' as const, saturation: 1, contrast: 1, brightness: 0, colorBalance: { r: 0, g: 0, b: 0 }, vignette: 0, sharpen: 0 },
+      grain: { strength: 0, temporal: false },
+      captions: { groups: [], style: resolveCaptionStyle({ captionPreset: 'Minimal' }), preset: 'Clean' as const, font: 'Anton', animation: 'Pop-in', mode: 'word' as const, position: 'bottom' as const, lines: 1 as const, highlightColor: '#ffffff' },
+      audio: { voicePath: join(process.cwd(), 'test', 'fixtures', 'audio', 'sample.mp3') },
+      encoder: { codec: 'avc' as const, bitrateMbps: 4, keyIntervalSec: 2 },
+      out: { h264Path, finalPath }
+    }
+
+    let ticks = 0
+    let framesAtCancel = -1
+    let cancelReturned: boolean | undefined
+    const startedAt = Date.now()
+    let rejection: Error | undefined
+    await runGpuRender(spec, {
+      shouldAbort: () => hasCancelIntent(jobId),
+      onProgress: (p) => {
+        ticks++
+        // Cancel on the third report, so real frames have been encoded first.
+        if (ticks === 3 && cancelReturned === undefined) {
+          framesAtCancel = p.framesDone
+          cancelReturned = cancelRender(jobId, 'cancel')
+        }
+      }
+    }).catch((e: Error) => { rejection = e })
+    const elapsedMs = Date.now() - startedAt
+    // Still set here on purpose: the intent is what tells runJob this failure was requested
+    // rather than a GPU fault, and runJob — not this harness — is what consumes it.
+    const intentRecorded = hasCancelIntent(jobId)
+    consumeCancelIntent(jobId)
+    destroyWorker()
+
+    const stoppedEarly = framesAtCancel > 0 && framesAtCancel < totalFrames / 2
+    const rejected = !!rejection && /cancel/i.test(rejection.message)
+    // The mux only runs after a completed encode, so a cancelled render must leave no final.
+    const noFinal = !existsSync(finalPath)
+    const ok = cancelReturned === true && rejected && stoppedEarly && noFinal && intentRecorded
+    console.log(`SMOKE_GPU_CANCEL ok=${ok} cancelReturned=${cancelReturned} rejected=${rejected} reason="${rejection?.message ?? 'none'}" framesAtCancel=${framesAtCancel}/${totalFrames} stoppedEarly=${stoppedEarly} noFinal=${noFinal} intentRecorded=${intentRecorded} elapsedMs=${elapsedMs}`)
+    app.exit(ok ? 0 : 1)
+  } catch (e) {
+    console.log('SMOKE_GPU_CANCEL_FAIL ' + (e as Error).message)
+    try {
+      const { destroyGpuWorker: destroyWorker } = await import('./services/engine/gpu/host')
+      destroyWorker()
+    } catch { /* ignore */ }
+    app.exit(1)
+  }
+}
+
+/**
  * Full end-to-end journey (ME_SMOKE=e2e) on one continuous DB: fixture scrape +
  * download + transcript, REAL images, and a REAL ffmpeg render — probed with
  * ffprobe. Exercises the three render branches (multi-image+xfade, single image,
@@ -1668,7 +1749,7 @@ async function runSmokeAutomation(): Promise<void> {
         sourceKind: 'local-files', sourceId: '', sourceUrl: '', sourceName: 'sample.mp3', sourceOrder: 'Latest', sourceCount: 1,
         selectedVideoIds: [], localMediaPaths: [fixture('audio/sample.mp3')], assetPaths: [fixture('images/img1.png')],
         style: 'Clean', captionPreset: 'Hormozi', aspectRatios: ['16:9'], execution: 'local',
-        styleConfig: { videoStyle: 'Clean', captionPreset: 'Hormozi', captionFont: 'Montserrat', captionAnimation: 'Pop-in', captionPosition: 'bottom', captionLines: 1, captionPace: 'auto', wordsPerCaption: 2, highlightColor: '#f5b323', boxColor: '#111111', imageMode: 'sequence', crossfadeSec: 0.8, motionPreset: 'subtle', gradientEdge: 'none', gradientIntensity: 50, aspectRatio: '16:9', brollMode: 'off', brollDensity: 'sparse', brollPoolSize: 18, brollFallbackPolicy: 'prefer-selected', brollShufflePolicy: 'per-video' },
+        styleConfig: { videoStyle: 'Clean', captionPreset: 'Hormozi', captionFont: 'Montserrat', captionAnimation: 'Pop-in', captionPosition: 'bottom', captionLines: 1, captionPace: 'auto', wordsPerCaption: 2, highlightColor: '#f5b323', boxColor: '#111111', imageMode: 'sequence', crossfadeSec: 0.8, motionPreset: 'subtle', gradientEdge: 'none', gradientIntensity: 50, aspectRatio: '16:9', hookText: '', hookEnabled: false, zoomAtStart: false, brollMode: 'off', brollDensity: 'sparse', brollPoolSize: 18, brollFallbackPolicy: 'prefer-selected', brollShufflePolicy: 'per-video' },
         rules: { minDurationSec: 0, skipDownloaded: true, continueOnError: true, maxRetries: 1, minimumFreeSpaceGb: 1, captions: false, autoBroll: false, removeSilence: false, reduceFillerWords: false, keepAwake: false, skipUploaded: true, fillSkippedSelections: false, allowStaleUploadCache: true, uploadFreshnessMinutes: 360, downloadDelaySec: 0, retryBaseDelaySec: 1, retryMaxDelaySec: 2 },
         notify: { desktop: false, webhook: false, sound: false, email: false }
       }
@@ -1748,6 +1829,47 @@ async function runSmokeAutomation(): Promise<void> {
     check((batchFinished?.result?.outputPaths.length ?? 0) === 1, 'successful batch item retains its verified output')
 
     stopAutomationSupervisor()
+
+    /* The Automations screen's launch button (`batch:launch`). It used to call a second
+     * pipeline that created no job rows at all, so Jobs & History was structurally
+     * guaranteed to stay empty however many batches "succeeded" (diag-automation F1).
+     * The supervisor is stopped above and `scheduleWake` early-returns when stopped, so
+     * the job is created and inspected here without ever being pumped — no live scrape. */
+    repos.upsertSourceChannel({ id: 'src-smoke', url: 'https://www.youtube.com/@example', handle: '@example', name: 'Smoke Source', linkedMyChannelId: 'mych-smoke' })
+    repos.upsertSourceChannel({ id: 'src-smoke-2', url: 'https://www.youtube.com/@example2', handle: '@example2', name: 'Second Smoke Source', linkedMyChannelId: 'mych-smoke' })
+    const smokeVideos = (prefix: string): Array<{ id: string; title: string; durationSec: number; views: number; uploadDate: string; thumb: string }> =>
+      [1, 2, 3].map((n) => ({ id: `${prefix}-v${n}`, title: `${prefix} video ${n}`, durationSec: 600, views: 1000, uploadDate: '2026-01-0' + n, thumb: '' }))
+    repos.replaceSourceVideos('src-smoke', smokeVideos('smoke'))
+    repos.replaceSourceVideos('src-smoke-2', smokeVideos('smoke2'))
+    repos.saveVisualTemplate({
+      id: 'tpl-smoke', name: 'Smoke System', mode: 'Auto B-roll', density: 'Full', order: 'Shuffle',
+      motion: 'Cinematic', transition: 'crossfade', grade: 'Intense',
+      captionStyle: 'motivation-bold', aspectRatio: '9:16', hookLine: 'HOOK', zoomAtStart: true
+    })
+    const bothSources = ['src-smoke', 'src-smoke-2']
+    const launched = launchAutomation({ channelId: 'mych-smoke', sourceIds: bothSources, count: 2, templateId: 'tpl-smoke' })
+    const launchedJob = repos.automationJobs().find((row) => row.id === launched.jobId)
+    check(!!launchedJob, 'launch button creates a durable Supervisor job row')
+    check(launchedJob?.config.sourceCount === 2 && bothSources.includes(launchedJob?.config.sourceId ?? ''), `job draws from a linked source with the requested count (${launchedJob?.config.sourceId}, ${launchedJob?.config.sourceCount})`)
+    check(launchedJob?.config.styleConfig.videoStyle === 'Intense' && launchedJob?.config.styleConfig.motionPreset === 'cinematic' && launchedJob?.config.rules.autoBroll === true, 'the chosen visual template reaches the job config')
+    check(launchedJob?.config.styleConfig.hookText === 'HOOK' && launchedJob?.config.styleConfig.zoomAtStart === true, `the hook line and start zoom survive the template mapping (${launchedJob?.config.styleConfig.hookText})`)
+    const hookPatch = automationStyleProjectPatch(launchedJob!.config.styleConfig, true, undefined, 1)
+    check(asBetaOpts(hookPatch.betaOpts).hook.enabled && asBetaOpts(hookPatch.betaOpts).hook.text === 'HOOK', 'the hook reaches betaOpts, which queue.ts renders as the intro card')
+    /* Rotation is the point of F5: a second launch must draw the OTHER linked source,
+       which only works if `lastDrawnAt` actually persisted on the first one. */
+    const second = launchAutomation({ channelId: 'mych-smoke', sourceIds: bothSources, count: 1, templateId: 'tpl-smoke' })
+    const secondJob = repos.automationJobs().find((row) => row.id === second.jobId)
+    check(!!repos.sourceChannel(launchedJob?.config.sourceId ?? '')?.lastDrawnAt, 'the drawn source records a rotation cursor')
+    check(!!secondJob && secondJob.config.sourceId !== launchedJob?.config.sourceId, `a second launch rotates to the other linked source (${launchedJob?.config.sourceId} then ${secondJob?.config.sourceId})`)
+    let zeroSourceError = ''
+    try { launchAutomation({ channelId: '', sourceIds: [], count: 1, templateId: 'tpl-smoke' }) }
+    catch (err) { zeroSourceError = (err as Error).message }
+    check(zeroSourceError.includes('no linked source'), `a channel with no linked source fails loudly (${zeroSourceError || 'no error thrown'})`)
+    /* The screen counts unpublished videos across every linked source, so asking for more
+       than the rotated-to source holds must clamp rather than over-promise. */
+    const overAsk = launchAutomation({ channelId: 'mych-smoke', sourceIds: bothSources, count: 99, templateId: 'tpl-smoke' })
+    check(overAsk.itemCount === 3, `an over-large request clamps to what the drawn source actually holds (asked 99, queued ${overAsk.itemCount})`)
+
     console.log(problems.length ? `AUTOMATION_SMOKE_PROBLEMS ${JSON.stringify(problems)}` : `AUTOMATION_SMOKE_OK output=${outputPath}`)
     closeDatabase()
     app.exit(problems.length ? 1 : 0)
@@ -1894,6 +2016,10 @@ app.whenReady().then(async () => {
   }
   if (process.env['ME_SMOKE'] === 'broll-gpu-real') {
     void runSmokeBrollGpuReal()
+    return
+  }
+  if (process.env['ME_SMOKE'] === 'gpu-cancel') {
+    void runSmokeGpuCancel()
     return
   }
   // Demo-dependent smokes (M2–M7) assert against deterministic seeded rows. Production

@@ -1,5 +1,5 @@
 import { app, BrowserWindow, ipcMain } from 'electron'
-import { spawn } from 'node:child_process'
+import { spawn, type ChildProcess } from 'node:child_process'
 import { appendFileSync, existsSync } from 'node:fs'
 import { join } from 'node:path'
 import type { GpuRenderSpec } from '../../../../shared/renderSpec'
@@ -31,6 +31,10 @@ interface PendingJob {
   onProgress?: (p: GpuProgressMsg) => void
 }
 const pending = new Map<string, PendingJob>()
+// Live `ffmpegMux` children keyed by job id. The mux is the one real child process on this
+// path, and a cancel that arrives during it has to reach it — `render.ts`'s `running` map
+// only ever sees the main encode child, which the GPU path never spawns.
+const muxChildren = new Map<string, ChildProcess>()
 let readyResolver: ((m: GpuReadyMsg) => void) | null = null
 
 function workerHtmlPath(): string {
@@ -142,10 +146,18 @@ function ffmpegMux(spec: GpuRenderSpec, logPath?: string): Promise<void> {
   if (logPath) appendFileSync(logPath, `\n[gpu:mux]\n${[ffmpegPath(), ...args].join(' ')}\n`)
   return new Promise((resolve, reject) => {
     const child = spawn(ffmpegPath(), args, { windowsHide: true })
+    muxChildren.set(spec.jobId, child)
     let err = ''
     child.stderr.on('data', (d: Buffer) => (err += d))
-    child.on('error', reject)
-    child.on('close', (code) => (code === 0 ? resolve() : reject(new Error(`ffmpeg mux exited ${code}: ${ffmpegErrorTail(err)}`))))
+    child.on('error', (e) => {
+      muxChildren.delete(spec.jobId)
+      reject(e)
+    })
+    child.on('close', (code) => {
+      muxChildren.delete(spec.jobId)
+      if (code === 0) resolve()
+      else reject(new Error(`ffmpeg mux exited ${code}: ${ffmpegErrorTail(err)}`))
+    })
   })
 }
 
@@ -153,6 +165,9 @@ export interface GpuRunOptions {
   onProgress?: (p: GpuProgressMsg) => void
   logPath?: string
   skipAudioMaster?: boolean
+  /** Checked between stages so a cancel lands even where no signal reaches: while queued
+   *  behind another job on `chain`, and before the uncancellable audio master. */
+  shouldAbort?: () => boolean
 }
 
 /**
@@ -167,6 +182,9 @@ export function runGpuRender(spec: GpuRenderSpec, opts: GpuRunOptions = {}): Pro
 }
 
 async function runGpuRenderInner(spec: GpuRenderSpec, opts: GpuRunOptions): Promise<void> {
+  // Jobs queue behind each other on `chain`, so a job can be cancelled before its render
+  // ever starts. Nothing else checks for that — the queue's pre-run gate is long past.
+  if (opts.shouldAbort?.()) throw new Error('render cancelled')
   const ready = await ensureWorker()
   if (!ready.supported) throw new Error(`GPU engine unsupported: ${ready.detail ?? 'no WebCodecs encoder'}`)
   if (!worker || worker.isDestroyed()) throw new Error('GPU worker window unavailable')
@@ -221,10 +239,14 @@ async function runGpuRenderInner(spec: GpuRenderSpec, opts: GpuRunOptions): Prom
     worker!.webContents.send(GPU_CHANNELS.run, spec)
   })
 
+  if (opts.shouldAbort?.()) throw new Error('render cancelled')
   if (!existsSync(spec.out.h264Path)) throw new Error('GPU worker reported done but no H.264 output found')
 
   // ffmpeg's remaining role: stream-copy mux video + AAC audio, then loudness master.
   await ffmpegMux(spec, opts.logPath)
+  // The audio master is a two-pass loudnorm over the whole file and cannot be interrupted —
+  // this is the last point at which a cancel costs nothing.
+  if (opts.shouldAbort?.()) throw new Error('render cancelled')
   if (!opts.skipAudioMaster) {
     try {
       await masterAudioTwoPass(spec.out.finalPath)
@@ -233,6 +255,32 @@ async function runGpuRenderInner(spec: GpuRenderSpec, opts: GpuRunOptions): Prom
       if (opts.logPath) appendFileSync(opts.logPath, `[gpu:audio-master:warn] ${(e as Error).message}\n`)
     }
   }
+}
+
+/**
+ * Cancel an in-flight GPU render. There is no child process to SIGKILL — the WebCodecs
+ * encode runs inside the hidden worker window — so the worker is asked to stop at its next
+ * frame and any ffmpeg mux already running for the job is killed. The worker's own error
+ * report settles the pending promise, so there is still exactly one settle site and no
+ * double-reject race. Returns true when there was something to stop.
+ *
+ * Deliberately does NOT destroy the worker: it is shared with `probeGpuEngine` and
+ * `runGpuSelfTest`, and tearing it down would make the next job pay a cold start.
+ */
+export function cancelGpuRender(jobId: string): boolean {
+  const encoding = pending.has(jobId)
+  const muxing = muxChildren.get(jobId)
+  if (!encoding && !muxing) return false
+  if (encoding && worker && !worker.isDestroyed()) {
+    log.info(`cancel requested for job=${jobId} (worker encode)`)
+    worker.webContents.send(GPU_CHANNELS.cancel, jobId)
+  }
+  if (muxing) {
+    log.info(`cancel requested for job=${jobId} (ffmpeg mux)`)
+    muxChildren.delete(jobId)
+    muxing.kill('SIGKILL')
+  }
+  return true
 }
 
 /** Tear down the worker window (called on app quit / idle). */
@@ -290,7 +338,37 @@ export async function runGpuSelfTest(): Promise<{ ok: boolean; error?: string; t
 
     const start = Date.now()
     await new Promise<void>((resolve, reject) => {
-      pending.set(spec.jobId, { resolve, reject })
+      // The self-test gates the WHOLE batch (runAll awaits it before starting any job) and,
+      // unlike runGpuRenderInner, it had no timeout: a worker that never answered for
+      // 'selftest' left runAll pending forever, so the screen read "Rendering…" with not one
+      // job started and only an app restart recovered. This is a total budget rather than an
+      // idle one — the test is a fixed ~100 frames at 640x360, so seconds, not minutes.
+      let settled = false
+      const timer = setTimeout(() => {
+        if (settled) return
+        settled = true
+        pending.delete(spec.jobId)
+        // A worker wedged in WebCodecs stays wedged; drop it so the next ensureWorker()
+        // starts from a clean window.
+        try { worker?.destroy() } catch { /* ignore */ }
+        worker = null
+        workerReady = null
+        reject(new Error(`GPU self-test did not finish within ${Math.round(GPU_PROGRESS_TIMEOUT_MS / 1000)}s`))
+      }, GPU_PROGRESS_TIMEOUT_MS)
+      pending.set(spec.jobId, {
+        resolve: () => {
+          if (settled) return
+          settled = true
+          clearTimeout(timer)
+          resolve()
+        },
+        reject: (e) => {
+          if (settled) return
+          settled = true
+          clearTimeout(timer)
+          reject(e)
+        }
+      })
       worker!.webContents.send(GPU_CHANNELS.run, spec)
     })
     const duration = Date.now() - start

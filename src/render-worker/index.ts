@@ -15,6 +15,13 @@ import { SegmentDecoder } from './decoder'
 
 const worker = window.gpuWorker
 
+// Cooperative cancel. There is no process to kill here — this page IS the encoder — so the
+// host sends gpu:cancel and the frame loop bails at its next frame. Scoped to the job that
+// is actually running and reset on every run, so a cancel can never outlive its own render
+// and abort the next one (job ids are stable across re-renders).
+let activeJobId: string | null = null
+let aborted = false
+
 async function loadBitmap(path: string): Promise<ImageBitmap> {
   const bytes = worker!.readFile(path)
   const blob = new Blob([bytes])
@@ -24,6 +31,8 @@ async function loadBitmap(path: string): Promise<ImageBitmap> {
 async function run(spec: GpuRenderSpec): Promise<void> {
   let fd: number | null = null
   const decoders: (SegmentDecoder | null)[] = []
+  activeJobId = spec.jobId
+  aborted = false
   try {
     const isSelfTest = spec.jobId === 'selftest'
     console.log(`[worker] run start: job=${spec.jobId} isSelfTest=${isSelfTest} imageCount=${spec.images.length} brollCount=${spec.broll?.length ?? 0} durationSec=${spec.durationSec}`)
@@ -60,7 +69,8 @@ async function run(spec: GpuRenderSpec): Promise<void> {
       onProgress: (framesDone, frames) => {
         console.log(`[worker] encode progress: ${framesDone}/${frames} frames`)
         worker!.progress({ jobId: spec.jobId, framesDone, totalFrames: frames, fps: spec.fps })
-      }
+      },
+      shouldAbort: () => aborted
     })
 
     console.log(`[worker] closing output file and finalizing B-roll decoders`)
@@ -81,6 +91,8 @@ async function run(spec: GpuRenderSpec): Promise<void> {
       try { dec?.close() } catch { /* ignore close-on-error */ }
     })
     worker!.error({ jobId: spec.jobId, message: (e as Error).message })
+  } finally {
+    activeJobId = null
   }
 }
 
@@ -89,6 +101,11 @@ async function boot(): Promise<void> {
   // Probe once at startup and report so the host can decide auto vs ffmpeg.
   const probe = await probeHardwareEncode(1920, 1080, 24)
   worker.ready({ hardware: probe.hardware, supported: probe.supported, detail: probe.detail })
+  worker.onCancel((jobId) => {
+    if (jobId !== activeJobId) return
+    console.log(`[worker] cancel requested for job=${jobId}`)
+    aborted = true
+  })
   worker.onRun((spec) => {
     // Touch totalFrames so the import is always exercised (and to validate the spec).
     if (totalFrames(spec) < 1) {

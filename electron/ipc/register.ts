@@ -1,8 +1,8 @@
 import { ipcMain, shell } from 'electron'
 import { dirname } from 'node:path'
 import { existsSync } from 'node:fs'
-import type { AppSettings, BatchRenderInput, DeepPartial, GoalsPatch, Profile, ThumbnailTemplate, VisualTemplate } from '../../shared/types'
-import { countUnpublishedVideos, executeBatchRender } from './batch'
+import type { AppSettings, AutomationLaunchInput, DeepPartial, GoalsPatch, Profile, ThumbnailTemplate, VisualTemplate } from '../../shared/types'
+import { countUnpublishedVideos, launchAutomation } from './batch'
 import { getSettings, setSettings, resetSettings } from '../store/settings'
 import { getRepos } from '../db'
 import { registerScrapeIpc } from './scrape'
@@ -128,7 +128,7 @@ export function registerIpc(): void {
   ipcMain.handle('visualTemplates:save', (_e, t: VisualTemplate) => getRepos().saveVisualTemplate(t))
   ipcMain.handle('visualTemplates:delete', (_e, id: string) => getRepos().deleteVisualTemplate(reqId(id)))
   ipcMain.handle('sources:unpublishedCount', (_e, sourceIds: string[]) => countUnpublishedVideos(sourceIds))
-  ipcMain.handle('batch:send', (_e, input: BatchRenderInput) => executeBatchRender(input))
+  ipcMain.handle('batch:launch', (_e, input: AutomationLaunchInput) => launchAutomation(input))
   ipcMain.handle('db:recentUploads', (_e, limit?: number) => getRepos().recentUploads(limit ?? 8))
   ipcMain.handle('db:updateChannelGoals', (_e, id: string, patch: GoalsPatch) => {
     getRepos().updateChannelGoals(reqId(id), patch)
@@ -145,7 +145,7 @@ export function registerIpc(): void {
 
   // ---- P1: per-video work items + fuzzy upload detection ----
   ipcMain.handle('db:workItems', () => getRepos().workItems())
-  ipcMain.handle('workItems:detect', () => runUploadDetection({ force: true }))
+  ipcMain.handle('workItems:detect', () => runUploadDetection({ force: true, trigger: 'manual' }))
   ipcMain.handle('workItems:setUploaded', (_e, videoId: string, uploaded: boolean) => {
     getRepos().setWorkItemUploaded(reqId(videoId, 'videoId'), !!uploaded)
   })

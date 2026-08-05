@@ -43,6 +43,21 @@ describe('render progress UI state', () => {
     expect(renderLiveState(active, progress(active.job.id, 64))).toMatchObject({ status: 'rendering', pct: 64 })
   })
 
+  // A cancel used to be reported to the renderer as `stage: 'done'`, so the row the user
+  // had just stopped read "Done" — and the persisted row went back to 'queued', so the next
+  // "Render all" picked it up again. Cancelling is terminal now, on both channels.
+  it('reports a cancelled render as cancelled, not done', () => {
+    const active = row('rendering', 40)
+    const cancelled: RenderProgress = { jobId: active.job.id, pct: 0, stage: 'cancelled', done: true }
+    expect(renderLiveState(active, cancelled)).toMatchObject({ status: 'cancelled', pct: 0 })
+  })
+
+  it('keeps a persisted cancelled row cancelled despite stale live progress', () => {
+    const stopped = row('cancelled', 0)
+    expect(renderLiveState(stopped, progress(stopped.job.id, 71)).status).toBe('cancelled')
+    expect(dropIdleRenderProgress([stopped], { [stopped.job.id]: progress(stopped.job.id, 71) })).toEqual({})
+  })
+
   it('drops live progress for rows no longer rendering', () => {
     const done = row('done', 100)
     const active = row('rendering', 12)

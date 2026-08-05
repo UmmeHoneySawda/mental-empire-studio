@@ -388,6 +388,7 @@ export function RenderQueue(): JSX.Element {
   const loadRenderJobs = useData((s) => s.loadRenderJobs)
   const renderAll = useData((s) => s.renderAll)
   const cancelJob = useData((s) => s.cancelJob)
+  const cancelAllJobs = useData((s) => s.cancelAllJobs)
   const deleteJob = useData((s) => s.deleteJob)
   const requeueJob = useData((s) => s.requeueJob)
   const openRenderFile = useData((s) => s.openRenderFile)
@@ -404,6 +405,8 @@ export function RenderQueue(): JSX.Element {
   const readyCount = queuedRows.filter((r) => r.isReady).length
   const canRenderAll = queuedRows.length > 0 && readyCount === queuedRows.length && !rendering
   const canRenderSome = readyCount > 0 && !canRenderAll && !rendering
+  // Everything a "Stop all" would actually stop: the in-flight job plus the queue behind it.
+  const stoppableCount = processing + queuedRows.length
   const outputFolder = settings.libraryFolder || settings.outputFolder || '<Documents>/MentalEmpireStudio'
   const hardwareEncoder = (settings.encoder ?? 'cpu') !== 'cpu'
   const effectiveParallel = hardwareEncoder ? 1 : settings.concurrency
@@ -464,6 +467,11 @@ export function RenderQueue(): JSX.Element {
           <div style={{ flex: 1 }} />
 
           {/* Render CTAs */}
+          {stoppableCount > 0 && (
+            <button type="button" onClick={() => void cancelAllJobs()} title="Stop the job that is rendering and cancel everything still waiting. Cancelled jobs stay cancelled — use ↻ to put one back in the queue." className="me-btn" style={{ display: 'flex', alignItems: 'center', gap: 8, border: '1px solid #4a3540', background: '#1b1217', color: '#ff8a96', fontWeight: 600, fontSize: 13, padding: '10px 18px', borderRadius: 10, cursor: 'pointer' }}>
+              Stop all ({stoppableCount})
+            </button>
+          )}
           {canRenderSome && (
             <button type="button" onClick={() => void renderAll()} className="me-btn" style={{ display: 'flex', alignItems: 'center', gap: 8, border: '1px solid var(--accent)', background: 'var(--accent-soft)', color: 'var(--accent)', fontWeight: 600, fontSize: 13, padding: '10px 20px', borderRadius: 10, cursor: 'pointer' }}>
               Render ready ({readyCount})
@@ -503,10 +511,10 @@ export function RenderQueue(): JSX.Element {
         {rows.map((r) => {
           const { pct, status } = live(r)
           const p = status === 'rendering' ? progress[r.job.id] : undefined
-          const isBlocked = !r.isReady && status !== 'rendering' && status !== 'done'
+          const isBlocked = !r.isReady && status !== 'rendering' && status !== 'done' && status !== 'cancelled'
           const barColor = status === 'done' ? '#36c98e' : status === 'error' ? '#ff5a6e' : 'var(--accent)'
           const statusTone: Tone = isBlocked ? 'warn' : status === 'done' ? 'ok' : status === 'error' ? 'err' : status === 'rendering' ? 'active' : 'idle'
-          const statusLabel = isBlocked ? 'Needs assets' : status === 'done' ? 'Done' : status === 'error' ? 'Failed' : status === 'rendering' ? 'Rendering' : 'Queued'
+          const statusLabel = isBlocked ? 'Needs assets' : status === 'done' ? 'Done' : status === 'error' ? 'Failed' : status === 'cancelled' ? 'Cancelled' : status === 'rendering' ? 'Rendering' : 'Queued'
           const encoderChip = p?.encoder ? (p.device === 'gpu' ? `${p.encoder} encode` : p.encoder) : ''
           const filterChip = p?.filterDetail || (p?.filterDevice === 'gpu' ? 'GPU filters' : p?.filterDevice === 'cpu' ? 'CPU filters' : '')
           const speedChip = typeof p?.speed === 'number' && Number.isFinite(p.speed) ? `${p.speed.toFixed(1)}x` : ''
@@ -589,8 +597,12 @@ export function RenderQueue(): JSX.Element {
 
                 {/* Actions */}
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 6, flex: 'none', alignItems: 'flex-end' }}>
-                  {status === 'rendering' && (
-                    <button type="button" onClick={() => void cancelJob(r.job.id)} className="me-btn" style={{ border: '1px solid #4a3540', background: '#1b1217', borderRadius: 7, padding: '5px 9px', fontSize: 10.5, color: '#ff8a96', cursor: 'pointer' }}>Stop</button>
+                  {/* Stop is offered on queued rows too: the jobs waiting behind the active
+                      one previously had no cancel control at all, only ×. Not on a blocked
+                      row that already failed — there is nothing queued to take out of line,
+                      and cancelling it would only blank the error that explains it. */}
+                  {(status === 'rendering' || status === 'queued') && (
+                    <button type="button" onClick={() => void cancelJob(r.job.id)} title={status === 'rendering' ? 'Stop this render' : 'Cancel — take this job out of the queue'} className="me-btn" style={{ border: '1px solid #4a3540', background: '#1b1217', borderRadius: 7, padding: '5px 9px', fontSize: 10.5, color: '#ff8a96', cursor: 'pointer' }}>Stop</button>
                   )}
                   {status === 'done' && (
                     <>
@@ -598,8 +610,8 @@ export function RenderQueue(): JSX.Element {
                       <button type="button" onClick={() => void openRenderFolder(r.job.id)} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 7, padding: '5px 9px', fontSize: 10.5, color: '#c4cad3', cursor: 'pointer' }}>Folder</button>
                     </>
                   )}
-                  {(status === 'error') && (
-                    <button type="button" onClick={() => void requeueJob(r.job.id)} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 7, padding: '5px 9px', fontSize: 10.5, color: '#c4cad3', cursor: 'pointer' }}>↻ Retry</button>
+                  {(status === 'error' || status === 'cancelled') && (
+                    <button type="button" onClick={() => void requeueJob(r.job.id)} title={status === 'cancelled' ? 'Put this job back in the queue' : undefined} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 7, padding: '5px 9px', fontSize: 10.5, color: '#c4cad3', cursor: 'pointer' }}>↻ Retry</button>
                   )}
                   {(status === 'queued' || isBlocked) && (
                     <button type="button" onClick={() => void requeueJob(r.job.id)} title="Reset to queued" className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 7, padding: '5px 9px', fontSize: 10.5, color: '#c4cad3', cursor: 'pointer' }}>↻</button>

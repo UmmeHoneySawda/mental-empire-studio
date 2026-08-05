@@ -25,6 +25,9 @@ export const DEFAULT_AUTOMATION_STYLE: AutomationStyleConfig = {
   gradientEdge: 'none',
   gradientIntensity: 50,
   aspectRatio: '16:9',
+  hookText: '',
+  hookEnabled: false,
+  zoomAtStart: true,
   brollMode: 'off',
   brollDensity: 'sparse',
   brollPoolSize: 18,
@@ -103,8 +106,9 @@ export function normalizeAutomationStyle(value: unknown, legacy: Partial<Automat
   const legacyAspect = Array.isArray(legacy.aspectRatios) ? legacy.aspectRatios[0] : undefined
   const offsetRaw = raw.captionOffsetY
   const offset = offsetRaw == null || offsetRaw === '' ? undefined : finiteNumber(offsetRaw, 82, 4, 96)
+  const videoStyle = oneOf<VideoStyle>(raw.videoStyle, ['None', 'Cinematic', 'Intense', 'Heartfelt', 'Clean'], legacyStyle)
   return {
-    videoStyle: oneOf<VideoStyle>(raw.videoStyle, ['None', 'Cinematic', 'Intense', 'Heartfelt', 'Clean'], legacyStyle),
+    videoStyle,
     captionPreset: typeof raw.captionPreset === 'string' && raw.captionPreset.trim() ? raw.captionPreset.trim().slice(0, 80) : legacy.captionPreset || DEFAULT_AUTOMATION_STYLE.captionPreset,
     captionFont: typeof raw.captionFont === 'string' && raw.captionFont.trim() ? raw.captionFont.trim().slice(0, 80) : DEFAULT_AUTOMATION_STYLE.captionFont,
     captionAnimation: captionAnimation(raw.captionAnimation),
@@ -121,6 +125,10 @@ export function normalizeAutomationStyle(value: unknown, legacy: Partial<Automat
     gradientEdge: oneOf(raw.gradientEdge, ['none', 'top', 'bottom', 'left', 'right'], DEFAULT_AUTOMATION_STYLE.gradientEdge),
     gradientIntensity: finiteNumber(raw.gradientIntensity, DEFAULT_AUTOMATION_STYLE.gradientIntensity, 0, 100),
     aspectRatio: oneOf(raw.aspectRatio ?? legacyAspect, ['16:9', '1:1', '9:16'], DEFAULT_AUTOMATION_STYLE.aspectRatio),
+    hookText: typeof raw.hookText === 'string' ? raw.hookText.trim().slice(0, 200) : DEFAULT_AUTOMATION_STYLE.hookText,
+    hookEnabled: typeof raw.hookEnabled === 'boolean' ? raw.hookEnabled : DEFAULT_AUTOMATION_STYLE.hookEnabled,
+    // Legacy rows predate the field; the old behaviour derived the opening zoom from the style.
+    zoomAtStart: typeof raw.zoomAtStart === 'boolean' ? raw.zoomAtStart : videoStyle !== 'None',
     brollMode: oneOf(raw.brollMode, ['off', 'full', 'overlay'], legacy.rules?.autoBroll ? 'full' : DEFAULT_AUTOMATION_STYLE.brollMode),
     brollDensity: oneOf<BrollDensity>(raw.brollDensity, ['full', 'sparse', 'keywords'], DEFAULT_AUTOMATION_STYLE.brollDensity),
     brollPoolSize: Math.round(finiteNumber(raw.brollPoolSize, DEFAULT_AUTOMATION_STYLE.brollPoolSize, 1, 200)),

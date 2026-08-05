@@ -1,40 +1,40 @@
-import { useEffect, useState } from 'react'
-// Imported from the leaf module rather than the barrel: the barrel pulls every zod
-// schema in the engine's shared model into this chunk, and Compose only needs the type.
-import type { ComposeEngine } from '@shared/video-engine/ipc'
+import { useEffect, useRef, useState } from 'react'
 import { useStore } from '../store/useStore'
 import { useData } from '../store/useData'
-import { Banner, SectionLabel } from '../components/ui/kit'
+import { Banner, Btn, SectionLabel } from '../components/ui/kit'
 import { ProjectGate } from '../components/ProjectGate'
-import { EngineSwitch } from '../features/video-studio/EngineSwitch'
+import { EngineStatusLamp } from '../features/video-studio/EngineStatusLamp'
 import { useVideoStudio } from '../features/video-studio/store/useVideoStudio'
 import { EditorShell } from '../features/video-studio/editor/EditorShell'
+import { useEditor } from '../features/video-studio/editor/useEditor'
 import '../features/video-studio/editor/editor.css'
 
 /* Compose — the video editor.
 
-   There is one engine now: the Remotion timeline editor (`EditorShell`), which owns the
-   whole workspace with renderer-owned state, a live <Player>, and no staged-preview step.
-   The Classic GPU pipeline and the HyperFrames studio are no longer offered here, so this
-   screen is a project gate plus that editor; the render head above it stays as the
+   There is one engine: the Remotion timeline editor (`EditorShell`), which owns the whole
+   workspace with renderer-owned state, a live <Player>, and no staged-preview step. This
+   screen is a project library plus that editor; the render head above it is the
    renderer-availability lamp. */
-
-const ENGINE: ComposeEngine = 'remotion'
 
 export function Compose(): JSX.Element {
   const setActive = useStore((s) => s.setActive)
   const project = useData((s) => s.activeProject)
   const downloads = useData((s) => s.downloads)
   const openProject = useData((s) => s.openProject)
+  const closeProject = useData((s) => s.closeProject)
 
   const engineStatus = useVideoStudio((s) => s.status)
   const [error, setError] = useState('')
   const [openingDownloadId, setOpeningDownloadId] = useState('')
+  const [closing, setClosing] = useState(false)
+  // Set once the user asks for the library. Without it the auto-open below would
+  // immediately re-open the only download and the back button would look broken.
+  const wentBack = useRef(false)
 
   // Auto-open only when there is one obvious choice; with multiple downloads the
   // context stays explicit so Compose never silently swaps projects.
   useEffect(() => {
-    if (!project && downloads.length === 1) {
+    if (!project && !wentBack.current && downloads.length === 1) {
       void openProject(downloads[0].id).catch((e) => setError((e as Error).message))
     }
   }, [project, downloads, openProject])
@@ -51,6 +51,7 @@ export function Compose(): JSX.Element {
 
   const openComposeProject = async (downloadId: string): Promise<void> => {
     if (openingDownloadId) return
+    wentBack.current = false
     setOpeningDownloadId(downloadId)
     setError('')
     try {
@@ -59,6 +60,24 @@ export function Compose(): JSX.Element {
       setError((e as Error).message || 'Could not open this video.')
     } finally {
       setOpeningDownloadId('')
+    }
+  }
+
+  // Closing unmounts the editor, so the pending debounced save has to land first —
+  // the same guarantee `openRendererEditor` gives when it re-binds to another clip.
+  const backToLibrary = async (): Promise<void> => {
+    if (closing) return
+    setClosing(true)
+    setError('')
+    try {
+      if (!(await useEditor.getState().flush())) {
+        setError(useEditor.getState().error || 'The current project could not be saved, so it stayed open.')
+        return
+      }
+      wentBack.current = true
+      closeProject()
+    } finally {
+      setClosing(false)
     }
   }
 
@@ -72,21 +91,17 @@ export function Compose(): JSX.Element {
             Video studio
           </div>
         </div>
-        <EngineSwitch engine={ENGINE} status={engineStatus} onChange={() => {}} />
+        <EngineStatusLamp status={engineStatus} />
         <div style={{ flex: 1 }} />
-        {downloads.length > 0 && (
-          <select
-            className="ed-input"
-            value={project?.downloadId ?? ''}
-            onChange={(e) => { if (e.target.value) void openComposeProject(e.target.value) }}
-            style={{ width: 260, fontSize: 12 }}
-            title="Switch project"
+        {project && (
+          <Btn
+            variant="soft"
+            disabled={closing}
+            title="Save this project and pick another video"
+            onClick={() => void backToLibrary()}
           >
-            {!project && <option value="">Choose a downloaded clip…</option>}
-            {downloads.filter((d) => !!d.filePath && (d.durationSec ?? 0) > 0).map((d) => (
-              <option key={d.id} value={d.id}>{d.title}</option>
-            ))}
-          </select>
+            {closing ? 'Saving…' : '← Library'}
+          </Btn>
         )}
       </div>
 

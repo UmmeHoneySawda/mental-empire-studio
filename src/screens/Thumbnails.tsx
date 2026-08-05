@@ -39,12 +39,14 @@ export function Thumbnails(): JSX.Element {
   const transcript = useData((s) => s.transcript)
   const downloads = useData((s) => s.downloads)
   const openProject = useData((s) => s.openProject)
+  const closeProject = useData((s) => s.closeProject)
   const refreshActiveProjectSnapshot = useData((s) => s.refreshActiveProjectSnapshot)
   const loadRenderJobs = useData((s) => s.loadRenderJobs)
   const loadWorkItems = useData((s) => s.loadWorkItems)
 
   const [leftTab, setLeftTab] = useState<'layers' | 'templates'>('layers')
   const [saved, setSaved] = useState(false)
+  const [exported, setExported] = useState(false)
   const [saving, setSaving] = useState(false)
   const [saveError, setSaveError] = useState('')
   const [pickError, setPickError] = useState('')
@@ -167,6 +169,16 @@ export function Thumbnails(): JSX.Element {
     }
   }
 
+  // The gate was unreachable before, so nothing ever cleared the header's transient state.
+  // Now that it is, a stale error banner would sit above the library grid.
+  const backToLibrary = (): void => {
+    closeProject()
+    clearSelection()
+    setSaveError('')
+    setSaved(false)
+    setExported(false)
+  }
+
   const saveThumbnail = async (): Promise<void> => {
     if (!activeProject || saving) return
     setSaving(true)
@@ -185,12 +197,13 @@ export function Thumbnails(): JSX.Element {
   }
 
   const exportPng = async (): Promise<void> => {
+    if (!activeProject) return
     setSaveError('')
     try {
       const url = await rasterizeLayers(layers)
-      await window.api?.thumbnails?.writePng?.(activeProject?.title || 'thumbnail', url)
-      setSaved(true)
-      setTimeout(() => setSaved(false), 2200)
+      await window.api?.thumbnails?.writePng?.(activeProject.title, url)
+      setExported(true)
+      setTimeout(() => setExported(false), 2200)
     } catch (e) {
       setSaveError((e as Error).message || 'Could not export PNG.')
     }
@@ -208,17 +221,30 @@ export function Thumbnails(): JSX.Element {
           </div>
         </div>
         <div style={{ flex: 1 }} />
+        {activeProject && (
+          <Btn variant="soft" title="Pick another video" onClick={backToLibrary}>
+            ← Library
+          </Btn>
+        )}
         <IconBtn title="Undo (⌘/Ctrl+Z)" disabled={!canUndo} onClick={undoThumbnail}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M9 14L4 9l5-5" /><path d="M4 9h10.5a5.5 5.5 0 010 11H11" /></svg>
         </IconBtn>
         <IconBtn title="Redo (⌘/Ctrl+Shift+Z)" disabled={!canRedo} onClick={redoThumbnail}>
           <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2"><path d="M15 14l5-5-5-5" /><path d="M20 9H9.5a5.5 5.5 0 000 11H13" /></svg>
         </IconBtn>
-        <Btn onClick={() => void exportPng()} title="Write a PNG to the output folder">Export PNG</Btn>
         {activeProject && (
-          <Btn variant={saved ? 'soft' : 'primary'} disabled={saving} onClick={() => void saveThumbnail()}>
-            {saved ? '✓ Saved' : saving ? 'Saving…' : 'Save thumbnail'}
-          </Btn>
+          <>
+            <Btn
+              variant={exported ? 'soft' : 'ghost'}
+              onClick={() => void exportPng()}
+              title="Write a standalone PNG to the library's _cache/thumbnails folder — this does not attach it to the project"
+            >
+              {exported ? '✓ Exported' : 'Export PNG'}
+            </Btn>
+            <Btn variant={saved ? 'soft' : 'primary'} disabled={saving} onClick={() => void saveThumbnail()}>
+              {saved ? '✓ Saved' : saving ? 'Saving…' : 'Save thumbnail'}
+            </Btn>
+          </>
         )}
       </div>
 

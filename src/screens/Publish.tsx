@@ -1,27 +1,47 @@
 import { useEffect, useMemo, useState } from 'react'
 import { ScreenPad } from '../components/primitives'
-import { PageHeader, Card, Btn, StatusPill, EmptyState } from '../components/ui/kit'
+import { PageHeader, Card, Btn, StatusPill, EmptyState, Banner } from '../components/ui/kit'
 import { useData } from '../store/useData'
 import type { PublishItem } from '@shared/types'
 import { mediaSrc } from '../lib/media'
 
-// Library/Publish hub (P2 H): the "did I already upload this" view. Removes the manual
-// folder-hunting — lists every finished render with a fuzzy-matched upload status (via the
-// Sources -> My Channel link, so it needs G's channel linking to resolve), a Reveal-in-
-// folder button, and native drag-out (drag the video/thumbnail straight into a browser
-// upload tab) instead of digging through D:\ytAutomateOutputs by hand.
+// Hand-off hub (P2 H): the "did I already upload this" view. Removes the manual
+// folder-hunting — lists every finished render with the upload status persisted by
+// runUploadDetection, a Reveal-in-folder button, and native drag-out (drag the video/thumbnail
+// straight into a browser upload tab) instead of digging through D:\ytAutomateOutputs by hand.
+// The nav key stays `publish` (settings.defaultScreen persists it) but nothing here uploads:
+// the app has no uploader, no OAuth and no network call on this path, so the labels say so.
 
-type Filter = 'all' | 'not-uploaded' | 'uploaded' | 'unlinked'
+type Filter = 'all' | PublishItem['uploadStatus']
 
 const STATUS_LABEL: Record<PublishItem['uploadStatus'], string> = {
   uploaded: 'Uploaded',
+  'maybe-uploaded': 'Probably uploaded',
   'not-uploaded': 'Not uploaded',
-  unlinked: 'Link a source to check'
+  unchecked: 'Not checked'
 }
-const STATUS_TONE: Record<PublishItem['uploadStatus'], 'ok' | 'warn' | 'neutral'> = {
+const STATUS_TONE: Record<PublishItem['uploadStatus'], 'ok' | 'warn' | 'neutral' | 'accent'> = {
   uploaded: 'ok',
+  'maybe-uploaded': 'accent',
   'not-uploaded': 'warn',
-  unlinked: 'neutral'
+  unchecked: 'neutral'
+}
+
+/** Tab order; labels come from STATUS_LABEL so a pill and its filter can never drift apart. */
+const FILTER_ORDER: Filter[] = ['all', 'not-uploaded', 'maybe-uploaded', 'uploaded', 'unchecked']
+
+function statusHint(item: PublishItem): string {
+  const pct = item.uploadMatchScore === undefined ? null : `${Math.round(item.uploadMatchScore * 100)}%`
+  switch (item.uploadStatus) {
+    case 'uploaded':
+      return pct ? `Title matched an upload on your channel at ${pct}` : 'You marked this uploaded'
+    case 'maybe-uploaded':
+      return `Best title match ${pct ?? '—'} — under the confirm threshold, so check before re-uploading`
+    case 'not-uploaded':
+      return 'No upload on your channels matched this title'
+    case 'unchecked':
+      return 'Upload detection has not looked at this video yet'
+  }
 }
 
 function fmtDuration(sec: number): string {
@@ -71,7 +91,18 @@ function DragHandle({ path, label, startDrag }: { path: string; label: string; s
 function PublishCard({ item }: { item: PublishItem }): JSX.Element {
   const revealPublishFile = useData((s) => s.revealPublishFile)
   const startPublishDrag = useData((s) => s.startPublishDrag)
+  const setItemUploaded = useData((s) => s.setItemUploaded)
+  const loadPublishItems = useData((s) => s.loadPublishItems)
   const thumbSrc = mediaSrc(item.thumbPath ?? undefined)
+  const isUploaded = item.uploadStatus === 'uploaded'
+  // Dragging a file out writes nothing, and the only automatic path to "Uploaded" is a
+  // re-scrape plus a fuzzy title match. Without this the screen can never converge: the card
+  // looks identical before and after the hand-off, so the user has no way to say "yes, I did".
+  const mark = async (uploaded: boolean): Promise<void> => {
+    if (!item.videoId) return
+    await setItemUploaded(item.videoId, uploaded)
+    await loadPublishItems()
+  }
 
   return (
     <Card pad={0} style={{ overflow: 'hidden', display: 'flex' }}>
@@ -98,15 +129,24 @@ function PublishCard({ item }: { item: PublishItem }): JSX.Element {
             <div title={item.title} className="me-ellipsis" style={{ fontWeight: 600, fontSize: 13.5, color: 'var(--text-bright)' }}>{item.title}</div>
             <div style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}>{item.channel} · rendered {fmtDate(item.renderedAt)}</div>
           </div>
-          <StatusPill tone={STATUS_TONE[item.uploadStatus]}>{STATUS_LABEL[item.uploadStatus]}</StatusPill>
+          <StatusPill tone={STATUS_TONE[item.uploadStatus]} title={statusHint(item)}>{STATUS_LABEL[item.uploadStatus]}</StatusPill>
         </div>
-        {item.matchedTitle && (
-          <div title={item.matchedTitle} className="me-ellipsis" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-faint)' }}>matched: {item.matchedTitle}</div>
+        {item.matchedChannels && (
+          <div className="me-ellipsis" style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-faint)' }}>found on {item.matchedChannels.join(', ')}</div>
         )}
         <div style={{ display: 'flex', gap: 6, marginTop: 'auto', flexWrap: 'wrap' }}>
           <DragHandle path={item.videoPath} label="Drag video" startDrag={startPublishDrag} />
           {item.thumbPath && <DragHandle path={item.thumbPath} label="Drag thumb" startDrag={startPublishDrag} />}
           <button type="button" onClick={() => void revealPublishFile(item.videoPath)} title="Reveal the rendered file in your file manager" aria-label="Reveal video in folder" className="me-btn ed-focus" style={{ border: '1px solid var(--border-3)', background: 'var(--bg-control)', borderRadius: 'var(--radius-sm)', padding: '5px 10px', fontSize: 'var(--fs-caption)', color: 'var(--text-bright)', cursor: 'pointer' }}>Reveal video</button>
+          {item.videoId && (
+            <button
+              type="button"
+              onClick={() => void mark(!isUploaded)}
+              title={isUploaded ? 'Mark this as not uploaded (overrides detection either way)' : 'Record that you uploaded this, so it stops showing as pending'}
+              className="me-btn ed-focus"
+              style={{ border: '1px solid var(--border-3)', background: 'var(--bg-control)', borderRadius: 'var(--radius-sm)', padding: '5px 10px', fontSize: 'var(--fs-caption)', color: 'var(--text-bright)', cursor: 'pointer' }}
+            >{isUploaded ? 'Unmark uploaded' : 'Mark uploaded'}</button>
+          )}
         </div>
       </div>
     </Card>
@@ -129,48 +169,67 @@ export function Publish(): JSX.Element {
   const items = useData((s) => s.publishItems)
   const loading = useData((s) => s.publishLoading)
   const loadPublishItems = useData((s) => s.loadPublishItems)
+  const detectUploads = useData((s) => s.detectUploads)
   const [filter, setFilter] = useState<Filter>('all')
+  const [checking, setChecking] = useState(false)
 
   useEffect(() => { void loadPublishItems() }, [loadPublishItems])
 
   const filtered = useMemo(() => filter === 'all' ? items : items.filter((i) => i.uploadStatus === filter), [items, filter])
-  const counts = useMemo(() => ({
-    all: items.length,
-    'not-uploaded': items.filter((i) => i.uploadStatus === 'not-uploaded').length,
-    uploaded: items.filter((i) => i.uploadStatus === 'uploaded').length,
-    unlinked: items.filter((i) => i.uploadStatus === 'unlinked').length
-  }), [items])
+  const counts = useMemo(() => {
+    const by: Record<Filter, number> = { all: items.length, uploaded: 0, 'maybe-uploaded': 0, 'not-uploaded': 0, unchecked: 0 }
+    for (const i of items) by[i.uploadStatus]++
+    return by
+  }, [items])
 
-  const tabs: Array<{ key: Filter; label: string }> = [
-    { key: 'all', label: 'All' },
-    { key: 'not-uploaded', label: 'Not uploaded' },
-    { key: 'uploaded', label: 'Uploaded' },
-    { key: 'unlinked', label: 'No source link' }
-  ]
+  // Only offer a filter that can return something. Four tabs with live counts, three of them
+  // permanently 0, leading to "Nothing matches this filter", was the old screen's worst lie.
+  const tabs = FILTER_ORDER.filter((k) => k === 'all' || counts[k] > 0 || filter === k)
+
+  const runDetection = async (): Promise<void> => {
+    setChecking(true)
+    try {
+      await detectUploads()
+      await loadPublishItems()
+    } finally {
+      setChecking(false)
+    }
+  }
 
   return (
     <ScreenPad>
       <PageHeader
         eyebrow="Output"
-        title="Publish"
-        subtitle="Every finished render, matched against your channels' uploaded titles. Drag a video or thumbnail straight into a browser upload tab — no folder-hunting."
-        actions={<Btn variant="ghost" onClick={() => void loadPublishItems()} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh'}</Btn>}
+        title="Ready to upload"
+        subtitle="Every finished render, with whether it already appears on one of your channels. Drag the video and its thumbnail straight into your YouTube upload tab — no folder-hunting. The app hands the files off; it does not upload for you."
+        actions={(
+          <>
+            <Btn variant="ghost" onClick={() => void runDetection()} disabled={checking} title="Re-match every video against the uploads scraped from your own channels">{checking ? 'Checking…' : 'Check uploads'}</Btn>
+            <Btn variant="ghost" onClick={() => void loadPublishItems()} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh'}</Btn>
+          </>
+        )}
       />
 
+      {items.length > 0 && counts.unchecked === items.length && (
+        <Banner kind="info" style={{ marginBottom: 12 }}>
+          None of these have been checked against your own channels' uploads yet, so no card can tell you whether you already uploaded it. Hit “Check uploads” — if they stay unchecked, refresh a channel on My Channels so there are uploads to match against.
+        </Banner>
+      )}
+
       <div role="tablist" aria-label="Filter by upload status" style={{ display: 'flex', gap: 6, marginBottom: 16, flexWrap: 'wrap' }}>
-        {tabs.map((t) => {
-          const on = filter === t.key
+        {tabs.map((key) => {
+          const on = filter === key
           return (
             <button
-              key={t.key}
+              key={key}
               type="button"
               role="tab"
               aria-selected={on}
-              onClick={() => setFilter(t.key)}
+              onClick={() => setFilter(key)}
               className="me-btn ed-focus"
               style={{ border: on ? '1px solid var(--accent)' : '1px solid var(--border-2)', color: on ? 'var(--accent)' : 'var(--text-muted)', background: on ? 'var(--accent-soft)' : 'transparent', borderRadius: 'var(--radius-sm)', padding: '6px 12px', fontSize: 'var(--fs-sm)', cursor: 'pointer' }}
             >
-              {t.label} <span style={{ fontFamily: 'var(--font-mono)', opacity: 0.7 }}>{counts[t.key]}</span>
+              {key === 'all' ? 'All' : STATUS_LABEL[key]} <span style={{ fontFamily: 'var(--font-mono)', opacity: 0.7 }}>{counts[key]}</span>
             </button>
           )
         })}

@@ -1020,7 +1020,12 @@ function installMock(): void {
       },
       cancel: async (jobId: string) => {
         const row = renderRows.find((r) => r.job.id === jobId)
-        if (row) row.job.status = 'error'
+        if (row) row.job.status = 'cancelled'
+      },
+      cancelAll: async () => {
+        for (const row of renderRows) {
+          if (row.job.status === 'rendering' || row.job.status === 'queued') row.job.status = 'cancelled'
+        }
       },
       openFile: async () => {},
       openFolder: async () => {}

@@ -88,6 +88,12 @@ export function RemotionVideo({ project }: RemotionCompositionProps) {
           key={`transition-chain:${chain.scenes[0]!.id}`}
           from={chain.startFrame}
           durationInFrames={chain.durationFrames}
+          // One second of premount so a scene's media is decoded before its first painted
+          // frame. Premounted subtrees render but are not painted, and the `<Player>` — unlike
+          // the render — does not block on asset readiness, so without this every scene
+          // boundary starts blank. Deliberately not on `TransitionSeries.Sequence`: that
+          // component validates children by type identity and has its own prop surface.
+          premountFor={project.canvas.fps}
           style={sceneLayerStyle(
             project,
             chain.scenes[0]!,
@@ -131,6 +137,7 @@ export function RemotionVideo({ project }: RemotionCompositionProps) {
             key={scene.id}
             from={scene.startFrame}
             durationInFrames={scene.durationFrames}
+            premountFor={project.canvas.fps}
             style={sceneLayerStyle(project, scene, prepared)}
           >
             <SceneContent

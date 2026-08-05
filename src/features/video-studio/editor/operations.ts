@@ -2,9 +2,11 @@ import {
   AUTO_BROLL_TRACK_ID,
   AUTO_BROLL_TRACK_NAME,
   AUTO_BROLL_TRACK_ORDER,
+  clampVideoGrading,
   mediaFillSeed,
   planMediaFill,
   type AutoBrollPlacement,
+  type VideoGrading,
   type VideoProject,
   type VideoScene,
   type VideoTrack
@@ -334,6 +336,15 @@ export function patchClip(
   patch: Partial<VideoScene>
 ): VideoProject {
   return mapScene(project, sceneId, (current) => ({ ...current, ...patch, id: current.id }))
+}
+
+/** The colour grade, like every other edit: local and synchronous, committed by the
+ *  debounced save. It used to be a `videoEngine:setGrading` round trip per input event,
+ *  which set `busy` — disabling the very slider being dragged — and pushed a whole-document
+ *  snapshot onto the undo stack for each of the ~100 events a sweep emits. The IPC handler
+ *  stays for the automation path, which has no project in the renderer to edit. */
+export function setGrading(project: VideoProject, grading: VideoGrading): VideoProject {
+  return { ...project, grading: clampVideoGrading(grading) }
 }
 
 /** Appends a visual lane at the front of the compositor. Audio is always drawn last in the

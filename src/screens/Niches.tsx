@@ -13,6 +13,7 @@ const ORIENTATIONS: Array<Niche['orientation']> = ['landscape', 'portrait', 'any
 export function Niches(): JSX.Element {
   const niches = useData((s) => s.niches)
   const nichePools = useData((s) => s.nichePools)
+  const nichePoolProgress = useData((s) => s.nichePoolProgress)
   const sourceChannels = useData((s) => s.sourceChannels)
   const loadNiches = useData((s) => s.loadNiches)
   const saveNiche = useData((s) => s.saveNiche)
@@ -33,6 +34,9 @@ export function Niches(): JSX.Element {
     return { clips: h?.clips ?? 0, updatedAt: h?.updatedAt }
   }
 
+  // `warming` is the only feedback between the click and the first progress frame — and on the
+  // no-provider bail there is never a frame at all. The store map is what survives the
+  // <Screen key={active}> remount, so a warm still reports itself after navigating away and back.
   const warm = async (id: string): Promise<void> => {
     setWarming(id)
     setWarmError('')
@@ -75,6 +79,9 @@ export function Niches(): JSX.Element {
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
           {niches.map((n) => {
             const pool = poolFor(n.id)
+            const prog = nichePoolProgress[n.id]
+            const progPct = prog ? Math.min(100, Math.round((prog.done / Math.max(1, prog.total)) * 100)) : 0
+            const isWarming = warming === n.id || !!prog
             const assigned = sourceChannels.filter((c) => c.nicheId === n.id)
             const isConfirming = confirmDelete === n.id
             return (
@@ -82,8 +89,14 @@ export function Niches(): JSX.Element {
                 <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10, flexWrap: 'wrap' }}>
                   <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)' }}>{n.name}</span>
                   <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-faint)', border: '1px solid var(--border-2)', borderRadius: 5, padding: '2px 7px' }}>{n.orientation}</span>
-                  <StatusPill tone={pool.clips > 0 ? 'ok' : 'neutral'} title="Clips cached in this pool">{pool.clips}/{n.targetClips} clips</StatusPill>
-                  {pool.updatedAt && <span style={{ fontSize: 10, color: 'var(--text-faint)' }}>· refreshed {new Date(pool.updatedAt).toLocaleDateString()}</span>}
+                  {prog ? (
+                    <StatusPill tone="accent" title="Downloading clips into this pool now">
+                      {prog.done}/{prog.total} clips · {progPct}%
+                    </StatusPill>
+                  ) : (
+                    <StatusPill tone={pool.clips > 0 ? 'ok' : 'neutral'} title="Clips cached in this pool">{pool.clips}/{n.targetClips} clips</StatusPill>
+                  )}
+                  {!prog && pool.updatedAt && <span style={{ fontSize: 10, color: 'var(--text-faint)' }}>· refreshed {new Date(pool.updatedAt).toLocaleDateString()}</span>}
                   <div style={{ flex: 1 }} />
                   {isConfirming ? (
                     <>
@@ -93,7 +106,7 @@ export function Niches(): JSX.Element {
                     </>
                   ) : (
                     <>
-                      <Btn variant="ghost" disabled={warming === n.id} onClick={() => void warm(n.id)}>{warming === n.id ? 'Warming…' : 'Warm pool'}</Btn>
+                      <Btn variant="ghost" disabled={isWarming} onClick={() => void warm(n.id)}>{isWarming ? 'Warming…' : 'Warm pool'}</Btn>
                       <Btn variant="ghost" onClick={() => setEditing(n)}>Edit</Btn>
                       <Btn variant="danger" onClick={() => setConfirmDelete(n.id)}>Delete</Btn>
                     </>

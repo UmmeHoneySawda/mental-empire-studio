@@ -13,6 +13,9 @@ const api: GpuWorkerApi = {
   onRun: (cb: (spec: GpuRenderSpec) => void) => {
     ipcRenderer.on(GPU_CHANNELS.run, (_e, spec: GpuRenderSpec) => cb(spec))
   },
+  onCancel: (cb: (jobId: string) => void) => {
+    ipcRenderer.on(GPU_CHANNELS.cancel, (_e, jobId: string) => cb(jobId))
+  },
   readFile: (path: string): ArrayBuffer => {
     const buf = readFileSync(path)
     // Return a tightly-sliced ArrayBuffer (Node Buffers can share a larger pool).

@@ -3,7 +3,7 @@ import type { ReactNode } from 'react'
 import { ScreenPad } from '../components/primitives'
 import { Banner, Btn, EmptyState, StatusPill } from '../components/ui/kit'
 import { useStore } from '../store/useStore'
-import { useTalkingPhotos } from '../store/useTalkingPhotos'
+import { motionQueryKey, useTalkingPhotos } from '../store/useTalkingPhotos'
 import { useData } from '../store/useData'
 import { describeTalkingPhotosCapabilities, isAllowedProviderMediaUrl } from '@shared/talkingphotos'
 import type {
@@ -17,6 +17,7 @@ import type {
 } from '@shared/talkingphotos'
 import { videoSrc } from '../lib/media'
 import {
+  buildDuplicatePrefill,
   defaultCreateDraft,
   describeProgress,
   filterLibrary,
@@ -34,9 +35,9 @@ import {
   titleFromProviderJob,
   unifyJobsAndProjects,
   validateCreate,
-  type CreateDraft,
   type CreateStyle,
-  type LibraryItem
+  type LibraryItem,
+  type WizardStep
 } from './talking-video/logic'
 
 // ---- status copy -----------------------------------------------------------
@@ -593,8 +594,6 @@ function TvPlayerModal({ item, onClose }: { item: LibraryItem | null; onClose: (
 
 // ---- main screen -----------------------------------------------------------
 
-type Tab = 'create' | 'library'
-type Step = 1 | 2 | 3
 
 export function TalkingVideo(): JSX.Element {
   const enabled = useStore((s) => s.settings.integrations.talkingPhotos.enabled)
@@ -602,11 +601,12 @@ export function TalkingVideo(): JSX.Element {
     connection, connecting, capabilities, jobs, remoteProjects, syncing, creating, error,
     init, connect, reconnect, disconnect, sync, loadProjects,
     createUploadedAudio, createScript, downloadOutput,
-    languages, languagesLoading, voicesByLanguage, voicesLoading,
-    motionsByQuery, motionsLoading, loadLanguages, loadVoices, loadMotions,
+    languages, languagesLoading, voicesByLanguage, voicesLoadingKeys,
+    motionsByQuery, motionsLoadingKeys, loadLanguages, loadVoices, loadMotions,
     createProviderSubtitles, applyLocalCaptions,
     deleteProject, mergeProjects,
-    loadTtsRecoveryLibrary, loadSubtitleLanguages
+    loadTtsRecoveryLibrary, loadSubtitleLanguages,
+    tab, step, draft, setTab, setStep, setDraft, patchDraft: patch
   } = useTalkingPhotos()
 
   const downloads = useData((s) => s.downloads)
@@ -614,9 +614,6 @@ export function TalkingVideo(): JSX.Element {
   const status = connection?.status ?? 'disconnected'
   const capabilitySummary = describeTalkingPhotosCapabilities(status, capabilities ?? null)
 
-  const [tab, setTab] = useState<Tab>('create')
-  const [step, setStep] = useState<Step>(1)
-  const [draft, setDraft] = useState<CreateDraft>(() => defaultCreateDraft())
   const [attemptedSubmit, setAttemptedSubmit] = useState(false)
   const [touched, setTouched] = useState<Partial<Record<string, boolean>>>({})
   const [highlightJobId, setHighlightJobId] = useState('')
@@ -634,7 +631,6 @@ export function TalkingVideo(): JSX.Element {
   const [selectMode, setSelectMode] = useState(false)
   const [selectedIds, setSelectedIds] = useState<string[]>([])
   const [captionLang, setCaptionLang] = useState('')
-  const [mood, setMood] = useState('Neutral')
   // Submit lifecycle: `submitting` mirrors an in-flight create so the Submit screen
   // leaves as soon as the job actually exists (via the early talkingphotos:job event),
   // rather than blocking on the whole create+render pipeline promise. The refs make
@@ -643,8 +639,6 @@ export function TalkingVideo(): JSX.Element {
   const submitHandledRef = useRef(false)
   const submitKnownIdsRef = useRef<Set<string>>(new Set())
   const accountRef = useRef<HTMLDivElement>(null)
-
-  const patch = (p: Partial<CreateDraft>): void => setDraft((d) => ({ ...d, ...p }))
 
   useEffect(() => { void init(); void loadDownloads() }, [init, loadDownloads])
   useEffect(() => { if (status === 'connected') void loadLanguages() }, [status, loadLanguages])
@@ -676,11 +670,6 @@ export function TalkingVideo(): JSX.Element {
     return () => document.removeEventListener('mousedown', onDoc)
   }, [])
 
-  // Default tab: Library when videos exist
-  useEffect(() => {
-    if (jobs.some((j) => !j.internalSegment)) setTab((t) => (t === 'create' && !attemptedSubmit ? t : t))
-  }, [jobs, attemptedSubmit])
-
   const downloadedAudio = useMemo(
     () => downloads.filter((item) => !!item.filePath && /\.(mp3|wav|m4a|aac|flac|ogg)$/i.test(item.filePath)),
     [downloads]
@@ -692,7 +681,11 @@ export function TalkingVideo(): JSX.Element {
       : capabilities.limits.maxCharactersTts)
     : 0
 
-  const motionKey = `human|${draft.characterGender || 'female'}|${draft.aspectRatio}|`
+  const motionKey = motionQueryKey({
+    projectType: 'human',
+    gender: (draft.characterGender as 'male' | 'female') || 'female',
+    aspectRatio: draft.aspectRatio
+  })
   const motions: ProviderMotion[] = motionsByQuery[motionKey] ?? []
   const motionOptions: ComboOption[] = motions.map((m) => ({
     value: String(m.id),
@@ -761,7 +754,7 @@ export function TalkingVideo(): JSX.Element {
     const subtitleMode: TalkingPhotosSubtitleMode = draft.captionsOn
       ? (capabilitySummary.ttsAvailable ? 'provider' : 'local')
       : 'none'
-    const voiceStyle = moodToVoiceStyle(mood)
+    const voiceStyle = moodToVoiceStyle(draft.mood)
     const speed = draft.ttsSpeed ?? 50
     const pitch = draft.ttsPitch ?? 50
     const imagePath = draft.characterImagePath || ''
@@ -827,7 +820,8 @@ export function TalkingVideo(): JSX.Element {
       ttsVoice: draft.ttsVoice,
       characterGender: draft.characterGender,
       characterAge: draft.characterAge,
-      characterStyle: draft.characterStyle
+      characterStyle: draft.characterStyle,
+      mood: draft.mood
     }))
     setAttemptedSubmit(false)
     setTouched({})
@@ -850,10 +844,7 @@ export function TalkingVideo(): JSX.Element {
   }, [jobs, submitting])
 
   const applyDuplicate = (item: LibraryItem): void => {
-    setDraft((d) => ({
-      ...d,
-      title: item.title.replace(/\s*·\s*part\s+\d+\s*\/\s*\d+\s*$/i, '').trim() + ' (copy)'
-    }))
+    patch(buildDuplicatePrefill(item))
     setTab('create')
     setStep(1)
     setToast('Duplicated settings — review and create')
@@ -1003,7 +994,7 @@ export function TalkingVideo(): JSX.Element {
             <div className="tv-view active" role="tabpanel">
               <div className="tv-create-grid">
                 <nav className="tv-rail" aria-label="Steps">
-                  {([1, 2, 3] as Step[]).map((n) => (
+                  {([1, 2, 3] as WizardStep[]).map((n) => (
                     <button
                       key={n}
                       type="button"
@@ -1062,7 +1053,7 @@ export function TalkingVideo(): JSX.Element {
                               <Combobox id="tv-language" value={draft.ttsLanguage || ''} onChange={(v) => patch({ ttsLanguage: v, ttsVoice: '' })}
                                 options={languageOptions} placeholder="Search language…" loading={languagesLoading} disabled={!capabilitySummary.ttsAvailable} />
                               <Combobox id="tv-voice" value={draft.ttsVoice || ''} onChange={(v) => patch({ ttsVoice: v })}
-                                options={voiceOptions} placeholder="Search voice…" loading={voicesLoading} disabled={!capabilitySummary.ttsAvailable} />
+                                options={voiceOptions} placeholder="Search voice…" loading={voicesLoadingKeys.has(draft.ttsLanguage || '')} disabled={!capabilitySummary.ttsAvailable} />
                             </div>
                           </Field>
                           <button type="button" className={`tv-more-toggle${more1 ? ' open' : ''}`} onClick={() => setMore1((v) => !v)}>
@@ -1073,7 +1064,7 @@ export function TalkingVideo(): JSX.Element {
                               <Field label="Mood">
                                 <div className="tv-chipgroup">
                                   {MOODS.map((m) => (
-                                    <button key={m} type="button" className={`tv-chip-opt${mood === m ? ' selected' : ''}`} onClick={() => setMood(m)}>{m}</button>
+                                    <button key={m} type="button" className={`tv-chip-opt${draft.mood === m ? ' selected' : ''}`} onClick={() => patch({ mood: m })}>{m}</button>
                                   ))}
                                 </div>
                               </Field>
@@ -1272,7 +1263,7 @@ export function TalkingVideo(): JSX.Element {
                           </div>
                           <Combobox id="tv-motion-combobox" value={String(draft.motionId || '')}
                             onChange={(v) => { patch({ motionId: Number(v) }); markTouched('motion') }}
-                            options={motionOptions} placeholder="Search motions…" loading={motionsLoading} />
+                            options={motionOptions} placeholder="Search motions…" loading={motionsLoadingKeys.has(motionKey)} />
                         </Field>
                       )}
                       <Field label="Add captions">

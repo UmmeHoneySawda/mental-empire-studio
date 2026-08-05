@@ -7,6 +7,7 @@ import { DEFAULT_BETA_OPTS } from '@shared/types'
 import type { ScrapedVideo, ScrapeOrder, SourceAutomationPatch, SourceChannel } from '@shared/types'
 import { youtubeIdFromDownloadId, youtubeThumbUrl, type YoutubeThumbQuality } from '@shared/youtube'
 import { sourceVideoBadge, type SourceVideoBadge } from '../lib/workitems'
+import { fmtAgo } from '../lib/time'
 
 const GRADS = [
   'linear-gradient(135deg,#2a2540,#46243a)', 'linear-gradient(135deg,#1a2e3a,#0f3a32)',
@@ -27,15 +28,17 @@ function fmtViews(views: number): string {
 }
 
 function YouTubeThumb({ videoId, alt, fallback, selected }: { videoId: string; alt: string; fallback: string; selected?: boolean }): JSX.Element {
-  const [quality, setQuality] = useState<YoutubeThumbQuality>('max')
+  // Start at `hq`: it exists for every video, whereas `maxresdefault` only exists for uploads
+  // at >=1080p, so starting there cost a guaranteed 404 round-trip per card before any pixels.
+  const [quality, setQuality] = useState<YoutubeThumbQuality>('hq')
   const [failed, setFailed] = useState(false)
   const src = videoId && !failed ? youtubeThumbUrl(videoId, quality) : ''
   return (
     <div style={{ position: 'relative', width: '100%', height: '100%', background: fallback, backgroundSize: 'cover', backgroundPosition: 'center' }}>
       {src && (
         <img
-          src={src} alt={alt}
-          onError={() => { if (quality === 'max') setQuality('hq'); else if (quality === 'hq') setQuality('mq'); else setFailed(true) }}
+          src={src} alt={alt} loading="lazy" decoding="async"
+          onError={() => { if (quality === 'hq') setQuality('mq'); else setFailed(true) }}
           style={{ position: 'absolute', inset: 0, width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
         />
       )}
@@ -44,18 +47,6 @@ function YouTubeThumb({ videoId, alt, fallback, selected }: { videoId: string; a
       )}
     </div>
   )
-}
-
-function fmtAgo(iso?: string): string {
-  if (!iso) return 'never'
-  const ms = Date.now() - new Date(iso).getTime()
-  if (!Number.isFinite(ms) || ms < 0) return 'just now'
-  const mins = Math.floor(ms / 60000)
-  if (mins < 1) return 'just now'
-  if (mins < 60) return `${mins}m ago`
-  const hrs = Math.floor(mins / 60)
-  if (hrs < 24) return `${hrs}h ago`
-  return `${Math.floor(hrs / 24)}d ago`
 }
 
 function orderCachedVideos(videos: ScrapedVideo[], order: ScrapeOrder, count: number): ScrapedVideo[] {

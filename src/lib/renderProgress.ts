@@ -16,7 +16,7 @@ export function renderLiveState(row: RenderQueueRow, progress?: RenderProgress):
   if (!progress) return { pct: row.job.pct, status: row.job.status }
   return {
     pct: progress.pct,
-    status: progress.done ? (progress.error ? 'error' : 'done') : 'rendering',
+    status: progress.done ? (progress.error ? 'error' : progress.stage === 'cancelled' ? 'cancelled' : 'done') : 'rendering',
     progress
   }
 }

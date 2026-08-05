@@ -188,7 +188,7 @@ interface EditorActions {
   /** Copy-prompt round trip: ask an outside model which words to emphasise, paste back. */
   importantWordsPrompt: (input?: { purpose?: string; maximumSelectionRatio?: number }) => Promise<string>
   applyImportantWords: (json: string, maximumSelectionRatio?: number) => Promise<void>
-  setGrading: (grading: VideoGrading) => Promise<void>
+  removeTransition: (transitionId: string) => Promise<void>
   searchBroll: (query: string) => Promise<void>
   placeBroll: (candidate: VideoBrollCandidate, startFrame: number, durationFrames: number) => Promise<void>
   /** Reads the whole transcript, plans and downloads footage engine-side, then splices the
@@ -775,11 +775,16 @@ export const useEditor = create<EditorStore>((set, get) => {
       await get().refreshCues()
     },
 
-    setGrading: async (grading) => {
+    /** The engine owns transition removal because it also repairs the clips the transition
+     *  was borrowing frames from — see the no-dangling-transition invariant. Going through
+     *  `runEngine` + `adopt` is what gives it a busy label, the error banner and an undo
+     *  entry; the panel used to call the IPC itself and got none of the three. */
+    removeTransition: async (transitionId) => {
       const { projectId } = get()
       if (!projectId) return
       if (!(await get().flush())) return
-      const project = await runEngine('Updating the grade', (native) => native.videoEngine.setGrading(projectId, grading))
+      const project = await runEngine('Removing the transition', (native) =>
+        native.videoEngine.removeTransition(projectId, transitionId))
       if (project) adopt(project)
     },
 

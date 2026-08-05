@@ -1,5 +1,5 @@
 import { spawn, spawnSync } from 'node:child_process'
-import { appendFileSync, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, copyFileSync, statSync, rmSync } from 'node:fs'
+import { appendFileSync, createWriteStream, existsSync, mkdirSync, readdirSync, readFileSync, writeFileSync, copyFileSync, statSync, rmSync, renameSync } from 'node:fs'
 import { join } from 'node:path'
 import { app } from 'electron'
 import type { AppSettings, BrollDensity, TranscriptWord, VideoStyle, Niche, NichePoolHealth } from '../../shared/types'
@@ -696,7 +696,9 @@ function concatPath(p: string): string {
   return p.replace(/\\/g, '/').replace(/'/g, "\\'")
 }
 
-async function downloadOne(c: BrollCandidate, dir: string, logPath?: string): Promise<string> {
+/** Exported for `test/unit/broll-download-atomic.test.ts` — the .part/rename discipline below
+ *  is on the render path too, so it needs direct coverage. */
+export async function downloadOne(c: BrollCandidate, dir: string, logPath?: string): Promise<string> {
   const path = join(dir, `${c.provider}-${c.id}.mp4`)
   if (existsSync(path)) {
     brollInfo(logPath, `clip cache hit provider=${c.provider} id=${c.id} bytes=${fileBytes(path)} path=${path}`)
@@ -707,23 +709,36 @@ async function downloadOne(c: BrollCandidate, dir: string, logPath?: string): Pr
   const res = await fetch(c.url)
   brollInfo(logPath, `clip download response provider=${c.provider} id=${c.id} status=${res.status} ms=${Date.now() - started} url=${redactUrl(c.url)}`)
   if (!res.ok || !res.body) throw new Error(`download ${redactUrl(c.url)} -> ${res.status}`)
+  // Stream to a sibling .part and rename only after a clean close. A partial file left at
+  // `path` by a kill mid-download is indistinguishable from a complete one, and the cache-hit
+  // check above would adopt it as a valid clip.
+  const part = `${path}.part`
   let bytes = 0
-  await new Promise<void>((resolve, reject) => {
-    const file = createWriteStream(path)
-    file.on('error', reject)
-    // @ts-expect-error - web stream → node stream is supported at runtime
-    const reader = res.body.getReader()
-    const pump = (): void => {
-      reader.read().then(({ done, value }: { done: boolean; value?: Uint8Array }) => {
-        if (done) { file.end(() => resolve()); return }
-        const chunk = Buffer.from(value!)
-        bytes += chunk.length
-        if (!file.write(chunk)) file.once('drain', pump)
-        else pump()
-      }).catch(reject)
-    }
-    pump()
-  })
+  let file: ReturnType<typeof createWriteStream> | undefined
+  try {
+    await new Promise<void>((resolve, reject) => {
+      file = createWriteStream(part)
+      file.on('error', reject)
+      // @ts-expect-error - web stream → node stream is supported at runtime
+      const reader = res.body.getReader()
+      const pump = (): void => {
+        reader.read().then(({ done, value }: { done: boolean; value?: Uint8Array }) => {
+          if (done) { file!.end(() => resolve()); return }
+          const chunk = Buffer.from(value!)
+          bytes += chunk.length
+          if (!file!.write(chunk)) file!.once('drain', pump)
+          else pump()
+        }).catch(reject)
+      }
+      pump()
+    })
+    renameSync(part, path)
+  } catch (e) {
+    file?.destroy()
+    // A leftover .part is never adopted as a clip and the next attempt truncates it.
+    try { rmSync(part, { force: true }) } catch { /* Windows can hold the handle briefly */ }
+    throw e
+  }
   brollInfo(logPath, `clip download done provider=${c.provider} id=${c.id} bytes=${bytes || fileBytes(path)} ms=${Date.now() - started} path=${path}`)
   return path
 }
@@ -786,8 +801,13 @@ async function cacheCandidateForLibrary(c: BrollCandidate, sourceKey: string, ke
   mkdirSync(dir, { recursive: true })
   const dest = join(dir, `${c.provider}-${safeId(c.id)}.mp4`)
   let path: string
+  // A file already at `dest` but absent from the index was cached by an earlier warm — before
+  // the .part discipline in downloadOne that could be a truncated download, so probe it rather
+  // than trusting the provider's duration (which then lets the `durationSec <= 0` skip fire).
+  let adopted = false
   if (existsSync(dest)) {
     path = dest
+    adopted = true
   } else if (existsSync(c.url)) {
     path = dest
     copyFileSync(c.url, path)
@@ -808,7 +828,7 @@ async function cacheCandidateForLibrary(c: BrollCandidate, sourceKey: string, ke
     provider: c.provider,
     id: c.id,
     path,
-    durationSec: c.durationSec || probeDurationSec(path),
+    durationSec: adopted ? probeDurationSec(path) || c.durationSec : c.durationSec || probeDurationSec(path),
     width: c.width,
     height: c.height,
     tags: [...new Set([...c.tags, keyword])],

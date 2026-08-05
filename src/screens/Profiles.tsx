@@ -3,7 +3,6 @@ import { useStore } from '../store/useStore'
 import { useData } from '../store/useData'
 import { ScreenPad } from '../components/primitives'
 import { Banner, Btn, EmptyState, SectionLabel } from '../components/ui/kit'
-import { REMOTION_CUSTOM_HOOK_TEMPLATE_ID } from '@shared/video-engine/hook-style'
 import { resolveTransitionPreset, TRANSITION_PRESETS } from '@shared/video-engine/transition-presets'
 import { mediaSrc } from '../lib/media'
 import type { CaptionStyleId } from '@shared/video-engine/caption-style'
@@ -134,8 +133,6 @@ export function Profiles(): JSX.Element {
   const [activeSourceIds, setActiveSourceIds] = useState<string[]>([])
   const [batchCount, setBatchCount] = useState<number>(5)
   const [selectedTemplateId, setSelectedTemplateId] = useState<string>('tpl-dark-stoic')
-  const [renderMode, setRenderMode] = useState<'normal' | 'fast'>('normal')
-  const [playbackSpeed, setPlaybackSpeed] = useState<number>(4)
   const [unpublishedAvailable, setUnpublishedAvailable] = useState<number>(0)
   const [sendingBatch, setSendingBatch] = useState<boolean>(false)
 
@@ -149,13 +146,9 @@ export function Profiles(): JSX.Element {
   const [jobsError, setJobsError] = useState('')
   const [jobActionPending, setJobActionPending] = useState<Record<string, boolean>>({})
 
-  /* The hook and caption lists are the renderer's registered templates, fetched once. The
-   * Remotion renderer is the one Compose edits with, so a Visual System can only promise a
-   * hook or caption style that engine actually ships. */
-  const hookTemplates = useMemo(
-    () => engineTemplates.filter((template) => template.kind === 'hook' && template.id !== REMOTION_CUSTOM_HOOK_TEMPLATE_ID),
-    [engineTemplates]
-  )
+  /* The caption list is the renderer's registered templates, fetched once. The Remotion
+   * renderer is the one Compose edits with, so a Visual System can only promise a caption
+   * style that engine actually ships. */
   const captionTemplates = useMemo(() => engineTemplates.filter((template) => template.kind === 'caption'), [engineTemplates])
 
   useEffect(() => {
@@ -249,6 +242,12 @@ export function Profiles(): JSX.Element {
     return templates.find((t) => t.id === selectedTemplateId) || templates[0]
   }, [templates, selectedTemplateId])
 
+  /* One owner for "can this launch, and for how many". The button's disabled state, its
+     label and the IPC payload all read these, so they cannot drift apart. `unpublishedAvailable`
+     spans every linked source; the main process clamps again to the one it rotates to. */
+  const drawCount = Math.min(batchCount, unpublishedAvailable)
+  const canLaunch = !sendingBatch && drawCount > 0 && activeSourceIds.length > 0 && !!selectedChannelId
+
   /* Legacy rows hold a `Crossfade`-style label rather than a preset id, so the chip that
      lights up is the preset the value resolves to — the same one the batch will apply. */
   const activeTransitionId = editingTemplate ? resolveTransitionPreset(editingTemplate.transition).id : ''
@@ -259,22 +258,13 @@ export function Profiles(): JSX.Element {
       name: 'New Visual System',
       mode: 'Auto B-roll',
       density: 'Full',
-      clipMin: 3,
-      clipMax: 6,
       order: 'Shuffle',
       motion: 'Cinematic',
       transition: 'crossfade',
-      effects: ['Film grain'],
       grade: 'Cinematic',
-      fineGrade: { exposure: 0, contrast: 10, saturation: 0, temperature: 0, vignette: 20, grain: 15 },
       captionStyle: 'motivation-bold',
       aspectRatio: '9:16',
-      hookAngle: 'bold-claim',
-      hookTemplate: hookTemplates[0]?.id ?? 'remotion-hook-kinetic-30',
-      hookLine: 'YOUR HOOK TEXT GOES HERE',
-      hookSec: 3,
-      hookBackdrop: 'Blurred clip',
-      hookPosition: 'middle',
+      hookLine: '',
       zoomAtStart: true
     }
     setEditingTemplate(newTpl)
@@ -303,29 +293,22 @@ export function Profiles(): JSX.Element {
   }
 
   const handleSendToRender = async () => {
-    if (!selectedChannelId) {
-      showToast('Please select a target channel.')
-      return
-    }
-    if (activeSourceIds.length === 0) {
-      showToast('Please enable at least one rotation source.')
-      return
-    }
+    if (!canLaunch) return
     setSendingBatch(true)
     try {
-      const channelName = myChannels.find((c) => c.id === selectedChannelId)?.name || 'target channel'
-      const res = await window.api.batch.send({
+      const res = await window.api.batch.launch({
         channelId: selectedChannelId,
         sourceIds: activeSourceIds,
-        count: Math.min(batchCount, Math.max(1, unpublishedAvailable || batchCount)),
-        templateId: selectedTemplateId || templates[0]?.id || '',
-        renderMode,
-        playbackSpeed
+        count: drawCount,
+        templateId: selectedTemplateId || templates[0]?.id || ''
       })
-      showToast(`Queued ${res.renderJobCount} videos for ${channelName}! Select another channel to queue more.`)
+      showToast(`Queued ${res.itemCount} video${res.itemCount === 1 ? '' : 's'} from ${res.sourceName}. “${res.jobName}” is now running.`)
       setMainTab('jobs')
+      void loadAutomationJobs()
     } catch (err) {
-      showToast(`Error: ${(err as Error).message}`)
+      /* Preflight blockers arrive here as one joined sentence — surface them verbatim
+         rather than the old "Queued 0 videos!" success toast (diag-automation F3). */
+      showToast(`Could not start: ${(err as Error).message}`)
     } finally {
       setSendingBatch(false)
     }
@@ -578,61 +561,6 @@ export function Profiles(): JSX.Element {
                 <span className="at-summary-val">{selectedTemplate?.captionStyle || 'motivation-bold'}</span>
               </div>
 
-              {/* Render Mode & Speed Control */}
-              <div style={{ marginTop: 14, marginBottom: 14, borderTop: '1px solid var(--border)', paddingTop: 10 }}>
-                <span className="at-summary-label" style={{ display: 'block', marginBottom: 8 }}>Render Mode:</span>
-                <div style={{ display: 'flex', gap: 8, marginBottom: 8 }}>
-                  <button
-                    type="button"
-                    style={{
-                      flex: 1,
-                      padding: '7px 10px',
-                      borderRadius: 6,
-                      fontSize: 11,
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      border: '1px solid var(--border)',
-                      background: renderMode === 'normal' ? 'var(--accent)' : 'var(--bg-inset)',
-                      color: renderMode === 'normal' ? '#fff' : 'var(--text-muted)'
-                    }}
-                    onClick={() => setRenderMode('normal')}
-                  >
-                    Normal Render
-                  </button>
-                  <button
-                    type="button"
-                    style={{
-                      flex: 1,
-                      padding: '7px 10px',
-                      borderRadius: 6,
-                      fontSize: 11,
-                      fontWeight: 600,
-                      cursor: 'pointer',
-                      border: '1px solid var(--border)',
-                      background: renderMode === 'fast' ? 'var(--accent)' : 'var(--bg-inset)',
-                      color: renderMode === 'fast' ? '#fff' : 'var(--text-muted)'
-                    }}
-                    onClick={() => setRenderMode('fast')}
-                  >
-                    Fast Render
-                  </button>
-                </div>
-                {renderMode === 'fast' && (
-                  <div style={{ display: 'flex', alignItems: 'center', gap: 10, background: 'var(--bg-inset)', padding: '8px 10px', borderRadius: 6 }}>
-                    <span style={{ fontSize: 10.5, color: 'var(--text-dim)', whiteSpace: 'nowrap' }}>Playback Speed:</span>
-                    <input
-                      type="range"
-                      min="1"
-                      max="8"
-                      value={playbackSpeed}
-                      onChange={(e) => setPlaybackSpeed(Number(e.target.value))}
-                      style={{ flex: 1 }}
-                    />
-                    <span style={{ fontSize: 11, color: 'var(--text-bright)', fontWeight: 700, minWidth: 24, textAlign: 'right' }}>{playbackSpeed}x</span>
-                  </div>
-                )}
-              </div>
-
               {/* Queue Filmstrip Visual */}
               <div>
                 <span className="at-summary-label" style={{ display: 'block', marginBottom: 6 }}>
@@ -651,8 +579,18 @@ export function Profiles(): JSX.Element {
                 </div>
               </div>
 
-              <button type="button" className="at-launch-btn" onClick={handleSendToRender} disabled={sendingBatch}>
-                <span>▶</span> {sendingBatch ? 'Enqueuing renders…' : `Send ${batchCount} videos to render pipeline →`}
+              <button
+                type="button"
+                className="at-launch-btn"
+                onClick={handleSendToRender}
+                disabled={!canLaunch}
+              >
+                <span>▶</span>{' '}
+                {sendingBatch
+                  ? 'Starting automation…'
+                  : drawCount === 0
+                    ? 'No unpublished videos available'
+                    : `Start automation for ${drawCount} video${drawCount === 1 ? '' : 's'} →`}
               </button>
             </div>
           </div>
@@ -896,44 +834,6 @@ export function Profiles(): JSX.Element {
                     </div>
                   </div>
 
-                  {/* Fine Grading Sliders */}
-                  <div className="at-sub-options">
-                    <span className="at-field-label">Fine Grade Adjustments</span>
-                    <div className="at-sub-row">
-                      <span>Contrast</span>
-                      <div className="at-slider-cell">
-                        <input
-                          type="range"
-                          min="-50"
-                          max="50"
-                          value={editingTemplate.fineGrade.contrast}
-                          onChange={(e) => setEditingTemplate({
-                            ...editingTemplate,
-                            fineGrade: { ...editingTemplate.fineGrade, contrast: Number(e.target.value) }
-                          })}
-                        />
-                        <span className="at-slider-val">{editingTemplate.fineGrade.contrast}</span>
-                      </div>
-                    </div>
-
-                    <div className="at-sub-row">
-                      <span>Vignette</span>
-                      <div className="at-slider-cell">
-                        <input
-                          type="range"
-                          min="0"
-                          max="100"
-                          value={editingTemplate.fineGrade.vignette}
-                          onChange={(e) => setEditingTemplate({
-                            ...editingTemplate,
-                            fineGrade: { ...editingTemplate.fineGrade, vignette: Number(e.target.value) }
-                          })}
-                        />
-                        <span className="at-slider-val">{editingTemplate.fineGrade.vignette}%</span>
-                      </div>
-                    </div>
-                  </div>
-
                   {/* Caption Engine — the renderer's registered caption templates, the same
                       list (name and description) the Compose editor's Captions tab shows. */}
                   <div className="at-editor-section">
@@ -964,8 +864,12 @@ export function Profiles(): JSX.Element {
                       className="at-editor-input"
                       value={editingTemplate.hookLine}
                       onChange={(e) => setEditingTemplate({ ...editingTemplate, hookLine: e.target.value })}
-                      placeholder="e.g. THE UNCOMFORTABLE TRUTH ABOUT BEING ALONE"
+                      placeholder="Leave empty to write one from the transcript"
                     />
+                    <p className="at-preset-empty">
+                      Shown as an intro card over the first few seconds. Leave it empty and each
+                      video opens with its own first line instead.
+                    </p>
                   </div>
 
                   {/* Hook Canvas Live Preview */}
@@ -973,48 +877,10 @@ export function Profiles(): JSX.Element {
                     <span className="at-field-label">Hook Live Canvas Preview</span>
                     <div className="at-hook-preview">
                       <div className={`at-hook-frame ratio-${editingTemplate.aspectRatio.replace(':', '-')}`}>
-                        <div className={`at-hook-text-layer pos-${editingTemplate.hookPosition}`}>
-                          {editingTemplate.hookLine || 'YOUR HOOK TEXT'}
+                        <div className="at-hook-text-layer pos-middle">
+                          {editingTemplate.hookLine || 'FIRST LINE OF THE TRANSCRIPT'}
                         </div>
                       </div>
-                    </div>
-                  </div>
-
-                  {/* Hook Template — the renderer's registered hook templates, the same list
-                      the Compose editor's Hook tab offers (the custom-JSON hook excluded:
-                      it needs a hand-written plan, which a batch has no author for). */}
-                  <div className="at-editor-section">
-                    <span className="at-field-label">Hook Template</span>
-                    {hookTemplates.length === 0 ? (
-                      <p className="at-preset-empty">The renderer reported no hook templates, so there is nothing to choose here.</p>
-                    ) : (
-                      <div className="at-preset-list">
-                        {hookTemplates.map((template) => (
-                          <PresetRow
-                            key={template.id}
-                            title={template.name}
-                            sub={template.description || template.id}
-                            on={editingTemplate.hookTemplate === template.id}
-                            onClick={() => setEditingTemplate({ ...editingTemplate, hookTemplate: template.id })}
-                          />
-                        ))}
-                      </div>
-                    )}
-                  </div>
-
-                  {/* Hook Position */}
-                  <div className="at-editor-section">
-                    <span className="at-field-label">Hook Position</span>
-                    <div className="at-chip-row">
-                      {(['top', 'middle', 'bottom'] as const).map((pos) => (
-                        <button
-                          key={pos}
-                          className={`at-chip ${editingTemplate.hookPosition === pos ? 'active' : ''}`}
-                          onClick={() => setEditingTemplate({ ...editingTemplate, hookPosition: pos })}
-                        >
-                          {pos}
-                        </button>
-                      ))}
                     </div>
                   </div>
 

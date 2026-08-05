@@ -14,6 +14,8 @@ import {
 export type SourceMode = 'script' | 'audio'
 export type CreateAspect = '16:9' | '9:16' | '1:1'
 export type CreateStyle = 'close_up' | 'normal' | 'high_quality'
+export type WizardTab = 'create' | 'library'
+export type WizardStep = 1 | 2 | 3
 
 export type CreateDraft = {
   sourceMode: SourceMode
@@ -37,6 +39,7 @@ export type CreateDraft = {
   characterStyle?: string
   characterBeard?: string
   characterNegativePrompt?: string
+  mood: string
 }
 
 export type FieldErrors = {
@@ -457,6 +460,7 @@ export function defaultCreateDraft(overrides?: Partial<CreateDraft>): CreateDraf
     characterStyle: 'realistic',
     characterBeard: 'shaven',
     characterNegativePrompt: '',
+    mood: 'Neutral',
     ...overrides
   }
 }

@@ -8,6 +8,7 @@ import type { EffectPlan } from '../../shared/effectPlan'
 import { limitPunchHits } from '../../shared/captionStyle'
 import { resolutionFor, type CaptionAspect } from './captions'
 import { effectiveMotionPreset, imageMotionFor } from './engine/gpu/spec'
+import { cancelGpuRender } from './engine/gpu/host'
 import { FALLBACK_CAPS, selectEncoder } from './engine/encoder'
 import { FPS, LONG_FORM_FAST_SEC, crfFor } from './engine/render-config'
 import { createProgressSmoother, parseFfmpegProgressBlock, type FfmpegProgress } from './engine/progress'
@@ -164,15 +165,28 @@ function isCancellation(e: unknown, jobId?: string): boolean {
   return (e instanceof RenderCancelledError) || (!!e && (e as { cancelled?: boolean }).cancelled === true) || hasCancelIntent(jobId)
 }
 
-/** Kill the ffmpeg encode for a job (if running) and record why. Returns true if one was killed. */
+/** Stop the work for a job (if any is running) and record why. Returns true if something
+ *  was actually stopped. Covers both execution substrates: the ffmpeg encode child, and the
+ *  GPU compositor — which is a hidden BrowserWindow with no process to signal, so for years
+ *  a Stop on the GPU path (the intended default per CLAUDE.md) killed nothing and the render
+ *  ran to completion and was recorded as `done`. */
 export function cancelRender(jobId: string, mode: 'cancel' | 'delete'): boolean {
   const child = running.get(jobId)
-  if (!child) return false
-  intents.set(jobId, mode)
-  killedChildren.add(child)
-  child.kill('SIGKILL')
-  running.delete(jobId)
-  return true
+  if (child) {
+    intents.set(jobId, mode)
+    killedChildren.add(child)
+    child.kill('SIGKILL')
+    running.delete(jobId)
+    return true
+  }
+  // The GPU path stops cooperatively, so its frame loop, mux kill and between-stage checks
+  // all surface as ordinary failures — the intent is what tells runJob they were asked for.
+  // Set synchronously here, before any IPC round trip can deliver the worker's error.
+  if (cancelGpuRender(jobId)) {
+    intents.set(jobId, mode)
+    return true
+  }
+  return false
 }
 
 /** Record a cancel/delete request while the job is between ffmpeg children. */

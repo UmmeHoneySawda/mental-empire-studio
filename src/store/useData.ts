@@ -28,6 +28,7 @@ import type {
   WorkItem,
   Niche,
   NichePoolHealth,
+  NichePoolProgress,
   SourceAutomationPatch,
   SourceChannel,
   VisualTemplate
@@ -40,6 +41,9 @@ import { dropIdleRenderProgress } from '../lib/renderProgress'
 // producer screens read real data while the appearance/editor state stays put.
 
 const api = (): typeof window.api | undefined => (typeof window !== 'undefined' ? window.api : undefined)
+
+/** Skip the background re-scrape when opening a source this recently scraped. */
+const SOURCE_REFRESH_MAX_AGE_MS = 15 * 60_000
 
 function transcribeErrorMessage(message: string): string {
   const msg = message || 'Transcription failed.'
@@ -109,6 +113,8 @@ interface DataState {
   workItems: WorkItem[]
   niches: Niche[]
   nichePools: NichePoolHealth[]
+  /** in-flight "Warm pool" runs, keyed by nicheId; an entry is deleted on its terminal frame */
+  nichePoolProgress: Record<string, NichePoolProgress>
   sourceChannels: SourceChannel[]
   pendingSources: PendingSource[]
   visualTemplates: VisualTemplate[]
@@ -124,8 +130,9 @@ interface DataState {
   addChannel: (url: string, linkedSourceId?: string) => Promise<void>
   deleteChannel: (id: string) => Promise<void>
   rescrapeAll: () => Promise<void>
-  updateGoals: (id: string, patch: { weekGoal?: number; monthGoal?: number; reminder?: string; reminderNote?: string }) => Promise<void>
-  linkChannelSource: (channelId: string, linkedSourceId: string | null) => Promise<void>
+  refreshChannel: (id: string) => Promise<void>
+  updateGoals: (id: string, patch: { weekGoal?: number; monthGoal?: number; reminderNote?: string }) => Promise<void>
+  setSourceOwner: (sourceId: string, myChannelId: string | null) => Promise<void>
   loadSources: () => Promise<void>
   addSource: (url: string) => Promise<SourceChannel | null>
   retryPendingSource: (key: string) => Promise<void>
@@ -140,6 +147,7 @@ interface DataState {
   cancelDownload: (id: string) => Promise<void>
   openProject: (downloadId: string) => Promise<void>
   openProjectById: (projectId: string) => Promise<void>
+  closeProject: () => void
   refreshActiveProjectSnapshot: (projectId?: string) => Promise<void>
   loadPreviewSpec: (projectId?: string) => Promise<void>
   setProjectImages: (paths: string[]) => Promise<void>
@@ -158,6 +166,7 @@ interface DataState {
   renderAll: () => Promise<void>
   clearProgress: (id: string) => void
   cancelJob: (id: string) => Promise<void>
+  cancelAllJobs: () => Promise<void>
   deleteJob: (id: string) => Promise<void>
   requeueJob: (id: string) => Promise<void>
   openRenderFile: (id: string) => Promise<void>
@@ -268,6 +277,7 @@ export const useData = create<DataState>((set, get) => ({
   workItems: [],
   niches: [],
   nichePools: [],
+  nichePoolProgress: {},
   sourceChannels: [],
   pendingSources: [],
   visualTemplates: [],
@@ -287,6 +297,12 @@ export const useData = create<DataState>((set, get) => ({
     subscribed = true
     const reloadDownloads = throttle(() => { void get().loadDownloads(); void get().loadWorkItems() }, 400)
     const reloadRenderJobs = throttle(() => { void get().loadRenderJobs(); void get().loadWorkItems() }, 400)
+    // Separately throttled from reloadRenderJobs: publish:list does an existsSync per finished
+    // render (plus two more per item for the thumbnail), so it must never ride a per-progress
+    // tick. It is throttled rather than called straight off `done` because `done` is not always
+    // one-per-job — queue.ts's strict-GPU preflight failure emits it for every queued job in a
+    // single synchronous loop, which would otherwise fan out to N full filesystem sweeps.
+    const reloadPublish = throttle(() => { void get().loadPublishItems() }, 800)
     a.onActivity((row) => set((s) => ({ activity: [row, ...s.activity].slice(0, 30) })))
     a.onScrapeProgress((p) => set({ scrapeStatus: p.phase === 'done' || p.phase === 'error' ? null : p }))
     a.onDownloadProgress((p) => {
@@ -301,7 +317,9 @@ export const useData = create<DataState>((set, get) => ({
     }))
     a.onRenderProgress((p) => {
       set((s) => ({ renderProgress: { ...s.renderProgress, [p.jobId]: p } }))
-      if (p.done) void get().loadRenderJobs()
+      // queue.ts runs upload detection and writes outputPath before emitting `done`, so this is
+      // the tick where the Ready-to-Upload list has something new to show.
+      if (p.done) { void get().loadRenderJobs(); reloadPublish() }
       else reloadRenderJobs()
     })
     a.onFastPreviewProgress?.((p) => set({ fastPreviewProgress: p }))
@@ -314,6 +332,15 @@ export const useData = create<DataState>((set, get) => ({
       }))
     })
     a.onAutomationJob(() => { void get().loadAutomationJobs() })
+    // Held in the store, not in Niches.tsx: <Screen key={active}> remounts the screen on every
+    // nav, and a warm outlives that. No loadNiches() on the terminal frame — `warmNiche` already
+    // reloads once its invoke resolves, and that resolves after this frame.
+    a.onNichePoolProgress((p) => set((s) => {
+      const next = { ...s.nichePoolProgress }
+      if (p.finished) delete next[p.nicheId]
+      else next[p.nicheId] = p
+      return { nichePoolProgress: next }
+    }))
   },
 
   loadVisualTemplates: async () => {
@@ -377,17 +404,34 @@ export const useData = create<DataState>((set, get) => ({
       set({ scraping: false })
     }
   },
+  // Per-channel re-scrape. The IPC has existed since M3 with no renderer caller, so the only
+  // way to refresh was Home's "Run now" (every channel, serially). Guarded on the shared
+  // `scraping` flag because each call spawns a real yt-dlp process.
+  refreshChannel: async (id) => {
+    const a = api()
+    if (!a || get().scraping) return
+    set({ scraping: true })
+    try {
+      await a.scrape.refreshChannel(id)
+      await Promise.all([get().loadChannels(), get().loadActivity(), get().loadWorkItems()])
+    } finally {
+      set({ scraping: false })
+    }
+  },
   updateGoals: async (id, patch) => {
     const a = api()
     if (!a) return
     const channels = await a.db.updateChannelGoals(id, patch)
     set({ channels })
   },
-  linkChannelSource: async (channelId, linkedSourceId) => {
+  // Attach/detach one source to one owned channel. This is the authoritative edge; the DB
+  // keeps `my_channels.linkedSourceId` in step, so channels are reloaded too.
+  setSourceOwner: async (sourceId, myChannelId) => {
     const a = api()
     if (!a) return
-    const channels = await a.db.setChannelSource(channelId, linkedSourceId)
-    set({ channels })
+    const sourceChannels = await a.sources.setLinkedMyChannel(sourceId, myChannelId)
+    set({ sourceChannels })
+    await get().loadChannels()
   },
 
   loadSources: async () => {
@@ -460,7 +504,11 @@ export const useData = create<DataState>((set, get) => ({
     set({ sourceVideos })
     const sourceChannels = await a.sources.markVisited(id)
     set({ sourceChannels })
-    void get().refreshSource(id)
+    // Only re-scrape a stale source. Every refresh raises `fetching`, which disables the whole
+    // add/fetch row, so refreshing on every single open made opening a source feel like a fetch.
+    const scrapedAt = sourceChannels.find((s) => s.id === id)?.lastScrapedAt
+    const age = scrapedAt ? Date.now() - new Date(scrapedAt).getTime() : Infinity
+    if (!(age >= 0 && age < SOURCE_REFRESH_MAX_AGE_MS)) void get().refreshSource(id)
   },
   setSourceAutomation: async (id, patch) => {
     const a = api()
@@ -518,6 +566,12 @@ export const useData = create<DataState>((set, get) => ({
     if (!project) return
     const [projectImages, transcript] = await Promise.all([a.compose.images(projectId), a.transcribe.get(projectId)])
     set({ activeProject: project, projectImages, transcript, previewSpec: null, previewError: '', transcribeError: '', transcribeMessage: '' })
+  },
+  /** The counterpart to `openProject`. Without it the project slot was set-only, which is
+   *  why Compose could never return to its library. Clears everything the open filled in,
+   *  leaving exactly the cold-start state. */
+  closeProject: () => {
+    set({ activeProject: null, projectImages: [], transcript: [], previewSpec: null, previewLoading: false, previewError: '', transcribeError: '', transcribeMessage: '' })
   },
   refreshActiveProjectSnapshot: async (projectId) => {
     const a = api()
@@ -717,6 +771,12 @@ export const useData = create<DataState>((set, get) => ({
     if (!a) return
     await a.render.cancel(id)
     get().clearProgress(id)
+    await Promise.all([get().loadRenderJobs(), get().loadWorkItems()])
+  },
+  cancelAllJobs: async () => {
+    const a = api()
+    if (!a) return
+    await a.render.cancelAll()
     await Promise.all([get().loadRenderJobs(), get().loadWorkItems()])
   },
   deleteJob: async (id) => {

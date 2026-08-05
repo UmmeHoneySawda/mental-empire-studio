@@ -143,13 +143,25 @@ export async function runJob(job: RenderJob): Promise<void> {
   }
   const finishCancelled = (intent: 'cancel' | 'delete'): void => {
     finishStageLog('cancelled')
-    if (intent === 'cancel') repos.setRenderStatus(job.id, { status: 'queued', pct: 0, error: '' })
-    emitR({ jobId: job.id, pct: 0, stage: 'done', done: true })
+    // Terminal, not back-of-the-queue. 'queued' here meant the next "Render all" picked the
+    // job straight back up (queuedJobs() selects exactly that status), so a cancel read as
+    // "postpone" and the render the user stopped simply happened later. '↻ Retry' is now the
+    // only way back into the queue.
+    if (intent === 'cancel') repos.setRenderStatus(job.id, { status: 'cancelled', pct: 0, error: '' })
+    emitR({ jobId: job.id, pct: 0, stage: 'cancelled', done: true })
     pushActivity({ t: hhmm(), icon: '⊘', color: '#8a909c', text: `Render ${intent === 'cancel' ? 'cancelled' : 'removed'}: ${project.title.slice(0, 42)}` })
   }
+  // High-water mark for this run only — a local, so a requeue starts a fresh runJob and
+  // never inherits it. Progress had three ways to run backwards (per-segment B-roll ffmpeg
+  // pct overriding the aggregate, the GPU→ffmpeg fallback restarting the encode stage from
+  // zero, and the encoder-retry smoother resetting), and no clamp anywhere.
+  let highWaterPct = 0
   const emitStage = (stage: RenderStage, localPct: number, stageDetail?: string, ffmpeg?: FfmpegProgress): void => {
-    const pct = stagePct(stage, localPct)
-    repos.setRenderStatus(job.id, { status: 'rendering', pct })
+    const pct = Math.max(highWaterPct, stagePct(stage, localPct))
+    highWaterPct = pct
+    // A cancel writes the terminal 'cancelled' row the moment the user clicks, while this
+    // job is still winding down — don't resurrect it to 'rendering' on the next tick.
+    if (!hasCancelIntent(job.id)) repos.setRenderStatus(job.id, { status: 'rendering', pct })
     emitR({
       jobId: job.id,
       pct,
@@ -320,8 +332,12 @@ export async function runJob(job: RenderJob): Promise<void> {
         logPath,
         onProgress: (phase, done, total, ffmpeg) => {
           if (phase === 'normalize') {
+            // `done` already folds in the active segment's own ffmpeg pct (broll.ts:1116
+            // reports `i + p.pct/100`), so the aggregate is the whole truth. Preferring
+            // `ffmpeg.pct` here replaced it with that one segment's 0→100 and reset the bar
+            // to the start of the stage once per clip.
             const pct = total > 0 ? (done / total) * 100 : 0
-            emitStage('assembling', ffmpeg?.pct ?? pct, `Normalizing B-roll ${Math.min(total, Math.floor(done) + 1)}/${total}`, ffmpeg)
+            emitStage('assembling', pct, `Normalizing B-roll ${Math.min(total, Math.floor(done) + 1)}/${total}`, ffmpeg)
           } else if (phase === 'manifest') {
             emitStage('assembling', 100, 'B-roll manifest ready')
           } else {
@@ -412,6 +428,7 @@ export async function runJob(job: RenderJob): Promise<void> {
         const gpuStartedAt = Date.now()
         await runGpuRender(spec, {
           logPath: renderLogPath,
+          shouldAbort: () => hasCancelIntent(job.id),
           onProgress: (p) => {
             const pct = p.totalFrames > 0 ? (p.framesDone / p.totalFrames) * 100 : 0
             const fps = p.fps || spec.fps
@@ -457,6 +474,14 @@ export async function runJob(job: RenderJob): Promise<void> {
       })
     }
     emitStage('finalizing', 90, 'Writing output')
+    // A cancel that arrived while the encode was already unstoppable (the GPU compositor has
+    // no kill path) must not be recorded as a clean `done` — that both hides the cancel and
+    // strands the intent flag, which then eats the job's next run at the pre-run gate above.
+    const lateIntent = consumeCancelIntent(job.id)
+    if (lateIntent) {
+      finishCancelled(lateIntent)
+      return
+    }
     finishStageLog('done')
     repos.setRenderStatus(job.id, { status: 'done', pct: 100, outputPath: outPath })
     // Stamp the niche/library clips this render used so pruning keeps what's in rotation.
@@ -464,7 +489,8 @@ export async function runJob(job: RenderJob): Promise<void> {
       try { recordClipUsage(usedBrollClipPaths) } catch { /* usage tracking is advisory */ }
     }
     repos.updateProject(job.projectId, { stage: 'rendered' })
-    try { runUploadDetection() } catch { /* upload detection is advisory */ }
+    // Runs before the done event is emitted, so the renderer's reload picks up fresh status.
+    runUploadDetection({ trigger: 'render', context: { job_id: job.id } })
     writeProjectManifest(itemDirForProject(project), {
       videoId: videoIdFromProjectId(project.id), channel: project.channel, title: project.title,
       durationSec: renderProject.durationSec, stage: 'rendered', audioPath: project.mp3Path, outputPath: outPath
@@ -486,6 +512,11 @@ export async function runJob(job: RenderJob): Promise<void> {
     emitR({ jobId: job.id, pct: 0, stage: 'error', done: true, error: msg, device: enc.device, filterDevice, filterDetail, encoder: enc.label, warning: renderWarning })
     pushActivity({ t: hhmm(), icon: '!', color: '#ff5a6e', text: `Render failed: ${project.title}` })
   } finally {
+    // A cancel intent belongs to exactly ONE run. Any path that leaves runJob without
+    // consuming it strands the flag in the module-level map, and the pre-run gate at the
+    // top of the try then eats this job's NEXT run with a bare "render cancelled". This is
+    // idempotent — the success and catch paths above have already taken it if they ran.
+    consumeCancelIntent(job.id)
     // The SFX track is a full-length WAV written per render — delete it so temp doesn't grow.
     if (sfxPath) {
       try { rmSync(sfxPath, { force: true }) } catch { /* ignore */ }
@@ -497,8 +528,39 @@ export async function runJob(job: RenderJob): Promise<void> {
   }
 }
 
+let pumping = false
+let rerunRequested = false
+let batchAbort = false
+
+/** "Stop all": start no further jobs in the batch that is currently pumping. Jobs already
+ *  in flight are stopped by `cancelRender`; this is what stops the queue behind them. */
+export function abortQueue(): void {
+  batchAbort = true
+}
+
 /** Render every queued job, at most `settings.concurrency` in flight at a time. */
 export async function runAll(): Promise<void> {
+  // `render:all` is reachable from the Render Queue screen AND from automation, and each
+  // call snapshots queuedJobs() — two overlapping pumps select the same rows and run two
+  // encodes into one output path. Serialize them. A call that arrives mid-pump is coalesced
+  // into a single follow-up pass rather than dropped, so jobs queued during a run still run.
+  if (pumping) {
+    rerunRequested = true
+    return
+  }
+  pumping = true
+  try {
+    do {
+      rerunRequested = false
+      await runQueuedBatch()
+    } while (rerunRequested)
+  } finally {
+    pumping = false
+  }
+}
+
+async function runQueuedBatch(): Promise<void> {
+  batchAbort = false
   const jobs = getRepos().queuedJobs()
   if (!jobs.length) return
   const settings = getSettings()
@@ -534,6 +596,9 @@ export async function runAll(): Promise<void> {
 
   await new Promise<void>((resolve) => {
     const pump = (): void => {
+      // "Stop all" — start nothing further; the jobs already in flight finish unwinding
+      // through their own cancel, and the untouched rows were marked cancelled by the caller.
+      if (batchAbort) idx = jobs.length
       if (idx >= jobs.length && active === 0) {
         resolve()
         return

@@ -18,8 +18,14 @@ export function tokenSet(s: string): Set<string> {
   return new Set(normalizeTitle(s).split(' ').filter(Boolean))
 }
 
-/** Sørensen–Dice coefficient over normalized token sets (0..1). */
-export function similarity(a: string, b: string): number {
+/**
+ * Sørensen–Dice coefficient over normalized token sets (0..1). Deliberately NOT exported:
+ * it is the download<->upload mapping counter's private matcher. Upload detection uses
+ * `titleMatchScore`/`matchUploads` in `shared/match.ts` with the one configurable confidence
+ * band, and the Ready-to-Upload screen reads the persisted result via `uploadStatusOf` — it
+ * used to import this instead, at a hardcoded 0.5, and answered the same question differently.
+ */
+function similarity(a: string, b: string): number {
   const A = tokenSet(a)
   const B = tokenSet(b)
   if (A.size === 0 || B.size === 0) return 0

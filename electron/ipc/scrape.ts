@@ -19,6 +19,7 @@ import { goalProgressFromUploads } from '../../shared/goals'
 import { notify, reminderHit } from '../services/notify'
 import { warmBrollLibraryFromTitles } from '../services/broll'
 import { L } from '../services/logger'
+import { sentryLog } from '../services/sentry'
 import { emit, hhmm, pushActivity } from './events'
 
 // Orchestration layer: the services are pure; here we wire scrape → DB → mapping →
@@ -76,7 +77,11 @@ function listSources(): SourceChannel[] {
 async function scrapeAndSaveSource(url: string, sourceId?: string): Promise<SourceChannel> {
   const repos = getRepos()
   const settings = getSettings()
-  const ch = await scrapeChannel(url, settings, { flat: false, limit: 50 })
+  // Flat, deliberately: a non-flat dump resolves each of the 50 entries individually, and
+  // `--sleep-requests 1.5` then multiplies by the entry count (≥75 s of pure sleeping) before
+  // any real latency. "Popular" ordering — the only consumer that needs per-video view counts
+  // — has its own bounded non-flat path in `sourceVideos` below.
+  const ch = await scrapeChannel(url, settings, { flat: true, limit: 50 })
   const normalizedUrl = channelUrl(url)
   const existing = sourceId
     ? repos.sourceChannels().find((s) => s.id === sourceId)
@@ -179,10 +184,13 @@ function persistScrape(channelId: string, scraped: ScrapedChannel): MyChannel {
   repos.setChannelGoalProgress(channelId, ...goalProgressFromUploads(uploads))
 
   emitProgress({ channelId, channelName: scraped.name, phase: 'mapping', message: 'Mapping uploads' })
-  const channel = repos.myChannel(channelId)
-  const linkedSourceId = channel?.linkedSourceId
-  if (linkedSourceId) {
-    const downloads = repos.getDownloadsBySource(linkedSourceId)
+  // An owned channel may be fed by several sources, so the mapping counter aggregates the
+  // downloads of every source pointing at it. Reads the authoritative edge
+  // (`source_channels.linkedMyChannelId`), not the `my_channels.linkedSourceId` cache, which
+  // only ever holds the primary.
+  const linkedSourceIds = repos.sourcesForMyChannel(channelId).map((s) => s.id)
+  if (linkedSourceIds.length) {
+    const downloads = linkedSourceIds.flatMap((sid) => repos.getDownloadsBySource(sid))
     const mapping = matchDownloadsToUploads(
       downloads.map((d) => ({ id: d.id, title: d.title })),
       uploads.map((u) => ({ id: u.id, title: u.title }))
@@ -199,7 +207,7 @@ function persistScrape(channelId: string, scraped: ScrapedChannel): MyChannel {
 
   // Now that this channel's uploads are saved, refresh which processed videos look
   // already-uploaded (fuzzy title match across all owned channels).
-  try { runUploadDetection() } catch { /* detection is advisory */ }
+  runUploadDetection({ trigger: 'scrape', context: { channel_id: channelId } })
 
   pushActivity({ t: hhmm(), icon: '↻', color: '#8b7cff', text: `Scraped ${updated.name} — ${uploads.length} uploads` })
   emitProgress({ channelId, channelName: updated.name, phase: 'done', message: 'Done' })
@@ -212,7 +220,7 @@ export async function addMyChannel(url: string, linkedSourceId?: string): Promis
   emitProgress({ channelId: url, channelName: url, phase: 'start', message: 'Scraping channel' })
   const scraped = await scrapeChannel(url, settings)
   const id = scraped.channelId || `mc-${scraped.handle.replace(/^@/, '')}`
-  const source = linkedSourceId ? repos.sourceChannels().find((s) => s.id === linkedSourceId) : undefined
+  const source = linkedSourceId ? repos.sourceChannel(linkedSourceId) : undefined
 
   const base: MyChannel = {
     id,
@@ -238,6 +246,10 @@ export async function addMyChannel(url: string, linkedSourceId?: string): Promis
     lastScrapedAt: new Date().toISOString()
   }
   repos.upsertMyChannel(base)
+  // upsertMyChannel writes only `my_channels.linkedSourceId`. Claim the source on the
+  // authoritative edge too, or a channel connected with a source starts out linked in the
+  // direction nothing reads.
+  if (linkedSourceId) repos.setSourceLinkedMyChannel(linkedSourceId, id)
   return persistScrape(id, scraped)
 }
 

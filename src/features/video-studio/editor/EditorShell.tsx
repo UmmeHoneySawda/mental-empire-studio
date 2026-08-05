@@ -1,5 +1,4 @@
 import { useEffect, useState } from 'react'
-import type { RendererId, VideoProject } from '@shared/video-engine'
 import { Banner } from '../../../components/ui/kit'
 import { PreviewStage } from './PreviewStage'
 import { Timeline } from './Timeline'
@@ -25,8 +24,6 @@ const TABS: ReadonlyArray<{ id: PanelTab; label: string }> = [
 
 const FAST_PREVIEW_EXPORT_COMMAND = 'videoEngine.fastPreviewExport'
 
-type HyperframesWorkerChoice = 'auto' | '1' | '2' | '4'
-
 interface FastPreviewExportResult {
   path: string
   width: number
@@ -35,35 +32,13 @@ interface FastPreviewExportResult {
   durationSec: number
 }
 
-function hyperframesWorkerChoice(project: VideoProject): HyperframesWorkerChoice {
-  const value = project.metadata?.tags?.find((tag) => tag.startsWith('hf-workers:'))?.slice(11)
-  return value === '1' || value === '2' || value === '4' ? value : 'auto'
-}
-
-function withHyperframesWorkers(project: VideoProject, choice: HyperframesWorkerChoice): VideoProject {
-  const tags = (project.metadata?.tags ?? []).filter((tag) => !tag.startsWith('hf-workers:'))
-  return {
-    ...project,
-    metadata: {
-      ...project.metadata,
-      tags: [...tags, `hf-workers:${choice}`]
-    }
-  }
-}
-
 function readableError(error: unknown): string {
   return (error instanceof Error ? error.message : String(error))
     .replace(/^Error invoking remote method '[^']*':\s*/u, '')
     .replace(/^Error:\s*/u, '')
 }
 
-export function EditorShell({
-  downloadId,
-  rendererId = 'remotion'
-}: {
-  downloadId: string
-  rendererId?: RendererId
-}): JSX.Element {
+export function EditorShell({ downloadId }: { downloadId: string }): JSX.Element {
   const project = useEditor((state) => state.project)
   const loading = useEditor((state) => state.loading)
   const error = useEditor((state) => state.error)
@@ -74,7 +49,6 @@ export function EditorShell({
   const jobs = useEditor((state) => state.jobs)
   const past = useEditor((state) => state.past)
   const future = useEditor((state) => state.future)
-  const edit = useEditor((state) => state.edit)
   const flush = useEditor((state) => state.flush)
   const setTab = useEditor((state) => state.setTab)
   const clearMessages = useEditor((state) => state.clearMessages)
@@ -89,8 +63,8 @@ export function EditorShell({
   const fastPreviewPct = fastPreviewProgress?.percent ?? 0
 
   useEffect(() => {
-    void openRendererEditor(downloadId, rendererId)
-  }, [downloadId, rendererId])
+    void openRendererEditor(downloadId, 'remotion')
+  }, [downloadId])
 
   useEffect(() => {
     if (typeof window === 'undefined' || !window.api?.onVideoEngineJob) return
@@ -188,7 +162,7 @@ export function EditorShell({
   )
 
   const exportFastPreview = async (): Promise<void> => {
-    if (!project || rendererId !== 'remotion' || fastPreviewBusy) return
+    if (!project || fastPreviewBusy) return
     setFastPreviewBusy(true)
     setError('')
     try {
@@ -211,7 +185,7 @@ export function EditorShell({
     return (
       <div className="ve">
         <div className="ve-empty">
-          <h3>Opening the {rendererId === 'hyperframes' ? 'HyperFrames' : 'Remotion'} project</h3>
+          <h3>Opening the Remotion project</h3>
           <p>Loading this clip&apos;s audio, stills and transcript into the editor.</p>
         </div>
       </div>
@@ -225,7 +199,7 @@ export function EditorShell({
         <div className="ve-empty">
           <h3>This clip has no project yet</h3>
           <p>Building one copies the clip&apos;s audio and stills in, and turns its transcript into word-timed captions.</p>
-          <button type="button" className="ve-btn ve-btn--primary" disabled={!!busy} onClick={() => void reseedRendererEditor(downloadId, rendererId)}>
+          <button type="button" className="ve-btn ve-btn--primary" disabled={!!busy} onClick={() => void reseedRendererEditor(downloadId, 'remotion')}>
             {busy || 'Build the project'}
           </button>
         </div>
@@ -233,40 +207,18 @@ export function EditorShell({
     )
   }
 
-  const workerChoice = hyperframesWorkerChoice(project)
-
   return (
-    <div className="ve" data-engine={rendererId}>
+    <div className="ve" data-engine="remotion">
       <header className="ve-head">
         <div className="ve-head-title">
           <span className="me-ellipsis" title={project.name}>{project.name}</span>
           <span className="ve-head-spec ve-mono">
-            {rendererId === 'hyperframes' ? 'HyperFrames GPU' : 'Remotion'} ·{' '}
+            Remotion ·{' '}
             {project.canvas.width}×{project.canvas.height} · {project.canvas.fps}fps ·{' '}
             {timecode(project.canvas.durationFrames, project.canvas.fps)} · rev {project.revision}
           </span>
         </div>
         <div className="ve-head-actions">
-          {rendererId === 'hyperframes' && (
-            <label className="ve-head-spec" title="HyperFrames capture workers. Auto calibrates for this machine and composition.">
-              Workers{' '}
-              <select
-                className="ed-input ve-mono"
-                value={workerChoice}
-                onChange={(event) => {
-                  const choice = event.target.value as HyperframesWorkerChoice
-                  edit((current) => withHyperframesWorkers(current, choice))
-                }}
-                aria-label="HyperFrames capture workers"
-                style={{ width: 72, marginLeft: 5 }}
-              >
-                <option value="auto">Auto</option>
-                <option value="1">1</option>
-                <option value="2">2</option>
-                <option value="4">4</option>
-              </select>
-            </label>
-          )}
           <button
             type="button"
             className="ve-btn ve-btn--ghost"
@@ -285,17 +237,15 @@ export function EditorShell({
           >
             ↷
           </button>
-          {rendererId === 'remotion' && (
-            <button
-              type="button"
-              className="ve-btn ve-btn--soft"
-              disabled={!!busy || isFastPreviewing || !!activeJob}
-              onClick={() => void exportFastPreview()}
-              title={isFastPreviewing ? `Fast preview recording in progress (${fastPreviewPct}%)` : "Record the live preview in real time inside a hidden Chromium window."}
-            >
-              {isFastPreviewing ? `Previewing ${fastPreviewPct}%…` : 'Fast preview'}
-            </button>
-          )}
+          <button
+            type="button"
+            className="ve-btn ve-btn--soft"
+            disabled={!!busy || isFastPreviewing || !!activeJob}
+            onClick={() => void exportFastPreview()}
+            title={isFastPreviewing ? `Fast preview recording in progress (${fastPreviewPct}%)` : "Record the live preview in real time inside a hidden Chromium window."}
+          >
+            {isFastPreviewing ? `Previewing ${fastPreviewPct}%…` : 'Fast preview'}
+          </button>
           {activeJob ? (
             <button type="button" className="ve-btn ve-btn--soft" onClick={() => setTab('export')}>
               {activeJob.stage} · {Math.round(activeJob.progress * 100)}%
@@ -328,7 +278,7 @@ export function EditorShell({
           <MediaBin />
         </aside>
 
-        <PreviewStage rendererId={rendererId} />
+        <PreviewStage />
 
         <aside className="ve-inspector" aria-label="Inspector">
           <div className="ve-tabs" role="tablist" aria-label="Editor panels">

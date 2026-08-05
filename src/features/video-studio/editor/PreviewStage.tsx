@@ -1,13 +1,10 @@
 import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } from 'react'
-import type { RendererId } from '@shared/video-engine'
 import { timecode } from './constants'
 import { gradeFilter, gradeTintLayer, gradeVignetteLayer } from './gradePreview'
 import { useEditor } from './useEditor'
 
 const EditorPlayer = lazy(() =>
   import('./EditorPlayer').then((module) => ({ default: module.EditorPlayer })))
-const HyperframesEditorPlayer = lazy(() =>
-  import('./HyperframesEditorPlayer').then((module) => ({ default: module.HyperframesEditorPlayer })))
 
 function useFittedSize(width: number, height: number): {
   ref: (node: HTMLDivElement | null) => void
@@ -49,7 +46,7 @@ function useFittedSize(width: number, height: number): {
   return { ref, size }
 }
 
-export function PreviewStage({ rendererId }: { rendererId: RendererId }): JSX.Element {
+export function PreviewStage(): JSX.Element {
   const project = useEditor((state) => state.project)
   const playheadFrame = useEditor((state) => state.playheadFrame)
   const playing = useEditor((state) => state.playing)
@@ -91,25 +88,14 @@ export function PreviewStage({ rendererId }: { rendererId: RendererId }): JSX.El
             }}
           >
             <Suspense fallback={<div className="ve-stage-empty">Starting the player…</div>}>
-              {rendererId === 'hyperframes' ? (
-                <HyperframesEditorPlayer
-                  project={project}
-                  frame={playheadFrame}
-                  playing={playing}
-                  loopRange={loopRange}
-                  onFrame={setPlayhead}
-                  onPlayingChange={setPlaying}
-                />
-              ) : (
-                <EditorPlayer
-                  project={project}
-                  frame={playheadFrame}
-                  playing={playing}
-                  loopRange={loopRange}
-                  onFrame={setPlayhead}
-                  onPlayingChange={setPlaying}
-                />
-              )}
+              <EditorPlayer
+                project={project}
+                frame={playheadFrame}
+                playing={playing}
+                loopRange={loopRange}
+                onFrame={setPlayhead}
+                onPlayingChange={setPlaying}
+              />
             </Suspense>
             {tint && <div className="ve-stage-grade" style={tint} aria-hidden />}
             {vignette && <div className="ve-stage-grade" style={vignette} aria-hidden />}

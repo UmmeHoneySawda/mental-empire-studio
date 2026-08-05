@@ -77,7 +77,7 @@ async function runOne(video: ScrapedVideo, sourceId: string, channel: string, op
     })
     repos.upsertDownload({ ...(repos.download(id) as DownloadedVideo), size: sizeLabel(res.filePath) })
     pushActivity({ t: hhmm(), icon: '✓', color: '#36c98e', text: `Downloaded ${video.title}` })
-    try { runUploadDetection() } catch { /* upload detection is advisory */ }
+    runUploadDetection({ trigger: 'download' })
     emitProgress({ downloadId: id, title: video.title, pct: 100, stage: 'Downloaded only', done: true })
     return repos.download(id) as DownloadedVideo
   } catch (e) {

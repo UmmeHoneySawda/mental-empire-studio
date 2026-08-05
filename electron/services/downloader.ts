@@ -59,6 +59,12 @@ const cancelIntents = new Set<string>()
 const STALL_MS = 120_000
 const HARD_MS = 30 * 60_000
 
+// `-x` is a converter, not a selector: with no `-f`, yt-dlp downloads its default
+// `bestvideo*+bestaudio/best`, muxes it, extracts the mp3 and deletes the video — pulling
+// hundreds of MB and running an extra ffmpeg stage for a file we throw away. Ask for the
+// audio stream directly instead.
+const AUDIO_ONLY_FORMAT = 'bestaudio[ext=m4a]/bestaudio/best'
+
 export function cancelDownload(downloadId: string): boolean {
   const child = runningDownloads.get(downloadId)
   if (!child) return false
@@ -138,10 +144,18 @@ export async function downloadAudio(params: DownloadParams): Promise<DownloadRes
       const delayMs = Math.round((params.delaySec as number) * 1000 + Math.random() * 750)
       await new Promise((resolveDelay) => setTimeout(resolveDelay, delayMs))
     }
-    await runYtdlpDownload(video, dest, bitrate, settings, onProgress, downloadId, !!params.supervised)
+    await runYtdlpDownload(video, dest, bitrate, settings, onProgress, downloadId, !!params.supervised, AUDIO_ONLY_FORMAT)
     if (!await isVerifiedAudio(dest)) {
+      // The audio-only selector skips the video download and the merge, but a few sources
+      // only expose a muxed progressive format. Fall back once to yt-dlp's own default
+      // selection (video + audio + merge) before calling the download failed.
       quarantineIncomplete(dest)
-      throw new DownloadFailure('Download completed without a valid, non-empty audio stream.', { stderrCategory: 'invalid-media' })
+      sentryLog.warn('Audio download retrying without format selector', { ...baseAttrs, stderr_category: 'audio-format-retry' })
+      await runYtdlpDownload(video, dest, bitrate, settings, onProgress, downloadId, !!params.supervised)
+      if (!await isVerifiedAudio(dest)) {
+        quarantineIncomplete(dest)
+        throw new DownloadFailure('Download completed without a valid, non-empty audio stream.', { stderrCategory: 'invalid-media' })
+      }
     }
     // Wide success event — one row per finished download (skips cache hits above).
     sentryLog.info('Audio download completed', {
@@ -175,11 +189,13 @@ function runYtdlpDownload(
   settings: AppSettings,
   onProgress?: (pct: number) => void,
   downloadId?: string,
-  supervised = false
+  supervised = false,
+  formatSelector?: string
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const a = settings.autoScrape
     const args = [
+      ...(formatSelector ? ['-f', formatSelector] : []),
       '-x',
       '--audio-format', 'mp3',
       '--audio-quality', `${bitrate}K`,

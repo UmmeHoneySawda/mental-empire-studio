@@ -69,6 +69,13 @@ function readFixture(url: string): YtdlpPlaylist {
   return JSON.parse(readFileSync(file, 'utf8')) as YtdlpPlaylist
 }
 
+// A scrape that resolves only on `close` can hang indefinitely (network stall, throttling,
+// an interactive prompt) and the retry loop multiplies that wait. Bound each spawn the way
+// the download path already does (`downloader.ts` STALL_MS/HARD_MS).
+const SCRAPE_IDLE_MS = 60_000
+const SCRAPE_HARD_MS = 5 * 60_000
+const SCRAPE_TIMEOUT_MSG = 'yt-dlp scrape timed out'
+
 /** Run yt-dlp for a URL and return the parsed playlist JSON, retrying with backoff. */
 export async function runYtdlpJson(url: string, opts: YtdlpOptions = {}): Promise<YtdlpPlaylist> {
   if (process.env['ME_YTDLP_FIXTURE']) return readFixture(url)
@@ -79,6 +86,8 @@ export async function runYtdlpJson(url: string, opts: YtdlpOptions = {}): Promis
       return await spawnYtdlp(url, opts)
     } catch (e) {
       lastErr = e as Error
+      // A timeout already consumed its full budget; retrying it just multiplies the wait.
+      if (lastErr.message.startsWith(SCRAPE_TIMEOUT_MSG)) break
       if (attempt < retries) await sleep(1000 * 2 ** attempt) // exponential backoff
     }
   }
@@ -103,10 +112,22 @@ function spawnYtdlp(url: string, opts: YtdlpOptions): Promise<YtdlpPlaylist> {
     const child = spawn(bin, args, { windowsHide: true })
     let out = ''
     let err = ''
-    child.stdout.on('data', (d) => (out += d))
-    child.stderr.on('data', (d) => (err += d))
-    child.on('error', (e) => { L.error(`yt-dlp spawn error: ${e.message} (bin=${bin})`); reject(e) })
+    const startedAt = Date.now()
+    let lastActivity = startedAt
+    const watchdog = setInterval(() => {
+      const now = Date.now()
+      if (now - lastActivity < SCRAPE_IDLE_MS && now - startedAt < SCRAPE_HARD_MS) return
+      clearInterval(watchdog)
+      const secs = Math.round((now - startedAt) / 1000)
+      L.error(`yt-dlp scrape timed out after ${secs}s (idle ${Math.round((now - lastActivity) / 1000)}s): ${url}`)
+      child.kill('SIGKILL')
+      reject(new Error(`${SCRAPE_TIMEOUT_MSG} after ${secs}s`))
+    }, 5_000)
+    child.stdout.on('data', (d) => { lastActivity = Date.now(); out += d })
+    child.stderr.on('data', (d) => { lastActivity = Date.now(); err += d })
+    child.on('error', (e) => { clearInterval(watchdog); L.error(`yt-dlp spawn error: ${e.message} (bin=${bin})`); reject(e) })
     child.on('close', (code) => {
+      clearInterval(watchdog)
       if (code !== 0 && !out.trim()) {
         L.error(`yt-dlp scrape exited ${code}: ${err.slice(0, 600)}`)
         return reject(new Error(`yt-dlp exited ${code}: ${err.slice(0, 300)}`))

@@ -213,13 +213,18 @@ export function seedDemoData(d: Database.Database): void {
   const tx = d.transaction(() => {
     seedDefaultThumbnailTemplates(d)
     const src = d.prepare(
-      `INSERT INTO source_channels (id,url,handle,name,autoWatch,autoQueueRender,sourceOrder,sourceCount,imageMode,poolSize,kenBurns,captionPreset,captionAspect,thumbnailTemplateId,betaOpts)
-       VALUES (@id,@url,@handle,@name,@autoWatch,@autoQueueRender,@sourceOrder,@sourceCount,@imageMode,@poolSize,@kenBurns,@captionPreset,@captionAspect,@thumbnailTemplateId,@betaOpts)`
+      `INSERT INTO source_channels (id,url,handle,name,linkedMyChannelId,autoWatch,autoQueueRender,sourceOrder,sourceCount,imageMode,poolSize,kenBurns,captionPreset,captionAspect,thumbnailTemplateId,betaOpts)
+       VALUES (@id,@url,@handle,@name,@linkedMyChannelId,@autoWatch,@autoQueueRender,@sourceOrder,@sourceCount,@imageMode,@poolSize,@kenBurns,@captionPreset,@captionAspect,@thumbnailTemplateId,@betaOpts)`
     )
     demoSourceChannels.forEach((s) => {
       const p = demoProfiles.find((profile) => profile.linkedSourceId === s.id)
       src.run({
         ...s,
+        // `source_channels.linkedMyChannelId` is the authoritative owned<->source edge, and
+        // `my_channels.linkedSourceId` below is only its cache (see CLAUDE.md). Write both here:
+        // the fixture is the shape every future seeder copies, and the migrate() back-fill runs
+        // before this and so can never repair it.
+        linkedMyChannelId: demoMyChannels.find((c) => c.linkedSourceId === s.id)?.id ?? null,
         autoWatch: p?.autoWatch ? 1 : 0,
         autoQueueRender: p?.autoQueueRender ? 1 : 0,
         sourceOrder: p?.sourceOrder ?? 'Latest',

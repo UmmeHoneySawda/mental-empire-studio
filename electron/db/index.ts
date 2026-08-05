@@ -332,6 +332,9 @@ function migrate(d: Database.Database): void {
   ensureColumn(d, 'source_channels', 'outputFolder', 'TEXT')
   ensureColumn(d, 'source_channels', 'thumbnailTemplateId', 'TEXT')
   ensureColumn(d, 'source_channels', 'lastRunAt', 'TEXT')
+  // Automation rotation cursor. Deliberately separate from lastRunAt, which the legacy
+  // auto-watch scheduler owns — drawing for a batch must not perturb its baseline.
+  ensureColumn(d, 'source_channels', 'lastDrawnAt', 'TEXT')
   ensureColumn(d, 'source_channels', 'betaOpts', 'TEXT')
   ensureColumn(d, 'source_videos', 'ord', 'INTEGER')
   ensureColumn(d, 'downloaded_videos', 'matchedUploadId', 'TEXT')
@@ -391,6 +394,15 @@ function migrate(d: Database.Database): void {
   ensureColumn(d, 'projects', 'captionOffsetY', 'REAL')
   ensureColumn(d, 'downloaded_videos', 'error', 'TEXT')
   ensureColumn(d, 'work_item_state', 'uploadConfidence', 'TEXT')
+  // When upload detection last looked at this item. "Detection ran and found nothing" and
+  // "detection never ran" are different answers the Ready-to-Upload screen must not conflate,
+  // and nothing else records the difference: setDetectedUploads writes a row either way, while
+  // a manual mark or an archive toggle writes one without ever running detection.
+  ensureColumn(d, 'work_item_state', 'detectedAt', 'TEXT')
+  // Back-fill it for rows detection has already written, so existing libraries keep their
+  // answers instead of every card falling back to "not checked". uploadMatchScore is only ever
+  // written by setDetectedUploads, so its presence is exactly the legacy signal. Idempotent.
+  d.exec("UPDATE work_item_state SET detectedAt = COALESCE(updatedAt, datetime('now')) WHERE detectedAt IS NULL AND uploadMatchScore IS NOT NULL")
   // Durable Automation item checkpoints + asset-library metadata. All guarded for old DBs.
   ensureColumn(d, 'automation_job_items', 'stateJson', 'TEXT')
   ensureColumn(d, 'assets', 'id', 'TEXT')
@@ -416,6 +428,11 @@ function migrate(d: Database.Database): void {
   ensureColumn(d, 'provider_jobs', 'etaSeconds', 'INTEGER')
   ensureColumn(d, 'provider_jobs', 'hostName', 'TEXT')
   d.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_assets_content_id ON assets(id) WHERE id IS NOT NULL')
+  // The owned<->source edge is now looked up by channel on several paths (the back-fill below,
+  // sourcesForMyChannel, the cache sync, setChannelSource, deleteMyChannel). Unindexed it was
+  // a full scan of source_channels each time.
+  d.exec('CREATE INDEX IF NOT EXISTS idx_source_channels_linked_my_channel ON source_channels(linkedMyChannelId)')
+  backfillSourceOwnerEdge(d)
 
   purgeLegacyDemoSeed(d)
   migrateProfilesToSources(d)
@@ -471,6 +488,25 @@ function enforceProviderJobFingerprintUniqueness(d: Database.Database): void {
  * demo rows (only ones with no real file path / real youtube id) once, guarded by a
  * meta marker so a user's real data is never touched.
  */
+/**
+ * The owned<->source edge was two independent scalars with two one-way setters and no
+ * invariant. `source_channels.linkedMyChannelId` — the direction Publish, Automation, Download
+ * and SourcePicker all read — had no writer in the shipped UI, so it is NULL on every row
+ * predating that fix. Back-fill it from the direction the UI did write.
+ *
+ * Idempotent (only touches rows still NULL) and indexed, so it is a cheap no-op once settled.
+ * This is a legacy-data migration and nothing more: new writes go through `writeSourceOwner`,
+ * and the demo seed sets the edge in its own INSERT. Do not reach for this to repair a writer
+ * that skipped the invariant — fix the writer.
+ */
+function backfillSourceOwnerEdge(d: Database.Database): void {
+  d.exec(`UPDATE source_channels SET linkedMyChannelId = (
+            SELECT mc.id FROM my_channels mc WHERE mc.linkedSourceId = source_channels.id LIMIT 1
+          )
+          WHERE linkedMyChannelId IS NULL
+            AND EXISTS (SELECT 1 FROM my_channels mc WHERE mc.linkedSourceId = source_channels.id)`)
+}
+
 function purgeLegacyDemoSeed(d: Database.Database): void {
   const done = d.prepare("SELECT value FROM app_meta WHERE key='demo_purged_v2'").get()
   if (done) return
@@ -507,22 +543,13 @@ function installDefaultVisualTemplates(d: Database.Database): void {
       name: 'Dark Stoic Shorts',
       mode: 'Auto B-roll',
       density: 'Full',
-      clipMin: 3,
-      clipMax: 5,
       order: 'Shuffle',
       motion: 'Cinematic',
       transition: 'crossfade',
-      effects: ['Film grain', 'Speed ramp'],
       grade: 'Cinematic',
-      fineGrade: { exposure: 0, contrast: 15, saturation: -20, temperature: -10, vignette: 35, grain: 20 },
       captionStyle: 'motivation-bold',
       aspectRatio: '9:16',
-      hookAngle: 'bold-claim',
-      hookTemplate: 'remotion-hook-motivational',
       hookLine: 'THE UNCOMFORTABLE TRUTH ABOUT BEING ALONE',
-      hookSec: 3,
-      hookBackdrop: 'Blurred clip',
-      hookPosition: 'middle',
       zoomAtStart: true
     },
     {
@@ -530,22 +557,13 @@ function installDefaultVisualTemplates(d: Database.Database): void {
       name: 'High-Contrast Faceless',
       mode: 'Auto B-roll',
       density: 'Sparse',
-      clipMin: 4,
-      clipMax: 8,
       order: 'In order',
       motion: 'Subtle',
       transition: 'cut',
-      effects: ['Glitch cut'],
       grade: 'Noir',
-      fineGrade: { exposure: -10, contrast: 40, saturation: -100, temperature: 0, vignette: 50, grain: 40 },
       captionStyle: 'coach-clean',
       aspectRatio: '9:16',
-      hookAngle: 'question',
-      hookTemplate: 'remotion-hook-kinetic-30',
       hookLine: 'WHY 99% OF PEOPLE FAIL AT THIS ONE HABIT',
-      hookSec: 2.5,
-      hookBackdrop: 'Dark overlay',
-      hookPosition: 'top',
       zoomAtStart: false
     },
     {
@@ -553,22 +571,13 @@ function installDefaultVisualTemplates(d: Database.Database): void {
       name: 'Documentary Horizontal',
       mode: 'Image slideshow',
       density: 'Full',
-      clipMin: 5,
-      clipMax: 10,
       order: 'In order',
       motion: 'Cinematic',
       transition: 'dip-to-black',
-      effects: ['Light leaks'],
       grade: 'Gold',
-      fineGrade: { exposure: 5, contrast: 10, saturation: 15, temperature: 20, vignette: 20, grain: 10 },
       captionStyle: 'highlight',
       aspectRatio: '16:9',
-      hookAngle: 'stat',
-      hookTemplate: 'remotion-hook-cinematic-30',
       hookLine: 'HOW EMPIRES FALL IN SILENCE',
-      hookSec: 4,
-      hookBackdrop: 'Grain field',
-      hookPosition: 'middle',
       zoomAtStart: true
     }
   ]
@@ -678,11 +687,14 @@ export interface Repositories {
   sourceChannel(id: string): SourceChannel | undefined
   sourceChannelByUrl(url: string): SourceChannel | undefined
   upsertSourceChannel(s: SourceChannel): void
-  setSourceCursor(id: string, patch: { lastSeenVideoId?: string | null; lastVisitedAt?: string; lastRunAt?: string }): void
+  setSourceCursor(id: string, patch: { lastSeenVideoId?: string | null; lastVisitedAt?: string; lastRunAt?: string; lastDrawnAt?: string }): void
   updateSourceAutomation(id: string, patch: SourceAutomationPatch): SourceChannel[]
   deleteSourceChannel(id: string): void
   newVideoCountForSource(id: string): number
   setSourceLinkedMyChannel(id: string, myChannelId: string | null): void
+  /** Every source feeding one owned channel. The authoritative edge, so prefer this over
+   *  filtering `sourceChannels()` in JS. */
+  sourcesForMyChannel(myChannelId: string): SourceChannel[]
   downloads(): DownloadedVideo[]
   getDownloadsBySource(sourceId: string): DownloadedVideo[]
   profiles(): Profile[]
@@ -866,7 +878,7 @@ const SOURCE_AUTOMATION_COLS = [
   'autoWatch', 'autoQueueRender', 'sourceOrder', 'sourceCount', 'imageMode', 'poolSize', 'kenBurns',
   'captionPreset', 'captionFont', 'captionAnim', 'captionAspect', 'captionLines', 'captionPosition',
   'captionPace', 'captionHighlightColor', 'captionBoxColor', 'captionWordsPerPage', 'outputFolder',
-  'thumbnailTemplateId', 'lastRunAt', 'betaOpts'
+  'thumbnailTemplateId', 'lastRunAt', 'lastDrawnAt', 'betaOpts'
 ] as const
 
 const SOURCE_SELECT_COLS = [...SOURCE_BASE_COLS, ...SOURCE_AUTOMATION_COLS].join(',')
@@ -1068,9 +1080,42 @@ function buildRepositories(d: Database.Database): Repositories {
   const allSources = (): SourceChannel[] =>
     (d.prepare(`SELECT ${SOURCE_SELECT_COLS} FROM source_channels ORDER BY COALESCE(lastVisitedAt,lastScrapedAt,name) DESC`).all() as Array<Record<string, unknown>>).map(rowToSourceChannel)
 
+  /** The owned<->source edge is authoritative on `source_channels.linkedMyChannelId`: it is
+   *  the FK on the many side, so one owned channel may be fed by several sources, and it is
+   *  already the direction Publish, Automation, Download and SourcePicker read.
+   *  `my_channels.linkedSourceId`/`source` are kept as a primary-source cache so the older
+   *  readers (Profiles' OR, `deleteSourceChannel`'s cleanup) keep working unchanged. */
+  const syncMyChannelSourceCache = (myChannelId: string): void => {
+    const primary = d
+      .prepare('SELECT id, handle FROM source_channels WHERE linkedMyChannelId=? ORDER BY COALESCE(NULLIF(handle,\'\'),name,url)')
+      .get(myChannelId) as { id?: string; handle?: string } | undefined
+    d.prepare('UPDATE my_channels SET linkedSourceId=?, source=? WHERE id=?')
+      .run(primary?.id ?? null, primary?.handle ?? '', myChannelId)
+  }
+
+  /** The single edge writer. Not transactional itself — callers wrap it, so a multi-source
+   *  replacement is one transaction rather than one per source. */
+  const writeSourceOwner = (sourceId: string, myChannelId: string | null): void => {
+    const prev =
+      (d.prepare('SELECT linkedMyChannelId FROM source_channels WHERE id=?').get(sourceId) as
+        | { linkedMyChannelId?: string }
+        | undefined)?.linkedMyChannelId ?? null
+    d.prepare('UPDATE source_channels SET linkedMyChannelId=? WHERE id=?').run(myChannelId, sourceId)
+    // Refresh both sides: the channel that lost the source as well as the one that gained it.
+    if (prev && prev !== myChannelId) syncMyChannelSourceCache(prev)
+    if (myChannelId) syncMyChannelSourceCache(myChannelId)
+  }
+
   return {
-    myChannels: () => d.prepare('SELECT * FROM my_channels').all() as MyChannel[],
-    myChannel: (id) => d.prepare('SELECT * FROM my_channels WHERE id=?').get(id) as MyChannel | undefined,
+    // ORDER BY so card position is stable and scannable; SQLite scan order is neither.
+    myChannels: () =>
+      (d.prepare('SELECT * FROM my_channels ORDER BY COALESCE(NULLIF(name,\'\'),handle,id)').all() as Array<
+        Record<string, unknown>
+      >).map(rowToMyChannel),
+    myChannel: (id) => {
+      const row = d.prepare('SELECT * FROM my_channels WHERE id=?').get(id) as Record<string, unknown> | undefined
+      return row ? rowToMyChannel(row) : undefined
+    },
     upsertMyChannel: (c) => {
       d.prepare(
         `INSERT INTO my_channels (id,name,handle,mono,avatar,views,subs,total,linkedSourceId,source,mapDone,mapTotal,weekDone,weekGoal,monthDone,monthGoal,reminder,reminderNote,lastScrapedAt)
@@ -1123,9 +1168,10 @@ function buildRepositories(d: Database.Database): Repositories {
         `UPDATE source_channels
          SET lastVisitedAt=COALESCE(@lastVisitedAt,lastVisitedAt),
              lastSeenVideoId=COALESCE(@lastSeenVideoId,lastSeenVideoId),
-             lastRunAt=COALESCE(@lastRunAt,lastRunAt)
+             lastRunAt=COALESCE(@lastRunAt,lastRunAt),
+             lastDrawnAt=COALESCE(@lastDrawnAt,lastDrawnAt)
          WHERE id=@id`
-      ).run({ id, lastVisitedAt: patch.lastVisitedAt ?? null, lastSeenVideoId: patch.lastSeenVideoId ?? null, lastRunAt: patch.lastRunAt ?? null })
+      ).run({ id, lastVisitedAt: patch.lastVisitedAt ?? null, lastSeenVideoId: patch.lastSeenVideoId ?? null, lastRunAt: patch.lastRunAt ?? null, lastDrawnAt: patch.lastDrawnAt ?? null })
     },
     updateSourceAutomation: (id, patch) => {
       if (!d.prepare('SELECT id FROM source_channels WHERE id=?').get(id)) throw new Error(`Unknown source: ${id}`)
@@ -1153,8 +1199,14 @@ function buildRepositories(d: Database.Database): Repositories {
       const idx = videos.findIndex((v) => v.id === cursor)
       return idx < 0 ? videos.length : idx
     },
-    setSourceLinkedMyChannel: (id, myChannelId) =>
-      d.prepare('UPDATE source_channels SET linkedMyChannelId=? WHERE id=?').run(myChannelId, id),
+    // One transaction so the primary cache on `my_channels` can never disagree with the edge.
+    setSourceLinkedMyChannel: (id, myChannelId) => {
+      d.transaction(() => writeSourceOwner(id, myChannelId ?? null))()
+    },
+    sourcesForMyChannel: (myChannelId) =>
+      (d
+        .prepare(`SELECT ${SOURCE_SELECT_COLS} FROM source_channels WHERE linkedMyChannelId=? ORDER BY COALESCE(NULLIF(handle,''),name,url)`)
+        .all(myChannelId) as Array<Record<string, unknown>>).map(rowToSourceChannel),
 
     downloads: () => d.prepare('SELECT * FROM downloaded_videos').all() as DownloadedVideo[],
     getDownloadsBySource: (sourceId) =>
@@ -1338,15 +1390,31 @@ function buildRepositories(d: Database.Database): Repositories {
       if (sets.length) d.prepare(`UPDATE my_channels SET ${sets.join(', ')} WHERE id=@id`).run(params)
     },
     setChannelSource: (id, linkedSourceId) => {
-      // Store both the FK and the source handle (shown on the card). Clearing resets the
-      // mapping counters; a subsequent scrape/refresh recomputes matches for the new link.
-      const src = linkedSourceId ? (d.prepare('SELECT handle FROM source_channels WHERE id=?').get(linkedSourceId) as { handle?: string } | undefined) : undefined
-      d.prepare('UPDATE my_channels SET linkedSourceId=?, source=?, mapDone=0, mapTotal=0 WHERE id=?')
-        .run(linkedSourceId ?? null, src?.handle ?? '', id)
+      // "Make this the channel's only source" — kept for the connect flow and the legacy
+      // single-source callers. Writes BOTH directions in one transaction: previously it wrote
+      // only `my_channels.linkedSourceId`, while every consumer reads
+      // `source_channels.linkedMyChannelId`, so linking had no observable effect anywhere.
+      // Clearing still resets the mapping counters; the card renders mapTotal===0 as "not
+      // mapped" rather than green 0/0, and a per-channel refresh recomputes them.
+      d.transaction(() => {
+        const held = d
+          .prepare('SELECT id FROM source_channels WHERE linkedMyChannelId=? AND id<>?')
+          .all(id, linkedSourceId ?? '') as Array<{ id: string }>
+        for (const s of held) writeSourceOwner(s.id, null)
+        if (linkedSourceId) writeSourceOwner(linkedSourceId, id)
+        // writeSourceOwner maintains linkedSourceId/source; only the counters are ours.
+        d.prepare('UPDATE my_channels SET mapDone=0, mapTotal=0 WHERE id=?').run(id)
+        // Releasing every source leaves nothing to derive the cache from, so clear it here.
+        if (!linkedSourceId) syncMyChannelSourceCache(id)
+      })()
     },
     deleteMyChannel: (id) => {
       const tx = d.transaction(() => {
         d.prepare('DELETE FROM uploads WHERE myChannelId=?').run(id)
+        // Mirror deleteSourceChannel's cleanup: no source may keep pointing at a channel that
+        // no longer exists. There is no FK to enforce it — `linkedMyChannelId` arrived via
+        // ensureColumn, and ALTER TABLE ADD COLUMN cannot add one in SQLite.
+        d.prepare('UPDATE source_channels SET linkedMyChannelId=NULL WHERE linkedMyChannelId=?').run(id)
         d.prepare('DELETE FROM my_channels WHERE id=?').run(id)
       })
       tx()
@@ -1778,9 +1846,9 @@ function buildRepositories(d: Database.Database): Repositories {
       for (const j of d.prepare('SELECT id,title,channel,status,pct,projectId,outputPath,error,createdAt FROM render_jobs ORDER BY createdAt').all() as RenderJob[]) {
         if (j.projectId) jobByProject.set(j.projectId, j) // last (most recent) wins
       }
-      const state = new Map<string, { uploadedTo?: string; uploadMatchScore?: number; uploadConfidence?: string | null; manualUploaded?: number | null; archived?: number }>()
+      const state = new Map<string, { uploadedTo?: string; uploadMatchScore?: number; uploadConfidence?: string | null; detectedAt?: string | null; manualUploaded?: number | null; archived?: number }>()
       for (const s of d.prepare('SELECT * FROM work_item_state').all() as Array<Record<string, unknown>>) {
-        state.set(String(s.videoId), { uploadedTo: s.uploadedTo as string, uploadMatchScore: s.uploadMatchScore as number, uploadConfidence: s.uploadConfidence as string | null, manualUploaded: s.manualUploaded as number | null, archived: s.archived as number })
+        state.set(String(s.videoId), { uploadedTo: s.uploadedTo as string, uploadMatchScore: s.uploadMatchScore as number, uploadConfidence: s.uploadConfidence as string | null, detectedAt: s.detectedAt as string | null, manualUploaded: s.manualUploaded as number | null, archived: s.archived as number })
       }
       return downloads.map((dl): WorkItem => {
         const videoId = dl.id.replace(/^dl-/, '')
@@ -1816,6 +1884,7 @@ function buildRepositories(d: Database.Database): Repositories {
           uploadedTo,
           uploadMatchScore: st?.uploadMatchScore ?? undefined,
           uploadConfidence: detectedConfidence,
+          detectedAt: st?.detectedAt ?? undefined,
           uploadedManual: manualUploaded,
           archived: !!st?.archived
         }
@@ -1838,8 +1907,8 @@ function buildRepositories(d: Database.Database): Repositories {
     setDetectedUploads: (rows) => {
       const now = new Date().toISOString()
       const up = d.prepare(
-        `INSERT INTO work_item_state (videoId, uploadedTo, uploadMatchScore, uploadConfidence, updatedAt) VALUES (@videoId, @uploadedTo, @score, @confidence, @now)
-         ON CONFLICT(videoId) DO UPDATE SET uploadedTo=@uploadedTo, uploadMatchScore=@score, uploadConfidence=@confidence, updatedAt=@now`
+        `INSERT INTO work_item_state (videoId, uploadedTo, uploadMatchScore, uploadConfidence, detectedAt, updatedAt) VALUES (@videoId, @uploadedTo, @score, @confidence, @now, @now)
+         ON CONFLICT(videoId) DO UPDATE SET uploadedTo=@uploadedTo, uploadMatchScore=@score, uploadConfidence=@confidence, detectedAt=@now, updatedAt=@now`
       )
       const tx = d.transaction(() => {
         for (const r of rows) up.run({ videoId: r.videoId, uploadedTo: JSON.stringify(r.uploadedTo), score: r.score, confidence: r.confidence ?? null, now })
@@ -1963,6 +2032,28 @@ function projectPatchToRow(patch: Partial<Project>): Record<string, unknown> {
 function coerceNum(v: unknown, fallback: number): number {
   const n = typeof v === 'number' ? v : Number(v)
   return Number.isFinite(n) ? n : fallback
+}
+
+/** `my_channels` predates the goal/mapping columns and none of them are NOT NULL or have a
+ *  DEFAULT, but `MyChannel` declares them all as required `number`. Without this mapper the
+ *  raw cast lies: a legacy null reached `behindPace` (`weekDone < weekGoal`) and the renderer,
+ *  which printed "0 / null" while the same null coerced to 0 and reported green "on track". */
+function rowToMyChannel(r: Record<string, unknown>): MyChannel {
+  return {
+    ...(r as unknown as MyChannel),
+    total: coerceNum(r.total, 0),
+    mapDone: coerceNum(r.mapDone, 0),
+    mapTotal: coerceNum(r.mapTotal, 0),
+    weekDone: coerceNum(r.weekDone, 0),
+    weekGoal: coerceNum(r.weekGoal, 0),
+    monthDone: coerceNum(r.monthDone, 0),
+    monthGoal: coerceNum(r.monthGoal, 0),
+    views: (r.views as string | null) ?? '',
+    subs: (r.subs as string | null) ?? '',
+    source: (r.source as string | null) ?? '',
+    reminder: (r.reminder as string | null) ?? '',
+    reminderNote: (r.reminderNote as string | null) ?? ''
+  }
 }
 
 function rowToProject(r: Record<string, unknown>): Project {

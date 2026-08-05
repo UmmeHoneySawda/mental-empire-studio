@@ -24,8 +24,9 @@ export function automationStyleProjectPatch(style: AutomationStyleConfig, autoBr
       ...beta,
       style: style.videoStyle,
       autoHighlight: style.videoStyle !== 'None',
+      hook: { enabled: style.hookEnabled, text: style.hookText },
       overlay: { bottom: edge === 'bottom', top: edge === 'top', left: edge === 'left', right: edge === 'right', intensity: style.gradientIntensity },
-      autoZoom: { atStart: style.videoStyle !== 'None', atKeyPhrases: style.videoStyle === 'Intense' },
+      autoZoom: { atStart: style.zoomAtStart, atKeyPhrases: style.videoStyle === 'Intense' },
       broll: {
         ...beta.broll,
         enabled: autoBroll && style.brollMode !== 'off',

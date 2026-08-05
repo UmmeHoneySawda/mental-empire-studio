@@ -51,6 +51,15 @@ function wipeDirection(direction: VideoTransition['direction']): WipeDirection {
 
 type NoProps = Record<string, never>
 
+/** `interpolate` clamped at both ends. `presentationProgress` is not guaranteed to stay inside
+ *  [0,1] at a transition's boundary frames, and unclamped extrapolation runs straight past the
+ *  range into out-of-gamut opacities and negative blur radii. */
+const ramp = (progress: number, from: number, to: number): number =>
+  interpolate(progress, [0, 1], [from, to], {
+    extrapolateLeft: 'clamp',
+    extrapolateRight: 'clamp',
+  })
+
 function ZoomPresentation({
   children,
   presentationProgress,
@@ -63,10 +72,8 @@ function ZoomPresentation({
   // under it; pulling out does the reverse.
   const from = exiting ? 1 : pull ? 1.08 : 0.94
   const to = exiting ? (pull ? 0.94 : 1.08) : 1
-  const scale = interpolate(presentationProgress, [0, 1], [from, to])
-  const opacity = exiting
-    ? interpolate(presentationProgress, [0, 1], [1, 0])
-    : interpolate(presentationProgress, [0, 1], [0, 1])
+  const scale = ramp(presentationProgress, from, to)
+  const opacity = exiting ? ramp(presentationProgress, 1, 0) : ramp(presentationProgress, 0, 1)
   const style: CSSProperties = { opacity, transform: `scale(${scale})` }
   return <AbsoluteFill style={style}>{children}</AbsoluteFill>
 }
@@ -83,11 +90,9 @@ function BlurPresentation({
 }: TransitionPresentationComponentProps<{ radius: number }>): JSX.Element {
   const exiting = presentationDirection === 'exiting'
   const radius = exiting
-    ? interpolate(presentationProgress, [0, 1], [0, passedProps.radius])
-    : interpolate(presentationProgress, [0, 1], [passedProps.radius, 0])
-  const opacity = exiting
-    ? interpolate(presentationProgress, [0, 1], [1, 0])
-    : interpolate(presentationProgress, [0, 1], [0, 1])
+    ? ramp(presentationProgress, 0, passedProps.radius)
+    : ramp(presentationProgress, passedProps.radius, 0)
+  const opacity = exiting ? ramp(presentationProgress, 1, 0) : ramp(presentationProgress, 0, 1)
   const style: CSSProperties = { opacity, filter: `blur(${radius.toFixed(2)}px)` }
   return <AbsoluteFill style={style}>{children}</AbsoluteFill>
 }

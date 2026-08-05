@@ -50,3 +50,9 @@ tmp-*/
 /tv-*.yml
 scratch/
 changes.diff
+# Claude Code session-recovery runtime state
+HANDOFF.md
+.claude/settings.local.json
+.claude/rate-limit-state.json
+.claude/stop-failure-events.jsonl
+.claude/quota-blocked.json

@@ -1,4 +1,4 @@
-import { useMemo, useState } from 'react'
+import { useMemo, useRef, useState } from 'react'
 import {
   AUTO_BROLL_DENSITY_PER_MINUTE,
   REMOTION_CUSTOM_HOOK_TEMPLATE_ID,
@@ -18,7 +18,7 @@ import {
   TRANSITION_PRESETS,
   type PaletteKey
 } from './presets'
-import { addClip, clipsOnTrack, placementFrame } from './operations'
+import { addClip, clipsOnTrack, placementFrame, setGrading } from './operations'
 import { gradePreviewCaveat } from './gradePreview'
 import { defaultHookPlan } from './hookPlan'
 import { getSelectedClipIds, hookPlanFromProject, hookSceneId, selectedClip, useEditor } from './useEditor'
@@ -1164,16 +1164,7 @@ function TransitionsPanel(): JSX.Element {
                   className="ve-chip"
                   disabled={!!busy}
                   aria-label="Remove this transition"
-                  onClick={async () => {
-                    if (!project) return
-                    if (!(await useEditor.getState().flush())) return
-                    try {
-                      const updated = await window.api.videoEngine.removeTransition(project.id, transition.id)
-                      useEditor.setState({ project: updated, dirty: false })
-                    } catch (error) {
-                      useEditor.setState({ error: (error as Error).message })
-                    }
-                  }}
+                  onClick={() => void useEditor.getState().removeTransition(transition.id)}
                 >
                   ✕
                 </button>
@@ -1190,22 +1181,33 @@ function TransitionsPanel(): JSX.Element {
 
 function GradePanel(): JSX.Element {
   const project = useEditor((state) => state.project)
-  const setGrading = useEditor((state) => state.setGrading)
+  const edit = useEditor((state) => state.edit)
   const busy = useEditor((state) => state.busy)
+  // Which slider the pointer (or the keyboard) is currently working. A sweep emits ~100
+  // change events; only the first of them pushes onto the undo stack, so one drag is one
+  // undo. Cleared on pointer-up and on blur, which is what ends the gesture.
+  const gesture = useRef('')
   if (!project) return <p className="ve-hint">No project open.</p>
   const grading = project.grading
   // Names whichever parts of the grade the CSS preview cannot honestly show, so the
   // approximation says where it stops rather than quietly differing from the render.
   const caveat = gradePreviewCaveat(grading)
 
-  const patch = (next: Partial<VideoGrading>): void => {
-    void setGrading({ ...grading, ...next, enabled: next.enabled ?? true })
+  // Reads the live grade inside the edit rather than closing over `grading`, so events
+  // arriving faster than React re-renders compose instead of overwriting each other.
+  const patch = (next: Partial<VideoGrading>, options?: { history?: boolean }): void => {
+    edit(
+      (current) => setGrading(current, { ...current.grading, ...next, enabled: next.enabled ?? true }),
+      options
+    )
   }
 
   const sliders: ReadonlyArray<{ key: keyof VideoGrading; label: string; min: number; max: number; step: number }> = [
     { key: 'exposure', label: 'Exposure', min: -1, max: 1, step: 0.01 },
     { key: 'contrast', label: 'Contrast', min: -1, max: 1, step: 0.01 },
-    { key: 'saturation', label: 'Saturation', min: 0, max: 3, step: 0.01 },
+    // 2 is the schema's ceiling (`shared/video-engine/grading.ts`); a slider that went to
+    // 3 offered a third of its travel to values the project refuses to save.
+    { key: 'saturation', label: 'Saturation', min: 0, max: 2, step: 0.01 },
     { key: 'temperature', label: 'Temperature', min: -1, max: 1, step: 0.01 },
     { key: 'tint', label: 'Tint', min: -1, max: 1, step: 0.01 },
     { key: 'vignette', label: 'Vignette', min: 0, max: 1, step: 0.01 },
@@ -1224,7 +1226,7 @@ function GradePanel(): JSX.Element {
             type="checkbox"
             checked={grading.enabled}
             disabled={!!busy}
-            onChange={(event) => void setGrading({ ...grading, enabled: event.target.checked })}
+            onChange={(event) => patch({ enabled: event.target.checked })}
           />
         </Row>
       </Section>
@@ -1259,7 +1261,16 @@ function GradePanel(): JSX.Element {
                 step={slider.step}
                 value={value}
                 disabled={!!busy || !grading.enabled}
-                onChange={(event) => patch({ [slider.key]: Number(event.target.value) } as Partial<VideoGrading>)}
+                onChange={(event) => {
+                  const startsGesture = gesture.current !== slider.key
+                  gesture.current = String(slider.key)
+                  patch(
+                    { [slider.key]: Number(event.target.value) } as Partial<VideoGrading>,
+                    { history: startsGesture }
+                  )
+                }}
+                onPointerUp={() => { gesture.current = '' }}
+                onBlur={() => { gesture.current = '' }}
               />
             </Row>
           )

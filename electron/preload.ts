@@ -2,13 +2,14 @@ import { contextBridge, ipcRenderer, webUtils, type IpcRendererEvent } from 'ele
 import type {
   ActivityRow,
   AppSettings,
-  BatchRenderInput,
+  AutomationLaunchInput,
   DeepPartial,
   DownloadOptions,
   DownloadProgress,
   GoalsPatch,
   NativeApi,
   Niche,
+  NichePoolProgress,
   Profile,
   Project,
   ScrapeOrder,
@@ -102,7 +103,7 @@ const api: NativeApi = {
   },
 
   batch: {
-    send: (input: BatchRenderInput) => ipcRenderer.invoke('batch:send', input)
+    launch: (input: AutomationLaunchInput) => ipcRenderer.invoke('batch:launch', input)
   },
 
   db: {
@@ -208,6 +209,7 @@ const api: NativeApi = {
     jobs: () => ipcRenderer.invoke('render:jobs'),
     all: () => ipcRenderer.invoke('render:all'),
     cancel: (jobId: string) => ipcRenderer.invoke('render:cancel', jobId),
+    cancelAll: () => ipcRenderer.invoke('render:cancelAll'),
     delete: (jobId: string) => ipcRenderer.invoke('render:delete', jobId),
     requeue: (jobId: string) => ipcRenderer.invoke('render:requeue', jobId),
     openFile: (jobId: string) => ipcRenderer.invoke('render:openFile', jobId),
@@ -403,6 +405,7 @@ const api: NativeApi = {
   onProviderJob: (cb: (job: ProviderJob) => void) => subscribe('talkingphotos:job', cb),
   onVideoEngineJob: (cb: (job: VideoRenderJob) => void) => subscribe('videoEngine:job', cb),
   onAutoBrollProgress: (cb: (p: AutoBrollProgress) => void) => subscribe('videoEngine:autoBroll', cb),
+  onNichePoolProgress: (cb: (p: NichePoolProgress) => void) => subscribe('niche:poolProgress', cb),
   onConnectionStatusChanged: (cb: (connection: ProviderConnection) => void) => subscribe('talkingphotos:connectionStatus', cb),
   revealPath: (path: string) => ipcRenderer.invoke('shell:revealPath', path),
   openPath: (path: string) => ipcRenderer.invoke('shell:openPath', path),

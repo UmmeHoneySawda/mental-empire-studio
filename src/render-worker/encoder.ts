@@ -59,6 +59,8 @@ function heartbeatWhile<T>(work: Promise<T>, beat: () => void, intervalMs = 5000
 
 export interface EncodeCallbacks {
   onProgress: (framesDone: number, totalFrames: number) => void
+  /** Cooperative cancel, polled once per frame — keep it a boolean read, not IPC. */
+  shouldAbort?: () => boolean
 }
 
 /**
@@ -103,7 +105,13 @@ export async function encodeSpec(
 
   console.log(`[encoder] encodeSpec starting: totalFrames=${frames} keyEvery=${keyEvery} codec=${GPU_AVC_CODEC} isBroll=${isBroll}`)
 
+  let abortedAtFrame = -1
+
   for (let f = 0; f < frames; f++) {
+    if (cb.shouldAbort?.()) {
+      abortedAtFrame = f
+      break
+    }
     if (encodeError) throw encodeError
     const t = f / spec.fps
 
@@ -158,6 +166,15 @@ export async function encodeSpec(
 
     if (encoder.encodeQueueSize > 8) await waitForDrain(encoder)
     if (f % spec.fps === 0) cb.onProgress(f, frames)
+  }
+
+  if (abortedAtFrame >= 0) {
+    // Release the hardware encode session before unwinding. Consumer GPUs cap concurrent
+    // sessions and cancelling is now a routine path, so leaking one per Stop would starve
+    // the next render. The partial file is removed by the queue's finally.
+    try { encoder.close() } catch { /* already closed by the error callback */ }
+    console.log(`[encoder] cancelled at frame ${abortedAtFrame}/${frames}`)
+    throw new Error('render cancelled')
   }
 
   await encoder.flush()

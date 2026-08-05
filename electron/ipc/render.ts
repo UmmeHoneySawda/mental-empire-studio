@@ -1,11 +1,11 @@
 import { BrowserWindow, dialog, ipcMain, shell } from 'electron'
 import { existsSync } from 'node:fs'
 import { join } from 'node:path'
-import type { RenderQueueRow } from '../../shared/types'
+import type { RenderJob, RenderQueueRow } from '../../shared/types'
 import { projectVideoOpts } from '../../shared/types'
 import { getRepos } from '../db'
-import { runAll, outputDir } from '../services/queue'
-import { cancelRender, markCancelIntent } from '../services/render'
+import { runAll, abortQueue, outputDir } from '../services/queue'
+import { cancelRender, consumeCancelIntent, markCancelIntent } from '../services/render'
 import { safeName } from '../../shared/sanitize'
 import { itemDirForProject, itemThumbDir } from '../services/storage'
 import { cachedBrollClipCount, hasConfiguredBrollSource } from '../services/broll'
@@ -61,23 +61,49 @@ function outputPathForJob(id: string): string {
   return getRepos().renderJob(id)?.outputPath ?? ''
 }
 
+/** The two states a Stop can act on: in flight, or waiting in line. Anything else has
+ *  nothing to stop — and relabelling it would only lose a finished render's status or blank
+ *  a failed row's error text. */
+function isStoppable(job?: RenderJob): boolean {
+  return job?.status === 'rendering' || job?.status === 'queued'
+}
+
+/** Stop one job and record the terminal state, whether or not there was work to kill.
+ *  Writing the status here (rather than only from the queue runner's cancel path) is what
+ *  makes the row change the instant the user clicks: the GPU/mux stop is cooperative, and a
+ *  job that is between stages has nothing to kill at all. */
+function cancelOne(id: string): void {
+  const job = getRepos().renderJob(id)
+  if (!cancelRender(id, 'cancel') && (job?.status === 'rendering' || id.startsWith('preview-'))) {
+    markCancelIntent(id, 'cancel')
+  }
+  if (isStoppable(job)) getRepos().setRenderStatus(id, { status: 'cancelled', pct: 0, error: '' })
+}
+
 export function registerRenderIpc(): void {
   ipcMain.handle('render:jobs', () => jobsView())
   ipcMain.handle('render:all', () => runAll())
-  ipcMain.handle('render:cancel', (_e, id: string) => {
-    // Kill the running encode if any; if it was mid-render the queue runner restores
-    // it to 'queued', otherwise set it here for an already-idle job.
-    const job = getRepos().renderJob(id)
-    if (!cancelRender(id, 'cancel')) {
-      if (job?.status === 'rendering' || id.startsWith('preview-')) markCancelIntent(id, 'cancel')
-      else if (job) getRepos().setRenderStatus(id, { status: 'queued', pct: 0, error: '' })
+  ipcMain.handle('render:cancel', (_e, id: string) => cancelOne(id))
+  ipcMain.handle('render:cancelAll', () => {
+    // Stop the batch first so the pump starts nothing new while we walk the rows.
+    abortQueue()
+    for (const job of getRepos().renderJobs()) {
+      if (isStoppable(job)) cancelOne(job.id)
     }
   })
   ipcMain.handle('render:delete', (_e, id: string) => {
-    if (!cancelRender(id, 'delete')) markCancelIntent(id, 'delete') // stop work before the row disappears
+    // Stop work before the row disappears — but only record an intent when there IS work in
+    // flight. Job ids are stable across re-creates (createRenderJob upserts), so a 'delete'
+    // intent left on an idle id outlives the row and silently aborts the project's next
+    // render at the queue's pre-run gate.
+    const job = getRepos().renderJob(id)
+    if (!cancelRender(id, 'delete') && (job?.status === 'rendering' || id.startsWith('preview-'))) markCancelIntent(id, 'delete')
     getRepos().deleteRenderJob(id)
   })
-  ipcMain.handle('render:requeue', (_e, id: string) => getRepos().setRenderStatus(id, { status: 'queued', pct: 0, error: '' }))
+  ipcMain.handle('render:requeue', (_e, id: string) => {
+    consumeCancelIntent(id) // an explicit retry must not be eaten by a stale cancel flag
+    getRepos().setRenderStatus(id, { status: 'queued', pct: 0, error: '' })
+  })
   ipcMain.handle('render:openFile', async (_e, id: string) => {
     const p = outputPathForJob(id)
     if (p) await shell.openPath(p)

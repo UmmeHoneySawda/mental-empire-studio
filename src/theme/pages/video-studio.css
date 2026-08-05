@@ -27,17 +27,10 @@
   --engine-ink: #ffffff;
 }
 
-.vs[data-engine='hyperframes'] {
-  --engine: #ff8a3d;
-  --engine-soft: rgba(255, 138, 61, 0.15);
-  --engine-glow: rgba(255, 138, 61, 0.42);
-  --engine-ink: #16100a;
-}
-
-/* ── the render-head switch ─────────────────────────────────────────────────
-   Three hard cells, mono-labelled, with the active engine's accent bleeding into
-   a hairline that runs the width of the studio. It reads as a machine selector
-   rather than a settings toggle, which is what it is. */
+/* ── the render head ────────────────────────────────────────────────────────
+   One hard cell, mono-labelled, carrying the engine's accent. It names the
+   machine that will produce the file and lamps whether that machine is up. It
+   was a three-cell selector when there were three engines to choose between. */
 
 .vs-engine {
   display: inline-flex;
@@ -49,42 +42,19 @@
   flex: none;
 }
 
-.vs-engine-btn {
-  appearance: none;
-  border: none;
-  border-right: 1px solid var(--border);
-  background: transparent;
+/* Deliberately not var(--engine): those tokens are scoped to `.vs`, and the head renders
+   in the Compose chrome outside it, so an --engine reference here resolves to nothing. */
+.vs-engine-name {
   color: var(--text-dim);
   font-family: var(--font-mono);
   font-size: 10.5px;
+  font-weight: 700;
   letter-spacing: 0.7px;
   text-transform: uppercase;
   padding: 8px 13px 7px;
-  cursor: pointer;
   display: inline-flex;
   align-items: center;
   gap: 7px;
-  transition: color 0.15s, background 0.15s;
-}
-
-.vs-engine-btn:last-child {
-  border-right: none;
-}
-
-.vs-engine-btn:hover:not([aria-pressed='true']) {
-  color: var(--text-bright);
-  background: var(--surface-hover);
-}
-
-.vs-engine-btn[aria-pressed='true'] {
-  color: var(--engine-ink);
-  background: var(--engine);
-  font-weight: 700;
-}
-
-.vs-engine-btn[disabled] {
-  opacity: 0.4;
-  cursor: not-allowed;
 }
 
 /* The lamp: a filled square when the engine is live, hollow when it is not. */

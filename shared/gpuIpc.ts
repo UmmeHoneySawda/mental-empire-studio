@@ -9,6 +9,8 @@ import type { GpuRenderSpec } from './renderSpec'
 export const GPU_CHANNELS = {
   /** main → worker: start rendering this spec */
   run: 'gpu:run',
+  /** main → worker: stop this job — cooperative, the frame loop bails at its next frame */
+  cancel: 'gpu:cancel',
   /** worker → main: periodic progress */
   progress: 'gpu:progress',
   /** worker → main: finished, h264 written to spec.out.h264Path */
@@ -48,6 +50,8 @@ export interface GpuReadyMsg {
 export interface GpuWorkerApi {
   /** subscribe to render requests from the host */
   onRun(cb: (spec: GpuRenderSpec) => void): void
+  /** subscribe to cancel requests for the job currently rendering */
+  onCancel(cb: (jobId: string) => void): void
   /** read an input file (image/overlay/audio) from disk as bytes */
   readFile(path: string): ArrayBuffer
   /** write the muxed output bytes to disk (kept for small writes / self-test) */
