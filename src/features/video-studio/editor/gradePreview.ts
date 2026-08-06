@@ -13,10 +13,11 @@ import type { VideoGrading } from '@shared/video-engine'
  * below are deliberately the same ones the FFmpeg chain uses, so the preview is wrong only
  * in the ways CSS is unavoidably wrong:
  *
- *   exposure   → `brightness(2^EV)`         (ffmpeg `exposure=exposure=EV`)
+ *   exposure   → `brightness(2^EV)`         (ffmpeg `lutyuv=`, a 2^EV gain on Y and chroma)
  *   contrast   → `contrast(1 + c)`          (ffmpeg `eq=contrast=`, fed `1 + c` by queue.ts)
  *   saturation → `saturate(s)`              (ffmpeg `eq=saturation=`)
- *   temp/tint  → a soft-light wash whose channel mix is `colorbalance`'s rm/gm/bm
+ *   temp/tint  → a soft-light wash over the whole frame, from the same rm/gm/bm channel mix
+ *                the render now applies as a `lutyuv` offset on Y/U/V
  *   vignette   → a radial gradient standing in for `vignette=angle=`
  *   grain      → NOT approximated. `noise=alls=` is per-pixel and per-frame; the CSS
  *                equivalents are either a `data:` URI (blocked by `img-src 'self'`) or an
@@ -55,7 +56,7 @@ export function gradeTintLayer(grading: VideoGrading | undefined): CSSProperties
   const tint = clamp(grading.tint, -1, 1)
   if (temperature === 0 && tint === 0) return null
 
-  // The same channel mix `buildGradeFilter` hands to `colorbalance`, re-centred on mid grey
+  // The same channel mix `buildGradeFilter` turns into its Y/U/V offset, re-centred on mid grey
   // so a zero mix is a no-op wash rather than a grey veil.
   const red = temperature * 0.16 + tint * 0.04
   const green = -tint * 0.12

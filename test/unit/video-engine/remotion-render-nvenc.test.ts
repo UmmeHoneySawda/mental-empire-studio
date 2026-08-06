@@ -237,6 +237,70 @@ describe('cinematic grade filter chain', () => {
     expect(Number(angle)).toBeCloseTo(Math.PI / 3, 4)
   })
 
+  /* Exposure must never reach ffmpeg's `exposure` filter: it is float-RGB only, so it drags a
+     gbrpf32le round-trip into a chain that is otherwise yuv420p and pushes everything after it
+     to 4:4:4. The `lutyuv` gain is the same 2^EV multiply in the master's own format. */
+  it('applies exposure as a native-format LUT, not the float-RGB exposure filter', async () => {
+    const chain = await buildGradeFilter({ enabled: true, exposure: 0.15 })
+
+    expect(chain).not.toContain('exposure=')
+    expect(chain).toContain('lutyuv=')
+
+    const gain = /lutyuv=y='clip\(16\+\(val-16\)\*([\d.]+),16,235\)'/.exec(chain)?.[1]
+    expect(Number(gain)).toBeCloseTo(Math.pow(2, 0.15), 4)
+    expect(chain).toContain(`:u='clip(128+(val-128)*${gain},16,240)'`)
+    expect(chain).toContain(`:v='clip(128+(val-128)*${gain},16,240)'`)
+  })
+
+  it('emits no exposure stage at all when exposure is zero', async () => {
+    const chain = await buildGradeFilter({ enabled: true, exposure: 0, vignette: 0.2 })
+
+    expect(chain).not.toContain('lutyuv')
+  })
+
+  /* Temperature and tint must never reach `colorbalance`: it is RGB-only, so swscale converts
+     yuv420p -> rgb24 and back around it, and everything between those conversions — the
+     vignette — runs in rgb24 too. The same rm/gm/bm mix becomes one YUV offset instead. */
+  it('applies temperature and tint as a native-format offset, not colorbalance', async () => {
+    const chain = await buildGradeFilter({ enabled: true, temperature: 0.2, tint: 0 })
+
+    expect(chain).not.toContain('colorbalance')
+
+    // Warm: red up and blue down, which is V up and U down. Whole code values, because
+    // `lutyuv` floors its expression into an 8-bit table.
+    expect(chain).toContain(
+      "lutyuv=y='clip(val+1,16,235)':u='clip(val-3,16,240)':v='clip(val+3,16,240)'"
+    )
+  })
+
+  /* Rounding, not flooring, is what makes this true: floor would turn a -0.34 offset into a
+     whole code value of tint that the mix never asked for. */
+  it('emits no stage for a mix too small to survive an 8-bit table', async () => {
+    const chain = await buildGradeFilter({ enabled: true, temperature: 0.02, vignette: 0.2 })
+
+    expect(chain).not.toContain('lutyuv')
+    expect(chain).toContain('vignette=')
+  })
+
+  /* The offset has to land after `eq`, not folded into the exposure LUT ahead of it: `eq`'s
+     saturation multiplies the chroma deviation from 128, so an offset applied earlier would be
+     scaled by `saturation` and the tint would drift with an unrelated slider. */
+  it('offsets chroma after the eq stage, not before it', async () => {
+    const chain = await buildGradeFilter({
+      enabled: true, exposure: 0.1, saturation: 1.2, temperature: 0.2
+    })
+
+    expect(chain.indexOf('eq=')).toBeGreaterThan(chain.indexOf('lutyuv=y=\'clip(16+'))
+    expect(chain.indexOf("lutyuv=y='clip(val+")).toBeGreaterThan(chain.indexOf('eq='))
+  })
+
+  it('emits no colour-temperature stage when temperature and tint are neutral', async () => {
+    const chain = await buildGradeFilter({ enabled: true, temperature: 0, tint: 0, vignette: 0.2 })
+
+    expect(chain).not.toContain('lutyuv')
+    expect(chain).not.toContain('colorbalance')
+  })
+
   it('maps the project contrast offset onto the filter multiplier', () => {
     const project = createRemotionFixtureProject()
     const grade = gradeFromProject({

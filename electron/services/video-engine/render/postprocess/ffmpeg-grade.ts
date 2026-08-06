@@ -39,12 +39,26 @@ export interface CinematicGrade {
   grain?: number
 }
 
+/**
+ * `colorbalance`'s midtones shift at the peak of its weight curve, in 8-bit code values: the
+ * filter scales a midtones parameter by 0.7 where the curve is highest. Kept as the strength
+ * of the temperature/tint offset so the look survives the move off that filter — see
+ * `buildGradeFilter`.
+ */
+const TINT_PEAK_CODE_VALUES = 0.7 * 255
+
 function finite(value: number | undefined, fallback: number): number {
   return Number.isFinite(value) ? value! : fallback
 }
 
 function fixed(value: number): string {
   return Number(value.toFixed(4)).toString()
+}
+
+/** A leading sign, so an offset reads `val-2.092` rather than the valid but ugly `val+-2.092`. */
+function signed(value: number): string {
+  const text = fixed(value)
+  return text.startsWith('-') ? text : `+${text}`
 }
 
 /** Escapes a path for FFmpeg filtergraph syntax. Arguments are passed without a shell. */
@@ -135,15 +149,96 @@ export async function buildGradeFilter(grade: CinematicGrade): Promise<string> {
       )
     }
   }
-  if (exposure !== 0) chain.push(`exposure=exposure=${fixed(exposure)}`)
+  // A `lutyuv`, not ffmpeg's `exposure` filter. `exposure` accepts only float RGB, so ffmpeg
+  // auto-inserts swscale on both sides of it — yuv420p -> gbrpf32le (a 24.9 MB frame at 1080p)
+  // -> yuv444p — and every filter after it then runs at 4:4:4. But `exposure=EV` is just a
+  // multiply of the RGB code values by 2^EV, and scaling R, G and B by the same factor scales
+  // limited-range Y and the chroma deviation from 128 by that same factor. So a 256-entry LUT,
+  // built once at init and applied in native yuv420p, computes it without leaving the format
+  // the master is already in.
+  //
+  // Measured on 6s of 1080p30 as a paired, same-session, back-to-back A/B, with `colorbalance`
+  // left out of the chain (it is RGB-only, so it forces a conversion either way and swamps the
+  // difference): 5.67/5.93/5.81s -> 2.06/2.07/2.20s, -64% wall clock, -75% net of decode.
+  // Against a luma ramp the LUT tracks the `exposure` filter to a mean absolute error of 0.16
+  // and a max of 1 code value.
+  //
+  // Output is NOT byte-identical and cannot be: `exposure` clips per channel in RGB, which
+  // desaturates a blown highlight, while a per-component YUV LUT clamps Y and chroma
+  // independently. On synthetic 100%-saturated bars that is ~39 dB PSNR; at the |EV| <= 0.07 the
+  // studio presets use it only reaches pixels already at the top of the range.
+  //
+  // The 16/235/240 constants assume limited-range input. That is what the render master is —
+  // untagged yuv420p out of h264_nvenc — and what swscale already assumed when feeding
+  // `exposure`. A full-range master would need the pivots widened to 0/255.
+  if (exposure !== 0) {
+    const gain = fixed(Math.pow(2, exposure))
+    chain.push(
+      `lutyuv=y='clip(16+(val-16)*${gain},16,235)'`
+      + `:u='clip(128+(val-128)*${gain},16,240)'`
+      + `:v='clip(128+(val-128)*${gain},16,240)'`
+    )
+  }
   if (contrast !== 1 || saturation !== 1) {
     chain.push(`eq=contrast=${fixed(contrast)}:saturation=${fixed(saturation)}`)
   }
+  // A `lutyuv` chroma offset, not `colorbalance`. `colorbalance` accepts only RGB, so ffmpeg
+  // wraps it in swscale — yuv420p -> rgb24 -> yuv420p — and every filter between those two
+  // conversions runs in rgb24 as well, which in this chain means the vignette.
+  //
+  // Measured on the 3-minute benchmark fixture as a paired, same-session, back-to-back A/B
+  // against one cached master (`npm run bench:render -- --grade-only`): the grade pass went
+  // **501.9s -> 74.3s, -85.2%** (labels `colorbalance-before` / `colorbalance-after-rounded`;
+  // an earlier run of the same chain shape measured 63.9s, so read the win as -85% and not as
+  // three significant figures). On 6s of
+  // 1080p30, filter plus NVENC encode, the same swap is 19.09s -> 2.86s; dropping only `pl=1`
+  // reaches 11.38s, so the RGB round trip and the preserve-lightness pass cost about the same
+  // as each other. Numbers are inlined because the result files live in the gitignored
+  // scratchpad/ and do not survive a fresh clone.
+  //
+  // The replacement is the same rm/gm/bm mix, taken at `colorbalance`'s own midtone-peak
+  // weight and pushed through the BT.601 limited-range matrix, so it lands as one offset on Y,
+  // U and V in the format the master is already in. BT.601 because that is what swscale used
+  // for this untagged master: at temperature=1 the old chain moved a neutral ramp by dU=-17,
+  // dV=+15, which is 601's -16.8/+14.6 and not 709's -15.4/+13.7.
+  //
+  // Two deliberate appearance changes, both measured against the old chain:
+  //
+  //  - The push is now global. `colorbalance`'s midtones weight is not centred on mid grey: it
+  //    is a bump over code values ~26..101 that peaks at 64 and is exactly zero above 101, so
+  //    temperature and tint used to tint the darker quarter of the range and leave midtones
+  //    and highlights untouched. A constant offset applies that peak strength everywhere. At
+  //    the strongest studio preset (Warm film, temperature 0.2) the peak is dU=-3, dV=+3 out of
+  //    255, and a whole-frame wash is what the editor already previews — see the soft-light
+  //    layer in `gradePreview.ts`, which uses this same mix.
+  //  - `pl=1` no longer flattens saturated colour. Preserve-lightness collapses saturated
+  //    pixels towards neutral grey: at rm=0.032 the old chain returned SMPTE bars with the
+  //    red, blue and magenta patches grey. An offset has no such failure mode.
+  //
+  // Placement matters. This has to stay after `eq`, because `eq=saturation` multiplies the
+  // chroma deviation from 128, so folding the offset into the exposure LUT above would scale
+  // it by an unrelated slider.
+  //
+  // The offsets are rounded here because `lutyuv` floors its expression into an 8-bit table:
+  // measured on 20 frames, a -2.092 offset shifted U by a mean of exactly -3.00, and a +0.9311
+  // offset shifted V by 0.00. Floor turns a half-code-value offset into a whole one in the
+  // negative direction and drops it entirely in the positive, which on a 2-code-value tint is
+  // most of the tint. Rounding first also makes the emitted filter say what it does, and it is
+  // why a mix too small to survive 8-bit emits no stage at all rather than a no-op pass.
   if (temperature !== 0 || tint !== 0) {
-    const red = temperature * 0.16 + tint * 0.04
-    const green = -tint * 0.12
-    const blue = -temperature * 0.16 + tint * 0.04
-    chain.push(`colorbalance=rm=${fixed(red)}:gm=${fixed(green)}:bm=${fixed(blue)}:pl=1`)
+    const red = (temperature * 0.16 + tint * 0.04) * TINT_PEAK_CODE_VALUES
+    const green = (-tint * 0.12) * TINT_PEAK_CODE_VALUES
+    const blue = (-temperature * 0.16 + tint * 0.04) * TINT_PEAK_CODE_VALUES
+    const dy = Math.round(0.257 * red + 0.504 * green + 0.098 * blue)
+    const du = Math.round(-0.148 * red - 0.291 * green + 0.439 * blue)
+    const dv = Math.round(0.439 * red - 0.368 * green - 0.071 * blue)
+    if (dy !== 0 || du !== 0 || dv !== 0) {
+      chain.push(
+        `lutyuv=y='clip(val${signed(dy)},16,235)'`
+        + `:u='clip(val${signed(du)},16,240)'`
+        + `:v='clip(val${signed(dv)},16,240)'`
+      )
+    }
   }
   // `eval=init`, not `eval=frame`. The angle is folded to a constant at build time on the line
   // below — `finite()` rejects any non-number, so it can never be an ffmpeg expression in
