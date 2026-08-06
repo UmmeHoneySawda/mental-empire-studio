@@ -169,7 +169,12 @@ jobs:
             echo "::endgroup::"
           }
 
-          for m in 1 m3 m4 m5 m6 m7 e2e; do
+          # `automation` drives the durable Supervisor end to end (real ffmpeg encode,
+          # SQLite checkpoints, interrupted-row recovery) plus the batch:launch seam —
+          # rotation, template mapping, hook wiring, zero-source failure and count
+          # clamping. It was previously run by nothing but a human. It seeds and resets
+          # its own profile, so it stays out of the demo-seed list in main.ts.
+          for m in 1 m3 m4 m5 m6 m7 automation e2e; do
             run "$m"
           done
       - name: Upload smoke logs

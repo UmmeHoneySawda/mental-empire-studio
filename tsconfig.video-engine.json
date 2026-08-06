@@ -21,6 +21,7 @@
     "shared/video-engine",
     "electron/services/video-engine",
     "video-engine",
-    "scripts/video-engine*.ts"
+    "scripts/video-engine*.ts",
+    "scripts/bench-render*.ts"
   ]
 }

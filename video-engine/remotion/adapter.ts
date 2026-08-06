@@ -1,5 +1,6 @@
 import { createReadStream, existsSync } from 'node:fs'
 import { mkdir, stat } from 'node:fs/promises'
+import { cpus } from 'node:os'
 import { createServer, type ServerResponse } from 'node:http'
 import type { AddressInfo } from 'node:net'
 import path from 'node:path'
@@ -90,12 +91,63 @@ export function chromeModeForGpuProfile(profile: GpuRenderProfile): ChromeMode {
     : 'headless-shell'
 }
 
-function concurrencyForGpuProfile(
-  profile: GpuRenderProfile,
-): number | null {
-  // A single Chromium tab avoids duplicated decode/compositor work and GPU-memory
-  // contention. Automatic mode preserves Remotion's CPU-based heuristic.
-  return profile === 'automatic' ? null : 1
+/** Never exceed this, on any machine. The measured turnover on a 4-core box was between 2
+ *  and 4, and nothing above 4 has been benchmarked — so 4 is the edge of the evidence, not
+ *  a guess about big machines. Raise it only with a `npm run bench:render` number. */
+const MAX_RENDER_CONCURRENCY = 4
+
+/**
+ * How many Chromium tabs pull frames in parallel. **Independent of the GPU profile.**
+ *
+ * This used to be `profile === 'automatic' ? null : 1`, which coupled two unrelated
+ * decisions — "which GL backend do we use" and "how many frames do we render at once" — in
+ * one function. Since `defaultGpuRenderProfile('win32')` is always `'windows-nvidia'`, every
+ * Windows NVIDIA machine was pinned to a single tab regardless of how many cores it had, and
+ * the only escape was `MES_REMOTION_GPU_PROFILE=automatic`, which also throws away
+ * `gl: 'angle'` and changes `chromeMode`. That is not a throughput lever.
+ *
+ * Measured on the benchmark fixture (GTX 1660 Ti, 4 logical cores, `npm run bench:render --
+ * --no-grade`, 5400 frames, one run per arm). **Only compare arms from the same sweep** —
+ * background load moves the absolute numbers far more than the setting does, so a
+ * cross-sweep row is a comparison of machine conditions wearing a concurrency label:
+ *
+ *   sweep A (loaded)   concurrency 1 -> 510.9s (10.57 fps)   <- the old hardcoded value
+ *                      concurrency 2 -> 443.5s (12.17 fps)   <- -13.2% vs 1
+ *   sweep B (idle)     concurrency 2 -> 364.9s (14.80 fps)
+ *                      concurrency 4 -> 427.0s (12.65 fps)   <- +17.0% vs 2, past the peak
+ *
+ * The same concurrency 2 measured 364.9s, 443.5s and 531.8s across sessions — a **46% spread
+ * with the configuration held constant**, larger than any optimisation measured so far. That
+ * is why the -13.2% above is only quotable as a PAIRED, same-sweep result, and why 443.5s is
+ * the number to quote rather than the idle box's 364.9s. Remotion refuses anything above the
+ * core count outright (`Maximum for --concurrency is 4`), so 6 and 8 are unmeasurable here,
+ * not merely unmeasured.
+ *
+ * **Peak NVENC encoder sessions stayed at 1 at every level** (`nvidia-smi
+ * encoder.stats.sessionCount`, sampled throughout each run). That is the assumption the
+ * diagnosis required be verified before raising this: all tabs feed one ffmpeg/NVENC
+ * process, so `hardwareAcceleration: 'required'` is not weakened. Peak VRAM at concurrency 2
+ * was 1641 MiB of 6144, so VRAM is not the binding constraint at these levels — which is why
+ * this derives from cores alone and does not probe the GPU. A synchronous GPU probe on this
+ * path is exactly the bug that wedged the first benchmark sweep.
+ */
+export function concurrencyForMachine(
+  logicalCores: number = cpus().length,
+): number {
+  const override = process.env['MES_REMOTION_CONCURRENCY']
+  if (override) {
+    const parsed = Number(override)
+    if (!Number.isInteger(parsed) || parsed < 1) {
+      throw new Error(`Invalid MES_REMOTION_CONCURRENCY "${override}". Expected a positive integer.`)
+    }
+    return parsed
+  }
+  // Half the cores: each tab needs a core for layout and paint, and the encoder and the
+  // main process need what is left. On 4 cores this is the measured optimum.
+  // `cpus()` has come back empty in containers and under some hypervisors; without this
+  // guard that reaches Remotion as `concurrency: NaN` rather than failing loudly.
+  const cores = Number.isFinite(logicalCores) ? logicalCores : 0
+  return Math.max(1, Math.min(MAX_RENDER_CONCURRENCY, Math.floor(cores / 2)))
 }
 
 /**
@@ -220,8 +272,10 @@ function resolveOptions(
     chromeMode: options.chromeMode ?? chromeModeForGpuProfile(gpuProfile),
     chromiumOptions:
       options.chromiumOptions ?? chromiumOptionsForGpuProfile(gpuProfile),
+    // `null` means "let Remotion use its own CPU heuristic" and is only reachable by an
+    // explicit caller opt-in, so `??` must not collapse it into the machine default.
     concurrency:
-      options.concurrency ?? concurrencyForGpuProfile(gpuProfile),
+      options.concurrency === undefined ? concurrencyForMachine() : options.concurrency,
     timeoutInMilliseconds: options.timeoutInMilliseconds ?? 120_000,
     licenseKey: options.licenseKey ?? null,
     logLevel: options.logLevel ?? 'warn',

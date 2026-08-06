@@ -104,9 +104,43 @@ headlessly under `xvfb-run`:
 
 - `ME_SMOKE=1|m3|m4|m5|m6|m7` → each milestone's `runSmokeM*` in `electron/main.ts` drives the real code
   against `test/fixtures/` and asserts; prints `SMOKE…_OK`.
+- `ME_SMOKE=automation` → `runSmokeAutomation` drives the durable Supervisor end to end with a **real**
+  ffmpeg encode (it deletes `ME_RENDER_FIXTURE` itself), SQLite step checkpoints, interrupted-row
+  recovery, and the `batch:launch` seam (rotation, template mapping, hook wiring, zero-source failure,
+  count clamping). Prints `AUTOMATION_SMOKE_OK`. It resets and seeds its own profile, so it is
+  deliberately not in main.ts's demo-seed list.
 - Seams: `ME_YTDLP_FIXTURE` (recorded scrape JSON), `ME_DOWNLOAD_FIXTURE` (sample mp3 copy),
   `ME_WHISPER_FIXTURE` (word timings), `ME_RENDER_FIXTURE` (stub mp4 instead of ffmpeg).
 - `ME_SHOOT=<png>` boots the window and screenshots (`ME_BATCH=1` also drives thumbnail batch).
+- **`npm run bench:render` is the render-performance benchmark.** Any claim about render speed
+  must come from it, never from inspection. It renders a fixed 3-minute workload
+  (`test/fixtures/bench-render/project.json` — 27 scenes, 23 transitions in one
+  `TransitionSeries` chain, 450 caption words, a hook, a non-identity grade) through the real
+  adapter and the real `applyCinematicGrade`, and writes a per-stage breakdown to
+  `scratchpad/bench-render-<stamp>.json`. Flags: `--runs=N` (variance), `--concurrency=N|auto`,
+  `--no-grade` / `--no-captions` / `--no-hook` / `--no-transitions` (stage isolation),
+  `--grade-only` (skip the render, grade a cached master — rejects the stage-isolation flags,
+  which it could record but not apply), `--keep` (keep the scratch dir, which is the **only**
+  way any output survives the run — without it there is nothing left to verify),
+  `--frames=N` (a slice — marked `partial`, never comparable to a full baseline), `--label=`.
+  The media is synthetic-but-real ffmpeg output regenerated on demand into the gitignored
+  `test/fixtures/bench-render/assets/`; the audio is the committed real mp3, concatenated.
+  **Do not regenerate `project.json`** (`npm run bench:fixture`) without meaning to — it
+  invalidates every stored baseline. A baseline is only comparable to runs on the same ffmpeg
+  build, which is why each result records one. It touches no DB and no settings.
+- **Benchmark methodology — this box needs paired A/B, and ignoring that wasted hours in M10.**
+  Concurrency 2 measured **364.9s, 443.5s and 531.8s** for the same render stage with the
+  configuration held constant: a **46% spread** between sessions, larger than any optimisation
+  measured so far. So: **never compare a new arm against a stored baseline from an earlier
+  session.** Run the two arms you are comparing back-to-back in one sitting and compare only
+  those. `--runs=N` gives within-session spread (0.2% across the two `label=baseline` runs) and
+  says nothing about between-session drift. A corollary for stage isolation: prefer
+  `--grade-only`, which reuses a cached ungraded master, so an A/B of the grade pass costs one
+  grade each instead of a re-render. And a 900-frame `--frames` slice is **not** a scale model —
+  it rendered at 16.11 fps (`label=cancel-repro-before`) against the full fixture's 10.15 fps
+  (`label=m10-combined-1`) because it front-loads the simple early scenes. Use slices for
+  single-stage A/B only, never to extrapolate a total. Every figure in this section names the
+  `label` of the stored result it came from, so it can be falsified rather than trusted.
 - Always run `npm run typecheck` + `npm run build` + the smokes after a change. CI (`.github/workflows/
   ci.yml`) runs them all.
 - **GPU-only smokes, deliberately NOT in the CI loop** (CI is Linux under xvfb with no WebCodecs
@@ -116,7 +150,11 @@ headlessly under `xvfb-run`:
   `cancelGpuRender` → `gpu:cancel` → the worker's frame loop, and the render stops early instead
   of finishing). `ME_SMOKE=m6` cannot cover that — it forces `renderEngine='ffmpeg'`.
 - Screen-level Playwright harnesses drive the real app against a throwaway `ME_USERDATA_DIR`:
-  `npm run e2e:studio` (the only one in CI), plus `node scripts/e2e-{renderqueue,publish,mychannels,niches}.mjs`.
+  `npm run e2e:studio`, `npm run e2e:automation`, plus
+  `node scripts/e2e-{renderqueue,publish,mychannels,niches,thumbnails,sources,settings}.mjs`.
+  **None of them is in CI** —
+  `ci.yml` gates only the `ME_SMOKE` loop (`1 m3 m4 m5 m6 m7 automation e2e`), so a Playwright harness
+  only runs when a human runs it. Run the one covering the screen you touched.
   `e2e-niches.mjs` warms a real pool offline through `ME_BROLL_LOCAL`. Note how it observes the
   run: the local seam probes with a **synchronous** ffprobe per file, which parks the main
   process — and CDP is served by the main process, so a harness-side poll cannot sample the DOM

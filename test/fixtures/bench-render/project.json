@@ -1,0 +1,4049 @@
+{
+  "schemaVersion": 1,
+  "id": "bench-render-3min",
+  "name": "Render benchmark — 3 minutes, 24 scenes, 23 transitions, full captions, hook, grade",
+  "revision": 1,
+  "rendererId": "remotion",
+  "createdAt": "2026-08-06T00:00:00.000Z",
+  "updatedAt": "2026-08-06T00:00:00.000Z",
+  "canvas": {
+    "width": 1920,
+    "height": 1080,
+    "fps": 30,
+    "durationFrames": 5400,
+    "backgroundColor": "#000000"
+  },
+  "assets": [
+    {
+      "id": "bench-voice",
+      "name": "voice.mp3",
+      "kind": "audio",
+      "uri": "file:///BENCH_ASSET_ROOT/voice.mp3",
+      "mimeType": "audio/mpeg",
+      "durationFrames": 5400
+    },
+    {
+      "id": "bench-broll-01",
+      "name": "broll-01.mp4",
+      "kind": "video",
+      "uri": "file:///BENCH_ASSET_ROOT/broll-01.mp4",
+      "mimeType": "video/mp4",
+      "width": 1920,
+      "height": 1080,
+      "durationFrames": 600
+    },
+    {
+      "id": "bench-broll-02",
+      "name": "broll-02.mp4",
+      "kind": "video",
+      "uri": "file:///BENCH_ASSET_ROOT/broll-02.mp4",
+      "mimeType": "video/mp4",
+      "width": 1920,
+      "height": 1080,
+      "durationFrames": 600
+    },
+    {
+      "id": "bench-broll-03",
+      "name": "broll-03.mp4",
+      "kind": "video",
+      "uri": "file:///BENCH_ASSET_ROOT/broll-03.mp4",
+      "mimeType": "video/mp4",
+      "width": 1920,
+      "height": 1080,
+      "durationFrames": 600
+    },
+    {
+      "id": "bench-broll-04",
+      "name": "broll-04.mp4",
+      "kind": "video",
+      "uri": "file:///BENCH_ASSET_ROOT/broll-04.mp4",
+      "mimeType": "video/mp4",
+      "width": 1920,
+      "height": 1080,
+      "durationFrames": 600
+    },
+    {
+      "id": "bench-broll-05",
+      "name": "broll-05.mp4",
+      "kind": "video",
+      "uri": "file:///BENCH_ASSET_ROOT/broll-05.mp4",
+      "mimeType": "video/mp4",
+      "width": 1920,
+      "height": 1080,
+      "durationFrames": 600
+    },
+    {
+      "id": "bench-broll-06",
+      "name": "broll-06.mp4",
+      "kind": "video",
+      "uri": "file:///BENCH_ASSET_ROOT/broll-06.mp4",
+      "mimeType": "video/mp4",
+      "width": 1920,
+      "height": 1080,
+      "durationFrames": 600
+    },
+    {
+      "id": "bench-still-01",
+      "name": "still-01.png",
+      "kind": "image",
+      "uri": "file:///BENCH_ASSET_ROOT/still-01.png",
+      "mimeType": "image/png",
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "id": "bench-still-02",
+      "name": "still-02.png",
+      "kind": "image",
+      "uri": "file:///BENCH_ASSET_ROOT/still-02.png",
+      "mimeType": "image/png",
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "id": "bench-still-03",
+      "name": "still-03.png",
+      "kind": "image",
+      "uri": "file:///BENCH_ASSET_ROOT/still-03.png",
+      "mimeType": "image/png",
+      "width": 1920,
+      "height": 1080
+    },
+    {
+      "id": "bench-still-04",
+      "name": "still-04.png",
+      "kind": "image",
+      "uri": "file:///BENCH_ASSET_ROOT/still-04.png",
+      "mimeType": "image/png",
+      "width": 1920,
+      "height": 1080
+    }
+  ],
+  "tracks": [
+    {
+      "id": "bench-track-audio",
+      "name": "Voiceover",
+      "kind": "audio",
+      "order": -10,
+      "muted": false,
+      "locked": false
+    },
+    {
+      "id": "bench-track-visual",
+      "name": "Visuals",
+      "kind": "video",
+      "order": 0,
+      "muted": false,
+      "locked": false
+    },
+    {
+      "id": "bench-track-hook",
+      "name": "Hook",
+      "kind": "overlay",
+      "order": 20,
+      "muted": false,
+      "locked": false
+    },
+    {
+      "id": "bench-track-caption",
+      "name": "Captions",
+      "kind": "caption",
+      "order": 100,
+      "muted": false,
+      "locked": false
+    }
+  ],
+  "scenes": [
+    {
+      "id": "bench-scene-audio",
+      "trackId": "bench-track-audio",
+      "kind": "audio",
+      "startFrame": 0,
+      "durationFrames": 5400,
+      "zIndex": 0,
+      "assetId": "bench-voice",
+      "volume": 1
+    },
+    {
+      "id": "bench-scene-00",
+      "trackId": "bench-track-visual",
+      "kind": "media",
+      "startFrame": 0,
+      "durationFrames": 239,
+      "zIndex": 0,
+      "assetId": "bench-broll-01",
+      "sourceRange": {
+        "startFrame": 0,
+        "durationFrames": 239
+      },
+      "fit": "cover",
+      "opacity": 1,
+      "volume": 0
+    },
+    {
+      "id": "bench-scene-01",
+      "trackId": "bench-track-visual",
+      "kind": "media",
+      "startFrame": 224,
+      "durationFrames": 251,
+      "zIndex": 0,
+      "assetId": "bench-still-01",
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "scaleX": 1.05,
+        "scaleY": 1.05,
+        "rotationDeg": 0,
+        "anchorX": 0.5,
+        "anchorY": 0.5
+      },
+      "fit": "cover",
+      "opacity": 1
+    },
+    {
+      "id": "bench-scene-02",
+      "trackId": "bench-track-visual",
+      "kind": "media",
+      "startFrame": 460,
+      "durationFrames": 227,
+      "zIndex": 0,
+      "assetId": "bench-broll-02",
+      "sourceRange": {
+        "startFrame": 74,
+        "durationFrames": 227
+      },
+      "fit": "cover",
+      "opacity": 1,
+      "volume": 0
+    },
+    {
+      "id": "bench-scene-03",
+      "trackId": "bench-track-visual",
+      "kind": "media",
+      "startFrame": 672,
+      "durationFrames": 263,
+      "zIndex": 0,
+      "assetId": "bench-still-02",
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "scaleX": 1.07,
+        "scaleY": 1.07,
+        "rotationDeg": 0,
+        "anchorX": 0.5,
+        "anchorY": 0.5
+      },
+      "fit": "cover",
+      "opacity": 1
+    },
+    {
+      "id": "bench-scene-04",
+      "trackId": "bench-track-visual",
+      "kind": "media",
+      "startFrame": 920,
+      "durationFrames": 215,
+      "zIndex": 0,
+      "assetId": "bench-broll-03",
+      "sourceRange": {
+        "startFrame": 148,
+        "durationFrames": 215
+      },
+      "fit": "cover",
+      "opacity": 1,
+      "volume": 0
+    },
+    {
+      "id": "bench-scene-05",
+      "trackId": "bench-track-visual",
+      "kind": "media",
+      "startFrame": 1120,
+      "durationFrames": 275,
+      "zIndex": 0,
+      "assetId": "bench-still-03",
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "scaleX": 1.04,
+        "scaleY": 1.04,
+        "rotationDeg": 0,
+        "anchorX": 0.5,
+        "anchorY": 0.5
+      },
+      "fit": "cover",
+      "opacity": 1
+    },
+    {
+      "id": "bench-scene-06",
+      "trackId": "bench-track-visual",
+      "kind": "media",
+      "startFrame": 1380,
+      "durationFrames": 239,
+      "zIndex": 0,
+      "assetId": "bench-broll-04",
+      "sourceRange": {
+        "startFrame": 222,
+        "durationFrames": 239
+      },
+      "fit": "cover",
+      "opacity": 1,
+      "volume": 0
+    },
+    {
+      "id": "bench-scene-07",
+      "trackId": "bench-track-visual",
+      "kind": "media",
+      "startFrame": 1604,
+      "durationFrames": 251,
+      "zIndex": 0,
+      "assetId": "bench-still-04",
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "scaleX": 1.06,
+        "scaleY": 1.06,
+        "rotationDeg": 0,
+        "anchorX": 0.5,
+        "anchorY": 0.5
+      },
+      "fit": "cover",
+      "opacity": 1
+    },
+    {
+      "id": "bench-scene-08",
+      "trackId": "bench-track-visual",
+      "kind": "media",
+      "startFrame": 1840,
+      "durationFrames": 227,
+      "zIndex": 0,
+      "assetId": "bench-broll-05",
+      "sourceRange": {
+        "startFrame": 296,
+        "durationFrames": 227
+      },
+      "fit": "cover",
+      "opacity": 1,
+      "volume": 0
+    },
+    {
+      "id": "bench-scene-09",
+      "trackId": "bench-track-visual",
+      "kind": "media",
+      "startFrame": 2052,
+      "durationFrames": 263,
+      "zIndex": 0,
+      "assetId": "bench-still-01",
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "scaleX": 1.08,
+        "scaleY": 1.08,
+        "rotationDeg": 0,
+        "anchorX": 0.5,
+        "anchorY": 0.5
+      },
+      "fit": "cover",
+      "opacity": 1
+    },
+    {
+      "id": "bench-scene-10",
+      "trackId": "bench-track-visual",
+      "kind": "media",
+      "startFrame": 2300,
+      "durationFrames": 215,
+      "zIndex": 0,
+      "assetId": "bench-broll-06",
+      "sourceRange": {
+        "startFrame": 370,
+        "durationFrames": 215
+      },
+      "fit": "cover",
+      "opacity": 1,
+      "volume": 0
+    },
+    {
+      "id": "bench-scene-11",
+      "trackId": "bench-track-visual",
+      "kind": "media",
+      "startFrame": 2500,
+      "durationFrames": 275,
+      "zIndex": 0,
+      "assetId": "bench-still-02",
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "scaleX": 1.05,
+        "scaleY": 1.05,
+        "rotationDeg": 0,
+        "anchorX": 0.5,
+        "anchorY": 0.5
+      },
+      "fit": "cover",
+      "opacity": 1
+    },
+    {
+      "id": "bench-scene-12",
+      "trackId": "bench-track-visual",
+      "kind": "media",
+      "startFrame": 2760,
+      "durationFrames": 239,
+      "zIndex": 0,
+      "assetId": "bench-broll-01",
+      "sourceRange": {
+        "startFrame": 83,
+        "durationFrames": 239
+      },
+      "fit": "cover",
+      "opacity": 1,
+      "volume": 0
+    },
+    {
+      "id": "bench-scene-13",
+      "trackId": "bench-track-visual",
+      "kind": "media",
+      "startFrame": 2984,
+      "durationFrames": 251,
+      "zIndex": 0,
+      "assetId": "bench-still-03",
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "scaleX": 1.07,
+        "scaleY": 1.07,
+        "rotationDeg": 0,
+        "anchorX": 0.5,
+        "anchorY": 0.5
+      },
+      "fit": "cover",
+      "opacity": 1
+    },
+    {
+      "id": "bench-scene-14",
+      "trackId": "bench-track-visual",
+      "kind": "media",
+      "startFrame": 3220,
+      "durationFrames": 227,
+      "zIndex": 0,
+      "assetId": "bench-broll-02",
+      "sourceRange": {
+        "startFrame": 145,
+        "durationFrames": 227
+      },
+      "fit": "cover",
+      "opacity": 1,
+      "volume": 0
+    },
+    {
+      "id": "bench-scene-15",
+      "trackId": "bench-track-visual",
+      "kind": "media",
+      "startFrame": 3432,
+      "durationFrames": 263,
+      "zIndex": 0,
+      "assetId": "bench-still-04",
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "scaleX": 1.04,
+        "scaleY": 1.04,
+        "rotationDeg": 0,
+        "anchorX": 0.5,
+        "anchorY": 0.5
+      },
+      "fit": "cover",
+      "opacity": 1
+    },
+    {
+      "id": "bench-scene-16",
+      "trackId": "bench-track-visual",
+      "kind": "media",
+      "startFrame": 3680,
+      "durationFrames": 215,
+      "zIndex": 0,
+      "assetId": "bench-broll-03",
+      "sourceRange": {
+        "startFrame": 207,
+        "durationFrames": 215
+      },
+      "fit": "cover",
+      "opacity": 1,
+      "volume": 0
+    },
+    {
+      "id": "bench-scene-17",
+      "trackId": "bench-track-visual",
+      "kind": "media",
+      "startFrame": 3880,
+      "durationFrames": 275,
+      "zIndex": 0,
+      "assetId": "bench-still-01",
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "scaleX": 1.06,
+        "scaleY": 1.06,
+        "rotationDeg": 0,
+        "anchorX": 0.5,
+        "anchorY": 0.5
+      },
+      "fit": "cover",
+      "opacity": 1
+    },
+    {
+      "id": "bench-scene-18",
+      "trackId": "bench-track-visual",
+      "kind": "media",
+      "startFrame": 4140,
+      "durationFrames": 239,
+      "zIndex": 0,
+      "assetId": "bench-broll-04",
+      "sourceRange": {
+        "startFrame": 305,
+        "durationFrames": 239
+      },
+      "fit": "cover",
+      "opacity": 1,
+      "volume": 0
+    },
+    {
+      "id": "bench-scene-19",
+      "trackId": "bench-track-visual",
+      "kind": "media",
+      "startFrame": 4364,
+      "durationFrames": 251,
+      "zIndex": 0,
+      "assetId": "bench-still-02",
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "scaleX": 1.08,
+        "scaleY": 1.08,
+        "rotationDeg": 0,
+        "anchorX": 0.5,
+        "anchorY": 0.5
+      },
+      "fit": "cover",
+      "opacity": 1
+    },
+    {
+      "id": "bench-scene-20",
+      "trackId": "bench-track-visual",
+      "kind": "media",
+      "startFrame": 4600,
+      "durationFrames": 227,
+      "zIndex": 0,
+      "assetId": "bench-broll-05",
+      "sourceRange": {
+        "startFrame": 367,
+        "durationFrames": 227
+      },
+      "fit": "cover",
+      "opacity": 1,
+      "volume": 0
+    },
+    {
+      "id": "bench-scene-21",
+      "trackId": "bench-track-visual",
+      "kind": "media",
+      "startFrame": 4812,
+      "durationFrames": 263,
+      "zIndex": 0,
+      "assetId": "bench-still-03",
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "scaleX": 1.05,
+        "scaleY": 1.05,
+        "rotationDeg": 0,
+        "anchorX": 0.5,
+        "anchorY": 0.5
+      },
+      "fit": "cover",
+      "opacity": 1
+    },
+    {
+      "id": "bench-scene-22",
+      "trackId": "bench-track-visual",
+      "kind": "media",
+      "startFrame": 5060,
+      "durationFrames": 215,
+      "zIndex": 0,
+      "assetId": "bench-broll-06",
+      "sourceRange": {
+        "startFrame": 44,
+        "durationFrames": 215
+      },
+      "fit": "cover",
+      "opacity": 1,
+      "volume": 0
+    },
+    {
+      "id": "bench-scene-23",
+      "trackId": "bench-track-visual",
+      "kind": "media",
+      "startFrame": 5260,
+      "durationFrames": 140,
+      "zIndex": 0,
+      "assetId": "bench-still-04",
+      "transform": {
+        "x": 0,
+        "y": 0,
+        "scaleX": 1.07,
+        "scaleY": 1.07,
+        "rotationDeg": 0,
+        "anchorX": 0.5,
+        "anchorY": 0.5
+      },
+      "fit": "cover",
+      "opacity": 1
+    },
+    {
+      "id": "bench-scene-hook",
+      "trackId": "bench-track-hook",
+      "kind": "template",
+      "startFrame": 0,
+      "durationFrames": 90,
+      "zIndex": 0,
+      "template": {
+        "id": "remotion-hook-motivational",
+        "version": "1.0.0",
+        "rendererId": "remotion",
+        "props": {
+          "schemaVersion": 1,
+          "rendererId": "remotion",
+          "templateId": "remotion-hook-motivational",
+          "templateVersion": "1.0.0",
+          "fps": 30,
+          "title": "The first week is supposed to feel like nothing",
+          "durationFrames": 90,
+          "beats": [
+            {
+              "id": "bench-hook-beat-1",
+              "startFrame": 0,
+              "durationFrames": 45,
+              "headline": "The first week feels like nothing",
+              "visual": {
+                "kind": "none"
+              }
+            },
+            {
+              "id": "bench-hook-beat-2",
+              "startFrame": 45,
+              "durationFrames": 45,
+              "headline": "That is exactly when it is working",
+              "body": "Keep going anyway.",
+              "visual": {
+                "kind": "none"
+              }
+            }
+          ]
+        }
+      }
+    },
+    {
+      "id": "bench-scene-caption",
+      "trackId": "bench-track-caption",
+      "kind": "caption",
+      "startFrame": 0,
+      "durationFrames": 5400,
+      "zIndex": 0,
+      "template": {
+        "id": "remotion-caption-highlight",
+        "version": "1.0.0",
+        "rendererId": "remotion",
+        "props": {
+          "fontFamily": "Hanken Grotesk",
+          "textColor": "#FFFFFF",
+          "activeColor": "#E6FF38",
+          "importantColor": "#FF5A45",
+          "maxWordsPerCue": 6
+        }
+      }
+    }
+  ],
+  "captions": {
+    "id": "bench-captions",
+    "language": "en",
+    "transcriptHash": "fnv1a64:02f92efb2953d89e",
+    "templateId": "remotion-caption-highlight",
+    "words": [
+      {
+        "id": "bw-0000",
+        "text": "Most",
+        "startFrame": 0,
+        "endFrame": 11,
+        "importance": 2
+      },
+      {
+        "id": "bw-0001",
+        "text": "people",
+        "startFrame": 12,
+        "endFrame": 23,
+        "importance": 0
+      },
+      {
+        "id": "bw-0002",
+        "text": "never",
+        "startFrame": 24,
+        "endFrame": 35,
+        "importance": 0
+      },
+      {
+        "id": "bw-0003",
+        "text": "finish",
+        "startFrame": 36,
+        "endFrame": 47,
+        "importance": 1
+      },
+      {
+        "id": "bw-0004",
+        "text": "what",
+        "startFrame": 48,
+        "endFrame": 59,
+        "importance": 0
+      },
+      {
+        "id": "bw-0005",
+        "text": "they",
+        "startFrame": 60,
+        "endFrame": 71,
+        "importance": 0
+      },
+      {
+        "id": "bw-0006",
+        "text": "start",
+        "startFrame": 72,
+        "endFrame": 83,
+        "importance": 1
+      },
+      {
+        "id": "bw-0007",
+        "text": "because",
+        "startFrame": 84,
+        "endFrame": 95,
+        "importance": 2
+      },
+      {
+        "id": "bw-0008",
+        "text": "the",
+        "startFrame": 96,
+        "endFrame": 107,
+        "importance": 0
+      },
+      {
+        "id": "bw-0009",
+        "text": "first",
+        "startFrame": 108,
+        "endFrame": 119,
+        "importance": 1
+      },
+      {
+        "id": "bw-0010",
+        "text": "week",
+        "startFrame": 120,
+        "endFrame": 131,
+        "importance": 0
+      },
+      {
+        "id": "bw-0011",
+        "text": "feels",
+        "startFrame": 132,
+        "endFrame": 143,
+        "importance": 0
+      },
+      {
+        "id": "bw-0012",
+        "text": "like",
+        "startFrame": 144,
+        "endFrame": 155,
+        "importance": 1
+      },
+      {
+        "id": "bw-0013",
+        "text": "nothing",
+        "startFrame": 156,
+        "endFrame": 167,
+        "importance": 0
+      },
+      {
+        "id": "bw-0014",
+        "text": "is",
+        "startFrame": 168,
+        "endFrame": 179,
+        "importance": 2
+      },
+      {
+        "id": "bw-0015",
+        "text": "working",
+        "startFrame": 180,
+        "endFrame": 191,
+        "importance": 1
+      },
+      {
+        "id": "bw-0016",
+        "text": "and",
+        "startFrame": 192,
+        "endFrame": 203,
+        "importance": 0
+      },
+      {
+        "id": "bw-0017",
+        "text": "that",
+        "startFrame": 204,
+        "endFrame": 215,
+        "importance": 0
+      },
+      {
+        "id": "bw-0018",
+        "text": "silence",
+        "startFrame": 216,
+        "endFrame": 227,
+        "importance": 1
+      },
+      {
+        "id": "bw-0019",
+        "text": "is",
+        "startFrame": 228,
+        "endFrame": 239,
+        "importance": 0
+      },
+      {
+        "id": "bw-0020",
+        "text": "exactly",
+        "startFrame": 240,
+        "endFrame": 251,
+        "importance": 0
+      },
+      {
+        "id": "bw-0021",
+        "text": "where",
+        "startFrame": 252,
+        "endFrame": 263,
+        "importance": 2
+      },
+      {
+        "id": "bw-0022",
+        "text": "the",
+        "startFrame": 264,
+        "endFrame": 275,
+        "importance": 0
+      },
+      {
+        "id": "bw-0023",
+        "text": "work",
+        "startFrame": 276,
+        "endFrame": 287,
+        "importance": 0
+      },
+      {
+        "id": "bw-0024",
+        "text": "actually",
+        "startFrame": 288,
+        "endFrame": 299,
+        "importance": 1
+      },
+      {
+        "id": "bw-0025",
+        "text": "happens",
+        "startFrame": 300,
+        "endFrame": 311,
+        "importance": 0
+      },
+      {
+        "id": "bw-0026",
+        "text": "so",
+        "startFrame": 312,
+        "endFrame": 323,
+        "importance": 0
+      },
+      {
+        "id": "bw-0027",
+        "text": "keep",
+        "startFrame": 324,
+        "endFrame": 335,
+        "importance": 1
+      },
+      {
+        "id": "bw-0028",
+        "text": "going",
+        "startFrame": 336,
+        "endFrame": 347,
+        "importance": 2
+      },
+      {
+        "id": "bw-0029",
+        "text": "anyway",
+        "startFrame": 348,
+        "endFrame": 359,
+        "importance": 0
+      },
+      {
+        "id": "bw-0030",
+        "text": "Most",
+        "startFrame": 360,
+        "endFrame": 371,
+        "importance": 1
+      },
+      {
+        "id": "bw-0031",
+        "text": "people",
+        "startFrame": 372,
+        "endFrame": 383,
+        "importance": 0
+      },
+      {
+        "id": "bw-0032",
+        "text": "never",
+        "startFrame": 384,
+        "endFrame": 395,
+        "importance": 0
+      },
+      {
+        "id": "bw-0033",
+        "text": "finish",
+        "startFrame": 396,
+        "endFrame": 407,
+        "importance": 1
+      },
+      {
+        "id": "bw-0034",
+        "text": "what",
+        "startFrame": 408,
+        "endFrame": 419,
+        "importance": 0
+      },
+      {
+        "id": "bw-0035",
+        "text": "they",
+        "startFrame": 420,
+        "endFrame": 431,
+        "importance": 2
+      },
+      {
+        "id": "bw-0036",
+        "text": "start",
+        "startFrame": 432,
+        "endFrame": 443,
+        "importance": 1
+      },
+      {
+        "id": "bw-0037",
+        "text": "because",
+        "startFrame": 444,
+        "endFrame": 455,
+        "importance": 0
+      },
+      {
+        "id": "bw-0038",
+        "text": "the",
+        "startFrame": 456,
+        "endFrame": 467,
+        "importance": 0
+      },
+      {
+        "id": "bw-0039",
+        "text": "first",
+        "startFrame": 468,
+        "endFrame": 479,
+        "importance": 1
+      },
+      {
+        "id": "bw-0040",
+        "text": "week",
+        "startFrame": 480,
+        "endFrame": 491,
+        "importance": 0
+      },
+      {
+        "id": "bw-0041",
+        "text": "feels",
+        "startFrame": 492,
+        "endFrame": 503,
+        "importance": 0
+      },
+      {
+        "id": "bw-0042",
+        "text": "like",
+        "startFrame": 504,
+        "endFrame": 515,
+        "importance": 2
+      },
+      {
+        "id": "bw-0043",
+        "text": "nothing",
+        "startFrame": 516,
+        "endFrame": 527,
+        "importance": 0
+      },
+      {
+        "id": "bw-0044",
+        "text": "is",
+        "startFrame": 528,
+        "endFrame": 539,
+        "importance": 0
+      },
+      {
+        "id": "bw-0045",
+        "text": "working",
+        "startFrame": 540,
+        "endFrame": 551,
+        "importance": 1
+      },
+      {
+        "id": "bw-0046",
+        "text": "and",
+        "startFrame": 552,
+        "endFrame": 563,
+        "importance": 0
+      },
+      {
+        "id": "bw-0047",
+        "text": "that",
+        "startFrame": 564,
+        "endFrame": 575,
+        "importance": 0
+      },
+      {
+        "id": "bw-0048",
+        "text": "silence",
+        "startFrame": 576,
+        "endFrame": 587,
+        "importance": 1
+      },
+      {
+        "id": "bw-0049",
+        "text": "is",
+        "startFrame": 588,
+        "endFrame": 599,
+        "importance": 2
+      },
+      {
+        "id": "bw-0050",
+        "text": "exactly",
+        "startFrame": 600,
+        "endFrame": 611,
+        "importance": 0
+      },
+      {
+        "id": "bw-0051",
+        "text": "where",
+        "startFrame": 612,
+        "endFrame": 623,
+        "importance": 1
+      },
+      {
+        "id": "bw-0052",
+        "text": "the",
+        "startFrame": 624,
+        "endFrame": 635,
+        "importance": 0
+      },
+      {
+        "id": "bw-0053",
+        "text": "work",
+        "startFrame": 636,
+        "endFrame": 647,
+        "importance": 0
+      },
+      {
+        "id": "bw-0054",
+        "text": "actually",
+        "startFrame": 648,
+        "endFrame": 659,
+        "importance": 1
+      },
+      {
+        "id": "bw-0055",
+        "text": "happens",
+        "startFrame": 660,
+        "endFrame": 671,
+        "importance": 0
+      },
+      {
+        "id": "bw-0056",
+        "text": "so",
+        "startFrame": 672,
+        "endFrame": 683,
+        "importance": 2
+      },
+      {
+        "id": "bw-0057",
+        "text": "keep",
+        "startFrame": 684,
+        "endFrame": 695,
+        "importance": 1
+      },
+      {
+        "id": "bw-0058",
+        "text": "going",
+        "startFrame": 696,
+        "endFrame": 707,
+        "importance": 0
+      },
+      {
+        "id": "bw-0059",
+        "text": "anyway",
+        "startFrame": 708,
+        "endFrame": 719,
+        "importance": 0
+      },
+      {
+        "id": "bw-0060",
+        "text": "Most",
+        "startFrame": 720,
+        "endFrame": 731,
+        "importance": 1
+      },
+      {
+        "id": "bw-0061",
+        "text": "people",
+        "startFrame": 732,
+        "endFrame": 743,
+        "importance": 0
+      },
+      {
+        "id": "bw-0062",
+        "text": "never",
+        "startFrame": 744,
+        "endFrame": 755,
+        "importance": 0
+      },
+      {
+        "id": "bw-0063",
+        "text": "finish",
+        "startFrame": 756,
+        "endFrame": 767,
+        "importance": 2
+      },
+      {
+        "id": "bw-0064",
+        "text": "what",
+        "startFrame": 768,
+        "endFrame": 779,
+        "importance": 0
+      },
+      {
+        "id": "bw-0065",
+        "text": "they",
+        "startFrame": 780,
+        "endFrame": 791,
+        "importance": 0
+      },
+      {
+        "id": "bw-0066",
+        "text": "start",
+        "startFrame": 792,
+        "endFrame": 803,
+        "importance": 1
+      },
+      {
+        "id": "bw-0067",
+        "text": "because",
+        "startFrame": 804,
+        "endFrame": 815,
+        "importance": 0
+      },
+      {
+        "id": "bw-0068",
+        "text": "the",
+        "startFrame": 816,
+        "endFrame": 827,
+        "importance": 0
+      },
+      {
+        "id": "bw-0069",
+        "text": "first",
+        "startFrame": 828,
+        "endFrame": 839,
+        "importance": 1
+      },
+      {
+        "id": "bw-0070",
+        "text": "week",
+        "startFrame": 840,
+        "endFrame": 851,
+        "importance": 2
+      },
+      {
+        "id": "bw-0071",
+        "text": "feels",
+        "startFrame": 852,
+        "endFrame": 863,
+        "importance": 0
+      },
+      {
+        "id": "bw-0072",
+        "text": "like",
+        "startFrame": 864,
+        "endFrame": 875,
+        "importance": 1
+      },
+      {
+        "id": "bw-0073",
+        "text": "nothing",
+        "startFrame": 876,
+        "endFrame": 887,
+        "importance": 0
+      },
+      {
+        "id": "bw-0074",
+        "text": "is",
+        "startFrame": 888,
+        "endFrame": 899,
+        "importance": 0
+      },
+      {
+        "id": "bw-0075",
+        "text": "working",
+        "startFrame": 900,
+        "endFrame": 911,
+        "importance": 1
+      },
+      {
+        "id": "bw-0076",
+        "text": "and",
+        "startFrame": 912,
+        "endFrame": 923,
+        "importance": 0
+      },
+      {
+        "id": "bw-0077",
+        "text": "that",
+        "startFrame": 924,
+        "endFrame": 935,
+        "importance": 2
+      },
+      {
+        "id": "bw-0078",
+        "text": "silence",
+        "startFrame": 936,
+        "endFrame": 947,
+        "importance": 1
+      },
+      {
+        "id": "bw-0079",
+        "text": "is",
+        "startFrame": 948,
+        "endFrame": 959,
+        "importance": 0
+      },
+      {
+        "id": "bw-0080",
+        "text": "exactly",
+        "startFrame": 960,
+        "endFrame": 971,
+        "importance": 0
+      },
+      {
+        "id": "bw-0081",
+        "text": "where",
+        "startFrame": 972,
+        "endFrame": 983,
+        "importance": 1
+      },
+      {
+        "id": "bw-0082",
+        "text": "the",
+        "startFrame": 984,
+        "endFrame": 995,
+        "importance": 0
+      },
+      {
+        "id": "bw-0083",
+        "text": "work",
+        "startFrame": 996,
+        "endFrame": 1007,
+        "importance": 0
+      },
+      {
+        "id": "bw-0084",
+        "text": "actually",
+        "startFrame": 1008,
+        "endFrame": 1019,
+        "importance": 2
+      },
+      {
+        "id": "bw-0085",
+        "text": "happens",
+        "startFrame": 1020,
+        "endFrame": 1031,
+        "importance": 0
+      },
+      {
+        "id": "bw-0086",
+        "text": "so",
+        "startFrame": 1032,
+        "endFrame": 1043,
+        "importance": 0
+      },
+      {
+        "id": "bw-0087",
+        "text": "keep",
+        "startFrame": 1044,
+        "endFrame": 1055,
+        "importance": 1
+      },
+      {
+        "id": "bw-0088",
+        "text": "going",
+        "startFrame": 1056,
+        "endFrame": 1067,
+        "importance": 0
+      },
+      {
+        "id": "bw-0089",
+        "text": "anyway",
+        "startFrame": 1068,
+        "endFrame": 1079,
+        "importance": 0
+      },
+      {
+        "id": "bw-0090",
+        "text": "Most",
+        "startFrame": 1080,
+        "endFrame": 1091,
+        "importance": 1
+      },
+      {
+        "id": "bw-0091",
+        "text": "people",
+        "startFrame": 1092,
+        "endFrame": 1103,
+        "importance": 2
+      },
+      {
+        "id": "bw-0092",
+        "text": "never",
+        "startFrame": 1104,
+        "endFrame": 1115,
+        "importance": 0
+      },
+      {
+        "id": "bw-0093",
+        "text": "finish",
+        "startFrame": 1116,
+        "endFrame": 1127,
+        "importance": 1
+      },
+      {
+        "id": "bw-0094",
+        "text": "what",
+        "startFrame": 1128,
+        "endFrame": 1139,
+        "importance": 0
+      },
+      {
+        "id": "bw-0095",
+        "text": "they",
+        "startFrame": 1140,
+        "endFrame": 1151,
+        "importance": 0
+      },
+      {
+        "id": "bw-0096",
+        "text": "start",
+        "startFrame": 1152,
+        "endFrame": 1163,
+        "importance": 1
+      },
+      {
+        "id": "bw-0097",
+        "text": "because",
+        "startFrame": 1164,
+        "endFrame": 1175,
+        "importance": 0
+      },
+      {
+        "id": "bw-0098",
+        "text": "the",
+        "startFrame": 1176,
+        "endFrame": 1187,
+        "importance": 2
+      },
+      {
+        "id": "bw-0099",
+        "text": "first",
+        "startFrame": 1188,
+        "endFrame": 1199,
+        "importance": 1
+      },
+      {
+        "id": "bw-0100",
+        "text": "week",
+        "startFrame": 1200,
+        "endFrame": 1211,
+        "importance": 0
+      },
+      {
+        "id": "bw-0101",
+        "text": "feels",
+        "startFrame": 1212,
+        "endFrame": 1223,
+        "importance": 0
+      },
+      {
+        "id": "bw-0102",
+        "text": "like",
+        "startFrame": 1224,
+        "endFrame": 1235,
+        "importance": 1
+      },
+      {
+        "id": "bw-0103",
+        "text": "nothing",
+        "startFrame": 1236,
+        "endFrame": 1247,
+        "importance": 0
+      },
+      {
+        "id": "bw-0104",
+        "text": "is",
+        "startFrame": 1248,
+        "endFrame": 1259,
+        "importance": 0
+      },
+      {
+        "id": "bw-0105",
+        "text": "working",
+        "startFrame": 1260,
+        "endFrame": 1271,
+        "importance": 2
+      },
+      {
+        "id": "bw-0106",
+        "text": "and",
+        "startFrame": 1272,
+        "endFrame": 1283,
+        "importance": 0
+      },
+      {
+        "id": "bw-0107",
+        "text": "that",
+        "startFrame": 1284,
+        "endFrame": 1295,
+        "importance": 0
+      },
+      {
+        "id": "bw-0108",
+        "text": "silence",
+        "startFrame": 1296,
+        "endFrame": 1307,
+        "importance": 1
+      },
+      {
+        "id": "bw-0109",
+        "text": "is",
+        "startFrame": 1308,
+        "endFrame": 1319,
+        "importance": 0
+      },
+      {
+        "id": "bw-0110",
+        "text": "exactly",
+        "startFrame": 1320,
+        "endFrame": 1331,
+        "importance": 0
+      },
+      {
+        "id": "bw-0111",
+        "text": "where",
+        "startFrame": 1332,
+        "endFrame": 1343,
+        "importance": 1
+      },
+      {
+        "id": "bw-0112",
+        "text": "the",
+        "startFrame": 1344,
+        "endFrame": 1355,
+        "importance": 2
+      },
+      {
+        "id": "bw-0113",
+        "text": "work",
+        "startFrame": 1356,
+        "endFrame": 1367,
+        "importance": 0
+      },
+      {
+        "id": "bw-0114",
+        "text": "actually",
+        "startFrame": 1368,
+        "endFrame": 1379,
+        "importance": 1
+      },
+      {
+        "id": "bw-0115",
+        "text": "happens",
+        "startFrame": 1380,
+        "endFrame": 1391,
+        "importance": 0
+      },
+      {
+        "id": "bw-0116",
+        "text": "so",
+        "startFrame": 1392,
+        "endFrame": 1403,
+        "importance": 0
+      },
+      {
+        "id": "bw-0117",
+        "text": "keep",
+        "startFrame": 1404,
+        "endFrame": 1415,
+        "importance": 1
+      },
+      {
+        "id": "bw-0118",
+        "text": "going",
+        "startFrame": 1416,
+        "endFrame": 1427,
+        "importance": 0
+      },
+      {
+        "id": "bw-0119",
+        "text": "anyway",
+        "startFrame": 1428,
+        "endFrame": 1439,
+        "importance": 2
+      },
+      {
+        "id": "bw-0120",
+        "text": "Most",
+        "startFrame": 1440,
+        "endFrame": 1451,
+        "importance": 1
+      },
+      {
+        "id": "bw-0121",
+        "text": "people",
+        "startFrame": 1452,
+        "endFrame": 1463,
+        "importance": 0
+      },
+      {
+        "id": "bw-0122",
+        "text": "never",
+        "startFrame": 1464,
+        "endFrame": 1475,
+        "importance": 0
+      },
+      {
+        "id": "bw-0123",
+        "text": "finish",
+        "startFrame": 1476,
+        "endFrame": 1487,
+        "importance": 1
+      },
+      {
+        "id": "bw-0124",
+        "text": "what",
+        "startFrame": 1488,
+        "endFrame": 1499,
+        "importance": 0
+      },
+      {
+        "id": "bw-0125",
+        "text": "they",
+        "startFrame": 1500,
+        "endFrame": 1511,
+        "importance": 0
+      },
+      {
+        "id": "bw-0126",
+        "text": "start",
+        "startFrame": 1512,
+        "endFrame": 1523,
+        "importance": 2
+      },
+      {
+        "id": "bw-0127",
+        "text": "because",
+        "startFrame": 1524,
+        "endFrame": 1535,
+        "importance": 0
+      },
+      {
+        "id": "bw-0128",
+        "text": "the",
+        "startFrame": 1536,
+        "endFrame": 1547,
+        "importance": 0
+      },
+      {
+        "id": "bw-0129",
+        "text": "first",
+        "startFrame": 1548,
+        "endFrame": 1559,
+        "importance": 1
+      },
+      {
+        "id": "bw-0130",
+        "text": "week",
+        "startFrame": 1560,
+        "endFrame": 1571,
+        "importance": 0
+      },
+      {
+        "id": "bw-0131",
+        "text": "feels",
+        "startFrame": 1572,
+        "endFrame": 1583,
+        "importance": 0
+      },
+      {
+        "id": "bw-0132",
+        "text": "like",
+        "startFrame": 1584,
+        "endFrame": 1595,
+        "importance": 1
+      },
+      {
+        "id": "bw-0133",
+        "text": "nothing",
+        "startFrame": 1596,
+        "endFrame": 1607,
+        "importance": 2
+      },
+      {
+        "id": "bw-0134",
+        "text": "is",
+        "startFrame": 1608,
+        "endFrame": 1619,
+        "importance": 0
+      },
+      {
+        "id": "bw-0135",
+        "text": "working",
+        "startFrame": 1620,
+        "endFrame": 1631,
+        "importance": 1
+      },
+      {
+        "id": "bw-0136",
+        "text": "and",
+        "startFrame": 1632,
+        "endFrame": 1643,
+        "importance": 0
+      },
+      {
+        "id": "bw-0137",
+        "text": "that",
+        "startFrame": 1644,
+        "endFrame": 1655,
+        "importance": 0
+      },
+      {
+        "id": "bw-0138",
+        "text": "silence",
+        "startFrame": 1656,
+        "endFrame": 1667,
+        "importance": 1
+      },
+      {
+        "id": "bw-0139",
+        "text": "is",
+        "startFrame": 1668,
+        "endFrame": 1679,
+        "importance": 0
+      },
+      {
+        "id": "bw-0140",
+        "text": "exactly",
+        "startFrame": 1680,
+        "endFrame": 1691,
+        "importance": 2
+      },
+      {
+        "id": "bw-0141",
+        "text": "where",
+        "startFrame": 1692,
+        "endFrame": 1703,
+        "importance": 1
+      },
+      {
+        "id": "bw-0142",
+        "text": "the",
+        "startFrame": 1704,
+        "endFrame": 1715,
+        "importance": 0
+      },
+      {
+        "id": "bw-0143",
+        "text": "work",
+        "startFrame": 1716,
+        "endFrame": 1727,
+        "importance": 0
+      },
+      {
+        "id": "bw-0144",
+        "text": "actually",
+        "startFrame": 1728,
+        "endFrame": 1739,
+        "importance": 1
+      },
+      {
+        "id": "bw-0145",
+        "text": "happens",
+        "startFrame": 1740,
+        "endFrame": 1751,
+        "importance": 0
+      },
+      {
+        "id": "bw-0146",
+        "text": "so",
+        "startFrame": 1752,
+        "endFrame": 1763,
+        "importance": 0
+      },
+      {
+        "id": "bw-0147",
+        "text": "keep",
+        "startFrame": 1764,
+        "endFrame": 1775,
+        "importance": 2
+      },
+      {
+        "id": "bw-0148",
+        "text": "going",
+        "startFrame": 1776,
+        "endFrame": 1787,
+        "importance": 0
+      },
+      {
+        "id": "bw-0149",
+        "text": "anyway",
+        "startFrame": 1788,
+        "endFrame": 1799,
+        "importance": 0
+      },
+      {
+        "id": "bw-0150",
+        "text": "Most",
+        "startFrame": 1800,
+        "endFrame": 1811,
+        "importance": 1
+      },
+      {
+        "id": "bw-0151",
+        "text": "people",
+        "startFrame": 1812,
+        "endFrame": 1823,
+        "importance": 0
+      },
+      {
+        "id": "bw-0152",
+        "text": "never",
+        "startFrame": 1824,
+        "endFrame": 1835,
+        "importance": 0
+      },
+      {
+        "id": "bw-0153",
+        "text": "finish",
+        "startFrame": 1836,
+        "endFrame": 1847,
+        "importance": 1
+      },
+      {
+        "id": "bw-0154",
+        "text": "what",
+        "startFrame": 1848,
+        "endFrame": 1859,
+        "importance": 2
+      },
+      {
+        "id": "bw-0155",
+        "text": "they",
+        "startFrame": 1860,
+        "endFrame": 1871,
+        "importance": 0
+      },
+      {
+        "id": "bw-0156",
+        "text": "start",
+        "startFrame": 1872,
+        "endFrame": 1883,
+        "importance": 1
+      },
+      {
+        "id": "bw-0157",
+        "text": "because",
+        "startFrame": 1884,
+        "endFrame": 1895,
+        "importance": 0
+      },
+      {
+        "id": "bw-0158",
+        "text": "the",
+        "startFrame": 1896,
+        "endFrame": 1907,
+        "importance": 0
+      },
+      {
+        "id": "bw-0159",
+        "text": "first",
+        "startFrame": 1908,
+        "endFrame": 1919,
+        "importance": 1
+      },
+      {
+        "id": "bw-0160",
+        "text": "week",
+        "startFrame": 1920,
+        "endFrame": 1931,
+        "importance": 0
+      },
+      {
+        "id": "bw-0161",
+        "text": "feels",
+        "startFrame": 1932,
+        "endFrame": 1943,
+        "importance": 2
+      },
+      {
+        "id": "bw-0162",
+        "text": "like",
+        "startFrame": 1944,
+        "endFrame": 1955,
+        "importance": 1
+      },
+      {
+        "id": "bw-0163",
+        "text": "nothing",
+        "startFrame": 1956,
+        "endFrame": 1967,
+        "importance": 0
+      },
+      {
+        "id": "bw-0164",
+        "text": "is",
+        "startFrame": 1968,
+        "endFrame": 1979,
+        "importance": 0
+      },
+      {
+        "id": "bw-0165",
+        "text": "working",
+        "startFrame": 1980,
+        "endFrame": 1991,
+        "importance": 1
+      },
+      {
+        "id": "bw-0166",
+        "text": "and",
+        "startFrame": 1992,
+        "endFrame": 2003,
+        "importance": 0
+      },
+      {
+        "id": "bw-0167",
+        "text": "that",
+        "startFrame": 2004,
+        "endFrame": 2015,
+        "importance": 0
+      },
+      {
+        "id": "bw-0168",
+        "text": "silence",
+        "startFrame": 2016,
+        "endFrame": 2027,
+        "importance": 2
+      },
+      {
+        "id": "bw-0169",
+        "text": "is",
+        "startFrame": 2028,
+        "endFrame": 2039,
+        "importance": 0
+      },
+      {
+        "id": "bw-0170",
+        "text": "exactly",
+        "startFrame": 2040,
+        "endFrame": 2051,
+        "importance": 0
+      },
+      {
+        "id": "bw-0171",
+        "text": "where",
+        "startFrame": 2052,
+        "endFrame": 2063,
+        "importance": 1
+      },
+      {
+        "id": "bw-0172",
+        "text": "the",
+        "startFrame": 2064,
+        "endFrame": 2075,
+        "importance": 0
+      },
+      {
+        "id": "bw-0173",
+        "text": "work",
+        "startFrame": 2076,
+        "endFrame": 2087,
+        "importance": 0
+      },
+      {
+        "id": "bw-0174",
+        "text": "actually",
+        "startFrame": 2088,
+        "endFrame": 2099,
+        "importance": 1
+      },
+      {
+        "id": "bw-0175",
+        "text": "happens",
+        "startFrame": 2100,
+        "endFrame": 2111,
+        "importance": 2
+      },
+      {
+        "id": "bw-0176",
+        "text": "so",
+        "startFrame": 2112,
+        "endFrame": 2123,
+        "importance": 0
+      },
+      {
+        "id": "bw-0177",
+        "text": "keep",
+        "startFrame": 2124,
+        "endFrame": 2135,
+        "importance": 1
+      },
+      {
+        "id": "bw-0178",
+        "text": "going",
+        "startFrame": 2136,
+        "endFrame": 2147,
+        "importance": 0
+      },
+      {
+        "id": "bw-0179",
+        "text": "anyway",
+        "startFrame": 2148,
+        "endFrame": 2159,
+        "importance": 0
+      },
+      {
+        "id": "bw-0180",
+        "text": "Most",
+        "startFrame": 2160,
+        "endFrame": 2171,
+        "importance": 1
+      },
+      {
+        "id": "bw-0181",
+        "text": "people",
+        "startFrame": 2172,
+        "endFrame": 2183,
+        "importance": 0
+      },
+      {
+        "id": "bw-0182",
+        "text": "never",
+        "startFrame": 2184,
+        "endFrame": 2195,
+        "importance": 2
+      },
+      {
+        "id": "bw-0183",
+        "text": "finish",
+        "startFrame": 2196,
+        "endFrame": 2207,
+        "importance": 1
+      },
+      {
+        "id": "bw-0184",
+        "text": "what",
+        "startFrame": 2208,
+        "endFrame": 2219,
+        "importance": 0
+      },
+      {
+        "id": "bw-0185",
+        "text": "they",
+        "startFrame": 2220,
+        "endFrame": 2231,
+        "importance": 0
+      },
+      {
+        "id": "bw-0186",
+        "text": "start",
+        "startFrame": 2232,
+        "endFrame": 2243,
+        "importance": 1
+      },
+      {
+        "id": "bw-0187",
+        "text": "because",
+        "startFrame": 2244,
+        "endFrame": 2255,
+        "importance": 0
+      },
+      {
+        "id": "bw-0188",
+        "text": "the",
+        "startFrame": 2256,
+        "endFrame": 2267,
+        "importance": 0
+      },
+      {
+        "id": "bw-0189",
+        "text": "first",
+        "startFrame": 2268,
+        "endFrame": 2279,
+        "importance": 2
+      },
+      {
+        "id": "bw-0190",
+        "text": "week",
+        "startFrame": 2280,
+        "endFrame": 2291,
+        "importance": 0
+      },
+      {
+        "id": "bw-0191",
+        "text": "feels",
+        "startFrame": 2292,
+        "endFrame": 2303,
+        "importance": 0
+      },
+      {
+        "id": "bw-0192",
+        "text": "like",
+        "startFrame": 2304,
+        "endFrame": 2315,
+        "importance": 1
+      },
+      {
+        "id": "bw-0193",
+        "text": "nothing",
+        "startFrame": 2316,
+        "endFrame": 2327,
+        "importance": 0
+      },
+      {
+        "id": "bw-0194",
+        "text": "is",
+        "startFrame": 2328,
+        "endFrame": 2339,
+        "importance": 0
+      },
+      {
+        "id": "bw-0195",
+        "text": "working",
+        "startFrame": 2340,
+        "endFrame": 2351,
+        "importance": 1
+      },
+      {
+        "id": "bw-0196",
+        "text": "and",
+        "startFrame": 2352,
+        "endFrame": 2363,
+        "importance": 2
+      },
+      {
+        "id": "bw-0197",
+        "text": "that",
+        "startFrame": 2364,
+        "endFrame": 2375,
+        "importance": 0
+      },
+      {
+        "id": "bw-0198",
+        "text": "silence",
+        "startFrame": 2376,
+        "endFrame": 2387,
+        "importance": 1
+      },
+      {
+        "id": "bw-0199",
+        "text": "is",
+        "startFrame": 2388,
+        "endFrame": 2399,
+        "importance": 0
+      },
+      {
+        "id": "bw-0200",
+        "text": "exactly",
+        "startFrame": 2400,
+        "endFrame": 2411,
+        "importance": 0
+      },
+      {
+        "id": "bw-0201",
+        "text": "where",
+        "startFrame": 2412,
+        "endFrame": 2423,
+        "importance": 1
+      },
+      {
+        "id": "bw-0202",
+        "text": "the",
+        "startFrame": 2424,
+        "endFrame": 2435,
+        "importance": 0
+      },
+      {
+        "id": "bw-0203",
+        "text": "work",
+        "startFrame": 2436,
+        "endFrame": 2447,
+        "importance": 2
+      },
+      {
+        "id": "bw-0204",
+        "text": "actually",
+        "startFrame": 2448,
+        "endFrame": 2459,
+        "importance": 1
+      },
+      {
+        "id": "bw-0205",
+        "text": "happens",
+        "startFrame": 2460,
+        "endFrame": 2471,
+        "importance": 0
+      },
+      {
+        "id": "bw-0206",
+        "text": "so",
+        "startFrame": 2472,
+        "endFrame": 2483,
+        "importance": 0
+      },
+      {
+        "id": "bw-0207",
+        "text": "keep",
+        "startFrame": 2484,
+        "endFrame": 2495,
+        "importance": 1
+      },
+      {
+        "id": "bw-0208",
+        "text": "going",
+        "startFrame": 2496,
+        "endFrame": 2507,
+        "importance": 0
+      },
+      {
+        "id": "bw-0209",
+        "text": "anyway",
+        "startFrame": 2508,
+        "endFrame": 2519,
+        "importance": 0
+      },
+      {
+        "id": "bw-0210",
+        "text": "Most",
+        "startFrame": 2520,
+        "endFrame": 2531,
+        "importance": 2
+      },
+      {
+        "id": "bw-0211",
+        "text": "people",
+        "startFrame": 2532,
+        "endFrame": 2543,
+        "importance": 0
+      },
+      {
+        "id": "bw-0212",
+        "text": "never",
+        "startFrame": 2544,
+        "endFrame": 2555,
+        "importance": 0
+      },
+      {
+        "id": "bw-0213",
+        "text": "finish",
+        "startFrame": 2556,
+        "endFrame": 2567,
+        "importance": 1
+      },
+      {
+        "id": "bw-0214",
+        "text": "what",
+        "startFrame": 2568,
+        "endFrame": 2579,
+        "importance": 0
+      },
+      {
+        "id": "bw-0215",
+        "text": "they",
+        "startFrame": 2580,
+        "endFrame": 2591,
+        "importance": 0
+      },
+      {
+        "id": "bw-0216",
+        "text": "start",
+        "startFrame": 2592,
+        "endFrame": 2603,
+        "importance": 1
+      },
+      {
+        "id": "bw-0217",
+        "text": "because",
+        "startFrame": 2604,
+        "endFrame": 2615,
+        "importance": 2
+      },
+      {
+        "id": "bw-0218",
+        "text": "the",
+        "startFrame": 2616,
+        "endFrame": 2627,
+        "importance": 0
+      },
+      {
+        "id": "bw-0219",
+        "text": "first",
+        "startFrame": 2628,
+        "endFrame": 2639,
+        "importance": 1
+      },
+      {
+        "id": "bw-0220",
+        "text": "week",
+        "startFrame": 2640,
+        "endFrame": 2651,
+        "importance": 0
+      },
+      {
+        "id": "bw-0221",
+        "text": "feels",
+        "startFrame": 2652,
+        "endFrame": 2663,
+        "importance": 0
+      },
+      {
+        "id": "bw-0222",
+        "text": "like",
+        "startFrame": 2664,
+        "endFrame": 2675,
+        "importance": 1
+      },
+      {
+        "id": "bw-0223",
+        "text": "nothing",
+        "startFrame": 2676,
+        "endFrame": 2687,
+        "importance": 0
+      },
+      {
+        "id": "bw-0224",
+        "text": "is",
+        "startFrame": 2688,
+        "endFrame": 2699,
+        "importance": 2
+      },
+      {
+        "id": "bw-0225",
+        "text": "working",
+        "startFrame": 2700,
+        "endFrame": 2711,
+        "importance": 1
+      },
+      {
+        "id": "bw-0226",
+        "text": "and",
+        "startFrame": 2712,
+        "endFrame": 2723,
+        "importance": 0
+      },
+      {
+        "id": "bw-0227",
+        "text": "that",
+        "startFrame": 2724,
+        "endFrame": 2735,
+        "importance": 0
+      },
+      {
+        "id": "bw-0228",
+        "text": "silence",
+        "startFrame": 2736,
+        "endFrame": 2747,
+        "importance": 1
+      },
+      {
+        "id": "bw-0229",
+        "text": "is",
+        "startFrame": 2748,
+        "endFrame": 2759,
+        "importance": 0
+      },
+      {
+        "id": "bw-0230",
+        "text": "exactly",
+        "startFrame": 2760,
+        "endFrame": 2771,
+        "importance": 0
+      },
+      {
+        "id": "bw-0231",
+        "text": "where",
+        "startFrame": 2772,
+        "endFrame": 2783,
+        "importance": 2
+      },
+      {
+        "id": "bw-0232",
+        "text": "the",
+        "startFrame": 2784,
+        "endFrame": 2795,
+        "importance": 0
+      },
+      {
+        "id": "bw-0233",
+        "text": "work",
+        "startFrame": 2796,
+        "endFrame": 2807,
+        "importance": 0
+      },
+      {
+        "id": "bw-0234",
+        "text": "actually",
+        "startFrame": 2808,
+        "endFrame": 2819,
+        "importance": 1
+      },
+      {
+        "id": "bw-0235",
+        "text": "happens",
+        "startFrame": 2820,
+        "endFrame": 2831,
+        "importance": 0
+      },
+      {
+        "id": "bw-0236",
+        "text": "so",
+        "startFrame": 2832,
+        "endFrame": 2843,
+        "importance": 0
+      },
+      {
+        "id": "bw-0237",
+        "text": "keep",
+        "startFrame": 2844,
+        "endFrame": 2855,
+        "importance": 1
+      },
+      {
+        "id": "bw-0238",
+        "text": "going",
+        "startFrame": 2856,
+        "endFrame": 2867,
+        "importance": 2
+      },
+      {
+        "id": "bw-0239",
+        "text": "anyway",
+        "startFrame": 2868,
+        "endFrame": 2879,
+        "importance": 0
+      },
+      {
+        "id": "bw-0240",
+        "text": "Most",
+        "startFrame": 2880,
+        "endFrame": 2891,
+        "importance": 1
+      },
+      {
+        "id": "bw-0241",
+        "text": "people",
+        "startFrame": 2892,
+        "endFrame": 2903,
+        "importance": 0
+      },
+      {
+        "id": "bw-0242",
+        "text": "never",
+        "startFrame": 2904,
+        "endFrame": 2915,
+        "importance": 0
+      },
+      {
+        "id": "bw-0243",
+        "text": "finish",
+        "startFrame": 2916,
+        "endFrame": 2927,
+        "importance": 1
+      },
+      {
+        "id": "bw-0244",
+        "text": "what",
+        "startFrame": 2928,
+        "endFrame": 2939,
+        "importance": 0
+      },
+      {
+        "id": "bw-0245",
+        "text": "they",
+        "startFrame": 2940,
+        "endFrame": 2951,
+        "importance": 2
+      },
+      {
+        "id": "bw-0246",
+        "text": "start",
+        "startFrame": 2952,
+        "endFrame": 2963,
+        "importance": 1
+      },
+      {
+        "id": "bw-0247",
+        "text": "because",
+        "startFrame": 2964,
+        "endFrame": 2975,
+        "importance": 0
+      },
+      {
+        "id": "bw-0248",
+        "text": "the",
+        "startFrame": 2976,
+        "endFrame": 2987,
+        "importance": 0
+      },
+      {
+        "id": "bw-0249",
+        "text": "first",
+        "startFrame": 2988,
+        "endFrame": 2999,
+        "importance": 1
+      },
+      {
+        "id": "bw-0250",
+        "text": "week",
+        "startFrame": 3000,
+        "endFrame": 3011,
+        "importance": 0
+      },
+      {
+        "id": "bw-0251",
+        "text": "feels",
+        "startFrame": 3012,
+        "endFrame": 3023,
+        "importance": 0
+      },
+      {
+        "id": "bw-0252",
+        "text": "like",
+        "startFrame": 3024,
+        "endFrame": 3035,
+        "importance": 2
+      },
+      {
+        "id": "bw-0253",
+        "text": "nothing",
+        "startFrame": 3036,
+        "endFrame": 3047,
+        "importance": 0
+      },
+      {
+        "id": "bw-0254",
+        "text": "is",
+        "startFrame": 3048,
+        "endFrame": 3059,
+        "importance": 0
+      },
+      {
+        "id": "bw-0255",
+        "text": "working",
+        "startFrame": 3060,
+        "endFrame": 3071,
+        "importance": 1
+      },
+      {
+        "id": "bw-0256",
+        "text": "and",
+        "startFrame": 3072,
+        "endFrame": 3083,
+        "importance": 0
+      },
+      {
+        "id": "bw-0257",
+        "text": "that",
+        "startFrame": 3084,
+        "endFrame": 3095,
+        "importance": 0
+      },
+      {
+        "id": "bw-0258",
+        "text": "silence",
+        "startFrame": 3096,
+        "endFrame": 3107,
+        "importance": 1
+      },
+      {
+        "id": "bw-0259",
+        "text": "is",
+        "startFrame": 3108,
+        "endFrame": 3119,
+        "importance": 2
+      },
+      {
+        "id": "bw-0260",
+        "text": "exactly",
+        "startFrame": 3120,
+        "endFrame": 3131,
+        "importance": 0
+      },
+      {
+        "id": "bw-0261",
+        "text": "where",
+        "startFrame": 3132,
+        "endFrame": 3143,
+        "importance": 1
+      },
+      {
+        "id": "bw-0262",
+        "text": "the",
+        "startFrame": 3144,
+        "endFrame": 3155,
+        "importance": 0
+      },
+      {
+        "id": "bw-0263",
+        "text": "work",
+        "startFrame": 3156,
+        "endFrame": 3167,
+        "importance": 0
+      },
+      {
+        "id": "bw-0264",
+        "text": "actually",
+        "startFrame": 3168,
+        "endFrame": 3179,
+        "importance": 1
+      },
+      {
+        "id": "bw-0265",
+        "text": "happens",
+        "startFrame": 3180,
+        "endFrame": 3191,
+        "importance": 0
+      },
+      {
+        "id": "bw-0266",
+        "text": "so",
+        "startFrame": 3192,
+        "endFrame": 3203,
+        "importance": 2
+      },
+      {
+        "id": "bw-0267",
+        "text": "keep",
+        "startFrame": 3204,
+        "endFrame": 3215,
+        "importance": 1
+      },
+      {
+        "id": "bw-0268",
+        "text": "going",
+        "startFrame": 3216,
+        "endFrame": 3227,
+        "importance": 0
+      },
+      {
+        "id": "bw-0269",
+        "text": "anyway",
+        "startFrame": 3228,
+        "endFrame": 3239,
+        "importance": 0
+      },
+      {
+        "id": "bw-0270",
+        "text": "Most",
+        "startFrame": 3240,
+        "endFrame": 3251,
+        "importance": 1
+      },
+      {
+        "id": "bw-0271",
+        "text": "people",
+        "startFrame": 3252,
+        "endFrame": 3263,
+        "importance": 0
+      },
+      {
+        "id": "bw-0272",
+        "text": "never",
+        "startFrame": 3264,
+        "endFrame": 3275,
+        "importance": 0
+      },
+      {
+        "id": "bw-0273",
+        "text": "finish",
+        "startFrame": 3276,
+        "endFrame": 3287,
+        "importance": 2
+      },
+      {
+        "id": "bw-0274",
+        "text": "what",
+        "startFrame": 3288,
+        "endFrame": 3299,
+        "importance": 0
+      },
+      {
+        "id": "bw-0275",
+        "text": "they",
+        "startFrame": 3300,
+        "endFrame": 3311,
+        "importance": 0
+      },
+      {
+        "id": "bw-0276",
+        "text": "start",
+        "startFrame": 3312,
+        "endFrame": 3323,
+        "importance": 1
+      },
+      {
+        "id": "bw-0277",
+        "text": "because",
+        "startFrame": 3324,
+        "endFrame": 3335,
+        "importance": 0
+      },
+      {
+        "id": "bw-0278",
+        "text": "the",
+        "startFrame": 3336,
+        "endFrame": 3347,
+        "importance": 0
+      },
+      {
+        "id": "bw-0279",
+        "text": "first",
+        "startFrame": 3348,
+        "endFrame": 3359,
+        "importance": 1
+      },
+      {
+        "id": "bw-0280",
+        "text": "week",
+        "startFrame": 3360,
+        "endFrame": 3371,
+        "importance": 2
+      },
+      {
+        "id": "bw-0281",
+        "text": "feels",
+        "startFrame": 3372,
+        "endFrame": 3383,
+        "importance": 0
+      },
+      {
+        "id": "bw-0282",
+        "text": "like",
+        "startFrame": 3384,
+        "endFrame": 3395,
+        "importance": 1
+      },
+      {
+        "id": "bw-0283",
+        "text": "nothing",
+        "startFrame": 3396,
+        "endFrame": 3407,
+        "importance": 0
+      },
+      {
+        "id": "bw-0284",
+        "text": "is",
+        "startFrame": 3408,
+        "endFrame": 3419,
+        "importance": 0
+      },
+      {
+        "id": "bw-0285",
+        "text": "working",
+        "startFrame": 3420,
+        "endFrame": 3431,
+        "importance": 1
+      },
+      {
+        "id": "bw-0286",
+        "text": "and",
+        "startFrame": 3432,
+        "endFrame": 3443,
+        "importance": 0
+      },
+      {
+        "id": "bw-0287",
+        "text": "that",
+        "startFrame": 3444,
+        "endFrame": 3455,
+        "importance": 2
+      },
+      {
+        "id": "bw-0288",
+        "text": "silence",
+        "startFrame": 3456,
+        "endFrame": 3467,
+        "importance": 1
+      },
+      {
+        "id": "bw-0289",
+        "text": "is",
+        "startFrame": 3468,
+        "endFrame": 3479,
+        "importance": 0
+      },
+      {
+        "id": "bw-0290",
+        "text": "exactly",
+        "startFrame": 3480,
+        "endFrame": 3491,
+        "importance": 0
+      },
+      {
+        "id": "bw-0291",
+        "text": "where",
+        "startFrame": 3492,
+        "endFrame": 3503,
+        "importance": 1
+      },
+      {
+        "id": "bw-0292",
+        "text": "the",
+        "startFrame": 3504,
+        "endFrame": 3515,
+        "importance": 0
+      },
+      {
+        "id": "bw-0293",
+        "text": "work",
+        "startFrame": 3516,
+        "endFrame": 3527,
+        "importance": 0
+      },
+      {
+        "id": "bw-0294",
+        "text": "actually",
+        "startFrame": 3528,
+        "endFrame": 3539,
+        "importance": 2
+      },
+      {
+        "id": "bw-0295",
+        "text": "happens",
+        "startFrame": 3540,
+        "endFrame": 3551,
+        "importance": 0
+      },
+      {
+        "id": "bw-0296",
+        "text": "so",
+        "startFrame": 3552,
+        "endFrame": 3563,
+        "importance": 0
+      },
+      {
+        "id": "bw-0297",
+        "text": "keep",
+        "startFrame": 3564,
+        "endFrame": 3575,
+        "importance": 1
+      },
+      {
+        "id": "bw-0298",
+        "text": "going",
+        "startFrame": 3576,
+        "endFrame": 3587,
+        "importance": 0
+      },
+      {
+        "id": "bw-0299",
+        "text": "anyway",
+        "startFrame": 3588,
+        "endFrame": 3599,
+        "importance": 0
+      },
+      {
+        "id": "bw-0300",
+        "text": "Most",
+        "startFrame": 3600,
+        "endFrame": 3611,
+        "importance": 1
+      },
+      {
+        "id": "bw-0301",
+        "text": "people",
+        "startFrame": 3612,
+        "endFrame": 3623,
+        "importance": 2
+      },
+      {
+        "id": "bw-0302",
+        "text": "never",
+        "startFrame": 3624,
+        "endFrame": 3635,
+        "importance": 0
+      },
+      {
+        "id": "bw-0303",
+        "text": "finish",
+        "startFrame": 3636,
+        "endFrame": 3647,
+        "importance": 1
+      },
+      {
+        "id": "bw-0304",
+        "text": "what",
+        "startFrame": 3648,
+        "endFrame": 3659,
+        "importance": 0
+      },
+      {
+        "id": "bw-0305",
+        "text": "they",
+        "startFrame": 3660,
+        "endFrame": 3671,
+        "importance": 0
+      },
+      {
+        "id": "bw-0306",
+        "text": "start",
+        "startFrame": 3672,
+        "endFrame": 3683,
+        "importance": 1
+      },
+      {
+        "id": "bw-0307",
+        "text": "because",
+        "startFrame": 3684,
+        "endFrame": 3695,
+        "importance": 0
+      },
+      {
+        "id": "bw-0308",
+        "text": "the",
+        "startFrame": 3696,
+        "endFrame": 3707,
+        "importance": 2
+      },
+      {
+        "id": "bw-0309",
+        "text": "first",
+        "startFrame": 3708,
+        "endFrame": 3719,
+        "importance": 1
+      },
+      {
+        "id": "bw-0310",
+        "text": "week",
+        "startFrame": 3720,
+        "endFrame": 3731,
+        "importance": 0
+      },
+      {
+        "id": "bw-0311",
+        "text": "feels",
+        "startFrame": 3732,
+        "endFrame": 3743,
+        "importance": 0
+      },
+      {
+        "id": "bw-0312",
+        "text": "like",
+        "startFrame": 3744,
+        "endFrame": 3755,
+        "importance": 1
+      },
+      {
+        "id": "bw-0313",
+        "text": "nothing",
+        "startFrame": 3756,
+        "endFrame": 3767,
+        "importance": 0
+      },
+      {
+        "id": "bw-0314",
+        "text": "is",
+        "startFrame": 3768,
+        "endFrame": 3779,
+        "importance": 0
+      },
+      {
+        "id": "bw-0315",
+        "text": "working",
+        "startFrame": 3780,
+        "endFrame": 3791,
+        "importance": 2
+      },
+      {
+        "id": "bw-0316",
+        "text": "and",
+        "startFrame": 3792,
+        "endFrame": 3803,
+        "importance": 0
+      },
+      {
+        "id": "bw-0317",
+        "text": "that",
+        "startFrame": 3804,
+        "endFrame": 3815,
+        "importance": 0
+      },
+      {
+        "id": "bw-0318",
+        "text": "silence",
+        "startFrame": 3816,
+        "endFrame": 3827,
+        "importance": 1
+      },
+      {
+        "id": "bw-0319",
+        "text": "is",
+        "startFrame": 3828,
+        "endFrame": 3839,
+        "importance": 0
+      },
+      {
+        "id": "bw-0320",
+        "text": "exactly",
+        "startFrame": 3840,
+        "endFrame": 3851,
+        "importance": 0
+      },
+      {
+        "id": "bw-0321",
+        "text": "where",
+        "startFrame": 3852,
+        "endFrame": 3863,
+        "importance": 1
+      },
+      {
+        "id": "bw-0322",
+        "text": "the",
+        "startFrame": 3864,
+        "endFrame": 3875,
+        "importance": 2
+      },
+      {
+        "id": "bw-0323",
+        "text": "work",
+        "startFrame": 3876,
+        "endFrame": 3887,
+        "importance": 0
+      },
+      {
+        "id": "bw-0324",
+        "text": "actually",
+        "startFrame": 3888,
+        "endFrame": 3899,
+        "importance": 1
+      },
+      {
+        "id": "bw-0325",
+        "text": "happens",
+        "startFrame": 3900,
+        "endFrame": 3911,
+        "importance": 0
+      },
+      {
+        "id": "bw-0326",
+        "text": "so",
+        "startFrame": 3912,
+        "endFrame": 3923,
+        "importance": 0
+      },
+      {
+        "id": "bw-0327",
+        "text": "keep",
+        "startFrame": 3924,
+        "endFrame": 3935,
+        "importance": 1
+      },
+      {
+        "id": "bw-0328",
+        "text": "going",
+        "startFrame": 3936,
+        "endFrame": 3947,
+        "importance": 0
+      },
+      {
+        "id": "bw-0329",
+        "text": "anyway",
+        "startFrame": 3948,
+        "endFrame": 3959,
+        "importance": 2
+      },
+      {
+        "id": "bw-0330",
+        "text": "Most",
+        "startFrame": 3960,
+        "endFrame": 3971,
+        "importance": 1
+      },
+      {
+        "id": "bw-0331",
+        "text": "people",
+        "startFrame": 3972,
+        "endFrame": 3983,
+        "importance": 0
+      },
+      {
+        "id": "bw-0332",
+        "text": "never",
+        "startFrame": 3984,
+        "endFrame": 3995,
+        "importance": 0
+      },
+      {
+        "id": "bw-0333",
+        "text": "finish",
+        "startFrame": 3996,
+        "endFrame": 4007,
+        "importance": 1
+      },
+      {
+        "id": "bw-0334",
+        "text": "what",
+        "startFrame": 4008,
+        "endFrame": 4019,
+        "importance": 0
+      },
+      {
+        "id": "bw-0335",
+        "text": "they",
+        "startFrame": 4020,
+        "endFrame": 4031,
+        "importance": 0
+      },
+      {
+        "id": "bw-0336",
+        "text": "start",
+        "startFrame": 4032,
+        "endFrame": 4043,
+        "importance": 2
+      },
+      {
+        "id": "bw-0337",
+        "text": "because",
+        "startFrame": 4044,
+        "endFrame": 4055,
+        "importance": 0
+      },
+      {
+        "id": "bw-0338",
+        "text": "the",
+        "startFrame": 4056,
+        "endFrame": 4067,
+        "importance": 0
+      },
+      {
+        "id": "bw-0339",
+        "text": "first",
+        "startFrame": 4068,
+        "endFrame": 4079,
+        "importance": 1
+      },
+      {
+        "id": "bw-0340",
+        "text": "week",
+        "startFrame": 4080,
+        "endFrame": 4091,
+        "importance": 0
+      },
+      {
+        "id": "bw-0341",
+        "text": "feels",
+        "startFrame": 4092,
+        "endFrame": 4103,
+        "importance": 0
+      },
+      {
+        "id": "bw-0342",
+        "text": "like",
+        "startFrame": 4104,
+        "endFrame": 4115,
+        "importance": 1
+      },
+      {
+        "id": "bw-0343",
+        "text": "nothing",
+        "startFrame": 4116,
+        "endFrame": 4127,
+        "importance": 2
+      },
+      {
+        "id": "bw-0344",
+        "text": "is",
+        "startFrame": 4128,
+        "endFrame": 4139,
+        "importance": 0
+      },
+      {
+        "id": "bw-0345",
+        "text": "working",
+        "startFrame": 4140,
+        "endFrame": 4151,
+        "importance": 1
+      },
+      {
+        "id": "bw-0346",
+        "text": "and",
+        "startFrame": 4152,
+        "endFrame": 4163,
+        "importance": 0
+      },
+      {
+        "id": "bw-0347",
+        "text": "that",
+        "startFrame": 4164,
+        "endFrame": 4175,
+        "importance": 0
+      },
+      {
+        "id": "bw-0348",
+        "text": "silence",
+        "startFrame": 4176,
+        "endFrame": 4187,
+        "importance": 1
+      },
+      {
+        "id": "bw-0349",
+        "text": "is",
+        "startFrame": 4188,
+        "endFrame": 4199,
+        "importance": 0
+      },
+      {
+        "id": "bw-0350",
+        "text": "exactly",
+        "startFrame": 4200,
+        "endFrame": 4211,
+        "importance": 2
+      },
+      {
+        "id": "bw-0351",
+        "text": "where",
+        "startFrame": 4212,
+        "endFrame": 4223,
+        "importance": 1
+      },
+      {
+        "id": "bw-0352",
+        "text": "the",
+        "startFrame": 4224,
+        "endFrame": 4235,
+        "importance": 0
+      },
+      {
+        "id": "bw-0353",
+        "text": "work",
+        "startFrame": 4236,
+        "endFrame": 4247,
+        "importance": 0
+      },
+      {
+        "id": "bw-0354",
+        "text": "actually",
+        "startFrame": 4248,
+        "endFrame": 4259,
+        "importance": 1
+      },
+      {
+        "id": "bw-0355",
+        "text": "happens",
+        "startFrame": 4260,
+        "endFrame": 4271,
+        "importance": 0
+      },
+      {
+        "id": "bw-0356",
+        "text": "so",
+        "startFrame": 4272,
+        "endFrame": 4283,
+        "importance": 0
+      },
+      {
+        "id": "bw-0357",
+        "text": "keep",
+        "startFrame": 4284,
+        "endFrame": 4295,
+        "importance": 2
+      },
+      {
+        "id": "bw-0358",
+        "text": "going",
+        "startFrame": 4296,
+        "endFrame": 4307,
+        "importance": 0
+      },
+      {
+        "id": "bw-0359",
+        "text": "anyway",
+        "startFrame": 4308,
+        "endFrame": 4319,
+        "importance": 0
+      },
+      {
+        "id": "bw-0360",
+        "text": "Most",
+        "startFrame": 4320,
+        "endFrame": 4331,
+        "importance": 1
+      },
+      {
+        "id": "bw-0361",
+        "text": "people",
+        "startFrame": 4332,
+        "endFrame": 4343,
+        "importance": 0
+      },
+      {
+        "id": "bw-0362",
+        "text": "never",
+        "startFrame": 4344,
+        "endFrame": 4355,
+        "importance": 0
+      },
+      {
+        "id": "bw-0363",
+        "text": "finish",
+        "startFrame": 4356,
+        "endFrame": 4367,
+        "importance": 1
+      },
+      {
+        "id": "bw-0364",
+        "text": "what",
+        "startFrame": 4368,
+        "endFrame": 4379,
+        "importance": 2
+      },
+      {
+        "id": "bw-0365",
+        "text": "they",
+        "startFrame": 4380,
+        "endFrame": 4391,
+        "importance": 0
+      },
+      {
+        "id": "bw-0366",
+        "text": "start",
+        "startFrame": 4392,
+        "endFrame": 4403,
+        "importance": 1
+      },
+      {
+        "id": "bw-0367",
+        "text": "because",
+        "startFrame": 4404,
+        "endFrame": 4415,
+        "importance": 0
+      },
+      {
+        "id": "bw-0368",
+        "text": "the",
+        "startFrame": 4416,
+        "endFrame": 4427,
+        "importance": 0
+      },
+      {
+        "id": "bw-0369",
+        "text": "first",
+        "startFrame": 4428,
+        "endFrame": 4439,
+        "importance": 1
+      },
+      {
+        "id": "bw-0370",
+        "text": "week",
+        "startFrame": 4440,
+        "endFrame": 4451,
+        "importance": 0
+      },
+      {
+        "id": "bw-0371",
+        "text": "feels",
+        "startFrame": 4452,
+        "endFrame": 4463,
+        "importance": 2
+      },
+      {
+        "id": "bw-0372",
+        "text": "like",
+        "startFrame": 4464,
+        "endFrame": 4475,
+        "importance": 1
+      },
+      {
+        "id": "bw-0373",
+        "text": "nothing",
+        "startFrame": 4476,
+        "endFrame": 4487,
+        "importance": 0
+      },
+      {
+        "id": "bw-0374",
+        "text": "is",
+        "startFrame": 4488,
+        "endFrame": 4499,
+        "importance": 0
+      },
+      {
+        "id": "bw-0375",
+        "text": "working",
+        "startFrame": 4500,
+        "endFrame": 4511,
+        "importance": 1
+      },
+      {
+        "id": "bw-0376",
+        "text": "and",
+        "startFrame": 4512,
+        "endFrame": 4523,
+        "importance": 0
+      },
+      {
+        "id": "bw-0377",
+        "text": "that",
+        "startFrame": 4524,
+        "endFrame": 4535,
+        "importance": 0
+      },
+      {
+        "id": "bw-0378",
+        "text": "silence",
+        "startFrame": 4536,
+        "endFrame": 4547,
+        "importance": 2
+      },
+      {
+        "id": "bw-0379",
+        "text": "is",
+        "startFrame": 4548,
+        "endFrame": 4559,
+        "importance": 0
+      },
+      {
+        "id": "bw-0380",
+        "text": "exactly",
+        "startFrame": 4560,
+        "endFrame": 4571,
+        "importance": 0
+      },
+      {
+        "id": "bw-0381",
+        "text": "where",
+        "startFrame": 4572,
+        "endFrame": 4583,
+        "importance": 1
+      },
+      {
+        "id": "bw-0382",
+        "text": "the",
+        "startFrame": 4584,
+        "endFrame": 4595,
+        "importance": 0
+      },
+      {
+        "id": "bw-0383",
+        "text": "work",
+        "startFrame": 4596,
+        "endFrame": 4607,
+        "importance": 0
+      },
+      {
+        "id": "bw-0384",
+        "text": "actually",
+        "startFrame": 4608,
+        "endFrame": 4619,
+        "importance": 1
+      },
+      {
+        "id": "bw-0385",
+        "text": "happens",
+        "startFrame": 4620,
+        "endFrame": 4631,
+        "importance": 2
+      },
+      {
+        "id": "bw-0386",
+        "text": "so",
+        "startFrame": 4632,
+        "endFrame": 4643,
+        "importance": 0
+      },
+      {
+        "id": "bw-0387",
+        "text": "keep",
+        "startFrame": 4644,
+        "endFrame": 4655,
+        "importance": 1
+      },
+      {
+        "id": "bw-0388",
+        "text": "going",
+        "startFrame": 4656,
+        "endFrame": 4667,
+        "importance": 0
+      },
+      {
+        "id": "bw-0389",
+        "text": "anyway",
+        "startFrame": 4668,
+        "endFrame": 4679,
+        "importance": 0
+      },
+      {
+        "id": "bw-0390",
+        "text": "Most",
+        "startFrame": 4680,
+        "endFrame": 4691,
+        "importance": 1
+      },
+      {
+        "id": "bw-0391",
+        "text": "people",
+        "startFrame": 4692,
+        "endFrame": 4703,
+        "importance": 0
+      },
+      {
+        "id": "bw-0392",
+        "text": "never",
+        "startFrame": 4704,
+        "endFrame": 4715,
+        "importance": 2
+      },
+      {
+        "id": "bw-0393",
+        "text": "finish",
+        "startFrame": 4716,
+        "endFrame": 4727,
+        "importance": 1
+      },
+      {
+        "id": "bw-0394",
+        "text": "what",
+        "startFrame": 4728,
+        "endFrame": 4739,
+        "importance": 0
+      },
+      {
+        "id": "bw-0395",
+        "text": "they",
+        "startFrame": 4740,
+        "endFrame": 4751,
+        "importance": 0
+      },
+      {
+        "id": "bw-0396",
+        "text": "start",
+        "startFrame": 4752,
+        "endFrame": 4763,
+        "importance": 1
+      },
+      {
+        "id": "bw-0397",
+        "text": "because",
+        "startFrame": 4764,
+        "endFrame": 4775,
+        "importance": 0
+      },
+      {
+        "id": "bw-0398",
+        "text": "the",
+        "startFrame": 4776,
+        "endFrame": 4787,
+        "importance": 0
+      },
+      {
+        "id": "bw-0399",
+        "text": "first",
+        "startFrame": 4788,
+        "endFrame": 4799,
+        "importance": 2
+      },
+      {
+        "id": "bw-0400",
+        "text": "week",
+        "startFrame": 4800,
+        "endFrame": 4811,
+        "importance": 0
+      },
+      {
+        "id": "bw-0401",
+        "text": "feels",
+        "startFrame": 4812,
+        "endFrame": 4823,
+        "importance": 0
+      },
+      {
+        "id": "bw-0402",
+        "text": "like",
+        "startFrame": 4824,
+        "endFrame": 4835,
+        "importance": 1
+      },
+      {
+        "id": "bw-0403",
+        "text": "nothing",
+        "startFrame": 4836,
+        "endFrame": 4847,
+        "importance": 0
+      },
+      {
+        "id": "bw-0404",
+        "text": "is",
+        "startFrame": 4848,
+        "endFrame": 4859,
+        "importance": 0
+      },
+      {
+        "id": "bw-0405",
+        "text": "working",
+        "startFrame": 4860,
+        "endFrame": 4871,
+        "importance": 1
+      },
+      {
+        "id": "bw-0406",
+        "text": "and",
+        "startFrame": 4872,
+        "endFrame": 4883,
+        "importance": 2
+      },
+      {
+        "id": "bw-0407",
+        "text": "that",
+        "startFrame": 4884,
+        "endFrame": 4895,
+        "importance": 0
+      },
+      {
+        "id": "bw-0408",
+        "text": "silence",
+        "startFrame": 4896,
+        "endFrame": 4907,
+        "importance": 1
+      },
+      {
+        "id": "bw-0409",
+        "text": "is",
+        "startFrame": 4908,
+        "endFrame": 4919,
+        "importance": 0
+      },
+      {
+        "id": "bw-0410",
+        "text": "exactly",
+        "startFrame": 4920,
+        "endFrame": 4931,
+        "importance": 0
+      },
+      {
+        "id": "bw-0411",
+        "text": "where",
+        "startFrame": 4932,
+        "endFrame": 4943,
+        "importance": 1
+      },
+      {
+        "id": "bw-0412",
+        "text": "the",
+        "startFrame": 4944,
+        "endFrame": 4955,
+        "importance": 0
+      },
+      {
+        "id": "bw-0413",
+        "text": "work",
+        "startFrame": 4956,
+        "endFrame": 4967,
+        "importance": 2
+      },
+      {
+        "id": "bw-0414",
+        "text": "actually",
+        "startFrame": 4968,
+        "endFrame": 4979,
+        "importance": 1
+      },
+      {
+        "id": "bw-0415",
+        "text": "happens",
+        "startFrame": 4980,
+        "endFrame": 4991,
+        "importance": 0
+      },
+      {
+        "id": "bw-0416",
+        "text": "so",
+        "startFrame": 4992,
+        "endFrame": 5003,
+        "importance": 0
+      },
+      {
+        "id": "bw-0417",
+        "text": "keep",
+        "startFrame": 5004,
+        "endFrame": 5015,
+        "importance": 1
+      },
+      {
+        "id": "bw-0418",
+        "text": "going",
+        "startFrame": 5016,
+        "endFrame": 5027,
+        "importance": 0
+      },
+      {
+        "id": "bw-0419",
+        "text": "anyway",
+        "startFrame": 5028,
+        "endFrame": 5039,
+        "importance": 0
+      },
+      {
+        "id": "bw-0420",
+        "text": "Most",
+        "startFrame": 5040,
+        "endFrame": 5051,
+        "importance": 2
+      },
+      {
+        "id": "bw-0421",
+        "text": "people",
+        "startFrame": 5052,
+        "endFrame": 5063,
+        "importance": 0
+      },
+      {
+        "id": "bw-0422",
+        "text": "never",
+        "startFrame": 5064,
+        "endFrame": 5075,
+        "importance": 0
+      },
+      {
+        "id": "bw-0423",
+        "text": "finish",
+        "startFrame": 5076,
+        "endFrame": 5087,
+        "importance": 1
+      },
+      {
+        "id": "bw-0424",
+        "text": "what",
+        "startFrame": 5088,
+        "endFrame": 5099,
+        "importance": 0
+      },
+      {
+        "id": "bw-0425",
+        "text": "they",
+        "startFrame": 5100,
+        "endFrame": 5111,
+        "importance": 0
+      },
+      {
+        "id": "bw-0426",
+        "text": "start",
+        "startFrame": 5112,
+        "endFrame": 5123,
+        "importance": 1
+      },
+      {
+        "id": "bw-0427",
+        "text": "because",
+        "startFrame": 5124,
+        "endFrame": 5135,
+        "importance": 2
+      },
+      {
+        "id": "bw-0428",
+        "text": "the",
+        "startFrame": 5136,
+        "endFrame": 5147,
+        "importance": 0
+      },
+      {
+        "id": "bw-0429",
+        "text": "first",
+        "startFrame": 5148,
+        "endFrame": 5159,
+        "importance": 1
+      },
+      {
+        "id": "bw-0430",
+        "text": "week",
+        "startFrame": 5160,
+        "endFrame": 5171,
+        "importance": 0
+      },
+      {
+        "id": "bw-0431",
+        "text": "feels",
+        "startFrame": 5172,
+        "endFrame": 5183,
+        "importance": 0
+      },
+      {
+        "id": "bw-0432",
+        "text": "like",
+        "startFrame": 5184,
+        "endFrame": 5195,
+        "importance": 1
+      },
+      {
+        "id": "bw-0433",
+        "text": "nothing",
+        "startFrame": 5196,
+        "endFrame": 5207,
+        "importance": 0
+      },
+      {
+        "id": "bw-0434",
+        "text": "is",
+        "startFrame": 5208,
+        "endFrame": 5219,
+        "importance": 2
+      },
+      {
+        "id": "bw-0435",
+        "text": "working",
+        "startFrame": 5220,
+        "endFrame": 5231,
+        "importance": 1
+      },
+      {
+        "id": "bw-0436",
+        "text": "and",
+        "startFrame": 5232,
+        "endFrame": 5243,
+        "importance": 0
+      },
+      {
+        "id": "bw-0437",
+        "text": "that",
+        "startFrame": 5244,
+        "endFrame": 5255,
+        "importance": 0
+      },
+      {
+        "id": "bw-0438",
+        "text": "silence",
+        "startFrame": 5256,
+        "endFrame": 5267,
+        "importance": 1
+      },
+      {
+        "id": "bw-0439",
+        "text": "is",
+        "startFrame": 5268,
+        "endFrame": 5279,
+        "importance": 0
+      },
+      {
+        "id": "bw-0440",
+        "text": "exactly",
+        "startFrame": 5280,
+        "endFrame": 5291,
+        "importance": 0
+      },
+      {
+        "id": "bw-0441",
+        "text": "where",
+        "startFrame": 5292,
+        "endFrame": 5303,
+        "importance": 2
+      },
+      {
+        "id": "bw-0442",
+        "text": "the",
+        "startFrame": 5304,
+        "endFrame": 5315,
+        "importance": 0
+      },
+      {
+        "id": "bw-0443",
+        "text": "work",
+        "startFrame": 5316,
+        "endFrame": 5327,
+        "importance": 0
+      },
+      {
+        "id": "bw-0444",
+        "text": "actually",
+        "startFrame": 5328,
+        "endFrame": 5339,
+        "importance": 1
+      },
+      {
+        "id": "bw-0445",
+        "text": "happens",
+        "startFrame": 5340,
+        "endFrame": 5351,
+        "importance": 0
+      },
+      {
+        "id": "bw-0446",
+        "text": "so",
+        "startFrame": 5352,
+        "endFrame": 5363,
+        "importance": 0
+      },
+      {
+        "id": "bw-0447",
+        "text": "keep",
+        "startFrame": 5364,
+        "endFrame": 5375,
+        "importance": 1
+      },
+      {
+        "id": "bw-0448",
+        "text": "going",
+        "startFrame": 5376,
+        "endFrame": 5387,
+        "importance": 2
+      },
+      {
+        "id": "bw-0449",
+        "text": "anyway",
+        "startFrame": 5388,
+        "endFrame": 5399,
+        "importance": 0
+      }
+    ]
+  },
+  "transitions": [
+    {
+      "id": "bench-tr-00",
+      "fromSceneId": "bench-scene-00",
+      "toSceneId": "bench-scene-01",
+      "startFrame": 224,
+      "durationFrames": 15,
+      "type": "fade",
+      "easing": "linear"
+    },
+    {
+      "id": "bench-tr-01",
+      "fromSceneId": "bench-scene-01",
+      "toSceneId": "bench-scene-02",
+      "startFrame": 460,
+      "durationFrames": 15,
+      "type": "slide",
+      "direction": "right",
+      "easing": "ease-in"
+    },
+    {
+      "id": "bench-tr-02",
+      "fromSceneId": "bench-scene-02",
+      "toSceneId": "bench-scene-03",
+      "startFrame": 672,
+      "durationFrames": 15,
+      "type": "wipe",
+      "direction": "up",
+      "easing": "ease-out"
+    },
+    {
+      "id": "bench-tr-03",
+      "fromSceneId": "bench-scene-03",
+      "toSceneId": "bench-scene-04",
+      "startFrame": 920,
+      "durationFrames": 15,
+      "type": "zoom",
+      "easing": "ease-in-out"
+    },
+    {
+      "id": "bench-tr-04",
+      "fromSceneId": "bench-scene-04",
+      "toSceneId": "bench-scene-05",
+      "startFrame": 1120,
+      "durationFrames": 15,
+      "type": "blur",
+      "easing": "linear"
+    },
+    {
+      "id": "bench-tr-05",
+      "fromSceneId": "bench-scene-05",
+      "toSceneId": "bench-scene-06",
+      "startFrame": 1380,
+      "durationFrames": 15,
+      "type": "dip-to-black",
+      "easing": "ease-in"
+    },
+    {
+      "id": "bench-tr-06",
+      "fromSceneId": "bench-scene-06",
+      "toSceneId": "bench-scene-07",
+      "startFrame": 1604,
+      "durationFrames": 15,
+      "type": "fade",
+      "easing": "ease-out"
+    },
+    {
+      "id": "bench-tr-07",
+      "fromSceneId": "bench-scene-07",
+      "toSceneId": "bench-scene-08",
+      "startFrame": 1840,
+      "durationFrames": 15,
+      "type": "slide",
+      "direction": "down",
+      "easing": "ease-in-out"
+    },
+    {
+      "id": "bench-tr-08",
+      "fromSceneId": "bench-scene-08",
+      "toSceneId": "bench-scene-09",
+      "startFrame": 2052,
+      "durationFrames": 15,
+      "type": "wipe",
+      "direction": "left",
+      "easing": "linear"
+    },
+    {
+      "id": "bench-tr-09",
+      "fromSceneId": "bench-scene-09",
+      "toSceneId": "bench-scene-10",
+      "startFrame": 2300,
+      "durationFrames": 15,
+      "type": "zoom",
+      "easing": "ease-in"
+    },
+    {
+      "id": "bench-tr-10",
+      "fromSceneId": "bench-scene-10",
+      "toSceneId": "bench-scene-11",
+      "startFrame": 2500,
+      "durationFrames": 15,
+      "type": "blur",
+      "easing": "ease-out"
+    },
+    {
+      "id": "bench-tr-11",
+      "fromSceneId": "bench-scene-11",
+      "toSceneId": "bench-scene-12",
+      "startFrame": 2760,
+      "durationFrames": 15,
+      "type": "dip-to-black",
+      "easing": "ease-in-out"
+    },
+    {
+      "id": "bench-tr-12",
+      "fromSceneId": "bench-scene-12",
+      "toSceneId": "bench-scene-13",
+      "startFrame": 2984,
+      "durationFrames": 15,
+      "type": "fade",
+      "easing": "linear"
+    },
+    {
+      "id": "bench-tr-13",
+      "fromSceneId": "bench-scene-13",
+      "toSceneId": "bench-scene-14",
+      "startFrame": 3220,
+      "durationFrames": 15,
+      "type": "slide",
+      "direction": "right",
+      "easing": "ease-in"
+    },
+    {
+      "id": "bench-tr-14",
+      "fromSceneId": "bench-scene-14",
+      "toSceneId": "bench-scene-15",
+      "startFrame": 3432,
+      "durationFrames": 15,
+      "type": "wipe",
+      "direction": "up",
+      "easing": "ease-out"
+    },
+    {
+      "id": "bench-tr-15",
+      "fromSceneId": "bench-scene-15",
+      "toSceneId": "bench-scene-16",
+      "startFrame": 3680,
+      "durationFrames": 15,
+      "type": "zoom",
+      "easing": "ease-in-out"
+    },
+    {
+      "id": "bench-tr-16",
+      "fromSceneId": "bench-scene-16",
+      "toSceneId": "bench-scene-17",
+      "startFrame": 3880,
+      "durationFrames": 15,
+      "type": "blur",
+      "easing": "linear"
+    },
+    {
+      "id": "bench-tr-17",
+      "fromSceneId": "bench-scene-17",
+      "toSceneId": "bench-scene-18",
+      "startFrame": 4140,
+      "durationFrames": 15,
+      "type": "dip-to-black",
+      "easing": "ease-in"
+    },
+    {
+      "id": "bench-tr-18",
+      "fromSceneId": "bench-scene-18",
+      "toSceneId": "bench-scene-19",
+      "startFrame": 4364,
+      "durationFrames": 15,
+      "type": "fade",
+      "easing": "ease-out"
+    },
+    {
+      "id": "bench-tr-19",
+      "fromSceneId": "bench-scene-19",
+      "toSceneId": "bench-scene-20",
+      "startFrame": 4600,
+      "durationFrames": 15,
+      "type": "slide",
+      "direction": "down",
+      "easing": "ease-in-out"
+    },
+    {
+      "id": "bench-tr-20",
+      "fromSceneId": "bench-scene-20",
+      "toSceneId": "bench-scene-21",
+      "startFrame": 4812,
+      "durationFrames": 15,
+      "type": "wipe",
+      "direction": "left",
+      "easing": "linear"
+    },
+    {
+      "id": "bench-tr-21",
+      "fromSceneId": "bench-scene-21",
+      "toSceneId": "bench-scene-22",
+      "startFrame": 5060,
+      "durationFrames": 15,
+      "type": "zoom",
+      "easing": "ease-in"
+    },
+    {
+      "id": "bench-tr-22",
+      "fromSceneId": "bench-scene-22",
+      "toSceneId": "bench-scene-23",
+      "startFrame": 5260,
+      "durationFrames": 15,
+      "type": "blur",
+      "easing": "ease-out"
+    }
+  ],
+  "grading": {
+    "enabled": true,
+    "lutIntensity": 1,
+    "exposure": 0.15,
+    "contrast": 0.2,
+    "saturation": 1.15,
+    "temperature": 0.1,
+    "tint": -0.05,
+    "vignette": 0.35,
+    "grain": 0.12
+  }
+}

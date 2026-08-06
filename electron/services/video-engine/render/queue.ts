@@ -2,7 +2,6 @@ import { randomUUID } from 'node:crypto'
 import { EventEmitter } from 'node:events'
 import { rm } from 'node:fs/promises'
 import { extname, join } from 'node:path'
-import { fileURLToPath } from 'node:url'
 import type { RendererId, VideoProject } from '../../../../shared/video-engine'
 import { captureException, sentryLog } from '../../sentry'
 import { errorMessage, VideoEngineError } from '../errors'
@@ -13,7 +12,7 @@ import { VideoTemplateRegistry } from '../templates/registry'
 import {
   applyCinematicGrade,
   DEFAULT_GRADE_ENCODER_ARGS,
-  type CinematicGrade
+  gradeFromProject
 } from './postprocess/ffmpeg-grade'
 import { preflightProject } from './preflight'
 import type {
@@ -38,34 +37,6 @@ function projectIdentity(project: VideoProject): { id: string; revision: number;
     throw new VideoEngineError('INVALID_PROJECT', 'Project must have id, integer revision, and rendererId')
   }
   return { id: value.id, revision: value.revision!, rendererId: value.rendererId }
-}
-
-function gradeFromProject(project: VideoProject): CinematicGrade {
-  const grading = project.grading
-  const lut = grading.lutAssetId
-    ? project.assets.find((asset) => asset.id === grading.lutAssetId)
-    : undefined
-  let lutPath: string | undefined
-  if (lut) {
-    try {
-      const uri = new URL(lut.uri)
-      if (uri.protocol === 'file:') lutPath = fileURLToPath(uri)
-    } catch {
-      lutPath = lut.uri
-    }
-  }
-  return {
-    enabled: grading.enabled,
-    lutPath,
-    lutIntensity: grading.lutIntensity,
-    exposure: grading.exposure,
-    contrast: 1 + grading.contrast,
-    saturation: grading.saturation,
-    temperature: grading.temperature,
-    tint: grading.tint,
-    vignette: grading.vignette,
-    grain: grading.grain
-  }
 }
 
 export class RenderQueue {
