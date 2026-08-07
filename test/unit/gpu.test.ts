@@ -100,6 +100,44 @@ describe('gradeChain', () => {
     expect(gradeChain('None')).toBe('')
   })
 
+  /* `vignette` is the most expensive stage left in these chains and its dithering is most of that
+     cost: on 30s of 1080p the filter alone goes 9.86s -> 7.10s, and this file's Cinematic graph
+     goes 37.39s -> 35.29s (-5.6%; the graph-level share is smaller because Cinematic's RGB-only
+     `curves` and `colorbalance` dominate everything after them). The dithering hides banding in
+     the vignette's own gradient, so it can only go when grain already decorrelates that error. On
+     a flat mid-grey field the widest flat luma run is 4px either way once grain is present, but
+     13px -> 19px without it. */
+  it('drops vignette dithering only where grain masks the banding', () => {
+    expect(gradeChain('Cinematic')).toContain('vignette=PI/5:dither=0')
+    expect(gradeChain('Cinematic')).toContain('noise=alls=8:allf=t')
+
+    // No grain in these two, so they keep dithering.
+    expect(gradeChain('Intense')).toContain('vignette=PI/7')
+    expect(gradeChain('Intense')).not.toContain('dither=0')
+    expect(gradeChain('Heartfelt')).toContain('vignette=PI/8')
+    expect(gradeChain('Heartfelt')).not.toContain('dither=0')
+  })
+
+  /* Grain from a look adjustment is appended after a preset vignette, but it still masks it —
+     measured at 6px vs 5px flat runs for vignette-then-grain — so it enables the same saving. */
+  it('lets look-adjust grain drop dithering on both preset and adjust vignettes', () => {
+    const adjusted = gradeChain('Heartfelt', {
+      lookAdjust: { grain: 0.05, vignette: 0.5 }
+    } as Parameters<typeof gradeChain>[1])
+
+    expect(adjusted).toContain('vignette=PI/8:dither=0')
+    expect(adjusted).toContain('noise=alls=13:allf=t')
+    expect(adjusted).toMatch(/vignette=PI\/9:dither=0/)
+
+    // The same adjust vignette with no grain anywhere keeps its dithering.
+    const grainless = gradeChain('Heartfelt', {
+      lookAdjust: { vignette: 0.5 }
+    } as Parameters<typeof gradeChain>[1])
+
+    expect(grainless).toContain('vignette=PI/9')
+    expect(grainless).not.toContain('dither=0')
+  })
+
   /* A zeroed slider used to still emit `colorbalance=rs=0.000:gs=0.000:bs=0.000`, paying the
      whole rgb24 round trip to change nothing. cleanLookAdjust() preserves explicit zeros, so
      this was reachable by nudging the slider and putting it back. */

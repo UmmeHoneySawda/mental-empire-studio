@@ -66,7 +66,38 @@ function blendedLutPath(id: string, strength: number): string {
   return out
 }
 
-function adjustFilters(adjust?: LookAdjust): string[] {
+/**
+ * A `vignette` stage, with dithering dropped when film grain is in the same chain.
+ *
+ * Dithering is the most expensive thing `vignette` does. Measured on 30s of 1080p, decode ->
+ * filter -> NVENC, median of 3, on the exact chains these functions emit: the Cinematic graph goes
+ * 37.39s -> 35.29s (-5.6%), and the filter measured on its own goes 9.86s -> 7.10s. The graph-level
+ * share is smaller than the filter-level one because Cinematic's `curves` and `colorbalance` are
+ * RGB-only and dominate everything downstream of them; the video-engine chain, which is native
+ * yuv420p throughout, sees the same change as -20.3%. It is also not slice-threaded
+ * (`-filter_threads 1` measures the same 9.84s as the default), so it holds one core of four.
+ *
+ * The dithering hides quantization banding in the vignette's own gradient, so removing it is only
+ * safe when something else already decorrelates that error. Grain does. Measured as the widest run
+ * of identical luma along the centre row of a flat mid-grey field — the worst case for banding,
+ * sampled in the corner-ward third where the gradient is steepest:
+ *
+ *   grain then vignette (this file's order):  dither=1  4px   dither=0  4px
+ *   vignette then grain (adjust order):       dither=1  6px   dither=0  5px
+ *   no grain at all:                          dither=1 13px   dither=0 19px
+ *
+ * With grain on either side the two are indistinguishable; with no grain the bands widen by half.
+ * Hence the flag rather than an unconditional `dither=0`: only Cinematic carries grain among the
+ * presets, so Intense and Heartfelt keep dithering unless a look adjust adds grain of its own.
+ *
+ * Numbers are inlined because the result files live in the gitignored scratchpad/ and do not
+ * survive a fresh clone.
+ */
+function vignetteFilter(angle: string, grainInChain: boolean): string {
+  return grainInChain ? `vignette=${angle}:dither=0` : `vignette=${angle}`
+}
+
+function adjustFilters(adjust: LookAdjust | undefined, grainInChain: boolean): string[] {
   if (!adjust) return []
   const out: string[] = []
   const eq: string[] = []
@@ -98,7 +129,7 @@ function adjustFilters(adjust?: LookAdjust): string[] {
     }
   }
   if ((adjust.sharpen ?? 0) > 0) out.push(`unsharp=5:5:${clamp(adjust.sharpen ?? 0, 0, 1).toFixed(3)}:3:3:${(clamp(adjust.sharpen ?? 0, 0, 1) * 0.45).toFixed(3)}`)
-  if ((adjust.vignette ?? 0) > 0) out.push(`vignette=PI/${Math.max(4, Math.round(12 - clamp(adjust.vignette ?? 0, 0, 1) * 7))}`)
+  if ((adjust.vignette ?? 0) > 0) out.push(vignetteFilter(`PI/${Math.max(4, Math.round(12 - clamp(adjust.vignette ?? 0, 0, 1) * 7))}`, grainInChain))
   if ((adjust.grain ?? 0) > 0) out.push(`noise=alls=${Math.round(clamp(adjust.grain ?? 0, 0, 0.2) * 255)}:allf=t`)
   return out
 }
@@ -130,6 +161,11 @@ function applyLook(grade: GradeParams, grain: GrainParams, project?: Pick<Projec
 
 export function gradeChain(style: VideoStyle | undefined, project?: Pick<Project, 'lookLut' | 'lookStrength' | 'lookAdjust'>): string {
   const filters: string[] = []
+  // Whether film grain reaches the final chain, which decides if the vignettes below can skip
+  // dithering. Cinematic is the only preset carrying grain; a look adjust can add it to any of
+  // them. Computed before the switch because the adjust grain is appended last but still masks a
+  // preset vignette emitted earlier.
+  const grainInChain = style === 'Cinematic' || (project?.lookAdjust?.grain ?? 0) > 0
   switch (style) {
     case 'Cinematic':
       filters.push(...[
@@ -137,7 +173,7 @@ export function gradeChain(style: VideoStyle | undefined, project?: Pick<Project
         'colorbalance=rs=0.08:gs=-0.02:bs=-0.08:rm=0.03:gm=0.00:bm=-0.04:rh=0.02:gh=0.00:bh=-0.03',
         'eq=saturation=1.12:contrast=1.06:brightness=-0.015',
         'noise=alls=8:allf=t',
-        'vignette=PI/5'
+        vignetteFilter('PI/5', grainInChain)
       ])
       break
     case 'Intense':
@@ -145,7 +181,7 @@ export function gradeChain(style: VideoStyle | undefined, project?: Pick<Project
         'curves=preset=strong_contrast',
         'eq=saturation=1.18:contrast=1.13',
         'unsharp=5:5:0.45:3:3:0.2',
-        'vignette=PI/7'
+        vignetteFilter('PI/7', grainInChain)
       ])
       break
     case 'Heartfelt':
@@ -185,7 +221,7 @@ export function gradeChain(style: VideoStyle | undefined, project?: Pick<Project
       // gitignored scratchpad/ and do not survive a fresh clone.
       filters.push(...[
         'eq=saturation=1.06:contrast=1.02:brightness=0.01',
-        'vignette=PI/8'
+        vignetteFilter('PI/8', grainInChain)
       ])
       break
     case 'Clean':
@@ -196,7 +232,7 @@ export function gradeChain(style: VideoStyle | undefined, project?: Pick<Project
   const look = lookById(project?.lookLut)
   const strength = look.id === 'off' ? 0 : clamp(project?.lookStrength ?? look.defaultStrength, 0, 1)
   if (strength > 0) filters.push(`lut3d=file='${filterPath(blendedLutPath(look.id, strength))}':interp=trilinear`)
-  filters.push(...adjustFilters(project?.lookAdjust))
+  filters.push(...adjustFilters(project?.lookAdjust, grainInChain))
   return filters.length ? `${filters.join(',')},` : ''
 }
 

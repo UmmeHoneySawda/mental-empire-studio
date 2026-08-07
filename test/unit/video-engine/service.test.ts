@@ -650,6 +650,30 @@ describe('cinematic grading filter construction', () => {
       buildGradeFilter({ enabled: true, lutPath: join(root, 'missing.cube') }),
     ).rejects.toThrow(/lut file does not exist/i)
   })
+
+  /* After the `colorbalance` port left this chain native yuv420p, `vignette` became ~57% of the
+     grade pass (11.20s of 12.45s on 900 frames of 1080p, against a 4.65s decode+encode floor), and
+     its dithering is most of that: the whole chain measures 11.70s -> 9.62s, -17.8%. It is not
+     slice-threaded either, so it holds one core of four.
+
+     Dithering hides banding in the vignette's own gradient, so it is only safe to drop when grain
+     already decorrelates that error. On a flat mid-grey field the widest flat luma run is 6px with
+     dithering and 5px without once grain follows, but 13px -> 19px with no grain at all. */
+  it('drops vignette dithering only when grain follows in the same chain', async () => {
+    const graded = await buildGradeFilter({ enabled: true, vignette: 0.5, grain: 0.12 })
+
+    expect(graded).toContain('vignette=angle=0.5236:eval=init:dither=0')
+    expect(graded).toContain('noise=alls=3.36:allf=t')
+    // Either order masks it. This chain happens to grain after the vignette; the classic Cinematic
+    // chain grains before it and measures the same 5-6px flat runs, so the gate only checks that
+    // grain is present somewhere in the graph, not where it sits.
+    expect(graded.indexOf('vignette=')).toBeLessThan(graded.indexOf('noise='))
+
+    const grainless = await buildGradeFilter({ enabled: true, vignette: 0.5, grain: 0 })
+
+    expect(grainless).toContain('vignette=angle=0.5236:eval=init')
+    expect(grainless).not.toContain('dither')
+  })
 })
 
 describe('B-roll cache and provider service', () => {

@@ -18,6 +18,11 @@ product behavior and `PLAN.md` for completed milestone history.
   against Electron when dependencies change.
 - Preserve the app's local-first design: no cloud dependencies or API keys except the optional Groq
   transcription key.
+- **Render performance is a closed phase.** Read `docs/RENDER-PERFORMANCE.md` before touching render
+  or grade filter chains, encoder flags, or Remotion render options. It holds the baseline, the
+  measured rationale for the current settings, a list of optimizations already rejected with numbers,
+  and the benchmark variance rules — this machine has a ±10% spread on full renders, so unpaired
+  comparisons are not evidence. Do not open speculative perf work; act only on a measured regression.
 - **Sentry logging is mandatory for pipeline work.** Read `docs/SENTRY_LOGGING.md` before adding
   services, provider jobs, or automation steps. Use `sentryLog` / `captureException` from
   `electron/services/sentry.ts`. When diagnosing production failures, **check Sentry Issues + Logs

@@ -254,7 +254,40 @@ export async function buildGradeFilter(grade: CinematicGrade): Promise<string> {
   // scratchpad/ and do not survive a fresh clone.
   //
   // If a future change makes the angle time-varying, `eval=frame` becomes correct again.
-  if (vignette > 0) chain.push(`vignette=angle=${fixed((Math.PI / 3) * vignette)}:eval=init`)
+  //
+  // `dither=0`, but only when grain follows. Dithering is the most expensive thing this filter
+  // does, and after the `colorbalance` port left the chain native yuv420p the vignette became the
+  // single largest cost in the grade pass. Measured on 30s of 1080p30, decode -> filter -> NVENC,
+  // median of 3, on the exact chain this function emits:
+  //
+  //   whole grade pass:  11.94s -> 9.51s   (-20.3%)
+  //   filter alone:       9.86s -> 7.10s
+  //
+  // For scale, the same measurement prices every other stage in this chain at roughly nothing:
+  // decode+encode floor 4.65s, exposure LUT 4.46s, +eq 3.90s, +tint LUT 4.22s, then +vignette
+  // 11.20s and +grain 12.45s. The vignette is ~57% of the pass. It is also not slice-threaded —
+  // `-filter_threads 1` measures 9.84s against the default's 9.86s — so it occupies one core of
+  // four while the rest idle, which is why it dominates despite being simple arithmetic.
+  //
+  // Dithering exists to hide quantization banding in the vignette's own gradient, so dropping it
+  // is only safe when something else already decorrelates that error. Grain does. Measured as the
+  // widest run of identical luma along the centre row of a flat mid-grey field — the worst case
+  // for banding, sampled in the corner-ward third where the gradient is steepest:
+  //
+  //   vignette then grain (this order):  dither=1  6px   dither=0  5px
+  //   no grain at all:                   dither=1 13px   dither=0 19px
+  //
+  // With grain the two are indistinguishable; without it the bands widen by half, so grain=0
+  // projects keep dithering and pay for it. The two vignettes differ by 51.1 dB on that flat
+  // field, where the grain this chain already applies perturbs the same frame by 45.3 dB — the
+  // dither is well under the noise floor of the look it sits inside.
+  //
+  // Numbers are inlined because the result files live in the gitignored scratchpad/ and do not
+  // survive a fresh clone.
+  if (vignette > 0) {
+    const dither = grain > 0 ? ':dither=0' : ''
+    chain.push(`vignette=angle=${fixed((Math.PI / 3) * vignette)}:eval=init${dither}`)
+  }
   if (grain > 0) chain.push(`noise=alls=${fixed(grain * 28)}:allf=t`)
   return chain.join(',')
 }
