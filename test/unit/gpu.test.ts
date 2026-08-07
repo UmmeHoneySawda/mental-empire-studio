@@ -1,5 +1,5 @@
 import { describe, it, expect } from 'vitest'
-import { gradeParams } from '../../electron/services/engine/grade'
+import { gradeChain, gradeParams } from '../../electron/services/engine/grade'
 import { buildGpuRenderSpec, buildCaptionModel, buildImageSpecs, effectiveMotionPreset, gpuCaptionMode, gpuDimensions, imageMotionFor } from '../../electron/services/engine/gpu/spec'
 import { activeCaptionGroup, activeWordInGroup, activeImageIndex, totalFrames, overlayAlphaAt } from '../../shared/renderSpec'
 import { DEFAULT_SETTINGS, DEFAULT_BETA_OPTS, type AppSettings, type Project, type ProjectImage, type TranscriptWord } from '../../shared/types'
@@ -55,10 +55,78 @@ describe('gradeParams', () => {
     const { grade, grain } = gradeParams('Heartfelt')
     expect(grade.saturation).toBeCloseTo(1.06)
     expect(grade.brightness).toBeGreaterThan(0)
-    expect(grade.colorBalance.r).toBeGreaterThan(0)
-    expect(grade.colorBalance.b).toBeLessThan(0)
     expect(grade.vignette).toBeGreaterThan(0)
     expect(grain.temporal).toBe(false)
+  })
+  /* The shader applies colorBalance as a flat lift, so a non-zero value here would push every
+     pixel by that amount while gradeChain() emits no `colorbalance` stage for Heartfelt at all.
+     Keeping this at zero is what keeps the two renderers showing the same look. */
+  it('leaves heartfelt colour balance neutral to match the ffmpeg chain', () => {
+    const { grade } = gradeParams('Heartfelt')
+    expect(grade.colorBalance).toEqual({ r: 0, g: 0, b: 0 })
+  })
+})
+
+describe('gradeChain', () => {
+  /* `colorbalance` is RGB-only, so ffmpeg brackets it with swscale (yuv420p -> rgb24 -> yuv444p)
+     and every later filter runs at 4:4:4. Dropping it from Heartfelt took 30s of 720p from
+     24.13s to 3.97s. It is safe to drop because the effect measured 63.72 dB with the round trip
+     excluded, while the round trip it forced cost 46.55 dB — the conversion damaged the frame far
+     more than the filter changed it, and the best-fit YUV replacement was a zero offset. */
+  it('grades heartfelt without an RGB-only colorbalance stage', () => {
+    const chain = gradeChain('Heartfelt')
+
+    expect(chain).not.toContain('colorbalance')
+    expect(chain).toContain('eq=saturation=1.06:contrast=1.02:brightness=0.01')
+    expect(chain).toContain('vignette=PI/8')
+  })
+
+  /* Cinematic keeps its colorbalance deliberately. Here the effect measured 47.69 dB, a real
+     look rather than a rounding difference, and no YUV-native filter reproduces it: a per-plane
+     `lutyuv` cannot see the co-located luma, and colorbalance weights by max+min of RGB. */
+  it('keeps the cinematic colorbalance exactly as it was', () => {
+    const chain = gradeChain('Cinematic')
+
+    expect(chain).toContain(
+      'colorbalance=rs=0.08:gs=-0.02:bs=-0.08:rm=0.03:gm=0.00:bm=-0.04:rh=0.02:gh=0.00:bh=-0.03'
+    )
+    expect(chain).toContain('curves=preset=medium_contrast')
+  })
+
+  it('leaves the intense and clean chains untouched', () => {
+    expect(gradeChain('Intense')).not.toContain('colorbalance')
+    expect(gradeChain('Intense')).toContain('unsharp=5:5:0.45:3:3:0.2')
+    expect(gradeChain('Clean')).toBe('')
+    expect(gradeChain('None')).toBe('')
+  })
+
+  /* A zeroed slider used to still emit `colorbalance=rs=0.000:gs=0.000:bs=0.000`, paying the
+     whole rgb24 round trip to change nothing. cleanLookAdjust() preserves explicit zeros, so
+     this was reachable by nudging the slider and putting it back. */
+  it('emits no colorbalance stage for an all-zero look adjustment', () => {
+    const chain = gradeChain('Clean', {
+      lookAdjust: { colorBalance: { r: 0, g: 0, b: 0 } }
+    } as Parameters<typeof gradeChain>[1])
+
+    expect(chain).not.toContain('colorbalance')
+  })
+
+  /* Guarding on the rounded value matters: 0.0004 serializes to `0.000` through toFixed(3). */
+  it('emits no colorbalance stage for a shift too small to survive serialization', () => {
+    const chain = gradeChain('Clean', {
+      lookAdjust: { colorBalance: { r: 0.0004, g: 0, b: -0.0002 } }
+    } as Parameters<typeof gradeChain>[1])
+
+    expect(chain).not.toContain('colorbalance')
+  })
+
+  /* The slider reaches +/-0.5, far past the presets, where the shadow weighting is the point. */
+  it('still emits colorbalance for a real look adjustment', () => {
+    const chain = gradeChain('Clean', {
+      lookAdjust: { colorBalance: { r: 0.2, g: 0, b: -0.15 } }
+    } as Parameters<typeof gradeChain>[1])
+
+    expect(chain).toContain('colorbalance=rs=0.200:gs=0.000:bs=-0.150')
   })
 })
 

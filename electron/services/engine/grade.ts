@@ -76,7 +76,26 @@ function adjustFilters(adjust?: LookAdjust): string[] {
   if (eq.length) out.push(`eq=${eq.join(':')}`)
   const cb = adjust.colorBalance
   if (cb && (cb.r != null || cb.g != null || cb.b != null)) {
-    out.push(`colorbalance=rs=${clamp(cb.r ?? 0, -1, 1).toFixed(3)}:gs=${clamp(cb.g ?? 0, -1, 1).toFixed(3)}:bs=${clamp(cb.b ?? 0, -1, 1).toFixed(3)}`)
+    // Emitted only when it actually shifts something. The guard tests the rounded values, not
+    // the raw ones, because they are serialized with toFixed(3) — anything under 0.0005 reaches
+    // ffmpeg as literal `0.000`.
+    //
+    // An identity `colorbalance` is not free. The filter is RGB-only, so ffmpeg wraps it in
+    // swscale — yuv420p -> rgb24 -> yuv444p — and every filter after it runs at 4:4:4. Measured
+    // on 30s of 720p: an identity `colorbalance` still costs the full round trip, which is
+    // ~17s of wall clock and 46.55 dB of chroma resampling damage, to change nothing. A user
+    // who nudges the colour-balance slider and returns it to zero used to pay that on every
+    // render, since cleanLookAdjust() preserves explicit zeros and keeps the adjust object.
+    //
+    // This stays a real `colorbalance` when non-zero: unlike the Heartfelt preset, the slider
+    // reaches +/-0.5, where the shadow weighting is a visible part of the look rather than a
+    // rounding difference.
+    const rs = clamp(cb.r ?? 0, -1, 1).toFixed(3)
+    const gs = clamp(cb.g ?? 0, -1, 1).toFixed(3)
+    const bs = clamp(cb.b ?? 0, -1, 1).toFixed(3)
+    if (Number(rs) !== 0 || Number(gs) !== 0 || Number(bs) !== 0) {
+      out.push(`colorbalance=rs=${rs}:gs=${gs}:bs=${bs}`)
+    }
   }
   if ((adjust.sharpen ?? 0) > 0) out.push(`unsharp=5:5:${clamp(adjust.sharpen ?? 0, 0, 1).toFixed(3)}:3:3:${(clamp(adjust.sharpen ?? 0, 0, 1) * 0.45).toFixed(3)}`)
   if ((adjust.vignette ?? 0) > 0) out.push(`vignette=PI/${Math.max(4, Math.round(12 - clamp(adjust.vignette ?? 0, 0, 1) * 7))}`)
@@ -130,8 +149,40 @@ export function gradeChain(style: VideoStyle | undefined, project?: Pick<Project
       ])
       break
     case 'Heartfelt':
+      // No `colorbalance` here, deliberately. It used to carry `rs=0.06:gs=0.02:bs=-0.05:
+      // rm=0.04:gm=0.01:bm=-0.03`, and dropping it is the single largest win in this file:
+      // on 30s of 720p, 3 runs, median, **24.13s -> 3.97s (-83.5%)**.
+      //
+      // The cost was never the arithmetic, it was the pixel format. `colorbalance` accepts only
+      // RGB (see the pix_fmts list in libavfilter/vf_colorbalance.c), so ffmpeg wrapped it in
+      // swscale — yuv420p -> rgb24 -> yuv444p — and `eq` and `vignette` then ran at 4:4:4 as
+      // well. Verbose graph logs showed 12 auto-scale insertions for this chain and 0 without it.
+      //
+      // Removing it rather than porting it is justified by measurement, not by taste. Measured
+      // as chroma PSNR against the EXACT colorbalance transform — evaluated per chroma sample
+      // against its co-located luma, with no resampling anywhere, so approximation error is
+      // separated from swscale error:
+      //
+      //   - swscale's rgb24 round trip alone (identity colorbalance):   46.55 dB
+      //   - this preset's colorbalance effect, round trip excluded:     63.72 dB
+      //
+      // The round trip damaged the frame ~17 dB more than the filter changed it. Least-squares
+      // fitting a YUV-native replacement against the exact transform returns a best-fit
+      // constant offset of **u+0 v+0** — the optimal replacement is no stage at all. Doing
+      // nothing scores 47.21 dB against the intended effect where the old chain scored 48.02 dB,
+      // so the 0.8 dB given up is far smaller than the 46.55 dB the conversion was spending, and
+      // the result is closer to the ungraded source in chroma rather than further from it.
+      //
+      // Two candidate ports were measured and both rejected. A baked `lut3d` is RGB-only too and
+      // negotiated the identical round trip, landing at 24.7s — slower than the filter it would
+      // replace. A `geq` luma-weighted chroma shift reached 54.6s. `colorcorrect` is the only
+      // YUV-native filter whose math (`nu = sat*(u + y*bd + bl)`) can express a luma-weighted
+      // chroma offset, but at this preset's strength its fitted parameters round to zero.
+      //
+      // Cinematic keeps its `colorbalance`: there the effect is real (47.69 dB) and is a look,
+      // not a rounding difference. Numbers are inlined because the result files live in the
+      // gitignored scratchpad/ and do not survive a fresh clone.
       filters.push(...[
-        'colorbalance=rs=0.06:gs=0.02:bs=-0.05:rm=0.04:gm=0.01:bm=-0.03',
         'eq=saturation=1.06:contrast=1.02:brightness=0.01',
         'vignette=PI/8'
       ])
@@ -195,13 +246,23 @@ export function gradeParams(style: VideoStyle | undefined): { grade: GradeParams
       }
     case 'Heartfelt':
       return {
-        // colorbalance (warm) + eq=saturation=1.06:contrast=1.02:brightness=0.01 + vignette=PI/8.
+        // eq=saturation=1.06:contrast=1.02:brightness=0.01 + vignette=PI/8.
+        //
+        // colorBalance stays neutral here to match gradeChain(), which no longer emits a
+        // `colorbalance` stage for this preset — see the rationale on the Heartfelt case there.
+        //
+        // Zeroing it also fixes a divergence that predates that change. The shader applies this
+        // value as a flat, unweighted lift (`col += u_colorBalance` in compositor.ts), so the
+        // old r:0.05 pushed every pixel by +12.75 code values. ffmpeg's `colorbalance` weighted
+        // the same push toward shadows and decayed it to exactly zero above luma ~101, which
+        // measured as ~0.1 code values mean on real footage. The GPU path was applying the peak
+        // strength frame-wide for a look ffmpeg barely applied at all. src/mockApi.ts already
+        // reported zero here, so all three now agree.
         grade: {
           ...base('Heartfelt'),
           saturation: 1.06,
           contrast: 1.02,
           brightness: 0.01,
-          colorBalance: { r: 0.05, g: 0.015, b: -0.04 },
           vignette: 0.35
         },
         grain: { strength: 0, temporal: false }
