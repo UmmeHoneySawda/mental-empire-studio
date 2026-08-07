@@ -57,6 +57,12 @@ HANDOFF.md
 .claude/stop-failure-events.jsonl
 .claude/quota-blocked.json
 
+# Kilo machine-local preferences. Shared project config under .kilo/ — commands in
+# .kilo/command/*.md and agents in .kilo/agent/*.md — stays tracked; this file only carries
+# per-machine editor settings such as `snapshot`, so committing it churns the tree across
+# checkouts without configuring anything the project depends on.
+.kilo/kilo.jsonc
+
 # Benchmark media is regenerated on demand from BENCH_BROLL_SPECS in
 # scripts/bench-render-assets.ts via `npm run bench:render`. ~70 MB of synthetic 1080p, plus
 # the cached `ungraded-*.mp4` masters `--grade-only` leaves behind, which push the directory

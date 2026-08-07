@@ -156,7 +156,8 @@ export function gradeChain(style: VideoStyle | undefined, project?: Pick<Project
       // The cost was never the arithmetic, it was the pixel format. `colorbalance` accepts only
       // RGB (see the pix_fmts list in libavfilter/vf_colorbalance.c), so ffmpeg wrapped it in
       // swscale — yuv420p -> rgb24 -> yuv444p — and `eq` and `vignette` then ran at 4:4:4 as
-      // well. Verbose graph logs showed 12 auto-scale insertions for this chain and 0 without it.
+      // well. Verbose graph logs showed ffmpeg insert 2 scalers (auto_scale_0 / auto_scale_1)
+      // for this chain and none at all without it.
       //
       // Removing it rather than porting it is justified by measurement, not by taste. Measured
       // as chroma PSNR against the EXACT colorbalance transform — evaluated per chroma sample
