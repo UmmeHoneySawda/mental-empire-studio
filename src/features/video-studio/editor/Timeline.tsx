@@ -447,7 +447,7 @@ export function Timeline(): JSX.Element | null {
             })
           }}
         >
-          <div className="ve-lanes-inner" style={{ width: Math.max(width, 320) }}>
+          <div className="ve-lanes-inner" style={{ width: Math.max(width, 320), minWidth: '100%' }}>
             <div
               className="ve-ruler"
               style={{ height: RULER_HEIGHT }}
