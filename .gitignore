@@ -71,3 +71,5 @@ test/fixtures/bench-render/assets/
 # Rewritten on every bench run, so committing it would leave the tree permanently dirty —
 # and nothing reads it back, so it locks nothing. Regenerated, not authoritative.
 test/fixtures/bench-render/assets.lock.json
+.codex/
+.kilo/
