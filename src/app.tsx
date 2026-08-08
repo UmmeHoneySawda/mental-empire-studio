@@ -42,6 +42,8 @@ export function App(): JSX.Element {
   const { active, accent, ambientGlow } = useStore()
   const hydrate = useStore((s) => s.hydrate)
   const initData = useData((s) => s.init)
+  const ready = useData((s) => s.ready)
+  const startupError = useData((s) => s.startupError)
 
   // load persisted settings (electron-store) + live data once on boot
   useEffect(() => {
@@ -58,23 +60,33 @@ export function App(): JSX.Element {
     ? 'radial-gradient(70% 55% at 18% 0%, var(--accent-soft) 0%, rgba(0,0,0,0) 60%), radial-gradient(60% 50% at 100% 100%, rgba(80,90,120,.10) 0%, rgba(0,0,0,0) 55%), #070809'
     : '#070809'
   const mainBg = ambientGlow
-    ? 'radial-gradient(90% 60% at 100% 0%, var(--accent-soft) 0%, rgba(0,0,0,0) 55%), #0d0f14'
-    : '#0d0f14'
+    ? 'radial-gradient(90% 60% at 100% 0%, var(--accent-soft) 0%, rgba(0,0,0,0) 55%), var(--bg-window)'
+    : 'var(--bg-window)'
 
   const Screen = SCREENS[active]
 
   return (
     <div style={{ height: '100%', background: pageBg, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
       <TitleBar />
+      {startupError && (
+        <div role="alert" style={{ minHeight: 38, padding: '7px 14px', borderBottom: '1px solid rgba(245,179,35,.3)', background: 'rgba(245,179,35,.09)', color: '#f2ca72', display: 'flex', alignItems: 'center', justifyContent: 'center', gap: 12, fontSize: 12 }}>
+          <span>{startupError}</span>
+          <button type="button" className="me-btn" onClick={() => void initData()} style={{ border: '1px solid rgba(245,179,35,.45)', borderRadius: 7, background: '#17140c', color: '#f2ca72', padding: '4px 9px', cursor: 'pointer', font: 'inherit', fontWeight: 700 }}>Retry</button>
+        </div>
+      )}
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
         <Sidebar />
-        <div style={{ flex: 1, minWidth: 0, background: mainBg, position: 'relative', overflowY: 'auto', overflowX: 'hidden' }}>
-          <ErrorBoundary resetKey={active}>
-            <Suspense fallback={<div style={{ padding: 40, color: 'var(--text-muted)', fontSize: 13 }}>Loading…</div>}>
-              <Screen key={active} />
-            </Suspense>
-          </ErrorBoundary>
-        </div>
+        <main id="main-content" style={{ flex: 1, minWidth: 0, background: mainBg, position: 'relative', overflowY: 'auto', overflowX: 'hidden' }}>
+          {!ready ? (
+            <div role="status" aria-live="polite" style={{ padding: 40, color: 'var(--text-muted)', fontSize: 13 }}>Loading workspace…</div>
+          ) : (
+            <ErrorBoundary resetKey={active}>
+              <Suspense fallback={<div role="status" aria-live="polite" style={{ padding: 40, color: 'var(--text-muted)', fontSize: 13 }}>Loading screen…</div>}>
+                <Screen key={active} />
+              </Suspense>
+            </ErrorBoundary>
+          )}
+        </main>
         <FirstRunOnboarding />
       </div>
     </div>

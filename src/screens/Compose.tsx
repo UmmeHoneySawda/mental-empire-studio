@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useStore } from '../store/useStore'
 import { useData } from '../store/useData'
-import { Banner, Btn, SectionLabel } from '../components/ui/kit'
+import { Banner, Btn } from '../components/ui/kit'
 import { ProjectGate } from '../components/ProjectGate'
 import { EngineStatusLamp } from '../features/video-studio/EngineStatusLamp'
 import { useVideoStudio } from '../features/video-studio/store/useVideoStudio'
@@ -86,10 +86,7 @@ export function Compose(): JSX.Element {
       {/* header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 'none' }}>
         <div style={{ minWidth: 0 }}>
-          <SectionLabel style={{ color: 'var(--accent)', marginBottom: 4 }}>Step 02 — Compose</SectionLabel>
-          <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 21, letterSpacing: '-.4px', color: 'var(--text-strong)', lineHeight: 1 }}>
-            Video studio
-          </div>
+          <h1 style={{ margin: 0, fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 'var(--fs-title)', letterSpacing: '-.4px', color: 'var(--text-strong)', lineHeight: 'var(--lh-tight)' }}>Video Studio</h1>
         </div>
         <EngineStatusLamp status={engineStatus} />
         <div style={{ flex: 1 }} />
@@ -100,7 +97,7 @@ export function Compose(): JSX.Element {
             title="Save this project and pick another video"
             onClick={() => void backToLibrary()}
           >
-            {closing ? 'Saving…' : '← Library'}
+            {closing ? 'Saving…' : 'Choose another video'}
           </Btn>
         )}
       </div>
@@ -110,8 +107,8 @@ export function Compose(): JSX.Element {
       {!project ? (
         <div className="ed-scroll" style={{ flex: 1, minHeight: 0, paddingTop: 10 }}>
           <ProjectGate
-            headline="Pick a video to compose"
-            sub="Finished downloads ready for editing — captions, look, motion, and render."
+            headline="Choose a video to edit"
+            sub="Add captions, media, motion, and a visual treatment before rendering."
             downloads={downloads}
             openingId={openingDownloadId}
             error=""

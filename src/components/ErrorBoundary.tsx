@@ -35,14 +35,14 @@ export class ErrorBoundary extends Component<Props, State> {
     if (!error) return this.props.children
     return (
       <div style={{ padding: 32, maxWidth: 640, margin: '0 auto' }}>
-        <div style={{ border: '1px solid #5a2530', background: 'rgba(255,90,110,.08)', borderRadius: 14, padding: 22 }}>
-          <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 18, color: '#ff8a96', marginBottom: 8 }}>This screen hit an error</div>
-          <div style={{ fontSize: 12.5, color: '#cdd2da', lineHeight: 1.5, marginBottom: 14 }}>The rest of the app is still running. Try reloading, or switch to another screen.</div>
-          <div title={error.message} style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: '#8a909c', background: '#0e1116', border: '1px solid #1d2129', borderRadius: 8, padding: '8px 10px', marginBottom: 14, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 120, overflow: 'auto' }}>{error.message}</div>
+        <div role="alert" style={{ border: '1px solid #5a2530', background: 'rgba(255,90,110,.08)', borderRadius: 14, padding: 22 }}>
+          <h2 style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 18, color: '#ff8a96', margin: '0 0 8px' }}>This screen hit an error</h2>
+          <div style={{ fontSize: 12.5, color: 'var(--text-soft)', lineHeight: 1.5, marginBottom: 14 }}>The rest of the app is still running. Try reloading, or switch to another screen.</div>
+          <div title={error.message} style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-muted)', background: 'var(--bg-inset)', border: '1px solid var(--border)', borderRadius: 8, padding: '8px 10px', marginBottom: 14, whiteSpace: 'pre-wrap', wordBreak: 'break-word', maxHeight: 120, overflow: 'auto' }}>{error.message}</div>
           <div style={{ display: 'flex', gap: 9 }}>
-            <button type="button" onClick={() => this.setState({ error: null })} style={{ border: '1px solid var(--accent)', background: 'var(--accent-soft)', color: 'var(--accent)', borderRadius: 9, padding: '8px 15px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Try again</button>
-            <button type="button" onClick={() => window.location.reload()} style={{ border: '1px solid #262b34', background: '#15181f', color: '#c4cad3', borderRadius: 9, padding: '8px 15px', fontSize: 12, cursor: 'pointer' }}>Reload app</button>
-            <button type="button" onClick={() => void window.api?.openLogs?.()} style={{ border: '1px solid #262b34', background: '#15181f', color: '#c4cad3', borderRadius: 9, padding: '8px 15px', fontSize: 12, cursor: 'pointer' }}>Open logs</button>
+            <button type="button" className="me-btn" onClick={() => this.setState({ error: null })} style={{ border: '1px solid var(--accent)', background: 'var(--accent-soft)', color: 'var(--accent)', borderRadius: 9, padding: '8px 15px', fontSize: 12, fontWeight: 600, cursor: 'pointer' }}>Try again</button>
+            <button type="button" className="me-btn" onClick={() => window.location.reload()} style={{ border: '1px solid var(--border-3)', background: 'var(--bg-control)', color: 'var(--text-control)', borderRadius: 9, padding: '8px 15px', fontSize: 12, cursor: 'pointer' }}>Reload app</button>
+            <button type="button" className="me-btn" onClick={() => void window.api?.openLogs?.()} style={{ border: '1px solid var(--border-3)', background: 'var(--bg-control)', color: 'var(--text-control)', borderRadius: 9, padding: '8px 15px', fontSize: 12, cursor: 'pointer' }}>Open logs</button>
           </div>
         </div>
       </div>

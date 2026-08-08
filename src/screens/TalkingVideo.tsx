@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import type { ReactNode } from 'react'
 import { ScreenPad } from '../components/primitives'
-import { Banner, Btn, EmptyState, StatusPill } from '../components/ui/kit'
+import { Banner, Btn, ConfirmDialog, EmptyState, StatusPill } from '../components/ui/kit'
 import { useStore } from '../store/useStore'
 import { motionQueryKey, useTalkingPhotos } from '../store/useTalkingPhotos'
 import { useData } from '../store/useData'
@@ -386,49 +386,6 @@ const FIELD_IDS: Record<string, string> = {
 const MOODS = ['Neutral', 'Excited', 'Serious', 'Friendly', 'Unfriendly'] as const
 const PAGE_SIZE = 12
 
-// ---- confirm dialog + toast ------------------------------------------------
-
-function ConfirmDialog({
-  open, title, body, confirmLabel, onConfirm, onCancel, busy
-}: {
-  open: boolean
-  title: string
-  body: string
-  confirmLabel?: string
-  onConfirm: () => void
-  onCancel: () => void
-  busy?: boolean
-}): JSX.Element | null {
-  const cancelRef = useRef<HTMLButtonElement>(null)
-  useEffect(() => {
-    if (!open) return
-    cancelRef.current?.focus()
-    const onKey = (e: KeyboardEvent): void => { if (e.key === 'Escape') onCancel() }
-    document.addEventListener('keydown', onKey)
-    return () => document.removeEventListener('keydown', onKey)
-  }, [open, onCancel])
-  if (!open) return null
-  return (
-    <div className="tv-modal-backdrop" role="presentation" onClick={onCancel}>
-      <div
-        className="tv-modal"
-        role="alertdialog"
-        aria-modal="true"
-        aria-labelledby="tv-confirm-title"
-        aria-describedby="tv-confirm-body"
-        onClick={(e) => e.stopPropagation()}
-      >
-        <h3 id="tv-confirm-title">{title}</h3>
-        <p id="tv-confirm-body">{body}</p>
-        <div className="tv-modal-actions">
-          <button type="button" className="tv-btn ghost" ref={cancelRef} onClick={onCancel} disabled={busy}>Cancel</button>
-          <button type="button" className="tv-btn danger" onClick={onConfirm} disabled={busy}>{confirmLabel ?? 'Delete'}</button>
-        </div>
-      </div>
-    </div>
-  )
-}
-
 function Toast({ message, onDone }: { message: string; onDone: () => void }): JSX.Element | null {
   useEffect(() => {
     if (!message) return
@@ -496,7 +453,7 @@ function LiveJobCard({
         {making ? (
           <div className="tv-make-body">
             <div className="tv-make-title">Making your video…</div>
-            <div className="tv-progress-track" aria-hidden="true">
+            <div className="tv-progress-track" role="progressbar" aria-label={`Creation progress for ${item.title}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={progress.barPct}>
               <div className="tv-progress-fill" style={{ width: `${progress.barPct}%` }} />
             </div>
             <div className="tv-make-meta" aria-live="polite">
@@ -915,8 +872,7 @@ export function TalkingVideo(): JSX.Element {
       <div className="tv-mock tp-shell">
         <div className="tv-topbar">
           <div className="tv-titlewrap">
-            <span className="tv-eyebrow">Create</span>
-            <span className="tv-title">Talking Video</span>
+            <h1 className="tv-title">Talking Videos</h1>
           </div>
           {enabled && status === 'connected' && (
             <div className="tv-tabs" role="tablist" aria-label="Talking Video views">
@@ -1275,7 +1231,7 @@ export function TalkingVideo(): JSX.Element {
                           onClick={() => patch({ captionsOn: !draft.captionsOn })}
                         >
                           <span className="tv-switch-knob" />
-                          <span>{draft.captionsOn ? 'On — engine auto-picked' : 'Off'}</span>
+                          <span>{draft.captionsOn ? 'On — style chosen automatically' : 'Off'}</span>
                         </button>
                       </Field>
                       <button type="button" className={`tv-more-toggle${more3 ? ' open' : ''}`} onClick={() => setMore3((v) => !v)}>

@@ -1,10 +1,11 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store/useStore'
 import { useData } from '../store/useData'
 import { ScreenPad } from '../components/primitives'
-import { Banner, Btn, EmptyState, SectionLabel } from '../components/ui/kit'
+import { Banner, Btn, ConfirmDialog, EmptyState, SectionLabel } from '../components/ui/kit'
 import { resolveTransitionPreset, TRANSITION_PRESETS } from '@shared/video-engine/transition-presets'
 import { mediaSrc } from '../lib/media'
+import { errorMessage } from '../lib/errors'
 import type { CaptionStyleId } from '@shared/video-engine/caption-style'
 import type { VideoTemplate } from '@shared/video-engine/ipc'
 import type { AutomationJob, AutomationJobDetail, VisualTemplate } from '@shared/types'
@@ -125,6 +126,12 @@ export function Profiles(): JSX.Element {
   const [editingTemplate, setEditingTemplate] = useState<VisualTemplate | null>(null)
   const [wizardStep, setWizardStep] = useState<0 | 1>(0)
   const [toastMessage, setToastMessage] = useState<string>('')
+  const [templateError, setTemplateError] = useState('')
+  const [templateSaving, setTemplateSaving] = useState(false)
+  const [templateToDelete, setTemplateToDelete] = useState<VisualTemplate | null>(null)
+  const [templateDeleting, setTemplateDeleting] = useState(false)
+  const editorRef = useRef<HTMLDivElement>(null)
+  const toastTimerRef = useRef<number | null>(null)
   /** The renderer's own template manifests — the hook and caption lists Compose shows. */
   const [engineTemplates, setEngineTemplates] = useState<VideoTemplate[]>([])
 
@@ -138,7 +145,11 @@ export function Profiles(): JSX.Element {
 
   const showToast = (msg: string) => {
     setToastMessage(msg)
-    window.setTimeout(() => setToastMessage(''), 3000)
+    if (toastTimerRef.current != null) window.clearTimeout(toastTimerRef.current)
+    toastTimerRef.current = window.setTimeout(() => {
+      setToastMessage('')
+      toastTimerRef.current = null
+    }, 3000)
   }
 
   // Jobs & History state
@@ -150,6 +161,47 @@ export function Profiles(): JSX.Element {
    * renderer is the one Compose edits with, so a Visual System can only promise a caption
    * style that engine actually ships. */
   const captionTemplates = useMemo(() => engineTemplates.filter((template) => template.kind === 'caption'), [engineTemplates])
+  const editingTemplateId = editingTemplate?.id
+
+  useEffect(() => () => {
+    if (toastTimerRef.current != null) window.clearTimeout(toastTimerRef.current)
+  }, [])
+
+  useEffect(() => {
+    if (!editingTemplateId) return
+    setTemplateError('')
+    const previousFocus = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const frame = window.requestAnimationFrame(() => {
+      editorRef.current?.querySelector<HTMLElement>('input, button, [tabindex]:not([tabindex="-1"])')?.focus()
+    })
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape') {
+        event.preventDefault()
+        setEditingTemplate(null)
+        return
+      }
+      if (event.key !== 'Tab') return
+      const focusable = Array.from(editorRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      ) ?? [])
+      if (focusable.length === 0) { event.preventDefault(); return }
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      document.removeEventListener('keydown', onKeyDown)
+      previousFocus?.focus()
+    }
+  }, [editingTemplateId])
 
   useEffect(() => {
     let live = true
@@ -161,15 +213,8 @@ export function Profiles(): JSX.Element {
   }, [])
   useEffect(() => {
     void Promise.all([loadSources(), loadAutomationJobs()])
-      .catch((error) => setJobsError(error instanceof Error ? error.message : String(error)))
+      .catch((error) => setJobsError(errorMessage(error, 'Could not load automation runs.')))
   }, [loadSources, loadAutomationJobs])
-
-  useEffect(() => {
-    if (sourceChannels.length > 0 && !selectedChannelId) {
-      setSelectedChannelId(sourceChannels[0].id)
-      setActiveSourceIds(sourceChannels.map(s => s.id))
-    }
-  }, [sourceChannels, selectedChannelId])
 
   useEffect(() => {
     if (!expanded?.id) return
@@ -179,7 +224,7 @@ export function Profiles(): JSX.Element {
   const showDetails = async (job: AutomationJob): Promise<void> => {
     if (expanded?.id === job.id) { setExpanded(null); return }
     try { setExpanded(await window.api.automation.job(job.id)) }
-    catch (error) { setJobsError(error instanceof Error ? error.message : String(error)) }
+    catch (error) { setJobsError(errorMessage(error, 'Could not load run details.')) }
   }
 
   const runJobAction = async (jobId: string, action: (id: string) => Promise<void>): Promise<void> => {
@@ -189,7 +234,7 @@ export function Profiles(): JSX.Element {
     try {
       await action(jobId)
     } catch (error) {
-      setJobsError(error instanceof Error ? error.message : String(error))
+      setJobsError(errorMessage(error, 'Could not update this automation run.'))
     } finally {
       setJobActionPending((prev) => { const next = { ...prev }; delete next[jobId]; return next })
     }
@@ -200,14 +245,18 @@ export function Profiles(): JSX.Element {
       await openProjectById(projectId)
       setActive('compose')
     } catch (error) {
-      setJobsError(error instanceof Error ? error.message : String(error))
+      setJobsError(errorMessage(error, 'Could not open this video project.'))
     }
   }
 
   const activeJob = automationJobs.find((job) => job.status === 'running' || job.status === 'pausing')
 
   useEffect(() => {
-    if (myChannels.length > 0 && !selectedChannelId) {
+    if (myChannels.length === 0) {
+      if (selectedChannelId) setSelectedChannelId('')
+      return
+    }
+    if (!myChannels.some((channel) => channel.id === selectedChannelId)) {
       setSelectedChannelId(myChannels[0].id)
     }
   }, [myChannels, selectedChannelId])
@@ -234,9 +283,15 @@ export function Profiles(): JSX.Element {
       return
     }
     window.api.sources.unpublishedCount(activeSourceIds)
-      .then((count) => setUnpublishedAvailable(count))
+      .then((count) => setUnpublishedAvailable(Number.isFinite(count) ? Math.max(0, count) : 0))
       .catch(() => setUnpublishedAvailable(0))
   }, [activeSourceIds])
+
+  useEffect(() => {
+    if (unpublishedAvailable > 0) {
+      setBatchCount((count) => Math.min(Math.max(1, count), unpublishedAvailable))
+    }
+  }, [unpublishedAvailable])
 
   const selectedTemplate = useMemo(() => {
     return templates.find((t) => t.id === selectedTemplateId) || templates[0]
@@ -246,7 +301,41 @@ export function Profiles(): JSX.Element {
      label and the IPC payload all read these, so they cannot drift apart. `unpublishedAvailable`
      spans every linked source; the main process clamps again to the one it rotates to. */
   const drawCount = Math.min(batchCount, unpublishedAvailable)
-  const canLaunch = !sendingBatch && drawCount > 0 && activeSourceIds.length > 0 && !!selectedChannelId
+  const canChooseBatch = !!selectedChannelId && linkedSources.length > 0 && unpublishedAvailable > 0
+  const canLaunch = !sendingBatch && drawCount > 0 && activeSourceIds.length > 0 && !!selectedChannelId && !!selectedTemplate
+  const setupBlocker = myChannels.length === 0
+    ? {
+        title: 'Add a publishing channel first',
+        body: 'Automations need to know which owned channel will receive the finished videos.',
+        stage: 2,
+        actionLabel: 'Add a channel',
+        onAction: () => setActive('channels')
+      }
+    : linkedSources.length === 0
+      ? {
+          title: 'Link a source to this channel',
+          body: 'Choose which source supplies videos before setting a batch size or production template.',
+          stage: 2,
+          actionLabel: 'Link a source',
+          onAction: () => setActive('channels')
+        }
+      : unpublishedAvailable === 0
+        ? {
+            title: 'No unpublished videos are ready',
+            body: 'Check the linked sources for new videos, or finish work that is already in progress.',
+            stage: 2,
+            actionLabel: 'Review sources',
+            onAction: () => setActive('sources')
+          }
+        : templates.length === 0
+          ? {
+              title: 'Create a production template',
+              body: 'A template defines the video format, captions, motion, and visual treatment for this batch.',
+              stage: 3,
+              actionLabel: 'Create a template',
+              onAction: () => setMainTab('templates')
+            }
+          : null
 
   /* Legacy rows hold a `Crossfade`-style label rather than a preset id, so the chip that
      lights up is the preset the value resolves to — the same one the batch will apply. */
@@ -255,7 +344,7 @@ export function Profiles(): JSX.Element {
   const openNewTemplateEditor = () => {
     const newTpl: VisualTemplate = {
       id: `tpl-${Date.now()}`,
-      name: 'New Visual System',
+      name: 'New Production Template',
       mode: 'Auto B-roll',
       density: 'Full',
       order: 'Shuffle',
@@ -267,29 +356,57 @@ export function Profiles(): JSX.Element {
       hookLine: '',
       zoomAtStart: true
     }
+    setTemplateError('')
     setEditingTemplate(newTpl)
     setWizardStep(0)
   }
 
-  const handleSaveTemplate = async (saved: VisualTemplate) => {
-    await saveVisualTemplate(saved)
-    setEditingTemplate(null)
-    showToast(`Saved template "${saved.name}"`)
+  const handleSaveTemplate = async (saved: VisualTemplate): Promise<void> => {
+    const name = saved.name.trim()
+    if (!name) {
+      setWizardStep(0)
+      setTemplateError('Enter a template name before saving.')
+      return
+    }
+    setTemplateSaving(true)
+    setTemplateError('')
+    try {
+      await saveVisualTemplate({ ...saved, name, hookLine: saved.hookLine.trim() })
+      setEditingTemplate(null)
+      showToast(`Saved template "${name}"`)
+    } catch (error) {
+      setTemplateError(errorMessage(error, 'Could not save this template. Try again.'))
+    } finally {
+      setTemplateSaving(false)
+    }
   }
 
-  const handleDuplicateTemplate = async (t: VisualTemplate) => {
+  const handleDuplicateTemplate = async (t: VisualTemplate): Promise<void> => {
     const dup: VisualTemplate = {
       ...t,
       id: `tpl-${Date.now()}`,
       name: `${t.name} (Copy)`
     }
-    await saveVisualTemplate(dup)
-    showToast(`Duplicated "${t.name}"`)
+    try {
+      await saveVisualTemplate(dup)
+      showToast(`Duplicated "${t.name}"`)
+    } catch (error) {
+      showToast(errorMessage(error, 'Could not duplicate this template.'))
+    }
   }
 
-  const handleDeleteTemplate = async (id: string) => {
-    await deleteVisualTemplate(id)
-    showToast('Template deleted')
+  const confirmDeleteTemplate = async (): Promise<void> => {
+    if (!templateToDelete) return
+    setTemplateDeleting(true)
+    try {
+      await deleteVisualTemplate(templateToDelete.id)
+      setTemplateToDelete(null)
+      showToast('Template deleted')
+    } catch (error) {
+      showToast(errorMessage(error, 'Could not delete this template.'))
+    } finally {
+      setTemplateDeleting(false)
+    }
   }
 
   const handleSendToRender = async () => {
@@ -308,7 +425,7 @@ export function Profiles(): JSX.Element {
     } catch (err) {
       /* Preflight blockers arrive here as one joined sentence — surface them verbatim
          rather than the old "Queued 0 videos!" success toast (diag-automation F3). */
-      showToast(`Could not start: ${(err as Error).message}`)
+      showToast(`Could not start: ${errorMessage(err, 'The batch could not be started.')}`)
     } finally {
       setSendingBatch(false)
     }
@@ -316,22 +433,17 @@ export function Profiles(): JSX.Element {
 
   return (
     <ScreenPad>
-      {/* Top Banner / Eyebrow Header */}
+      {/* Page header */}
       <div className="at-intro">
         <div>
-          <div className="at-intro-eyebrow">
-            <span>⚡</span> AUTOMATION ENGINE
-          </div>
-          <h1>
-            Make the next upload <em>inevitable.</em>
-          </h1>
+          <h1>Automations</h1>
           <p>
-            Configure visual systems and automated channel batches. Mental Empire runs rendering, captions, and export in the background.
+            Turn linked source videos into repeatable production batches, then follow every run through rendering and export.
           </p>
         </div>
-        <div className="at-status-pill">
-          <span className="at-status-pulse" />
-          Supervisor Active
+        <div className={`at-status-pill ${activeJob ? 'active' : 'idle'}`}>
+          <span className="at-status-pulse" aria-hidden="true" />
+          {activeJob ? 'Automation running' : 'Automation idle'}
         </div>
       </div>
 
@@ -343,8 +455,8 @@ export function Profiles(): JSX.Element {
           role="tab"
           aria-selected={mainTab === 'channels'}
         >
-          <span>Channels & Batch</span>
-          <span className="at-tab-badge">{sourceChannels.length || 3} channels</span>
+          <span>Batches</span>
+          <span className="at-tab-badge">{myChannels.length} {myChannels.length === 1 ? 'channel' : 'channels'}</span>
         </button>
         <button
           className={`at-tab-btn ${mainTab === 'templates' ? 'active' : ''}`}
@@ -353,7 +465,7 @@ export function Profiles(): JSX.Element {
           aria-selected={mainTab === 'templates'}
         >
           <span>Templates</span>
-          <span className="at-tab-badge">{templates.length} systems</span>
+          <span className="at-tab-badge">{templates.length}</span>
         </button>
         <button
           className={`at-tab-btn ${mainTab === 'jobs' ? 'active' : ''}`}
@@ -361,7 +473,7 @@ export function Profiles(): JSX.Element {
           role="tab"
           aria-selected={mainTab === 'jobs'}
         >
-          <span>Jobs & History</span>
+          <span>Run history</span>
           <span className="at-tab-badge">{automationJobs.length}</span>
         </button>
       </div>
@@ -370,7 +482,7 @@ export function Profiles(): JSX.Element {
           TAB 1: CHANNELS & BATCH
           ========================================================================= */}
       {mainTab === 'channels' && (
-        <div className="at-screen-grid">
+        <div className={`at-screen-grid ${setupBlocker?.stage === 2 ? 'blocked' : ''}`}>
           {/* Left Column: Step 1 (Channel & Sources) + Step 2 (Batch Stepper) */}
           <div>
             {/* Step 01 */}
@@ -378,14 +490,15 @@ export function Profiles(): JSX.Element {
               <div className="at-panel-heading">
                 <span className="at-step-number">01</span>
                 <div>
-                  <h2>Pick target channel</h2>
-                  <p>Choose which owned channel receives this automated video batch.</p>
+                  <h2>Choose a publishing channel</h2>
+                  <p>Select the owned channel that will receive the finished videos.</p>
                 </div>
               </div>
 
               {myChannels.length === 0 ? (
                 <div style={{ padding: 16, background: 'var(--bg-inset)', borderRadius: 10, border: '1px solid var(--border)' }}>
-                  <p style={{ margin: 0, fontSize: 12, color: 'var(--text-dim)' }}>No owned channels found. Add a channel in Channel Studio to target renders.</p>
+                  <p style={{ margin: 0, fontSize: 12, color: 'var(--text-dim)' }}>No publishing channels found. Add your channel before creating an automation.</p>
+                  <Btn variant="soft" onClick={() => setActive('channels')} style={{ marginTop: 12 }}>Add a channel</Btn>
                 </div>
               ) : (
                 <div className="at-channel-cards">
@@ -418,17 +531,22 @@ export function Profiles(): JSX.Element {
 
               {/* Source Rotation pool */}
               <div className="at-source-section">
-                <label>Rotation Sources</label>
+                <label>Linked sources</label>
                 <div className="at-source-list">
                   {linkedSources.length === 0 ? (
-                    <p style={{ fontSize: 11, color: 'var(--text-faint)', margin: 0 }}>No sources linked to this channel. Link a source in Channel Settings.</p>
+                    <div>
+                      <p style={{ fontSize: 11.5, color: 'var(--text-dim)', margin: '0 0 10px', lineHeight: 1.5 }}>No source is linked to this channel yet. Link one to choose where automation should draw videos from.</p>
+                      <Btn size="sm" variant="soft" onClick={() => setActive('channels')}>Link a source</Btn>
+                    </div>
                   ) : (
                     linkedSources.map((src) => {
                       const active = activeSourceIds.includes(src.id)
                       return (
-                        <div
+                        <button
+                          type="button"
                           key={src.id}
                           className={`at-source-row ${active ? 'active' : ''}`}
+                          aria-pressed={active}
                           onClick={() => {
                             setActiveSourceIds((prev) =>
                               prev.includes(src.id) ? prev.filter((id) => id !== src.id) : [...prev, src.id]
@@ -436,10 +554,10 @@ export function Profiles(): JSX.Element {
                           }}
                         >
                           <span>
-                            <b>{src.name || src.handle}</b> <small>· {src.cachedVideoCount || 0} cached videos</small>
+                            <b>{src.name || src.handle}</b> <small>· {src.cachedVideoCount || 0} available video{(src.cachedVideoCount || 0) === 1 ? '' : 's'}</small>
                           </span>
                           <div className="at-mini-check">{active ? '✓' : ''}</div>
-                        </div>
+                        </button>
                       )
                     })
                   )}
@@ -452,148 +570,146 @@ export function Profiles(): JSX.Element {
               <div className="at-panel-heading">
                 <span className="at-step-number">02</span>
                 <div>
-                  <h2>Set batch count & draw</h2>
-                  <p>Select how many unpublished videos to draw for this batch. ({unpublishedAvailable} available)</p>
+                  <h2>Choose the batch size</h2>
+                  <p>Select how many unpublished videos to produce in this run.</p>
                 </div>
               </div>
 
-              <div className="at-quantity">
-                <button type="button" className="at-quantity-btn" onClick={() => setBatchCount(Math.max(1, batchCount - 1))}>−</button>
-                <span className="at-quantity-num">{batchCount}</span>
-                <button type="button" className="at-quantity-btn" onClick={() => setBatchCount(Math.min(50, batchCount + 1))}>＋</button>
-                <span className="at-quantity-unit">videos in batch</span>
-              </div>
-
-              <div className="at-scale-btns">
-                {[1, 3, 5, 8, 12].map((num) => (
-                  <button
-                    key={num}
-                    type="button"
-                    className={`at-scale-btn ${batchCount === num ? 'active' : ''}`}
-                    onClick={() => setBatchCount(num)}
-                  >
-                    {num}x
-                  </button>
-                ))}
-              </div>
-
-              {/* Drawn items preview */}
-              <div className="at-draw-header">
-                <h3>Batch Renders ({batchCount})</h3>
-                <span style={{ fontSize: 10, color: 'var(--text-dim)' }}>{unpublishedAvailable} unpublished available</span>
-              </div>
-
-              <div className="at-draw-list">
-                {Array.from({ length: batchCount }).map((_, idx) => (
-                  <div key={idx} className="at-draw-item">
-                    <span className="at-draw-index">{idx + 1 < 10 ? `0${idx + 1}` : idx + 1}</span>
-                    <span className="at-draw-title">Video #{idx + 1} from rotation pool</span>
-                    <span className="at-draw-meta">Ready</span>
-                    <span className="at-tag-new">NEW</span>
+              {canChooseBatch ? (
+                <>
+                  <div className="at-quantity">
+                    <button type="button" aria-label="Decrease batch size" className="at-quantity-btn" disabled={batchCount <= 1} onClick={() => setBatchCount(Math.max(1, batchCount - 1))}>−</button>
+                    <span className="at-quantity-num">{batchCount}</span>
+                    <button type="button" aria-label="Increase batch size" className="at-quantity-btn" disabled={batchCount >= Math.min(50, unpublishedAvailable)} onClick={() => setBatchCount(Math.min(50, unpublishedAvailable, batchCount + 1))}>+</button>
+                    <span className="at-quantity-unit">of {unpublishedAvailable} available</span>
                   </div>
-                ))}
-              </div>
-            </div>
-          </div>
 
-          {/* Right Column: Step 3 (Pick System) & Run Summary */}
-          <div>
-            <div className="at-flow-panel">
-              <div className="at-panel-heading">
-                <span className="at-step-number">03</span>
-                <div>
-                  <h2>Select visual system</h2>
-                  <p>Choose template style for rendering captions, B-roll & color grading.</p>
-                </div>
-              </div>
-
-              <div className="at-template-picker">
-                {templates.map((tpl) => {
-                  const selected = selectedTemplateId === tpl.id
-                  return (
-                    <div
-                      key={tpl.id}
-                      className={`at-template-swatch ${selected ? 'selected' : ''}`}
-                      onClick={() => setSelectedTemplateId(tpl.id)}
-                    >
-                      <div
-                        className={`at-swatch-thumb at-grade-${tpl.grade.toLowerCase()}`}
-                        style={{
-                          display: 'flex',
-                          alignItems: 'center',
-                          justifyContent: 'center',
-                          color: '#fff',
-                          fontFamily: 'Anton',
-                          fontSize: 13,
-                          letterSpacing: 0.5
-                        }}
+                  <div className="at-scale-btns" aria-label="Common batch sizes">
+                    {[1, 3, 5, 10].filter((num) => num <= unpublishedAvailable).map((num) => (
+                      <button
+                        key={num}
+                        type="button"
+                        className={`at-scale-btn ${batchCount === num ? 'active' : ''}`}
+                        onClick={() => setBatchCount(num)}
                       >
-                        {tpl.aspectRatio}
+                        {num} video{num === 1 ? '' : 's'}
+                      </button>
+                    ))}
+                  </div>
+
+                  <div className="at-draw-header">
+                    <h3>Videos in this run</h3>
+                    <span style={{ fontSize: 10.5, color: 'var(--text-dim)' }}>{drawCount} planned</span>
+                  </div>
+
+                  <div className="at-draw-list">
+                    {Array.from({ length: drawCount }).map((_, idx) => (
+                      <div key={idx} className="at-draw-item">
+                        <span className="at-draw-index">{idx + 1 < 10 ? `0${idx + 1}` : idx + 1}</span>
+                        <span className="at-draw-title">Next unpublished video from linked sources</span>
+                        <span className="at-draw-meta">Planned</span>
                       </div>
-                      <span className="at-swatch-name">{tpl.name}</span>
-                      <span className="at-swatch-mode">{tpl.mode}</span>
-                    </div>
-                  )
-                })}
-              </div>
-            </div>
-
-            {/* Run Summary */}
-            <div className="at-run-summary">
-              <SectionLabel>Batch Execution Summary</SectionLabel>
-
-              <div className="at-summary-table">
-                <span className="at-summary-label">Target Channel:</span>
-                <span className="at-summary-val">
-                  {myChannels.find((c) => c.id === selectedChannelId)?.name || 'Select a channel'}
-                </span>
-
-                <span className="at-summary-label">Batch Count:</span>
-                <span className="at-summary-val">{batchCount} videos <small>({unpublishedAvailable} available)</small></span>
-
-                <span className="at-summary-label">Visual Template:</span>
-                <span className="at-summary-val">{selectedTemplate?.name || 'Default'}</span>
-
-                <span className="at-summary-label">Format & Ratio:</span>
-                <span className="at-summary-val">{selectedTemplate?.aspectRatio || '9:16'} · {selectedTemplate?.mode || 'Auto B-roll'}</span>
-
-                <span className="at-summary-label">Caption Style:</span>
-                <span className="at-summary-val">{selectedTemplate?.captionStyle || 'motivation-bold'}</span>
-              </div>
-
-              {/* Queue Filmstrip Visual */}
-              <div>
-                <span className="at-summary-label" style={{ display: 'block', marginBottom: 6 }}>
-                  Queue Sequence Preview:
-                </span>
-                <div className="at-filmstrip">
-                  {Array.from({ length: batchCount }).map((_, idx) => (
-                    <div
-                      key={idx}
-                      className={`at-filmstrip-item at-grade-${(selectedTemplate?.grade || 'Cinematic').toLowerCase()}`}
-                    >
-                      <span className="at-filmstrip-num">#{idx + 1}</span>
-                      <span style={{ fontSize: 8, color: '#fff', fontWeight: 600 }}>{selectedTemplate?.aspectRatio || '9:16'}</span>
-                    </div>
-                  ))}
+                    ))}
+                  </div>
+                </>
+              ) : setupBlocker ? (
+                <div className="at-prerequisite">
+                  <h3>{setupBlocker.title}</h3>
+                  <p>{setupBlocker.body}</p>
+                  <Btn size="sm" variant="soft" onClick={setupBlocker.onAction}>{setupBlocker.actionLabel}</Btn>
                 </div>
-              </div>
-
-              <button
-                type="button"
-                className="at-launch-btn"
-                onClick={handleSendToRender}
-                disabled={!canLaunch}
-              >
-                <span>▶</span>{' '}
-                {sendingBatch
-                  ? 'Starting automation…'
-                  : drawCount === 0
-                    ? 'No unpublished videos available'
-                    : `Start automation for ${drawCount} video${drawCount === 1 ? '' : 's'} →`}
-              </button>
+              ) : null}
             </div>
           </div>
+
+          {/* Right Column: Step 3 (Pick template) and run summary */}
+          {setupBlocker?.stage !== 2 && <div>
+            {setupBlocker?.stage === 3 ? (
+              <div className="at-flow-panel at-blocked-panel">
+                <h2>{setupBlocker.title}</h2>
+                <p>{setupBlocker.body}</p>
+                <Btn variant="primary" onClick={setupBlocker.onAction}>{setupBlocker.actionLabel}</Btn>
+              </div>
+            ) : (
+              <>
+                <div className="at-flow-panel">
+                  <div className="at-panel-heading">
+                    <span className="at-step-number">03</span>
+                    <div>
+                      <h2>Choose a production template</h2>
+                      <p>Select the format, captions, motion, and visual treatment for this run.</p>
+                    </div>
+                  </div>
+
+                  <div className="at-template-picker">
+                    {templates.map((tpl) => {
+                      const selected = selectedTemplateId === tpl.id
+                      return (
+                        <button
+                          type="button"
+                          key={tpl.id}
+                          className={`at-template-swatch ${selected ? 'selected' : ''}`}
+                          aria-pressed={selected}
+                          onClick={() => setSelectedTemplateId(tpl.id)}
+                        >
+                          <span
+                            className={`at-swatch-thumb at-grade-${tpl.grade.toLowerCase()}`}
+                            style={{
+                              display: 'flex',
+                              alignItems: 'center',
+                              justifyContent: 'center',
+                              color: '#fff',
+                              fontFamily: 'var(--font-poster)',
+                              fontSize: 13,
+                              letterSpacing: 0.5
+                            }}
+                          >
+                            {tpl.aspectRatio}
+                          </span>
+                          <span className="at-swatch-name">{tpl.name}</span>
+                          <span className="at-swatch-mode">{tpl.mode}</span>
+                        </button>
+                      )
+                    })}
+                  </div>
+                </div>
+
+                <div className="at-run-summary">
+                  <SectionLabel>Ready to start</SectionLabel>
+
+                  <div className="at-summary-table">
+                    <span className="at-summary-label">Publishing channel</span>
+                    <span className="at-summary-val">
+                      {myChannels.find((c) => c.id === selectedChannelId)?.name}
+                    </span>
+
+                    <span className="at-summary-label">Videos</span>
+                    <span className="at-summary-val">{drawCount}</span>
+
+                    <span className="at-summary-label">Template</span>
+                    <span className="at-summary-val">{selectedTemplate?.name}</span>
+
+                    <span className="at-summary-label">Output</span>
+                    <span className="at-summary-val">{selectedTemplate?.aspectRatio} · {selectedTemplate?.mode}</span>
+
+                    <span className="at-summary-label">Captions</span>
+                    <span className="at-summary-val">{selectedTemplate?.captionStyle}</span>
+                  </div>
+
+                  <button
+                    type="button"
+                    className="at-launch-btn"
+                    onClick={handleSendToRender}
+                    disabled={!canLaunch}
+                  >
+                    {sendingBatch
+                      ? 'Starting batch…'
+                      : `Start ${drawCount}-video batch`}
+                  </button>
+                </div>
+              </>
+            )}
+          </div>}
         </div>
       )}
 
@@ -604,10 +720,10 @@ export function Profiles(): JSX.Element {
         <div>
           <div className="at-templates-toolbar">
             <div>
-              <p>Visual templates define color grade, B-roll density, typography, captions, and hook cards.</p>
+              <p>Production templates define format, B-roll density, typography, captions, and hook cards.</p>
             </div>
             <Btn variant="primary" onClick={openNewTemplateEditor}>
-              ＋ Create a visual system
+              Create template
             </Btn>
           </div>
 
@@ -616,10 +732,10 @@ export function Profiles(): JSX.Element {
               <div key={tpl.id} className="at-template-card">
                 <div className={`at-card-art at-grade-${tpl.grade.toLowerCase()}`}>
                   <span className="at-card-badge">{tpl.aspectRatio} · {tpl.grade}</span>
-                  <button className="at-card-play" onClick={() => { setEditingTemplate(tpl); setWizardStep(0) }}>
+                    <button type="button" aria-label={`Edit ${tpl.name}`} className="at-card-play" onClick={() => { setEditingTemplate(tpl); setWizardStep(0) }}>
                     ▶
                   </button>
-                  <span style={{ fontFamily: 'Anton', fontSize: 16, color: '#fff', textTransform: 'uppercase' }}>
+                  <span style={{ fontFamily: 'var(--font-poster)', fontSize: 16, color: '#fff', textTransform: 'uppercase' }}>
                     {tpl.hookLine || tpl.name}
                   </span>
                 </div>
@@ -635,13 +751,13 @@ export function Profiles(): JSX.Element {
                     </div>
                   </div>
                   <div className="at-card-actions">
-                    <button className="at-card-btn" onClick={() => { setEditingTemplate(tpl); setWizardStep(0) }}>
+                    <button type="button" className="at-card-btn" onClick={() => { setEditingTemplate(tpl); setWizardStep(0) }}>
                       Edit
                     </button>
-                    <button className="at-card-btn" onClick={() => handleDuplicateTemplate(tpl)}>
+                    <button type="button" className="at-card-btn" onClick={() => void handleDuplicateTemplate(tpl)}>
                       Duplicate
                     </button>
-                    <button className="at-card-btn" onClick={() => handleDeleteTemplate(tpl.id)}>
+                    <button type="button" className="at-card-btn" onClick={() => setTemplateToDelete(tpl)}>
                       Delete
                     </button>
                   </div>
@@ -650,11 +766,11 @@ export function Profiles(): JSX.Element {
             ))}
 
             {/* Create placeholder card */}
-            <div className="at-create-card" onClick={openNewTemplateEditor}>
+            <button type="button" className="at-create-card" onClick={openNewTemplateEditor}>
               <div className="at-create-icon">＋</div>
-              <b>Create a visual system</b>
-              <p>Build custom color grade, captions, and animated hook cards.</p>
-            </div>
+              <b>Create a production template</b>
+              <p>Reuse one format, caption style, motion treatment, and hook setup.</p>
+            </button>
           </div>
         </div>
       )}
@@ -666,29 +782,26 @@ export function Profiles(): JSX.Element {
         <>
           <div className="automation-header">
             <div style={{ flex: 1 }}>
-              <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10.5, letterSpacing: '1px', color: 'var(--accent)', marginBottom: 6 }}>
-                AUTOMATION STUDIO
-              </div>
-              <h1 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 24, fontWeight: 600, color: 'var(--text-bright)' }}>
-                Durable Unattended Execution
-              </h1>
+              <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'var(--fs-title)', lineHeight: 'var(--lh-tight)', fontWeight: 600, color: 'var(--text-bright)' }}>
+                Automation runs
+              </h2>
             </div>
           </div>
 
           <Banner kind="info" style={{ marginBottom: 16, whiteSpace: 'normal' }}>
-            <b style={{ color: 'var(--text-bright)' }}>Local background execution:</b> you can leave this tab, and with tray mode enabled you can close the window.
+            Runs continue locally while you use another screen. With tray mode enabled, they also continue after you close the window.
           </Banner>
 
             <>
               <div className="automation-jobs-heading">
                 <div>
-                  <h2>Automation jobs</h2>
-                  <p>Durable production goals loaded from SQLite.</p>
+                  <h2>Run history</h2>
+                  <p>Follow active batches, recover failed work, and reopen individual video projects.</p>
                 </div>
-                <Btn variant="soft" onClick={() => setMainTab('channels')}>Open Channels &amp; Batch</Btn>
+                <Btn variant="soft" onClick={() => setMainTab('channels')}>Create a batch</Btn>
               </div>
 
-              {jobsError && <div role="alert" style={{ marginBottom: 12 }}><Banner kind="error">{jobsError}</Banner></div>}
+              {jobsError && <div style={{ marginBottom: 12 }}><Banner kind="error">{jobsError}</Banner></div>}
 
               {activeJob && (
                 <div className="automation-live-strip">
@@ -698,7 +811,7 @@ export function Profiles(): JSX.Element {
               )}
 
               {automationJobs.length === 0 ? (
-                <EmptyState title="No automation jobs yet" body="Queue a batch from Channels & Batch — a target channel, its rotation sources, and a visual system — and the supervisor's progress shows up here." action={<Btn variant="primary" onClick={() => setMainTab('channels')}>Open Channels &amp; Batch</Btn>} />
+                <EmptyState title="No automation runs yet" body="Create a batch by choosing a publishing channel, linked sources, batch size, and production template. Its progress will appear here." action={<Btn variant="primary" onClick={() => setMainTab('channels')}>Create a batch</Btn>} />
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
                   {automationJobs.map((job) => (
@@ -730,16 +843,16 @@ export function Profiles(): JSX.Element {
           TEMPLATE BUILDER MODAL (2-Step Wizard)
           ========================================================================= */}
       {editingTemplate && (
-        <div className="at-modal-backdrop" onClick={() => setEditingTemplate(null)}>
-          <div className="at-editor" onClick={(e) => e.stopPropagation()}>
+        <div className="at-modal-backdrop" onMouseDown={(event) => { if (event.target === event.currentTarget) setEditingTemplate(null) }}>
+          <div ref={editorRef} className="at-editor" role="dialog" aria-modal="true" aria-labelledby="template-editor-title">
             <div className="at-editor-header">
-              <h2>{editingTemplate.id.startsWith('tpl-') ? 'Edit Visual System' : 'Create Visual System'}</h2>
+              <h2 id="template-editor-title">{templates.some((template) => template.id === editingTemplate.id) ? 'Edit production template' : 'Create production template'}</h2>
               <div className="at-wizard-rail">
                 <div className={`at-rail-dot ${wizardStep === 0 ? 'active' : ''}`}>
-                  <span>1</span> Style & Material
+                  <span>1</span> Format and style
                 </div>
                 <div className={`at-rail-dot ${wizardStep === 1 ? 'active' : ''}`}>
-                  <span>2</span> Hook & Motion
+                  <span>2</span> Hook and motion
                 </div>
               </div>
             </div>
@@ -749,9 +862,12 @@ export function Profiles(): JSX.Element {
                 <>
                   {/* Template Name */}
                   <div className="at-editor-section">
-                    <span className="at-field-label">System Name</span>
+                    <label htmlFor="template-name" className="at-field-label">Template name</label>
                     <input
+                      id="template-name"
                       className="at-editor-input"
+                      maxLength={80}
+                      aria-invalid={!editingTemplate.name.trim()}
                       value={editingTemplate.name}
                       onChange={(e) => setEditingTemplate({ ...editingTemplate, name: e.target.value })}
                       placeholder="e.g. Dark Stoic Shorts"
@@ -760,17 +876,21 @@ export function Profiles(): JSX.Element {
 
                   {/* Mode Selector */}
                   <div className="at-editor-section">
-                    <span className="at-field-label">Visual Material Engine</span>
+                    <span className="at-field-label">Visual source</span>
                     <div className="at-choice-row">
                       <button
+                        type="button"
                         className={`at-choice-btn ${editingTemplate.mode === 'Auto B-roll' ? 'active' : ''}`}
+                        aria-pressed={editingTemplate.mode === 'Auto B-roll'}
                         onClick={() => setEditingTemplate({ ...editingTemplate, mode: 'Auto B-roll' })}
                       >
                         <b>Auto B-roll</b>
                         <small>Relevant video clips cut automatically from stock library.</small>
                       </button>
                       <button
+                        type="button"
                         className={`at-choice-btn ${editingTemplate.mode === 'Image slideshow' ? 'active' : ''}`}
+                        aria-pressed={editingTemplate.mode === 'Image slideshow'}
                         onClick={() => setEditingTemplate({ ...editingTemplate, mode: 'Image slideshow' })}
                       >
                         <b>Image Slideshow</b>
@@ -788,8 +908,10 @@ export function Profiles(): JSX.Element {
                         <div className="at-chip-row" style={{ marginTop: 6 }}>
                           {(['9:16', '1:1', '16:9'] as const).map((ratio) => (
                             <button
+                              type="button"
                               key={ratio}
                               className={`at-chip ${editingTemplate.aspectRatio === ratio ? 'active' : ''}`}
+                              aria-pressed={editingTemplate.aspectRatio === ratio}
                               onClick={() => setEditingTemplate({ ...editingTemplate, aspectRatio: ratio })}
                             >
                               {ratio}
@@ -805,8 +927,10 @@ export function Profiles(): JSX.Element {
                         <div className="at-chip-row" style={{ marginTop: 6 }}>
                           {TRANSITION_PRESETS.map((preset) => (
                             <button
+                              type="button"
                               key={preset.id}
                               className={`at-chip ${activeTransitionId === preset.id ? 'active' : ''}`}
+                              aria-pressed={activeTransitionId === preset.id}
                               title={preset.hint}
                               onClick={() => setEditingTemplate({ ...editingTemplate, transition: preset.id })}
                             >
@@ -820,16 +944,18 @@ export function Profiles(): JSX.Element {
 
                   {/* Color Grade Swatches */}
                   <div className="at-editor-section">
-                    <span className="at-field-label">Color Grading System</span>
+                    <span className="at-field-label">Color grade</span>
                     <div className="at-thumb-grid">
                       {(['Noir', 'Cinematic', 'Intense', 'Heartfelt', 'Clean', 'Gold'] as const).map((grd) => (
-                        <div
+                        <button
+                          type="button"
                           key={grd}
                           className={`at-thumb at-grade-${grd.toLowerCase()} ${editingTemplate.grade === grd ? 'at-thumb-on' : ''}`}
+                          aria-pressed={editingTemplate.grade === grd}
                           onClick={() => setEditingTemplate({ ...editingTemplate, grade: grd })}
                         >
                           <span>{grd}</span>
-                        </div>
+                        </button>
                       ))}
                     </div>
                   </div>
@@ -837,7 +963,7 @@ export function Profiles(): JSX.Element {
                   {/* Caption Engine — the renderer's registered caption templates, the same
                       list (name and description) the Compose editor's Captions tab shows. */}
                   <div className="at-editor-section">
-                    <span className="at-field-label">Caption Style Engine</span>
+                    <span className="at-field-label">Caption style</span>
                     {captionTemplates.length === 0 ? (
                       <p className="at-preset-empty">The renderer reported no caption templates, so there is nothing to choose here.</p>
                     ) : (
@@ -859,9 +985,11 @@ export function Profiles(): JSX.Element {
                 <>
                   {/* Step 2: Hook Card & Motion */}
                   <div className="at-editor-section">
-                    <span className="at-field-label">Hook Text Line</span>
+                    <label htmlFor="template-hook" className="at-field-label">Hook text line</label>
                     <input
+                      id="template-hook"
                       className="at-editor-input"
+                      maxLength={200}
                       value={editingTemplate.hookLine}
                       onChange={(e) => setEditingTemplate({ ...editingTemplate, hookLine: e.target.value })}
                       placeholder="Leave empty to write one from the transcript"
@@ -885,8 +1013,10 @@ export function Profiles(): JSX.Element {
                   </div>
 
                   {/* Start Zoom Toggle */}
-                  <div
+                  <button
+                    type="button"
                     className={`at-toggle-row ${editingTemplate.zoomAtStart ? 'on' : ''}`}
+                    aria-pressed={editingTemplate.zoomAtStart}
                     onClick={() => setEditingTemplate({ ...editingTemplate, zoomAtStart: !editingTemplate.zoomAtStart })}
                   >
                     <div>
@@ -894,27 +1024,29 @@ export function Profiles(): JSX.Element {
                       <small>Push-in animation on the first visual cut behind the hook card.</small>
                     </div>
                     <div className="at-switch" />
-                  </div>
+                  </button>
                 </>
               )}
             </div>
 
+            {templateError && <div style={{ padding: '10px 24px 0' }}><Banner kind="error">{templateError}</Banner></div>}
+
             <div className="at-editor-footer">
-              <Btn variant="soft" onClick={() => setEditingTemplate(null)}>
+              <Btn variant="soft" disabled={templateSaving} onClick={() => setEditingTemplate(null)}>
                 Cancel
               </Btn>
               {wizardStep === 1 && (
-                <Btn variant="soft" onClick={() => setWizardStep(0)}>
+                <Btn variant="soft" disabled={templateSaving} onClick={() => setWizardStep(0)}>
                   ← Back to Style
                 </Btn>
               )}
               {wizardStep === 0 ? (
-                <Btn variant="primary" onClick={() => setWizardStep(1)}>
-                  Next: Hook & Motion →
+                <Btn variant="primary" disabled={!editingTemplate.name.trim()} onClick={() => setWizardStep(1)}>
+                  Next: Hook and motion
                 </Btn>
               ) : (
-                <Btn variant="primary" onClick={() => handleSaveTemplate(editingTemplate)}>
-                  Save Visual System →
+                <Btn variant="primary" disabled={templateSaving || !editingTemplate.name.trim()} onClick={() => void handleSaveTemplate(editingTemplate)}>
+                  {templateSaving ? 'Saving…' : 'Save template'}
                 </Btn>
               )}
             </div>
@@ -922,8 +1054,18 @@ export function Profiles(): JSX.Element {
         </div>
       )}
 
+      <ConfirmDialog
+        open={!!templateToDelete}
+        title="Delete production template?"
+        body={templateToDelete ? `“${templateToDelete.name}” will be permanently removed. Videos already created with it will not change.` : ''}
+        confirmLabel="Delete template"
+        busy={templateDeleting}
+        onCancel={() => setTemplateToDelete(null)}
+        onConfirm={() => void confirmDeleteTemplate()}
+      />
+
       {/* Toast popup */}
-      {toastMessage && <div className="at-toast">{toastMessage}</div>}
+      {toastMessage && <div className="at-toast" role="status" aria-live="polite">{toastMessage}</div>}
 
     </ScreenPad>
   )

@@ -29,7 +29,7 @@ function VideoThumb({ download }: { download: DownloadedVideo }): JSX.Element {
         />
       )}
       {fmtDuration(download.durationSec) && (
-        <span style={{ position: 'absolute', right: 8, bottom: 8, background: 'rgba(8,10,14,.82)', color: '#dde0e5', borderRadius: 6, padding: '2px 7px', fontSize: 10, fontFamily: 'var(--font-mono)' }}>
+        <span style={{ position: 'absolute', right: 8, bottom: 8, background: 'rgba(8,10,14,.82)', color: 'var(--text)', borderRadius: 6, padding: '2px 7px', fontSize: 10, fontFamily: 'var(--font-mono)' }}>
           {fmtDuration(download.durationSec)}
         </span>
       )}
@@ -62,7 +62,7 @@ export function ProjectGate({
           <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 18, color: 'var(--text-strong)' }}>{headline}</div>
           <div style={{ fontSize: 12, color: 'var(--text-dim)', marginTop: 4 }}>{sub}</div>
         </div>
-        <Btn variant="soft" onClick={onSources}>Open Sources</Btn>
+        <Btn variant="soft" onClick={onSources}>Browse source videos</Btn>
       </div>
       {error && <Banner kind="error" style={{ marginBottom: 14 }}>{error}</Banner>}
       {ready.length === 0 ? (
@@ -73,9 +73,9 @@ export function ProjectGate({
               <path d="M10 9.5l5 2.5-5 2.5z" fill="currentColor" stroke="none" />
             </svg>
           }
-          title="No finished downloads yet"
-          body="Download audio from a source channel first — every finished download shows up here, ready to edit."
-          action={<Btn variant="primary" onClick={onSources}>Go to Sources</Btn>}
+          title="No downloaded videos yet"
+          body="Choose a source video and download its audio first. It will then be ready for editing and thumbnail work."
+          action={<Btn variant="primary" onClick={onSources}>Browse source videos</Btn>}
         />
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(240px,1fr))', gap: 14 }}>

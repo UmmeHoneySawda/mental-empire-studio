@@ -23,11 +23,13 @@
   --text: #e9ebef;
   --text-strong: #f4f6f9;
   --text-bright: #eef0f3;
-  --text-muted: #8a909c;
-  --text-dim: #6a7180;
-  --text-faint: #5b616f;
-  --text-fainter: #4f5662;
-  --text-label: #454b57;
+  --text-soft: #cdd2da;
+  --text-control: #c4cad3;
+  --text-muted: #aab0bb;
+  --text-dim: #9ea5b0;
+  --text-faint: #969da9;
+  --text-fainter: #9299a6;
+  --text-label: #8c939f;
 
   /* status */
   --ok: #36c98e;
@@ -74,18 +76,20 @@
   --shadow-pop: 0 12px 32px -8px rgba(0, 0, 0, 0.55);
   --shadow-glow: 0 4px 16px -4px var(--accent-glow);
 
-  /* type scale (font-size) + line-heights */
-  --fs-caption: 10.5px;
+  /* role-based type scale for a dense desktop production workspace */
+  --fs-caption: 11px;
   --fs-mono: 11px;
   --fs-sm: 12px;
   --fs-body: 13px;
   --fs-md: 14px;
   --fs-lg: 16px;
-  --fs-title: 20px;
-  --fs-display: 27px;
+  --fs-title: 21px;
+  --fs-display: 26px;
   --lh-tight: 1.1;
   --lh-snug: 1.35;
   --lh-normal: 1.5;
+  --measure-prose: 62ch;
+  --tracking-label: 0.02em;
 
   /* tokenized surfaces/status that recurred as raw hex in screens + kit */
   --bg-elevated: #242933; /* elevated hover surface */

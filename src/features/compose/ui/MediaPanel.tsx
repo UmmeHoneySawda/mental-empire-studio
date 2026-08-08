@@ -71,7 +71,7 @@ function LibraryPicker({ onAdd, onClose }: { onAdd: (paths: string[]) => void; o
                       onClick={() => toggle(a.path)}
                       title={a.path.split(/[\\/]/).pop()}
                       className="ed-focus"
-                      style={{ position: 'relative', aspectRatio: '1', borderRadius: 8, overflow: 'hidden', cursor: 'pointer', border: on ? '2px solid var(--accent)' : '1px solid var(--border-2)', background: '#15181f', padding: 0 }}
+                      style={{ position: 'relative', aspectRatio: '1', borderRadius: 8, overflow: 'hidden', cursor: 'pointer', border: on ? '2px solid var(--accent)' : '1px solid var(--border-2)', background: 'var(--bg-control)', padding: 0 }}
                     >
                       {src && <img src={src} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />}
                       {on && <span style={{ position: 'absolute', top: 3, right: 3, width: 15, height: 15, borderRadius: '50%', background: 'var(--accent)', color: 'var(--accent-ink)', fontSize: 9, fontWeight: 800, display: 'grid', placeItems: 'center' }}>✓</span>}

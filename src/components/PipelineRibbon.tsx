@@ -71,7 +71,7 @@ export function PipelineRibbon({ title, downloadId, projectId, snapshot, onCusto
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flexWrap: 'wrap' }}>
         <div style={{ minWidth: 150, flex: '0 1 240px' }}>
           <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '.8px', color: 'var(--accent)', textTransform: 'uppercase' }}>Pipeline</div>
-          <div title={title} style={{ marginTop: 3, fontSize: 12.5, fontWeight: 700, color: '#dde0e5', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
+          <div title={title} style={{ marginTop: 3, fontSize: 12.5, fontWeight: 700, color: 'var(--text)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>
             {title || 'Current video'}
           </div>
         </div>
@@ -106,7 +106,7 @@ export function PipelineRibbon({ title, downloadId, projectId, snapshot, onCusto
           })}
         </div>
         <div style={{ display: 'flex', alignItems: 'center', gap: 8, flex: 'none' }}>
-          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#6a7180' }}>{doneCount}/{WORK_STAGES.length}</span>
+          <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-dim)' }}>{doneCount}/{WORK_STAGES.length}</span>
           <button
             type="button"
             disabled={action.complete || busy}

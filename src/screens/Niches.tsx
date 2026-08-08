@@ -40,7 +40,7 @@ export function Niches(): JSX.Element {
   const warm = async (id: string): Promise<void> => {
     setWarming(id)
     setWarmError('')
-    try { await warmNiche(id) } catch (e) { setWarmError(`Couldn't warm that pool: ${(e as Error).message}`) } finally { setWarming(null) }
+    try { await warmNiche(id) } catch (e) { setWarmError(`Clips could not be downloaded for this collection. ${(e as Error).message}`) } finally { setWarming(null) }
   }
 
   const blank = (): Partial<Niche> => ({ name: '', keywords: [], orientation: 'landscape', targetClips: 60 })
@@ -48,13 +48,12 @@ export function Niches(): JSX.Element {
   return (
     <ScreenPad>
       <PageHeader
-        eyebrow="Output"
-        title="B-roll Pools"
-        subtitle="A niche is a reusable, themed pool of stock B-roll. Assign source channels to a niche, warm its pool once, and every render from those channels pulls from it — no re-downloading, niches stay separate."
+        title="B-roll library"
+        subtitle="Create topic-specific B-roll collections and assign source channels to them. Studio downloads each collection once, then reuses its local clips in future renders."
         actions={
           <>
             <Btn variant="ghost" size="md" disabled={refreshingAll || niches.length === 0} onClick={async () => { setRefreshingAll(true); try { await refreshAllPools() } finally { setRefreshingAll(false) } }} title="Top up every pool to its target and prune clips unused for 30 days">{refreshingAll ? 'Refreshing…' : 'Refresh all'}</Btn>
-            <Btn variant="primary" size="md" onClick={() => setEditing(blank())}>+ New niche</Btn>
+            <Btn variant="primary" size="md" onClick={() => setEditing(blank())}>New collection</Btn>
           </>
         }
       />
@@ -71,9 +70,9 @@ export function Niches(): JSX.Element {
 
       {niches.length === 0 && !editing ? (
         <EmptyState
-          title="No B-roll pools yet"
-          body={'Create one (e.g. "Motivational" or "Tech") and add a few search phrases. Then assign your source channels to it.'}
-          action={<Btn variant="primary" onClick={() => setEditing(blank())}>+ New niche</Btn>}
+          title="No B-roll collections yet"
+          body={'Create a topic such as “Motivation” or “Technology,” add search phrases, then assign source channels to it.'}
+          action={<Btn variant="primary" onClick={() => setEditing(blank())}>Create collection</Btn>}
         />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
@@ -90,23 +89,23 @@ export function Niches(): JSX.Element {
                   <span style={{ fontSize: 15, fontWeight: 600, color: 'var(--text)' }}>{n.name}</span>
                   <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-faint)', border: '1px solid var(--border-2)', borderRadius: 5, padding: '2px 7px' }}>{n.orientation}</span>
                   {prog ? (
-                    <StatusPill tone="accent" title="Downloading clips into this pool now">
+                    <StatusPill tone="accent" title="Downloading clips into this collection now">
                       {prog.done}/{prog.total} clips · {progPct}%
                     </StatusPill>
                   ) : (
-                    <StatusPill tone={pool.clips > 0 ? 'ok' : 'neutral'} title="Clips cached in this pool">{pool.clips}/{n.targetClips} clips</StatusPill>
+                    <StatusPill tone={pool.clips > 0 ? 'ok' : 'neutral'} title="Clips cached in this collection">{pool.clips}/{n.targetClips} clips</StatusPill>
                   )}
                   {!prog && pool.updatedAt && <span style={{ fontSize: 10, color: 'var(--text-faint)' }}>· refreshed {new Date(pool.updatedAt).toLocaleDateString()}</span>}
                   <div style={{ flex: 1 }} />
                   {isConfirming ? (
                     <>
-                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Delete “{n.name}”?</span>
-                      <Btn variant="danger" onClick={() => { void deleteNiche(n.id); setConfirmDelete(null) }}>Delete</Btn>
+                      <span style={{ fontSize: 11, color: 'var(--text-muted)' }}>Delete collection “{n.name}”?</span>
+                      <Btn variant="danger" onClick={() => { void deleteNiche(n.id); setConfirmDelete(null) }}>Delete collection</Btn>
                       <Btn variant="ghost" onClick={() => setConfirmDelete(null)}>Cancel</Btn>
                     </>
                   ) : (
                     <>
-                      <Btn variant="ghost" disabled={isWarming} onClick={() => void warm(n.id)}>{isWarming ? 'Warming…' : 'Warm pool'}</Btn>
+                      <Btn variant="ghost" disabled={isWarming} onClick={() => void warm(n.id)}>{isWarming ? 'Downloading…' : 'Download clips'}</Btn>
                       <Btn variant="ghost" onClick={() => setEditing(n)}>Edit</Btn>
                       <Btn variant="danger" onClick={() => setConfirmDelete(n.id)}>Delete</Btn>
                     </>
@@ -119,13 +118,13 @@ export function Niches(): JSX.Element {
                   ))}
                 </div>
                 <div style={{ borderTop: '1px solid var(--border)', paddingTop: 10 }}>
-                  <div style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-dim)', marginBottom: 7 }}>Assigned source channels ({assigned.length})</div>
+                  <div style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-dim)', marginBottom: 7 }}>Source channels using this collection ({assigned.length})</div>
                   <div style={{ display: 'flex', flexWrap: 'wrap', gap: 6 }}>
                     {sourceChannels.length === 0 && <span style={{ fontSize: 11, color: 'var(--text-faint)' }}>No source channels yet.</span>}
                     {sourceChannels.map((c) => {
                       const on = c.nicheId === n.id
                       return (
-                        <Chip key={c.id} on={on} onClick={() => void assignChannelNiche(c.id, on ? null : n.id)} title={on ? 'Click to unassign' : 'Assign to this niche'}>{c.name || c.handle}</Chip>
+                        <Chip key={c.id} on={on} onClick={() => void assignChannelNiche(c.id, on ? null : n.id)} title={on ? 'Remove from this collection' : 'Use this collection'}>{c.name || c.handle}</Chip>
                       )
                     })}
                   </div>
@@ -145,33 +144,40 @@ function NicheEditor({ niche, onSave, onCancel }: { niche: Partial<Niche>; onSav
   const [orientation, setOrientation] = useState<Niche['orientation']>(niche.orientation ?? 'landscape')
   const [targetClips, setTargetClips] = useState(niche.targetClips ?? 60)
   const lbl = { fontSize: 'var(--fs-caption)', color: 'var(--text-dim)', display: 'block', marginBottom: 5 } as const
+  const normalizedName = name.trim()
+  const searchPhrases = keywords.split('\n').map((keyword) => keyword.trim()).filter(Boolean)
+  const targetIsValid = Number.isFinite(targetClips) && targetClips >= 1 && targetClips <= 200
+  const canSave = normalizedName.length > 0 && searchPhrases.length > 0 && targetIsValid
 
   return (
     <div style={{ border: '1px solid var(--accent)', borderRadius: 'var(--radius-lg)', background: 'var(--bg-card)', boxShadow: 'var(--shadow-card)', padding: 16, marginBottom: 18 }}>
-      <div style={{ fontSize: 'var(--fs-body)', fontWeight: 600, color: 'var(--text)', marginBottom: 12 }}>{niche.id ? 'Edit niche' : 'New niche'}</div>
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 160px 120px', gap: 12, marginBottom: 12 }}>
+      <div style={{ fontSize: 'var(--fs-body)', fontWeight: 600, color: 'var(--text)', marginBottom: 12 }}>{niche.id ? 'Edit B-roll collection' : 'New B-roll collection'}</div>
+      <div className="me-broll-editor-fields" style={{ display: 'grid', gridTemplateColumns: '1fr 160px 120px', gap: 12, marginBottom: 12 }}>
         <div>
-          <label style={lbl}>Name</label>
-          <input className="ed-input" value={name} onChange={(e) => setName(e.target.value)} placeholder="Motivational" />
+          <label htmlFor="broll-name" style={lbl}>Name</label>
+          <input id="broll-name" className="ed-input" required maxLength={80} value={name} onChange={(e) => setName(e.target.value)} placeholder="Motivational" />
         </div>
         <div>
-          <label style={lbl}>Orientation</label>
-          <select className="ed-input" value={orientation} onChange={(e) => setOrientation(e.target.value as Niche['orientation'])}>
+          <label htmlFor="broll-orientation" style={lbl}>Orientation</label>
+          <select id="broll-orientation" className="ed-input" value={orientation} onChange={(e) => setOrientation(e.target.value as Niche['orientation'])}>
             {ORIENTATIONS.map((o) => <option key={o} value={o}>{o}</option>)}
           </select>
         </div>
         <div>
-          <label style={lbl}>Target clips</label>
-          <input className="ed-input" type="number" min={1} max={200} value={targetClips} onChange={(e) => setTargetClips(Number(e.target.value))} />
+          <label htmlFor="broll-target" style={lbl}>Target clips</label>
+          <input id="broll-target" className="ed-input" type="number" min={1} max={200} required aria-invalid={!targetIsValid} value={targetClips} onChange={(e) => setTargetClips(Number(e.target.value))} />
         </div>
       </div>
       <div style={{ marginBottom: 12 }}>
-        <label style={lbl}>Search phrases (one per line)</label>
-        <textarea className="ed-input" style={{ minHeight: 90, resize: 'vertical', fontFamily: 'var(--font-mono)' }} value={keywords} onChange={(e) => setKeywords(e.target.value)} placeholder={'focused work\nsuccess mindset\ncity at night'} />
+        <label htmlFor="broll-keywords" style={lbl}>Search phrases (one per line)</label>
+        <textarea id="broll-keywords" className="ed-input" required maxLength={1000} aria-describedby="broll-validation" style={{ minHeight: 90, resize: 'vertical', fontFamily: 'var(--font-mono)' }} value={keywords} onChange={(e) => setKeywords(e.target.value)} placeholder={'focused work\nsuccess mindset\ncity at night'} />
+      </div>
+      <div id="broll-validation" style={{ minHeight: 18, marginBottom: 8, color: canSave ? 'var(--text-dim)' : 'var(--warning)', fontSize: 'var(--fs-caption)' }}>
+        {canSave ? `${searchPhrases.length} search ${searchPhrases.length === 1 ? 'phrase' : 'phrases'} ready.` : 'Add a name, at least one search phrase, and a target from 1 to 200.'}
       </div>
       <div style={{ display: 'flex', gap: 8, justifyContent: 'flex-end' }}>
         <Btn variant="ghost" size="md" onClick={onCancel}>Cancel</Btn>
-        <Btn variant="primary" size="md" onClick={() => onSave({ id: niche.id, name, keywords: keywords.split('\n'), orientation, targetClips, createdAt: niche.createdAt })}>Save niche</Btn>
+        <Btn variant="primary" size="md" disabled={!canSave} onClick={() => onSave({ id: niche.id, name: normalizedName, keywords: searchPhrases, orientation, targetClips, createdAt: niche.createdAt })}>Save collection</Btn>
       </div>
     </div>
   )

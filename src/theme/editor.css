@@ -53,7 +53,7 @@ textarea.ed-input {
 .ed-range::-webkit-slider-runnable-track {
   height: 4px;
   border-radius: 4px;
-  background: #262b34;
+  background: var(--border-3);
 }
 .ed-range::-webkit-slider-thumb {
   -webkit-appearance: none;
@@ -63,7 +63,7 @@ textarea.ed-input {
   margin-top: -4.5px;
   border-radius: 50%;
   background: var(--accent);
-  border: 2px solid #0c0d11;
+  border: 2px solid var(--bg-inset-2);
   box-shadow: 0 0 0 1px rgba(255, 255, 255, 0.08);
   transition: transform 0.12s;
 }

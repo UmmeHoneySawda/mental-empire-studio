@@ -51,7 +51,7 @@ export function EffectsPanel(): JSX.Element {
   return (
     <div style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
       <div style={{ fontSize: 11, color: 'var(--text-dim)', lineHeight: 1.5 }}>
-        Override the <b style={{ color: '#cdd2da' }}>{o.style}</b> style's automatic transitions and text effects with a custom
+        Override the <b style={{ color: 'var(--text-soft)' }}>{o.style}</b> style's automatic transitions and text effects with a custom
         effect plan. Leave empty to keep the style defaults.
       </div>
       <div style={{ display: 'flex', gap: 7 }}>

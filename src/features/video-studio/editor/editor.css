@@ -121,13 +121,12 @@
 }
 .ve-input:focus-visible { outline: 2px solid rgb(var(--ve-accent) / 0.6); outline-offset: 1px; }
 textarea.ve-input { resize: vertical; min-height: 52px; }
-.ve-custom-hook-json { min-height: 360px; font-family: "JetBrains Mono", monospace; font-size: 11px; line-height: 1.5; tab-size: 2; }
+.ve-custom-hook-json { min-height: 360px; font-family: var(--font-mono); font-size: var(--fs-mono); line-height: var(--lh-normal); tab-size: 2; }
 
 .ve-eyebrow {
-  font-size: 10px;
+  font-size: var(--fs-caption);
   font-weight: 600;
-  letter-spacing: 0.09em;
-  text-transform: uppercase;
+  letter-spacing: var(--tracking-label);
   color: rgb(var(--ve-fg-dim));
 }
 .ve-hint { margin: 0; font-size: 11px; line-height: 1.5; color: rgb(var(--ve-fg-dim)); }

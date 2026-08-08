@@ -131,7 +131,7 @@ function TranscriptEditor(): JSX.Element {
         </Btn>
       </div>
       {transcribeError && <Banner kind="error" style={{ marginBottom: 8 }}>{transcribeError}</Banner>}
-      <div className="ed-scroll" style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 12, background: 'var(--bg-inset)', fontSize: 13, lineHeight: 2, color: '#cdd2da', maxHeight: 190, userSelect: 'none' }}>
+      <div className="ed-scroll" style={{ border: '1px solid var(--border)', borderRadius: 10, padding: 12, background: 'var(--bg-inset)', fontSize: 13, lineHeight: 2, color: 'var(--text-soft)', maxHeight: 190, userSelect: 'none' }}>
         {transcript.length === 0 ? (
           <span style={{ color: 'var(--text-fainter)', fontSize: 11.5 }}>No transcript yet — run Transcribe to generate word-level timings.</span>
         ) : (

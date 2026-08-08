@@ -2,6 +2,7 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import type { SourceChannel } from '@shared/types'
 import { Btn, EmptyState } from '../../components/ui/kit'
 import { mediaSrc } from '../../lib/media'
+import { errorMessage } from '../../lib/errors'
 
 type Sort = 'used' | 'scraped' | 'name'
 
@@ -69,7 +70,7 @@ export function SourcePickerModal({ sources, selectedId, loading, error, opener,
                 {source.avatar ? <img src={mediaSrc(source.avatar)} alt="" /> : <i aria-hidden="true">{(source.name || source.handle).slice(0, 2).toUpperCase()}</i>}<span><strong>{source.name || source.handle}</strong><small>{source.handle}</small></span>
               </button>
               <div className="automation-source-chips"><span>{source.linkedMyChannelId ? 'Upload check linked' : 'Upload check unavailable'}</span><span>{cacheStatus(source)}</span></div>
-              <button type="button" className="automation-link-button" disabled={refreshing === source.id} onClick={() => { setRefreshing(source.id); setRefreshError(''); void onRefresh(source).catch((reason) => setRefreshError(reason instanceof Error ? reason.message : String(reason))).finally(() => setRefreshing('')) }}>{refreshing === source.id ? 'Refreshing…' : 'Refresh'}</button>
+              <button type="button" className="automation-link-button" disabled={refreshing === source.id} onClick={() => { setRefreshing(source.id); setRefreshError(''); void onRefresh(source).catch((reason) => setRefreshError(errorMessage(reason, 'Could not refresh this source.'))).finally(() => setRefreshing('')) }}>{refreshing === source.id ? 'Refreshing…' : 'Refresh'}</button>
             </div>)}</div>}
       {refreshError && <div className="automation-modal-state error" role="alert">Refresh failed: {refreshError}</div>}
     </div>

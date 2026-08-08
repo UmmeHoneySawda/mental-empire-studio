@@ -3,6 +3,7 @@ import { ScreenPad } from '../components/primitives'
 import { PageHeader, Card, Btn, EmptyState } from '../components/ui/kit'
 import { fmtAgo } from '../lib/time'
 import { useData } from '../store/useData'
+import { errorMessage } from '../lib/errors'
 
 export function MyChannels(): JSX.Element {
   const channels = useData((s) => s.channels)
@@ -35,7 +36,7 @@ export function MyChannels(): JSX.Element {
     try {
       await setSourceOwner(sourceId, owned ? channelId : null)
     } catch (e) {
-      setLinkError({ id: channelId, message: e instanceof Error ? e.message : 'Failed to change source link' })
+      setLinkError({ id: channelId, message: errorMessage(e, 'The source link could not be changed. Try again.') })
     }
   }
 
@@ -48,7 +49,7 @@ export function MyChannels(): JSX.Element {
       await addChannel(trimmed)
       setUrl('')
     } catch (e) {
-      setConnectError(e instanceof Error ? e.message : 'Failed to connect channel')
+      setConnectError(errorMessage(e, 'The publishing channel could not be added. Check the URL and try again.'))
     } finally {
       setConnecting(false)
     }
@@ -92,20 +93,20 @@ export function MyChannels(): JSX.Element {
   return (
     <ScreenPad>
       <PageHeader
-        eyebrow="Your channels"
-        title="Channels you publish to"
-        subtitle="Paste a channel URL — Studio scrapes stats (views, subs, uploads) with no API key. Link a source channel to track which downloaded videos you've already uploaded."
+        title="Publishing channels"
+        subtitle="Add channels you own to track upload goals and match finished videos with what is already live. No YouTube API key is required."
       />
 
       {/* Add channel form — the single entry point */}
       <div style={{ marginBottom: 28 }}>
+        <label htmlFor="publishing-channel-url" style={{ display: 'block', marginBottom: 7, fontSize: 'var(--fs-sm)', color: 'var(--text-muted)' }}>Publishing channel URL or @handle</label>
         <div style={{ display: 'flex', gap: 11 }}>
           <div style={{ flex: 1, display: 'flex', alignItems: 'center', gap: 10, background: 'var(--bg-card)', border: `1px dashed ${connectError ? 'var(--err)' : 'var(--border-3)'}`, borderRadius: 'var(--radius-md)', padding: '12px 15px' }}>
             <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="var(--text-faint)" strokeWidth="2" aria-hidden="true"><path d="M10 13a5 5 0 007 0l2-2a5 5 0 00-7-7l-1 1" /><path d="M14 11a5 5 0 00-7 0l-2 2a5 5 0 007 7l1-1" /></svg>
-            <input value={url} onChange={(e) => { setUrl(e.target.value); setConnectError('') }} onKeyDown={(e) => e.key === 'Enter' && void connect()} placeholder="youtube.com/@your-channel" aria-label="Channel URL" style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', fontSize: 13, color: 'var(--text-bright)', fontFamily: 'var(--font-mono)' }} />
+            <input id="publishing-channel-url" value={url} onChange={(e) => { setUrl(e.target.value); setConnectError('') }} onKeyDown={(e) => e.key === 'Enter' && void connect()} placeholder="youtube.com/@your-channel" aria-label="Publishing channel URL or handle" style={{ flex: 1, border: 'none', outline: 'none', background: 'transparent', fontSize: 13, color: 'var(--text-bright)', fontFamily: 'var(--font-mono)' }} />
           </div>
           <Btn variant="soft" size="md" onClick={() => void connect()} disabled={connecting || !url.trim()} style={{ minWidth: 150, justifyContent: 'center' }}>
-            {connecting ? 'Connecting…' : 'Connect & scrape'}
+            {connecting ? 'Adding channel…' : 'Add channel'}
           </Btn>
         </div>
         {connectError && <div title={connectError} className="me-clamp-2" role="alert" style={{ marginTop: 7, fontSize: 11.5, color: 'var(--err-2)', paddingLeft: 4 }}>{connectError}</div>}
@@ -113,8 +114,8 @@ export function MyChannels(): JSX.Element {
 
       {channels.length === 0 ? (
         <EmptyState
-          title="No channels connected yet"
-          body="Paste a YouTube channel URL above and connect it to track upload goals and match your downloads to what's already live."
+          title="No publishing channels yet"
+          body="Add a YouTube channel above to track upload goals and match finished videos with what is already live."
         />
       ) : (
         <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fill,minmax(320px,1fr))', gap: 16 }}>
@@ -167,7 +168,7 @@ export function MyChannels(): JSX.Element {
                   <div style={{ display: 'flex', gap: 6, flex: 'none' }}>
                     {/* The per-channel re-scrape IPC shipped in M3 and had no caller: the only
                         way to refresh one channel's stats was Home's every-channel "Run now". */}
-                    <button type="button" onClick={() => void refreshChannel(c.id)} disabled={scraping} title={scraping ? 'A scrape is already running' : 'Re-scrape this channel'} aria-label={`Refresh ${c.name}`} className="me-btn ed-focus" style={{ width: 26, height: 26, borderRadius: 'var(--radius-sm)', display: 'grid', placeItems: 'center', color: 'var(--text-faint)', cursor: scraping ? 'not-allowed' : 'pointer', opacity: scraping ? 0.45 : 1, background: 'var(--bg-inset)', border: '1px solid var(--border)' }}>
+                    <button type="button" onClick={() => void refreshChannel(c.id)} disabled={scraping} title={scraping ? 'Another channel refresh is already running' : 'Refresh uploads and channel statistics'} aria-label={`Refresh ${c.name}`} className="me-btn ed-focus" style={{ width: 26, height: 26, borderRadius: 'var(--radius-sm)', display: 'grid', placeItems: 'center', color: 'var(--text-faint)', cursor: scraping ? 'not-allowed' : 'pointer', opacity: scraping ? 0.45 : 1, background: 'var(--bg-inset)', border: '1px solid var(--border)' }}>
                       <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" strokeWidth="2.2" aria-hidden="true"><path d="M21 12a9 9 0 11-3-6.7M21 4v5h-5" /></svg>
                     </button>
                     <button type="button" onClick={() => setConfirmDelete(c.id)} title="Remove channel" aria-label={`Remove ${c.name}`} className="me-btn ed-focus" style={{ width: 26, height: 26, borderRadius: 'var(--radius-sm)', display: 'grid', placeItems: 'center', fontSize: 15, color: 'var(--text-faint)', cursor: 'pointer', background: 'var(--bg-inset)', border: '1px solid var(--border)' }}>×</button>
@@ -206,12 +207,12 @@ export function MyChannels(): JSX.Element {
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 5, border: '1px solid var(--border-2)', borderRadius: 'var(--radius-sm)', padding: '5px 8px', background: 'var(--bg-inset)', maxWidth: '100%' }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 6 }}>
                     <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="var(--text-dim)" strokeWidth="2" style={{ flex: 'none' }} aria-hidden="true"><path d="M7 7h10l-3-3M17 17H7l3 3" /></svg>
-                    <span style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}>sources</span>
+                    <span style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-dim)' }}>linked sources</span>
                     <span
-                      title={mapKnown ? `${c.mapDone} of ${c.mapTotal} downloads from linked sources matched to an upload here` : 'Not mapped yet — refresh this channel to compute'}
+                      title={mapKnown ? `${c.mapDone} of ${c.mapTotal} finished videos from linked sources matched an upload here` : 'Upload status has not been checked. Refresh this channel first.'}
                       style={{ marginLeft: 'auto', fontSize: 10, color: mapColor, fontWeight: 600, flex: 'none' }}
                     >
-                      {mapKnown ? `${c.mapDone}/${c.mapTotal} mapped` : 'not mapped'}
+                      {mapKnown ? `${c.mapDone}/${c.mapTotal} matched` : 'not checked'}
                     </span>
                   </div>
                   {linkedSources.length > 0 && (

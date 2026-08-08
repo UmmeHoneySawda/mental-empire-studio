@@ -105,7 +105,7 @@ export function SelectionDetails({
     <div className="ed-scroll" style={{ border: '1px solid var(--border)', borderRadius: 12, background: 'var(--bg-inset)', padding: 12, maxHeight: 260 }}>
       <SectionLabel style={{ color: 'var(--accent)', marginBottom: 6 }}>Selection</SectionLabel>
       <div style={{ fontFamily: 'var(--font-display)', fontSize: 14, fontWeight: 700, color: 'var(--text-bright)' }}>{title}</div>
-      <div title={detail} className="me-ellipsis" style={{ marginTop: 4, fontSize: 10.5, color: '#aab0bb', fontFamily: 'var(--font-mono)' }}>{detail}</div>
+      <div title={detail} className="me-ellipsis" style={{ marginTop: 4, fontSize: 10.5, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{detail}</div>
 
       {image && (
         <div style={{ marginTop: 11, display: 'flex', flexDirection: 'column', gap: 8 }}>

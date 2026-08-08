@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store/useStore'
 import { useData } from '../store/useData'
-import { Banner, Btn, IconBtn, SectionLabel } from '../components/ui/kit'
+import { Banner, Btn, IconBtn } from '../components/ui/kit'
 import { PipelineRibbon } from '../components/PipelineRibbon'
 import { ProjectGate } from '../components/ProjectGate'
 import { EditorCanvas } from '../features/thumbnail-editor/EditorCanvas'
@@ -214,16 +214,15 @@ export function Thumbnails(): JSX.Element {
       {/* header */}
       <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 'none' }}>
         <div style={{ minWidth: 0 }}>
-          <SectionLabel style={{ color: 'var(--accent)', marginBottom: 4 }}>Step 03 — Thumbnail</SectionLabel>
-          <div className="me-ellipsis" style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 21, letterSpacing: '-.4px', color: 'var(--text-strong)', lineHeight: 1 }}>
-            Thumbnail studio
+          <h1 className="me-ellipsis" style={{ margin: 0, fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 'var(--fs-title)', letterSpacing: '-.4px', color: 'var(--text-strong)', lineHeight: 'var(--lh-tight)' }}>
+            Thumbnails
             {activeProject && <span style={{ fontSize: 13, fontWeight: 400, color: 'var(--text-dim)', marginLeft: 10 }}>· {activeProject.title}</span>}
-          </div>
+          </h1>
         </div>
         <div style={{ flex: 1 }} />
         {activeProject && (
           <Btn variant="soft" title="Pick another video" onClick={backToLibrary}>
-            ← Library
+            Choose another video
           </Btn>
         )}
         <IconBtn title="Undo (⌘/Ctrl+Z)" disabled={!canUndo} onClick={undoThumbnail}>
@@ -253,8 +252,8 @@ export function Thumbnails(): JSX.Element {
       {!activeProject ? (
         <div className="ed-scroll" style={{ flex: 1, minHeight: 0, paddingTop: 10 }}>
           <ProjectGate
-            headline="Pick a video for thumbnail work"
-            sub="Finished downloads ready for a custom thumbnail."
+            headline="Choose a video for its thumbnail"
+            sub="Select a finished download, then design and save its thumbnail."
             downloads={downloads}
             openingId={openingDownloadId}
             error={pickError}

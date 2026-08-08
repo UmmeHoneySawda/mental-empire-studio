@@ -1,7 +1,7 @@
-import { useRef } from 'react'
+import { useRef, useState } from 'react'
 import { useStore } from '../../store/useStore'
 import type { ThumbnailLayer } from '@shared/types'
-import { Btn, IconBtn } from '../../components/ui/kit'
+import { Btn, ConfirmDialog, IconBtn } from '../../components/ui/kit'
 
 /* Layers panel — z-ordered list (top = front), drag to reorder, visibility /
    duplicate / delete per row, add-layer actions, and align/distribute tools when
@@ -64,7 +64,7 @@ export function LayersPanel(): JSX.Element {
       <div className="ed-scroll" style={{ flex: 1, minHeight: 0, padding: '10px 10px 4px' }}>
         {selectedLayers.length > 1 && (
           <div className="ed-fade" style={{ border: '1px solid var(--border-3)', borderRadius: 10, background: 'var(--bg-inset)', padding: 8, marginBottom: 8 }}>
-            <div style={{ fontSize: 10.5, color: '#cdd2da', marginBottom: 7, fontWeight: 700 }}>{selectedLayers.length} layers selected</div>
+            <div style={{ fontSize: 10.5, color: 'var(--text-soft)', marginBottom: 7, fontWeight: 700 }}>{selectedLayers.length} layers selected</div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3,1fr)', gap: 4, marginBottom: 4 }}>
               {(['left', 'center', 'right', 'top', 'middle', 'bottom'] as const).map((kind) => (
                 <Btn key={kind} size="sm" onClick={() => align(kind)} style={{ padding: '5px 0', fontSize: 10, textTransform: 'capitalize' }}>{kind}</Btn>
@@ -98,7 +98,7 @@ export function LayersPanel(): JSX.Element {
                   borderRadius: 8,
                   background: on ? 'var(--accent-soft)' : 'transparent',
                   fontSize: 11.5,
-                  color: on ? 'var(--text-bright)' : '#aab0bb',
+                  color: on ? 'var(--text-bright)' : 'var(--text-muted)',
                   cursor: l.locked ? 'pointer' : 'grab',
                   opacity: l.visible ? 1 : 0.5
                 }}
@@ -164,6 +164,8 @@ export function TemplatesPanel({
   onDelete: (id: string) => void
 }): JSX.Element {
   const templates = useStore((s) => s.templates)
+  const [templateToDelete, setTemplateToDelete] = useState<string | null>(null)
+  const pendingTemplate = templates.find((template) => template.id === templateToDelete)
   return (
     <div style={{ display: 'flex', flexDirection: 'column', height: '100%', minHeight: 0 }}>
       <div className="ed-scroll" style={{ flex: 1, minHeight: 0, padding: '10px 10px 4px' }}>
@@ -171,18 +173,28 @@ export function TemplatesPanel({
           {templates.map((t) => {
             const preview = previews[t.id]
             return (
-              <div key={t.id} onClick={() => onApply(t.id)} className="me-card" style={{ position: 'relative', border: '1px solid var(--border)', background: 'var(--bg-inset)', borderRadius: 9, padding: 5, cursor: 'pointer' }}>
-                <div
+              <div key={t.id} className="me-card" style={{ position: 'relative', border: '1px solid var(--border)', background: 'var(--bg-inset)', borderRadius: 9, padding: 5 }}>
+                <button
+                  type="button"
+                  aria-label={`Apply template ${t.name}`}
+                  onClick={() => onApply(t.id)}
+                  className="ed-focus"
+                  style={{ display: 'block', width: '100%', border: 0, padding: 0, background: 'transparent', color: 'inherit', cursor: 'pointer' }}
+                >
+                  <div style={{ aspectRatio: '16/9', borderRadius: 5, background: 'linear-gradient(135deg,#2a2540,#46243a)', overflow: 'hidden', display: 'grid', placeItems: 'center' }}>
+                    {preview
+                      ? <img src={preview} alt={`${t.name} preview`} loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
+                      : <span style={{ width: '50%', height: 4, borderRadius: 2, background: 'var(--accent)' }} />}
+                  </div>
+                  <div className="me-ellipsis" style={{ fontSize: 9.5, textAlign: 'center', marginTop: 5, color: 'var(--text)', fontWeight: 600 }}>{t.name}</div>
+                </button>
+                <button
+                  type="button"
                   title={`Delete "${t.name}"`}
-                  onClick={(e) => { e.stopPropagation(); if (window.confirm(`Delete "${t.name}"?`)) onDelete(t.id) }}
+                  aria-label={`Delete template ${t.name}`}
+                  onClick={() => setTemplateToDelete(t.id)}
                   style={{ position: 'absolute', top: 2, right: 2, zIndex: 2, width: 17, height: 17, borderRadius: 5, background: 'rgba(0,0,0,.6)', color: 'var(--err-2)', display: 'grid', placeItems: 'center', fontSize: 11, cursor: 'pointer' }}
-                >×</div>
-                <div style={{ aspectRatio: '16/9', borderRadius: 5, background: 'linear-gradient(135deg,#2a2540,#46243a)', overflow: 'hidden', display: 'grid', placeItems: 'center' }}>
-                  {preview
-                    ? <img src={preview} alt={`${t.name} preview`} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />
-                    : <span style={{ width: '50%', height: 4, borderRadius: 2, background: 'var(--accent)' }} />}
-                </div>
-                <div className="me-ellipsis" style={{ fontSize: 9.5, textAlign: 'center', marginTop: 5, color: '#cdd2da', fontWeight: 600 }}>{t.name}</div>
+                >×</button>
               </div>
             )
           })}
@@ -196,6 +208,17 @@ export function TemplatesPanel({
       <div style={{ borderTop: '1px solid var(--border)', padding: 10, flex: 'none' }}>
         <Btn size="sm" style={{ width: '100%', borderStyle: 'dashed' }} onClick={onSave}>＋ Save current as template</Btn>
       </div>
+      <ConfirmDialog
+        open={!!pendingTemplate}
+        title="Delete thumbnail template?"
+        body={pendingTemplate ? `“${pendingTemplate.name}” will be permanently removed.` : ''}
+        confirmLabel="Delete template"
+        onCancel={() => setTemplateToDelete(null)}
+        onConfirm={() => {
+          if (pendingTemplate) onDelete(pendingTemplate.id)
+          setTemplateToDelete(null)
+        }}
+      />
     </div>
   )
 }

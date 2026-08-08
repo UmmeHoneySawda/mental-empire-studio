@@ -457,7 +457,7 @@ export function EditorCanvas(): JSX.Element {
       rotateEnabled: true,
       borderStroke: '#f5b323',
       anchorStroke: '#f5b323',
-      anchorFill: '#0c0d11',
+      anchorFill: 'var(--bg-inset-2)',
       anchorCornerRadius: 2,
       anchorSize: 9,
       rotateAnchorOffset: 26,
@@ -526,7 +526,7 @@ export function EditorCanvas(): JSX.Element {
   }, [selectedLayerIds, layers, updateLayers])
 
   return (
-    <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9', borderRadius: 14, overflow: 'hidden', border: '1px solid var(--border)', background: '#0c0d11', boxShadow: 'inset 0 0 0 1px rgba(255,255,255,.02), 0 18px 48px rgba(0,0,0,.35)' }}>
+    <div style={{ position: 'relative', width: '100%', aspectRatio: '16/9', borderRadius: 14, overflow: 'hidden', border: '1px solid var(--border)', background: 'var(--bg-inset-2)', boxShadow: 'inset 0 0 0 1px rgba(255,255,255,.02), 0 18px 48px rgba(0,0,0,.35)' }}>
       <div ref={containerRef} style={{ width: '100%', height: '100%' }} />
       {editing && (
         <>
@@ -536,7 +536,7 @@ export function EditorCanvas(): JSX.Element {
             onMouseDown={(e) => e.preventDefault()}
           >
             <button type="button" title="Highlight selected word(s)" onClick={addInlineHighlight} style={{ border: '1px solid var(--accent)', borderRadius: 7, padding: '5px 10px', background: 'var(--accent-soft)', color: 'var(--accent)', fontSize: 10.5, fontWeight: 800, cursor: 'pointer' }}>Highlight</button>
-            <button type="button" title="Done (⌘/Ctrl+Enter)" onClick={() => commitInlineEditor()} style={{ border: '1px solid #262b34', borderRadius: 7, padding: '5px 10px', background: '#15181f', color: '#c4cad3', fontSize: 10.5, fontWeight: 800, cursor: 'pointer' }}>Done</button>
+            <button type="button" title="Done (⌘/Ctrl+Enter)" onClick={() => commitInlineEditor()} style={{ border: '1px solid var(--border-3)', borderRadius: 7, padding: '5px 10px', background: 'var(--bg-control)', color: 'var(--text-control)', fontSize: 10.5, fontWeight: 800, cursor: 'pointer' }}>Done</button>
           </div>
           <textarea
             ref={inlineTextRef}

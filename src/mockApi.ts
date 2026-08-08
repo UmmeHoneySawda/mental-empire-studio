@@ -35,6 +35,7 @@ import {
   type SourceChannel,
   type ThumbnailTemplate,
   type TranscriptWord,
+  type VisualTemplate,
   type WorkItem
 } from '@shared/types'
 import type { GpuRenderSpec } from '@shared/renderSpec'
@@ -141,6 +142,7 @@ function installMock(): void {
     integrations: { talkingPhotos: { enabled: true } }
   } as Partial<AppSettings>)
   const appMeta = new Map<string, string>()
+  const visualTemplates: VisualTemplate[] = []
 
   const sourceChannels: SourceChannel[] = [
     { id: 'src-pw', url: 'https://www.youtube.com/@powerwithinofficial-q7d', handle: '@powerwithinofficial-q7d', name: 'Power Within Official', lastScrapedAt: new Date().toISOString(), videoCount: 5, autoWatch: true, sourceOrder: 'Latest', sourceCount: 5, imageMode: 'pool', poolSize: 10, kenBurns: true, captionPreset: 'Hormozi', captionAspect: '16:9', betaOpts: { ...DEFAULT_BETA_OPTS, broll: { ...DEFAULT_BETA_OPTS.broll, enabled: true }, style: 'Cinematic' } },
@@ -700,6 +702,7 @@ function installMock(): void {
         renderRows.splice(0)
         profiles.splice(0)
         templates.splice(0)
+        visualTemplates.splice(0)
         workItemState.clear()
         activity.splice(0)
         settings = { ...DEFAULT_SETTINGS }
@@ -1079,6 +1082,20 @@ function installMock(): void {
     looks: ns({
       list: async () => LOOKS
     }),
+    visualTemplates: ns({
+      list: async () => visualTemplates,
+      save: async (template: VisualTemplate) => {
+        const index = visualTemplates.findIndex((item) => item.id === template.id)
+        if (index >= 0) visualTemplates[index] = template
+        else visualTemplates.push(template)
+        return visualTemplates
+      },
+      delete: async (id: string) => {
+        const index = visualTemplates.findIndex((item) => item.id === id)
+        if (index >= 0) visualTemplates.splice(index, 1)
+        return visualTemplates
+      }
+    }),
     automation: ns({
       runProfile: async (profileId: string) => {
         const p = profiles.find((x) => x.id === profileId)
@@ -1168,7 +1185,8 @@ function installMock(): void {
     onTranscribeProgress: () => noop,
     onRenderProgress: (cb: (p: RenderProgress) => void) => { renderCbs.push(cb); return noop },
     onAutomation: (cb: (p: AutomationEvent) => void) => { automationCbs.push(cb); return noop },
-    onAutomationJob: (cb: (p: AutomationJob) => void) => { automationJobCbs.push(cb); return noop }
+    onAutomationJob: (cb: (p: AutomationJob) => void) => { automationJobCbs.push(cb); return noop },
+    onNichePoolProgress: () => noop
   }
 
   function catalogFor(url: string): ScrapedVideo[] {

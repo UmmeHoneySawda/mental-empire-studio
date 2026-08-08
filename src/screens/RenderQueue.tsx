@@ -1,15 +1,17 @@
-import { useEffect } from 'react'
+import { useEffect, useState } from 'react'
 import { ScreenPad } from '../components/primitives'
 import { useStore } from '../store/useStore'
 import { useData } from '../store/useData'
 import { useTalkingPhotos } from '../store/useTalkingPhotos'
-import type { RenderProgress, RenderQueueRow, RenderStage, RenderStatus } from '@shared/types'
+import type { LibraryReorgPreview, RenderProgress, RenderQueueRow, RenderStage, RenderStatus } from '@shared/types'
 import type { ProviderJob } from '@shared/talkingphotos'
 import { rollupSegments, describeProgress, titleFromProviderJob, mapJobStatusToLibrary, kindFromOperation, type LibraryItem } from './talking-video/logic'
 import { mediaSrc } from '../lib/media'
 import { renderLiveState } from '../lib/renderProgress'
 import { PipelineRibbon } from '../components/PipelineRibbon'
 import { useVideoStudio } from '../features/video-studio/store/useVideoStudio'
+import { Banner, ConfirmDialog } from '../components/ui/kit'
+import { errorMessage } from '../lib/errors'
 
 const PROVIDER_JOB_LABEL: Record<string, string> = {
   queued: 'Queued', running: 'Processing', downloading: 'Downloading', completed: 'Completed', failed: 'Failed', attention: 'Reconnect needed', cancelled: 'Cancelled'
@@ -22,7 +24,7 @@ const TP_JOB_TYPE: Record<string, string> = {
 // inferring it from a bar colour.
 type Tone = 'idle' | 'active' | 'ok' | 'err' | 'warn'
 const TONE_STYLE: Record<Tone, { color: string; bg: string; border: string }> = {
-  idle: { color: '#aab0bb', bg: 'rgba(139,147,167,.10)', border: '#2a3040' },
+  idle: { color: 'var(--text-muted)', bg: 'rgba(139,147,167,.10)', border: '#2a3040' },
   active: { color: '#f5c860', bg: 'rgba(245,179,35,.10)', border: 'rgba(245,179,35,.35)' },
   ok: { color: '#4fd6a0', bg: 'rgba(54,201,142,.10)', border: '#1e2f28' },
   err: { color: '#ff8a96', bg: 'rgba(255,90,110,.10)', border: '#3a2025' },
@@ -80,8 +82,8 @@ function TalkingPhotosJobsSection(): JSX.Element | null {
   return (
     <div style={{ marginTop: 26 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '.6px', color: '#5b616f', flex: 1 }}>TALKING VIDEO · CLOUD</div>
-        <button type="button" onClick={() => void sync()} disabled={syncing} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', color: '#c4cad3', borderRadius: 8, padding: '5px 11px', fontSize: 11, cursor: syncing ? 'default' : 'pointer', opacity: syncing ? 0.6 : 1 }}>{syncing ? 'Refreshing…' : 'Refresh'}</button>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '.6px', color: 'var(--text-faint)', flex: 1 }}>TALKING VIDEO · CLOUD</div>
+        <button type="button" onClick={() => void sync()} disabled={syncing} className="me-btn" style={{ border: '1px solid var(--border-3)', background: 'var(--bg-control)', color: 'var(--text-control)', borderRadius: 8, padding: '5px 11px', fontSize: 11, cursor: syncing ? 'default' : 'pointer', opacity: syncing ? 0.6 : 1 }}>{syncing ? 'Refreshing…' : 'Refresh'}</button>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {items.map((item) => {
@@ -96,22 +98,22 @@ function TalkingPhotosJobsSection(): JSX.Element | null {
           const completed = item.status === 'completed'
           const localPath = raw?.localOutputPath ?? raw?.localCaptionedOutputPath ?? item.localOutputPath ?? null
           return (
-            <div key={item.id} className="me-card" style={{ border: `1px solid ${completed ? '#1e2f28' : failed || attention ? '#3a2025' : '#1d2129'}`, borderRadius: 12, background: '#12151b', padding: '12px 14px' }}>
+            <div key={item.id} className="me-card" style={{ border: `1px solid ${completed ? '#1e2f28' : failed || attention ? '#3a2025' : 'var(--border)'}`, borderRadius: 12, background: 'var(--bg-card)', padding: '12px 14px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
                 <span style={{ fontSize: 9.5, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--accent-ink)', background: 'var(--accent)', borderRadius: 5, padding: '2px 6px', flex: 'none' }}>TP</span>
-                <span style={{ fontSize: 9.5, fontFamily: 'var(--font-mono)', color: '#aab0bb', border: '1px solid #262b34', borderRadius: 999, padding: '2px 7px', flex: 'none' }}>{jobType}</span>
-                <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: '#dde0e5', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.title}>{item.title}</span>
+                <span style={{ fontSize: 9.5, fontFamily: 'var(--font-mono)', color: 'var(--text-muted)', border: '1px solid var(--border-3)', borderRadius: 999, padding: '2px 7px', flex: 'none' }}>{jobType}</span>
+                <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: 'var(--text)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={item.title}>{item.title}</span>
                 <StatusPill label={PROVIDER_JOB_LABEL[rawStatus] ?? rawStatus} tone={tone} />
               </div>
               {making && (
                 <div style={{ marginTop: 9 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <div style={{ flex: 1, height: 6, borderRadius: 4, background: '#1a1e26', overflow: 'hidden' }}>
+                    <div role="progressbar" aria-label={`Talking Video progress for ${item.title}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={prog.barPct} style={{ flex: 1, height: 6, borderRadius: 4, background: '#1a1e26', overflow: 'hidden' }}>
                       <div style={{ width: `${prog.barPct}%`, height: '100%', background: 'var(--accent)', transition: 'width .4s ease' }} />
                     </div>
                     <span style={{ fontSize: 10.5, color: 'var(--accent)', fontFamily: 'var(--font-mono)', width: 38, textAlign: 'right', flex: 'none' }}>{prog.barPct}%</span>
                   </div>
-                  <div style={{ marginTop: 5, fontSize: 10.5, color: '#8a909c' }}>{prog.label}{prog.etaLabel ? ` · ${prog.etaLabel}` : ''}</div>
+                  <div style={{ marginTop: 5, fontSize: 10.5, color: 'var(--text-muted)' }}>{prog.label}{prog.etaLabel ? ` · ${prog.etaLabel}` : ''}</div>
                 </div>
               )}
               {failed && (
@@ -122,7 +124,7 @@ function TalkingPhotosJobsSection(): JSX.Element | null {
               {completed && (
                 <div style={{ display: 'flex', gap: 8, marginTop: 10 }}>
                   <button type="button" onClick={() => void downloadOutput(item.id)} className="me-btn" style={{ border: '1px solid #26352f', background: '#101b16', borderRadius: 7, padding: '5px 10px', fontSize: 10.5, color: '#4fd6a0', cursor: 'pointer' }}>Download</button>
-                  {localPath && <button type="button" onClick={() => void window.api?.publish?.reveal?.(localPath)} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 7, padding: '5px 10px', fontSize: 10.5, color: '#c4cad3', cursor: 'pointer' }}>Folder</button>}
+                  {localPath && <button type="button" onClick={() => void window.api?.publish?.reveal?.(localPath)} className="me-btn" style={{ border: '1px solid var(--border-3)', background: 'var(--bg-control)', borderRadius: 7, padding: '5px 10px', fontSize: 10.5, color: 'var(--text-control)', cursor: 'pointer' }}>Folder</button>}
                 </div>
               )}
             </div>
@@ -157,8 +159,8 @@ function TemplateEngineJobsSection(): JSX.Element | null {
   return (
     <div style={{ marginTop: 26 }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 10 }}>
-        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '.6px', color: '#5b616f', flex: 1 }}>TEMPLATE ENGINE · REMOTION / HYPERFRAMES</div>
-        <button type="button" onClick={() => void refreshJobs()} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', color: '#c4cad3', borderRadius: 8, padding: '5px 11px', fontSize: 11, cursor: 'pointer' }}>Refresh</button>
+        <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '.6px', color: 'var(--text-faint)', flex: 1 }}>VIDEO STUDIO RENDERS</div>
+        <button type="button" onClick={() => void refreshJobs()} className="me-btn" style={{ border: '1px solid var(--border-3)', background: 'var(--bg-control)', color: 'var(--text-control)', borderRadius: 8, padding: '5px 11px', fontSize: 11, cursor: 'pointer' }}>Refresh</button>
       </div>
       <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>
         {ordered.map((job) => {
@@ -167,21 +169,21 @@ function TemplateEngineJobsSection(): JSX.Element | null {
           const seconds = job.canvas.durationFrames / Math.max(1, job.canvas.fps)
           const engineTint = job.rendererId === 'remotion' ? '#6c7bff' : '#ff8a3d'
           return (
-            <div key={job.id} className="me-card" style={{ border: `1px solid ${job.stage === 'completed' ? '#1e2f28' : job.stage === 'failed' ? '#3a2025' : '#1d2129'}`, borderRadius: 12, background: '#12151b', padding: '12px 14px' }}>
+            <div key={job.id} className="me-card" style={{ border: `1px solid ${job.stage === 'completed' ? '#1e2f28' : job.stage === 'failed' ? '#3a2025' : 'var(--border)'}`, borderRadius: 12, background: 'var(--bg-card)', padding: '12px 14px' }}>
               <div style={{ display: 'flex', alignItems: 'center', gap: 9 }}>
-                <span style={{ fontSize: 9.5, fontWeight: 700, fontFamily: 'var(--font-mono)', color: '#0a0c10', background: engineTint, borderRadius: 5, padding: '2px 6px', flex: 'none' }}>
+                <span title={job.rendererId === 'remotion' ? 'Remotion renderer' : 'HyperFrames renderer'} style={{ fontSize: 9.5, fontWeight: 700, fontFamily: 'var(--font-mono)', color: 'var(--bg-sidebar)', background: engineTint, borderRadius: 5, padding: '2px 6px', flex: 'none' }}>
                   {job.rendererId === 'remotion' ? 'RMT' : 'HF'}
                 </span>
-                <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: '#dde0e5', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={job.projectName}>{job.projectName}</span>
+                <span style={{ flex: 1, minWidth: 0, fontSize: 13, color: 'var(--text)', fontWeight: 600, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={job.projectName}>{job.projectName}</span>
                 <StatusPill label={job.stage} tone={tone} />
               </div>
-              <div style={{ marginTop: 5, fontSize: 10.5, color: '#8a909c', fontFamily: 'var(--font-mono)' }}>
-                {job.canvas.width}×{job.canvas.height} · {job.canvas.fps}fps · {seconds.toFixed(1)}s ({job.canvas.durationFrames}f) · rev {job.projectRevision}
+              <div title={`${job.canvas.durationFrames} frames · project revision ${job.projectRevision}`} style={{ marginTop: 5, fontSize: 10.5, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>
+                {job.canvas.width}×{job.canvas.height} · {job.canvas.fps} fps · {seconds.toFixed(1)}s
                 {job.attempt > 1 ? ` · attempt ${job.attempt}` : ''}
               </div>
               {!terminal && (
                 <div style={{ marginTop: 9, display: 'flex', alignItems: 'center', gap: 8 }}>
-                  <div style={{ flex: 1, height: 6, borderRadius: 4, background: '#1a1e26', overflow: 'hidden' }}>
+                  <div role="progressbar" aria-label={`Video Studio progress for ${job.projectName}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={Math.round(job.progress * 100)} style={{ flex: 1, height: 6, borderRadius: 4, background: '#1a1e26', overflow: 'hidden' }}>
                     <div style={{ width: `${Math.round(job.progress * 100)}%`, height: '100%', background: engineTint, transition: 'width .4s ease' }} />
                   </div>
                   <span style={{ fontSize: 10.5, color: engineTint, fontFamily: 'var(--font-mono)', width: 38, textAlign: 'right', flex: 'none' }}>{Math.round(job.progress * 100)}%</span>
@@ -197,12 +199,12 @@ function TemplateEngineJobsSection(): JSX.Element | null {
                   <button type="button" onClick={() => void cancelRender(job.id)} className="me-btn" style={{ border: '1px solid #3a2025', background: '#1a1216', borderRadius: 7, padding: '5px 10px', fontSize: 10.5, color: '#ff8a96', cursor: 'pointer' }}>Cancel</button>
                 )}
                 {(job.stage === 'failed' || job.stage === 'canceled') && (
-                  <button type="button" onClick={() => void retryRender(job.id)} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 7, padding: '5px 10px', fontSize: 10.5, color: '#c4cad3', cursor: 'pointer' }}>Retry</button>
+                  <button type="button" onClick={() => void retryRender(job.id)} className="me-btn" style={{ border: '1px solid var(--border-3)', background: 'var(--bg-control)', borderRadius: 7, padding: '5px 10px', fontSize: 10.5, color: 'var(--text-control)', cursor: 'pointer' }}>Retry</button>
                 )}
                 {job.stage === 'completed' && (
                   <>
                     <button type="button" onClick={() => void openRender(job.id)} className="me-btn" style={{ border: '1px solid #26352f', background: '#101b16', borderRadius: 7, padding: '5px 10px', fontSize: 10.5, color: '#4fd6a0', cursor: 'pointer' }}>Open</button>
-                    <button type="button" onClick={() => void revealRender(job.id)} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 7, padding: '5px 10px', fontSize: 10.5, color: '#c4cad3', cursor: 'pointer' }}>Folder</button>
+                    <button type="button" onClick={() => void revealRender(job.id)} className="me-btn" style={{ border: '1px solid var(--border-3)', background: 'var(--bg-control)', borderRadius: 7, padding: '5px 10px', fontSize: 10.5, color: 'var(--text-control)', cursor: 'pointer' }}>Folder</button>
                   </>
                 )}
               </div>
@@ -309,7 +311,7 @@ function FastPreviewSection(): JSX.Element | null {
   }
 
   return (
-    <div className="me-card" style={{ marginBottom: 20, border: `1px solid ${isDone ? '#1e2f28' : isFailed ? '#3a2025' : '#453215'}`, borderRadius: 12, background: '#12151b', padding: '14px 16px' }}>
+    <div className="me-card" style={{ marginBottom: 20, border: `1px solid ${isDone ? '#1e2f28' : isFailed ? '#3a2025' : '#453215'}`, borderRadius: 12, background: 'var(--bg-card)', padding: '14px 16px' }}>
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 8 }}>
         <div style={{ fontFamily: 'var(--font-mono)', fontSize: 10, letterSpacing: '.6px', color: '#f5c860', fontWeight: 700, flex: 1 }}>
           FAST PREVIEW · LOCAL RECORDING
@@ -338,7 +340,7 @@ function FastPreviewSection(): JSX.Element | null {
       </div>
 
       {isRecording && (
-        <div style={{ height: 6, background: '#1f242d', borderRadius: 3, overflow: 'hidden', marginBottom: 10, border: '1px solid #2a303c' }}>
+        <div role="progressbar" aria-label={`Fast preview progress for ${p.projectName || 'video'}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={p.percent} style={{ height: 6, background: '#1f242d', borderRadius: 3, overflow: 'hidden', marginBottom: 10, border: '1px solid #2a303c' }}>
           <div
             style={{
               height: '100%',
@@ -358,11 +360,11 @@ function FastPreviewSection(): JSX.Element | null {
       )}
 
       <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexWrap: 'wrap', fontSize: 11, color: '#8b93a7' }}>
-        <div style={{ flex: 1, minWidth: 200, fontFamily: 'var(--font-mono)', fontSize: 10.5, color: '#aab0bb', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p.outputPath}>
+        <div style={{ flex: 1, minWidth: 200, fontFamily: 'var(--font-mono)', fontSize: 10.5, color: 'var(--text-muted)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }} title={p.outputPath}>
           {p.outputPath}
         </div>
         <div style={{ display: 'flex', gap: 6 }}>
-          <button type="button" onClick={browseFastPreviewDir} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 6, padding: '4px 9px', fontSize: 10.5, color: '#c4cad3', cursor: 'pointer' }} title="Change Fast Preview save directory">
+          <button type="button" onClick={browseFastPreviewDir} className="me-btn" style={{ border: '1px solid var(--border-3)', background: 'var(--bg-control)', borderRadius: 6, padding: '4px 9px', fontSize: 10.5, color: 'var(--text-control)', cursor: 'pointer' }} title="Change Fast Preview save directory">
             Change Folder
           </button>
           {isDone && (
@@ -370,7 +372,7 @@ function FastPreviewSection(): JSX.Element | null {
               <button type="button" onClick={openFile} className="me-btn" style={{ border: '1px solid var(--accent)', background: 'var(--accent-soft)', borderRadius: 6, padding: '4px 10px', fontSize: 10.5, color: 'var(--accent)', cursor: 'pointer', fontWeight: 600 }}>
                 Open File
               </button>
-              <button type="button" onClick={openFolder} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 6, padding: '4px 10px', fontSize: 10.5, color: '#c4cad3', cursor: 'pointer' }}>
+              <button type="button" onClick={openFolder} className="me-btn" style={{ border: '1px solid var(--border-3)', background: 'var(--bg-control)', borderRadius: 6, padding: '4px 10px', fontSize: 10.5, color: 'var(--text-control)', cursor: 'pointer' }}>
                 Open Folder
               </button>
             </>
@@ -396,6 +398,10 @@ export function RenderQueue(): JSX.Element {
   const settings = useStore((s) => s.settings)
   const updateSettings = useStore((s) => s.updateSettings)
   const setActive = useStore((s) => s.setActive)
+  const [libraryPreview, setLibraryPreview] = useState<LibraryReorgPreview | null>(null)
+  const [libraryNotice, setLibraryNotice] = useState('')
+  const [libraryError, setLibraryError] = useState('')
+  const [organizingLibrary, setOrganizingLibrary] = useState(false)
 
   useEffect(() => { void loadRenderJobs() }, [loadRenderJobs])
 
@@ -418,26 +424,39 @@ export function RenderQueue(): JSX.Element {
   }
 
   const organizeLibrary = async (): Promise<void> => {
-    const p = await window.api?.library?.previewReorg?.()
-    if (!p) return
-    if (p.fileCount === 0) {
-      window.alert(`Library is already organized — nothing to move.\n\nRoot: ${p.libraryRoot}`)
-      return
+    setLibraryError('')
+    setLibraryNotice('')
+    try {
+      const preview = await window.api?.library?.previewReorg?.()
+      if (!preview) return
+      if (preview.fileCount === 0) {
+        setLibraryNotice(`Library is already organized. Root: ${preview.libraryRoot}`)
+        return
+      }
+      setLibraryPreview(preview)
+    } catch (error) {
+      setLibraryError(errorMessage(error, 'Could not inspect the media library.'))
     }
-    const mb = (p.totalBytes / 1_000_000).toFixed(0)
-    const ok = window.confirm(
-      `Organize library?\n\nMove ${p.fileCount} files (~${mb} MB) into per-video folders under:\n${p.libraryRoot}\n\n` +
-      `Each file is copied, verified, then the original removed, and an undo log is written.` +
-      (p.missing ? `\n\n${p.missing} missing source file(s) will be skipped.` : '')
-    )
-    if (!ok) return
-    const r = await window.api.library.reorganize()
-    await loadRenderJobs()
-    window.alert(
-      `Organized ${r.moved} file(s) into per-video folders.` +
-      (r.skippedMissing ? `\nSkipped ${r.skippedMissing} missing.` : '') +
-      (r.undoLogPath ? `\n\nUndo log: ${r.undoLogPath}` : '')
-    )
+  }
+
+  const confirmOrganizeLibrary = async (): Promise<void> => {
+    if (!libraryPreview) return
+    setOrganizingLibrary(true)
+    setLibraryError('')
+    try {
+      const result = await window.api.library.reorganize()
+      await loadRenderJobs()
+      setLibraryPreview(null)
+      setLibraryNotice(
+        `Organized ${result.moved} file(s).` +
+        (result.skippedMissing ? ` Skipped ${result.skippedMissing} missing.` : '') +
+        (result.undoLogPath ? ` Undo log: ${result.undoLogPath}` : '')
+      )
+    } catch (error) {
+      setLibraryError(errorMessage(error, 'Could not organize the media library.'))
+    } finally {
+      setOrganizingLibrary(false)
+    }
   }
 
   return (
@@ -446,7 +465,7 @@ export function RenderQueue(): JSX.Element {
       <div style={{ position: 'sticky', top: 0, zIndex: 10, background: 'var(--bg-window)', borderBottom: '1px solid var(--border)', padding: '14px 0 12px', marginBottom: 18 }}>
         <div style={{ display: 'flex', alignItems: 'center', gap: 16, flexWrap: 'wrap' }}>
           <div>
-            <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 22, letterSpacing: '-.5px', color: 'var(--text-strong)', lineHeight: 1 }}>Render queue</div>
+            <h1 style={{ margin: 0, fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 22, letterSpacing: '-.5px', color: 'var(--text-strong)', lineHeight: 1 }}>Render queue</h1>
             <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 4 }}>
               {processing > 0 && <span style={{ color: 'var(--accent)', marginRight: 10 }}>● {processing} rendering</span>}
               {rows.length} jobs · {effectiveParallel} active{hardwareEncoder && settings.concurrency > 1 ? ` (hardware cap; setting ${settings.concurrency})` : ''}
@@ -454,15 +473,15 @@ export function RenderQueue(): JSX.Element {
           </div>
 
           {/* Library folder (master root for per-video folders) */}
-          <div style={{ display: 'flex', alignItems: 'center', gap: 7, border: '1px solid #23272f', borderRadius: 9, padding: '7px 12px', background: '#0e1116', flex: 1, minWidth: 200, maxWidth: 360 }}>
-            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, color: '#5b616f', flex: 'none' }}>LIB</span>
-            <span title={outputFolder} style={{ flex: 1, fontSize: 11, color: '#aab0bb', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{outputFolder}</span>
-            <button type="button" onClick={browse} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 7, padding: '3px 8px', fontSize: 10, color: '#c4cad3', cursor: 'pointer', flex: 'none' }}>Browse</button>
-            <button type="button" onClick={() => void organizeLibrary()} title="Move existing audio, images, b-roll and renders into per-video folders under the library root (safe: copy → verify → remove, with an undo log)." className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 7, padding: '3px 8px', fontSize: 10, color: '#c4cad3', cursor: 'pointer', flex: 'none' }}>Organize</button>
+          <div style={{ display: 'flex', alignItems: 'center', gap: 7, border: '1px solid var(--border-2)', borderRadius: 9, padding: '7px 12px', background: 'var(--bg-inset)', flex: 1, minWidth: 200, maxWidth: 360 }}>
+            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, color: 'var(--text-faint)', flex: 'none' }}>LIB</span>
+            <span title={outputFolder} style={{ flex: 1, fontSize: 11, color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{outputFolder}</span>
+            <button type="button" onClick={browse} className="me-btn" style={{ border: '1px solid var(--border-3)', background: 'var(--bg-control)', borderRadius: 7, padding: '3px 8px', fontSize: 10, color: 'var(--text-control)', cursor: 'pointer', flex: 'none' }}>Browse</button>
+            <button type="button" onClick={() => void organizeLibrary()} title="Move existing audio, images, b-roll and renders into per-video folders under the library root (safe: copy → verify → remove, with an undo log)." className="me-btn" style={{ border: '1px solid var(--border-3)', background: 'var(--bg-control)', borderRadius: 7, padding: '3px 8px', fontSize: 10, color: 'var(--text-control)', cursor: 'pointer', flex: 'none' }}>Organize</button>
           </div>
 
           {/* Format chip */}
-          <div style={{ border: '1px solid #23272f', borderRadius: 9, padding: '7px 13px', fontSize: 11.5, color: '#dde0e5', background: '#0e1116', flex: 'none' }}>mp4 · {settings.quality}</div>
+          <div style={{ border: '1px solid var(--border-2)', borderRadius: 9, padding: '7px 13px', fontSize: 11.5, color: 'var(--text)', background: 'var(--bg-inset)', flex: 'none' }}>mp4 · {settings.quality}</div>
 
           <div style={{ flex: 1 }} />
 
@@ -484,6 +503,9 @@ export function RenderQueue(): JSX.Element {
         </div>
       </div>
 
+      {libraryError && <Banner kind="error" style={{ marginBottom: 14 }}>{libraryError}</Banner>}
+      {libraryNotice && <Banner kind="success" style={{ marginBottom: 14 }}>{libraryNotice}</Banner>}
+
       <FastPreviewSection />
 
       {focusRow && (
@@ -503,7 +525,7 @@ export function RenderQueue(): JSX.Element {
 
       {/* Job cards */}
       {rows.length === 0 && (
-        <div style={{ border: '1.5px dashed #23272f', borderRadius: 14, padding: '38px 18px', textAlign: 'center', fontSize: 12.5, color: '#6a7180' }}>
+        <div style={{ border: '1.5px dashed var(--border-2)', borderRadius: 14, padding: '38px 18px', textAlign: 'center', fontSize: 12.5, color: 'var(--text-dim)' }}>
           Nothing queued yet — compose a video and hit "Save &amp; send to render".
         </div>
       )}
@@ -523,7 +545,7 @@ export function RenderQueue(): JSX.Element {
           const eta = p?.etaState === 'estimating' ? 'estimating...' : fmtEta(p?.etaSec)
 
           return (
-            <div key={r.job.id} className="me-card" style={{ border: `1px solid ${isBlocked ? '#3a2025' : status === 'done' ? '#1e2f28' : '#1d2129'}`, borderRadius: 14, background: isBlocked ? 'rgba(255,90,110,.04)' : '#12151b', overflow: 'hidden' }}>
+            <div key={r.job.id} className="me-card" style={{ border: `1px solid ${isBlocked ? '#3a2025' : status === 'done' ? '#1e2f28' : 'var(--border)'}`, borderRadius: 14, background: isBlocked ? 'rgba(255,90,110,.04)' : 'var(--bg-card)', overflow: 'hidden' }}>
               {/* Missing-asset banner */}
               {isBlocked && r.missing.length > 0 && (
                 <div style={{ padding: '8px 16px', background: 'rgba(255,90,110,.1)', borderBottom: '1px solid #3a2025', display: 'flex', alignItems: 'center', gap: 10, fontSize: 11.5 }}>
@@ -538,9 +560,9 @@ export function RenderQueue(): JSX.Element {
                         ) : m}
                       </span>
                     ))}
-                    {' '}— click the link to fix, then ↻ to retry
+                    {' '}— open the missing item, fix it, then retry the render
                   </span>
-                  <button type="button" onClick={() => void requeueJob(r.job.id)} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 7, padding: '4px 8px', fontSize: 10, color: '#c4cad3', cursor: 'pointer' }}>↻ Retry</button>
+                  <button type="button" onClick={() => void requeueJob(r.job.id)} className="me-btn" style={{ border: '1px solid var(--border-3)', background: 'var(--bg-control)', borderRadius: 7, padding: '4px 8px', fontSize: 10, color: 'var(--text-control)', cursor: 'pointer' }}>Retry render</button>
                 </div>
               )}
 
@@ -548,23 +570,23 @@ export function RenderQueue(): JSX.Element {
               <div style={{ display: 'flex', alignItems: 'flex-start', gap: 14, padding: '14px 16px' }}>
                 {/* Thumbnail */}
                 <div style={{ width: 64, height: 36, borderRadius: 7, background: THUMB_BG, flex: 'none', overflow: 'hidden' }}>
-                  {mediaSrc(r.firstImagePath) && <img src={mediaSrc(r.firstImagePath)} style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />}
+                  {mediaSrc(r.firstImagePath) && <img src={mediaSrc(r.firstImagePath)} alt="" loading="lazy" decoding="async" style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }} />}
                 </div>
 
                 {/* Main content */}
                 <div style={{ flex: 1, minWidth: 0 }}>
                   <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                    <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, color: '#dde0e5', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.job.title}</span>
+                    <span style={{ flex: 1, minWidth: 0, fontSize: 13.5, color: 'var(--text)', fontWeight: 600, whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{r.job.title}</span>
                     <StatusPill label={statusLabel} tone={statusTone} />
                   </div>
-                  <div style={{ fontSize: 11, color: '#6a7180', fontFamily: 'var(--font-mono)', marginTop: 2 }}>{r.job.channel}</div>
+                  <div style={{ fontSize: 11, color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', marginTop: 2 }}>{r.job.channel}</div>
                   <AssetChips r={r} />
 
                   {/* Progress bar + stage info */}
                   {(status === 'rendering' || status === 'done' || status === 'error') && (
                     <div style={{ marginTop: 10 }}>
                       <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
-                        <div style={{ flex: 1, height: 6, borderRadius: 4, background: '#1a1e26', overflow: 'hidden' }}>
+                        <div role="progressbar" aria-label={`Render progress for ${r.job.title}`} aria-valuemin={0} aria-valuemax={100} aria-valuenow={pct} style={{ flex: 1, height: 6, borderRadius: 4, background: '#1a1e26', overflow: 'hidden' }}>
                           <div style={{ width: `${pct}%`, height: '100%', background: barColor, transition: 'width .4s ease' }} />
                         </div>
                         <span style={{ fontSize: 10.5, color: status === 'done' ? '#4fd6a0' : status === 'error' ? '#ff8a96' : 'var(--accent)', fontFamily: 'var(--font-mono)', width: 40, textAlign: 'right', flex: 'none' }}>
@@ -575,13 +597,13 @@ export function RenderQueue(): JSX.Element {
                         <>
                           <StageStepper p={p} />
                           <div style={{ marginTop: 5, display: 'flex', alignItems: 'center', gap: 7, flexWrap: 'wrap' }}>
-                            {p?.stageDetail && <span style={{ fontSize: 10, color: '#8a909c' }}>{p.stageDetail}</span>}
-                            {encoderChip && <span title={p?.encoder} style={{ border: '1px solid #262b34', borderRadius: 999, padding: '1px 6px', fontSize: 9.5, color: p?.device === 'gpu' ? '#4fd6a0' : '#aab0bb', fontFamily: 'var(--font-mono)' }}>{encoderChip}</span>}
-                            {filterChip && <span title={p?.filterDetail} style={{ border: '1px solid #262b34', borderRadius: 999, padding: '1px 6px', fontSize: 9.5, color: p?.filterDevice === 'gpu' ? '#4fd6a0' : '#f5b323', fontFamily: 'var(--font-mono)' }}>{filterChip}</span>}
-                            {eta && <span title="Estimated time remaining" style={{ fontSize: 9.5, color: '#6a7180', fontFamily: 'var(--font-mono)' }}>{eta}</span>}
-                            {speedChip && <span title="Encoding speed" style={{ fontSize: 9.5, color: '#6a7180', fontFamily: 'var(--font-mono)' }}>{speedChip}</span>}
-                            {fpsChip && <span title="Current encoder FPS" style={{ fontSize: 9.5, color: '#6a7180', fontFamily: 'var(--font-mono)' }}>{fpsChip}</span>}
-                            {bitrateChip && <span title="Output bitrate" style={{ fontSize: 9.5, color: '#6a7180', fontFamily: 'var(--font-mono)' }}>{bitrateChip}</span>}
+                            {p?.stageDetail && <span style={{ fontSize: 10, color: 'var(--text-muted)' }}>{p.stageDetail}</span>}
+                            {encoderChip && <span title={p?.encoder} style={{ border: '1px solid var(--border-3)', borderRadius: 999, padding: '1px 6px', fontSize: 9.5, color: p?.device === 'gpu' ? '#4fd6a0' : 'var(--text-muted)', fontFamily: 'var(--font-mono)' }}>{encoderChip}</span>}
+                            {filterChip && <span title={p?.filterDetail} style={{ border: '1px solid var(--border-3)', borderRadius: 999, padding: '1px 6px', fontSize: 9.5, color: p?.filterDevice === 'gpu' ? '#4fd6a0' : '#f5b323', fontFamily: 'var(--font-mono)' }}>{filterChip}</span>}
+                            {eta && <span title="Estimated time remaining" style={{ fontSize: 9.5, color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}>{eta}</span>}
+                            {speedChip && <span title="Encoding speed" style={{ fontSize: 9.5, color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}>{speedChip}</span>}
+                            {fpsChip && <span title="Current encoder FPS" style={{ fontSize: 9.5, color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}>{fpsChip}</span>}
+                            {bitrateChip && <span title="Output bitrate" style={{ fontSize: 9.5, color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}>{bitrateChip}</span>}
                             {p?.warning && <span title={p.warning} style={{ border: '1px solid rgba(245,179,35,.35)', borderRadius: 999, padding: '1px 7px', fontSize: 9.5, color: '#f5b323', background: 'rgba(245,179,35,.08)' }}>Warning</span>}
                           </div>
                         </>
@@ -607,16 +629,16 @@ export function RenderQueue(): JSX.Element {
                   {status === 'done' && (
                     <>
                       <button type="button" onClick={() => void openRenderFile(r.job.id)} className="me-btn" style={{ border: '1px solid #26352f', background: '#101b16', borderRadius: 7, padding: '5px 9px', fontSize: 10.5, color: '#4fd6a0', cursor: 'pointer' }}>Open</button>
-                      <button type="button" onClick={() => void openRenderFolder(r.job.id)} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 7, padding: '5px 9px', fontSize: 10.5, color: '#c4cad3', cursor: 'pointer' }}>Folder</button>
+                      <button type="button" onClick={() => void openRenderFolder(r.job.id)} className="me-btn" style={{ border: '1px solid var(--border-3)', background: 'var(--bg-control)', borderRadius: 7, padding: '5px 9px', fontSize: 10.5, color: 'var(--text-control)', cursor: 'pointer' }}>Folder</button>
                     </>
                   )}
                   {(status === 'error' || status === 'cancelled') && (
-                    <button type="button" onClick={() => void requeueJob(r.job.id)} title={status === 'cancelled' ? 'Put this job back in the queue' : undefined} className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 7, padding: '5px 9px', fontSize: 10.5, color: '#c4cad3', cursor: 'pointer' }}>↻ Retry</button>
+                    <button type="button" onClick={() => void requeueJob(r.job.id)} title={status === 'cancelled' ? 'Put this job back in the queue' : undefined} className="me-btn" style={{ border: '1px solid var(--border-3)', background: 'var(--bg-control)', borderRadius: 7, padding: '5px 9px', fontSize: 10.5, color: 'var(--text-control)', cursor: 'pointer' }}>↻ Retry</button>
                   )}
                   {(status === 'queued' || isBlocked) && (
-                    <button type="button" onClick={() => void requeueJob(r.job.id)} title="Reset to queued" className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 7, padding: '5px 9px', fontSize: 10.5, color: '#c4cad3', cursor: 'pointer' }}>↻</button>
+                    <button type="button" onClick={() => void requeueJob(r.job.id)} title="Reset to queued" className="me-btn" style={{ border: '1px solid var(--border-3)', background: 'var(--bg-control)', borderRadius: 7, padding: '5px 9px', fontSize: 10.5, color: 'var(--text-control)', cursor: 'pointer' }}>↻</button>
                   )}
-                  <button type="button" onClick={() => void deleteJob(r.job.id)} title="Remove" className="me-btn" style={{ border: '1px solid #262b34', background: '#15181f', borderRadius: 7, padding: '5px 9px', fontSize: 10.5, color: '#6a7180', cursor: 'pointer' }}>×</button>
+                  <button type="button" onClick={() => void deleteJob(r.job.id)} title="Remove" className="me-btn" style={{ border: '1px solid var(--border-3)', background: 'var(--bg-control)', borderRadius: 7, padding: '5px 9px', fontSize: 10.5, color: 'var(--text-dim)', cursor: 'pointer' }}>×</button>
                 </div>
               </div>
             </div>
@@ -625,6 +647,18 @@ export function RenderQueue(): JSX.Element {
       </div>
       <TemplateEngineJobsSection />
       <TalkingPhotosJobsSection />
+      <ConfirmDialog
+        open={!!libraryPreview}
+        title="Organize the media library?"
+        body={libraryPreview
+          ? `Move ${libraryPreview.fileCount} files (~${(libraryPreview.totalBytes / 1_000_000).toFixed(0)} MB) into per-video folders under:\n${libraryPreview.libraryRoot}\n\nEach file is copied and verified before the original is removed. An undo log is written.${libraryPreview.missing ? `\n\n${libraryPreview.missing} missing source file(s) will be skipped.` : ''}`
+          : ''}
+        confirmLabel="Organize library"
+        confirmVariant="primary"
+        busy={organizingLibrary}
+        onCancel={() => setLibraryPreview(null)}
+        onConfirm={() => void confirmOrganizeLibrary()}
+      />
     </ScreenPad>
   )
 }

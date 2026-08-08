@@ -77,8 +77,8 @@ function WorkCard({
       )}
       <div style={{ display: 'flex', gap: 6 }}>
         <button type="button" onClick={() => onOpen(item)} className="me-btn ed-focus" style={{ flex: 1, border: '1px solid var(--border-3)', background: 'var(--bg-control)', borderRadius: 'var(--radius-sm)', padding: '5px 0', fontSize: 11, color: 'var(--text-bright)', cursor: 'pointer' }}>{actionLabel(item)}</button>
-        <button type="button" onClick={() => onUploaded(item)} title="Toggle uploaded" aria-label="Toggle uploaded" className="me-btn ed-focus" style={{ border: `1px solid ${item.uploaded ? 'color-mix(in srgb, var(--info) 40%, transparent)' : 'var(--border-3)'}`, background: item.uploaded ? 'color-mix(in srgb, var(--info) 12%, transparent)' : 'var(--bg-control)', borderRadius: 'var(--radius-sm)', padding: '5px 9px', fontSize: 11, color: item.uploaded ? 'var(--info-2)' : 'var(--text-muted)', cursor: 'pointer' }}>✓</button>
-        <button type="button" onClick={() => onArchive(item)} title="Archive" aria-label="Archive" className="me-btn ed-focus" style={{ border: '1px solid var(--border-3)', background: 'var(--bg-control)', borderRadius: 'var(--radius-sm)', padding: '5px 9px', fontSize: 11, color: 'var(--text-dim)', cursor: 'pointer' }}>×</button>
+        <button type="button" onClick={() => onUploaded(item)} title={item.uploaded ? 'Mark as not uploaded' : 'Mark as uploaded'} aria-label={item.uploaded ? 'Mark as not uploaded' : 'Mark as uploaded'} className="me-btn ed-focus" style={{ border: `1px solid ${item.uploaded ? 'color-mix(in srgb, var(--info) 40%, transparent)' : 'var(--border-3)'}`, background: item.uploaded ? 'color-mix(in srgb, var(--info) 12%, transparent)' : 'var(--bg-control)', borderRadius: 'var(--radius-sm)', padding: '5px 9px', fontSize: 11, color: item.uploaded ? 'var(--info-2)' : 'var(--text-muted)', cursor: 'pointer' }}>✓</button>
+        <button type="button" onClick={() => onArchive(item)} title="Remove from Today" aria-label="Remove from Today" className="me-btn ed-focus" style={{ border: '1px solid var(--border-3)', background: 'var(--bg-control)', borderRadius: 'var(--radius-sm)', padding: '5px 9px', fontSize: 11, color: 'var(--text-dim)', cursor: 'pointer' }}>×</button>
       </div>
     </div>
   )
@@ -90,7 +90,6 @@ export function Home(): JSX.Element {
   const sourceChannels = useData((s) => s.sourceChannels)
   const renderJobs = useData((s) => s.renderJobs)
   const activity = useData((s) => s.activity)
-  const downloads = useData((s) => s.downloads)
   const scraping = useData((s) => s.scraping)
   const rescrapeAll = useData((s) => s.rescrapeAll)
   const openProject = useData((s) => s.openProject)
@@ -99,6 +98,7 @@ export function Home(): JSX.Element {
   const selected = useStore((s) => s.workspaceChannel)
   const setWorkspaceChannel = useStore((s) => s.setWorkspaceChannel)
   const setActive = useStore((s) => s.setActive)
+  const showActivityRail = useStore((s) => s.showActivityRail)
   const [openError, setOpenError] = useState('')
 
   const sourceNames = [...new Set(workItems.map((w) => w.channel))].sort((a, b) => a.localeCompare(b))
@@ -137,23 +137,21 @@ export function Home(): JSX.Element {
       )}
 
       <PageHeader
-        eyebrow="Home"
-        title="Command center"
-        subtitle="What needs you, what's in flight, and recent activity — all in one place."
-        actions={
+        title="Today"
+        subtitle="Continue production, clear a blocker, or start from a source."
+        actions={resume ? (
           <Btn
             variant="primary"
             size="md"
-            disabled={!resume}
-            onClick={() => resume && void openNext(resume)}
-            title={resume ? `Resume: ${resume.title}` : 'Nothing in progress'}
+            onClick={() => void openNext(resume)}
+            title={`Resume: ${resume.title}`}
           >
-            {resume ? `Resume → ${resume.title.slice(0, 24)}${resume.title.length > 24 ? '…' : ''}` : 'Nothing to resume'}
+            {`Resume ${resume.title.slice(0, 28)}${resume.title.length > 28 ? '…' : ''}`}
           </Btn>
-        }
+        ) : undefined}
       />
 
-      <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0,1fr) minmax(240px,286px)', gap: 18, alignItems: 'start' }}>
+      <div className="me-home-layout" style={{ display: 'grid', gridTemplateColumns: showActivityRail ? 'minmax(0,1fr) minmax(250px,286px)' : 'minmax(0,1fr)', gap: 'var(--space-5)', alignItems: 'start' }}>
         <div style={{ minWidth: 0 }}>
           <Card pad={14} style={{ marginBottom: 18 }}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 10, marginBottom: 12 }}>
@@ -162,8 +160,8 @@ export function Home(): JSX.Element {
             </div>
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(180px,1fr))', gap: 10 }}>
               {renderFailures.length > 0 && <NeedRow label={`${renderFailures.length} render issue${renderFailures.length === 1 ? '' : 's'}`} detail="Open the queue to retry or fix missing assets." tone="var(--err)" onClick={() => setActive('render')} />}
-              {readyToUpload.length > 0 && <NeedRow label={`${readyToUpload.length} ready to upload`} detail="Rendered videos are waiting for upload confirmation." tone="var(--info)" onClick={() => setWorkspaceChannel(null)} />}
-              {newVideos > 0 && <NeedRow label={`${newVideos} new source video${newVideos === 1 ? '' : 's'}`} detail="Open Sources to choose what to produce next." tone="var(--accent)" onClick={() => setActive('sources')} />}
+              {readyToUpload.length > 0 && <NeedRow label={`${readyToUpload.length} ready to upload`} detail="Rendered videos are waiting for your final upload check." tone="var(--info)" onClick={() => setActive('publish')} />}
+              {newVideos > 0 && <NeedRow label={`${newVideos} new source video${newVideos === 1 ? '' : 's'}`} detail="Browse source videos to choose what to produce next." tone="var(--accent)" onClick={() => setActive('sources')} />}
               {behindGoals.length > 0 && <NeedRow label={`${behindGoals.length} goal gap${behindGoals.length === 1 ? '' : 's'}`} detail="One or more channels are behind the weekly target." tone="var(--warn)" onClick={() => setActive('channels')} />}
               {signalCount === 0 && (
                 <div style={{ gridColumn: '1 / -1', border: '1px dashed var(--border-2)', borderRadius: 'var(--radius-lg)', padding: 22, textAlign: 'center', color: 'var(--text-faint)', fontSize: 'var(--fs-sm)' }}>You're all caught up. Pick a source or resume an unfinished video.</div>
@@ -175,20 +173,22 @@ export function Home(): JSX.Element {
             <span style={{ fontFamily: 'var(--font-display)', fontWeight: 700, fontSize: 'var(--fs-lg)', color: 'var(--text)' }}>Pipeline</span>
             <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-faint)', border: '1px solid var(--border-2)', borderRadius: 'var(--radius-sm)', padding: '2px 7px' }}>{activeItems.length} active</span>
             <div style={{ flex: 1 }} />
-            <Btn variant="ghost" onClick={() => setActive('sources')}>Open Sources</Btn>
+            <Btn variant="ghost" onClick={() => setActive('sources')}>Browse source videos</Btn>
           </div>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
-            <button type="button" onClick={() => setWorkspaceChannel(null)} className="me-btn ed-focus" style={chipStyle(!selected)}>All channels</button>
-            {sourceNames.map((name) => (
-              <button key={name} type="button" onClick={() => setWorkspaceChannel(name)} className="me-btn ed-focus" style={chipStyle(selected === name)}>{name}</button>
-            ))}
-          </div>
+          {sourceNames.length > 1 && (
+            <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap', marginBottom: 14 }}>
+              <button type="button" onClick={() => setWorkspaceChannel(null)} className="me-btn ed-focus" style={chipStyle(!selected)}>All channels</button>
+              {sourceNames.map((name) => (
+                <button key={name} type="button" onClick={() => setWorkspaceChannel(name)} className="me-btn ed-focus" style={chipStyle(selected === name)}>{name}</button>
+              ))}
+            </div>
+          )}
 
           {activeItems.length === 0 ? (
             <EmptyState
               title={workItems.length === 0 ? 'No videos yet' : 'Nothing here for this channel'}
               body={workItems.length === 0 ? 'Add a source channel to start the pipeline — its videos will flow through here.' : 'Switch channels above, or add a new source.'}
-              action={<Btn variant="primary" onClick={() => setActive('sources')}>Open Sources</Btn>}
+              action={<Btn variant="primary" onClick={() => setActive('sources')}>Browse source videos</Btn>}
             />
           ) : (
             <div style={{ display: 'grid', gridTemplateColumns: 'repeat(auto-fit,minmax(220px,1fr))', gap: 16, alignItems: 'start' }}>
@@ -211,41 +211,29 @@ export function Home(): JSX.Element {
           )}
         </div>
 
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 14 }}>
+        {showActivityRail && <aside aria-label="Recent activity" style={{ minWidth: 0 }}>
           <Card pad={16}>
             <div style={{ display: 'flex', alignItems: 'center', gap: 8, marginBottom: 14 }}>
-              <span style={{ width: 7, height: 7, borderRadius: '50%', background: 'var(--ok)', boxShadow: '0 0 8px var(--ok)' }} />
-              <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 'var(--fs-body)', color: 'var(--text)' }}>Activity</span>
-              <span style={{ marginLeft: 'auto', fontFamily: 'var(--font-mono)', fontSize: 9.5, color: 'var(--text-faint)' }}>live</span>
+              <span style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 'var(--fs-body)', color: 'var(--text)' }}>Recent activity</span>
+              <Btn size="sm" variant="ghost" onClick={() => void rescrapeAll()} style={{ marginLeft: 'auto' }}>{scraping ? 'Refreshing…' : 'Refresh sources'}</Btn>
             </div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 13 }}>
-              {activity.length === 0 && <div style={{ fontSize: 11, color: 'var(--text-faint)', lineHeight: 1.5 }}>No activity yet. Scrape, download, or render to see events here.</div>}
-              {activity.slice(0, 10).map((a, i) => (
-                <div key={`${a.t}-${i}`} style={{ display: 'flex', gap: 10 }}>
+            <div aria-live="polite" style={{ display: 'flex', flexDirection: 'column', gap: 12 }}>
+              {activity.length === 0 && <div style={{ fontSize: 11.5, color: 'var(--text-faint)', lineHeight: 1.5 }}>Production activity will appear here.</div>}
+              {activity.slice(0, 8).map((a, i) => (
+                <div key={`${a.t}-${i}`} style={{ display: 'flex', gap: 9, alignItems: 'flex-start' }}>
                   <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-fainter)', flex: 'none', width: 32, paddingTop: 1 }}>{a.t}</span>
-                  <span style={{ color: a.color, flex: 'none' }}>{a.icon}</span>
+                  <span aria-hidden="true" style={{ width: 5, height: 5, borderRadius: '50%', background: a.color, flex: 'none', marginTop: 5 }} />
                   <span title={a.text} className="me-clamp-2" style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.4 }}>{a.text}</span>
                 </div>
               ))}
             </div>
-          </Card>
-          <div style={{ border: '1px solid var(--accent)', borderRadius: 'var(--radius-lg)', padding: 16, background: 'linear-gradient(165deg,var(--accent-soft),var(--bg-card-3))', boxShadow: 'var(--shadow-card)' }}>
-            <div style={{ fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 'var(--fs-body)', color: 'var(--text-strong)', marginBottom: 6 }}>Auto-scrape</div>
-            <div style={{ fontSize: 11.5, color: 'var(--text-muted)', lineHeight: 1.5, marginBottom: 13 }}>
-              {channels.length ? <>Re-scrape {channels.length} channel{channels.length === 1 ? '' : 's'} for upload stats and source matching.</> : <>Add a channel, then re-scrape to pull stats and uploads.</>}
-            </div>
-            <Btn variant="soft" onClick={() => void rescrapeAll()} style={{ width: '100%', justifyContent: 'center' }}>{scraping ? 'Scraping…' : 'Run now'}</Btn>
-          </div>
-          <Card pad="12px 16px">
-            <div style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)', letterSpacing: '.4px', marginBottom: 8 }}>STATUS</div>
-            <div style={{ display: 'flex', flexDirection: 'column', gap: 7, fontSize: 11.5 }}>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: 'var(--text-muted)' }}>Sources</span><span style={{ color: 'var(--text-bright)', fontWeight: 600 }}>{sourceChannels.length}</span></div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: 'var(--text-muted)' }}>Downloads</span><span style={{ color: 'var(--text-bright)', fontWeight: 600 }}>{downloads.length}</span></div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: 'var(--text-muted)' }}>Render queue</span><span style={{ color: inQueue > 0 ? 'var(--accent)' : 'var(--text-bright)', fontWeight: 600 }}>{inQueue}</span></div>
-              <div style={{ display: 'flex', justifyContent: 'space-between' }}><span style={{ color: 'var(--text-muted)' }}>Newest check</span><span style={{ color: 'var(--text-bright)', fontWeight: 600 }}>{fmtAgo(sourceChannels[0]?.lastScrapedAt)}</span></div>
+            <div style={{ display: 'flex', flexWrap: 'wrap', gap: '5px 12px', marginTop: 16, paddingTop: 12, borderTop: '1px solid var(--border)', fontSize: 10.5, color: 'var(--text-dim)' }}>
+              <span>{sourceChannels.length} source{sourceChannels.length === 1 ? '' : 's'}</span>
+              <span>{inQueue} rendering or queued</span>
+              <span>checked {fmtAgo(sourceChannels[0]?.lastScrapedAt)}</span>
             </div>
           </Card>
-        </div>
+        </aside>}
       </div>
     </ScreenPad>
   )

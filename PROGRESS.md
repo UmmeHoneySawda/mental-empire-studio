@@ -1,5 +1,73 @@
 # Current Objective
 
+Run the full Impeccable UI/UX workflow in the user's specified sequence and turn Mental Empire Studio into one clearly directed, production-ready creator workflow without removing capabilities.
+
+# Verified Completed
+
+- Loaded Impeccable, Karpathy, and codebase-memory instructions; refreshed the knowledge graph as `D-Work-mental-empire-studio` (8,558 nodes / 25,252 edges).
+- Ran Impeccable session context once and completed `init` by creating `PRODUCT.md` from repository evidence under the user's explicit no-questions instruction.
+- Confirmed a clean starting worktree and identified the incumbent visual authority in `src/theme/tokens.css`, `src/components/Sidebar.tsx`, `src/components/ui/kit.tsx`, and representative screens.
+- Completed `critique src` with a persisted 21/40 baseline at `.impeccable/critique/2026-08-08T17-58-33Z__src.md`; the detector's 13 warnings were triaged as progress-indicator, caption-output, or editor-state false positives.
+- Applied the critique before advancing: the shell now exposes a five-stage production path, keeps labels at 1280×720, uses native navigation/window controls, and presents an honest state-aware render-queue action.
+- Fixed Automations selecting an owned-channel id from the source list, sanitized invalid unpublished-count responses, removed contradictory placeholder-ready jobs, and gated configuration behind one actionable prerequisite.
+- Completed `distill src`: Today now centers on blockers and the active pipeline, honors the existing activity-rail preference, consolidates three secondary rail cards into one, hides unnecessary filters for a single channel, and removes duplicate automation blockers while retaining every destination and action.
+- Completed `layout src`: all ScreenPad surfaces use the spacing scale and a centered 1600px content frame; Home's supporting rail stacks below the pipeline at ≤1100px; labeled navigation remains through 821px; page-header actions reflow at narrow widths.
+- Completed `onboard src`: first run now leads from publishing channel to source channel to a real source video, retains an explicit self-guided exit, focuses the current action, and exposes errors as live alerts.
+- Restored the browser QA mock's missing visual-template API so renderer initialization reaches `ready` and the onboarding flow can be exercised without Electron or user data.
+- Completed `clarify src`: established a product glossary and aligned navigation, primary screens, actions, empty states, automation templates, B-roll collections, and upload handoff around plain workflow terms; removed user-facing “Compose,” “visual system,” “niche,” “scrape,” “mapped,” and renderer jargon where it did not support a decision.
+- Completed `typeset src`: retained the self-hosted Space Grotesk/Hanken Grotesk/JetBrains Mono/Anton roles, formalized a compact desktop type scale and 62ch prose measure, removed redundant page eyebrows, converted editor screen names to semantic headings, and limited mono/poster faces to data or rendered-output roles.
+- Completed `adapt src`: treated 1100×720 as the production window and zoom/touch as secondary desktop contexts; fixed source-detail filter clipping, reflowed video grids and sticky actions, made onboarding compact and scroll-safe, stacked B-roll fields, added coarse-pointer targets and reduced-motion behavior, and made compact navigation explicitly named for assistive technology.
+- Completed `harden src`: startup now tolerates partial loader failures and offers an in-context retry without hiding healthy data; the initial shell no longer flashes false empty states; source requests ignore stale responses; upload checks, source actions, onboarding, and production-template operations surface recoverable errors; destructive template deletion confirms intent; dialogs trap focus, close on Escape, and restore focus; B-roll/template fields validate and bound input before persistence.
+- Completed browser fault injection for startup recovery: a simulated visual-template failure kept Today usable, displayed the warning and Retry action, then cleared after a successful retry. Added the missing B-roll progress subscription seam to the browser mock so browser QA initializes without an unhandled listener error.
+- Completed `extract src`: enriched the existing 14-use `Banner` primitive with error/status semantics and extracted one pure `errorMessage` boundary for user-facing async failures across onboarding, channels, sources, publishing, automations, and the data store. Two dialog focus traps remain local because they have only two proven uses; no speculative component abstraction was added.
+- Completed `audit src` with a persisted 14/20 report at `.impeccable/audit/2026-08-09T01-23-20+06-00__src.md`: no P0 defects, two P1 accessibility defects (low-contrast secondary text and pointer-only cards), five P2 system defects (landmarks/headings, native dialogs, global reduced-motion override, raw theme colors, and incomplete progress semantics), and one P3 image-loading opportunity. Browser inspection covered all 11 destinations at the production viewport with no overflow, unlabeled visible inputs, missing image alternatives, or runtime errors.
+- Completed `polish src`: all audited P1/P2 findings are resolved with AA secondary text, keyboard-operable production choices, application landmarks/headings, one focus-safe confirmation dialog, semantic progress/status feedback, selective reduced-motion behavior, broader semantic token use, and lazy decoding for repeated template/render thumbnails. The post-polish score is 18/20.
+- Completed `document`: added the portable root `DESIGN.md`, schema-v2 `.impeccable/design.json` with 21 color ramps and nine rendered components, and refreshed the repository-specific design-system implementation guide. The durable north star is “The Creator Control Room.”
+
+# Current Problem
+
+No remaining failure or blocker. All 13 Impeccable stages and the final verification are complete.
+
+# Relevant Files
+
+- `PRODUCT.md`
+- `src/app.tsx`
+- `src/components/Sidebar.tsx`
+- `src/components/primitives.tsx`
+- `src/components/ui/kit.tsx`
+- `src/theme/tokens.css`
+- `src/theme/global.css`
+- `src/screens/`
+
+# Do Not Modify
+
+- Video render/filter performance settings covered by `docs/RENDER-PERFORMANCE.md`.
+- Pipeline services, database schema, settings persistence, and IPC contracts unless a verified UI defect requires a minimal aligned change.
+- Existing working video-editor stacking and external B-roll preview behavior documented below.
+
+# Next Action
+
+None. Do not commit or push unless the user authorizes it.
+
+# Verification
+
+- `PRODUCT.md` exists and follows `impeccable:product-schema 1`.
+- First UI milestone: `npm run typecheck -- --pretty false` and `git diff --check` passed; browser verification measured a labeled 196px sidebar at 1280×720 and confirmed actionable Automations blockers.
+- Distill milestone: typecheck and diff check passed; browser DOM confirms one automation blocker/action and a single consolidated Home activity rail.
+- Layout milestone: clean pre/post layout detector scans, typecheck, and diff check; browser measurements showed no horizontal overflow at 800, 900, 1024, 1600, or 2200px and a centered 1600px wide-content cap.
+- Onboarding milestone: browser mock renders “Start your first video,” autofocuses “Browse source videos,” closes on Escape, and persists the mock completion marker; typecheck and diff check passed.
+- Clarify milestone: renderer typecheck and diff check passed; browser DOM verifies the Publishing Channels, Sources, B-roll Library, Ready to Upload, and Automations paths use the new vocabulary, including correct singular “1 channel” and an untruncated publishing-channel navigation label.
+- Typeset milestone: renderer typecheck and diff check passed; computed styles verify loaded Space Grotesk 26/600 page titles, Hanken Grotesk 13/400 body copy at 19.5px leading, and JetBrains Mono metadata; a 640×360 stress viewport (equivalent to 200% layout pressure) remained free of horizontal overflow. The only detector warnings are two Montserrat `@font-face` assets used by rendered caption presets, not application chrome.
+- Adapt milestone: renderer typecheck and diff check passed; all 11 destinations have no document/screen overflow at 1100×720, 900×720, or 640×720; active Video Studio and thumbnail workspaces fit at the production minimum; source filters and two-column cards no longer clip at 640px; onboarding fits 550×360 with its focused action visible; a 2200px viewport retains the centered 1600px content cap; emulated coarse pointers produce 44px controls and reduced motion collapses animations to one 0.01ms iteration.
+- Harden milestone: renderer typecheck passed; browser validation confirmed production-template name validation, focus entry, Escape dismissal, partial-startup warning/retry/recovery, and continued screen availability during a simulated loader failure.
+- Extract milestone: renderer typecheck passed after migrating the repeated unknown-error conversion pattern and centralizing live-region semantics in the shared Banner primitive.
+- Audit milestone: the bundled detector reported only the 13 previously triaged progress/caption/editor-state matches; an independent DOM audit covered every destination, found no horizontal overflow or runtime errors, and persisted the scored report. The detector's URL mode could not run because Puppeteer is not installed, so the existing in-app browser harness supplied rendered evidence without launching Electron or touching user data.
+- Polish milestone: typecheck and diff check passed; computed contrast on elevated surfaces is 4.71:1 or better for every secondary-text role; native dialogs and pointer-only template/source choices are gone; all 11 destinations retain one `main`, one `h1`, and zero horizontal overflow at both 640×720 and 1100×720; the runtime event buffer is empty. The single final detector pass reports only the 13 intentional progress-fill, editor-diagnostic, and rendered-caption-font matches already triaged above.
+- Document milestone: `DESIGN.md` frontmatter parses with only the official token groups and all eight canonical sections in order; `.impeccable/design.json` parses as schema v2 with matching metadata for all 21 frontmatter colors and nine self-contained component examples.
+- Final milestone: the final detector pass retained only 13 intentional warnings; `npm run typecheck -- --pretty false` passed; `npm run build` passed with the existing mixed-import chunk warnings; `npm test -- --reporter=dot` passed 84 files / 949 tests with 36 intentional skips; `git diff --check` passed with line-ending notices only. Browser QA covered all 11 destinations at 640×720, 1100×720, and the standard desktop viewport without overflow or runtime errors. The temporary browser tabs and Vite QA server were closed, and Electron/user data were never launched or modified.
+
+# Protected Prior Work — Timeline Stacking
+
 Make Remotion timeline tracks draggable in compositor order and make the caption layer honor
 its track order, so opaque Auto B-roll cannot cover captions and the user can move captions
 to the foreground.

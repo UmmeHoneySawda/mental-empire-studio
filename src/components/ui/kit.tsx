@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from 'react'
+import { useEffect, useId, useRef, useState } from 'react'
 import type { CSSProperties, ReactNode } from 'react'
 import { createTrailingCommit } from '../../lib/trailingCommit'
 import type { TrailingCommit } from '../../lib/trailingCommit'
@@ -11,14 +11,14 @@ import type { TrailingCommit } from '../../lib/trailingCommit'
 
 export function SectionLabel({ children, style }: { children: ReactNode; style?: CSSProperties }): JSX.Element {
   return (
-    <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '.8px', textTransform: 'uppercase', color: 'var(--text-faint)', ...style }}>
+    <div style={{ fontFamily: 'var(--font-body)', fontSize: 'var(--fs-caption)', fontWeight: 600, letterSpacing: 'var(--tracking-label)', color: 'var(--text-dim)', ...style }}>
       {children}
     </div>
   )
 }
 
 export function FieldLabel({ children, style }: { children: ReactNode; style?: CSSProperties }): JSX.Element {
-  return <div style={{ fontSize: 11, color: 'var(--text-dim)', marginBottom: 6, ...style }}>{children}</div>
+  return <div style={{ fontSize: 'var(--fs-caption)', fontWeight: 500, color: 'var(--text-dim)', marginBottom: 6, ...style }}>{children}</div>
 }
 
 // ---- containers ----
@@ -67,40 +67,33 @@ export function Card({
   )
 }
 
-/** Standard screen header: an optional eyebrow, the page `<h1>` title, an optional
- *  one-line subtitle, and right-aligned actions. Replaces the four different
+/** Standard screen header: the page `<h1>` title, an optional explanatory subtitle,
+ *  and right-aligned actions. Replaces the four different
  *  hand-rolled heading treatments across screens with one consistent pattern. */
 export function PageHeader({
-  eyebrow,
   title,
   subtitle,
   actions,
   style
 }: {
-  eyebrow?: ReactNode
   title: ReactNode
   subtitle?: ReactNode
   actions?: ReactNode
   style?: CSSProperties
 }): JSX.Element {
   return (
-    <div style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-4)', marginBottom: 'var(--space-6)', ...style }}>
-      <div style={{ minWidth: 0, flex: 1 }}>
-        {eyebrow && (
-          <div style={{ fontFamily: 'var(--font-mono)', fontSize: 'var(--fs-mono)', letterSpacing: '1px', textTransform: 'uppercase', color: 'var(--accent)', marginBottom: 7 }}>
-            {eyebrow}
-          </div>
-        )}
+    <div className="me-page-header" style={{ display: 'flex', alignItems: 'flex-start', gap: 'var(--space-4)', marginBottom: 'var(--space-6)', ...style }}>
+      <div className="me-page-header-copy" style={{ minWidth: 0, flex: 1 }}>
         <h1 style={{ margin: 0, fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 'var(--fs-display)', letterSpacing: '-.5px', color: 'var(--text-strong)', lineHeight: 'var(--lh-tight)' }}>
           {title}
         </h1>
         {subtitle && (
-          <div style={{ marginTop: 6, fontSize: 'var(--fs-body)', color: 'var(--text-dim)', lineHeight: 'var(--lh-normal)', maxWidth: 640 }}>
+          <p style={{ margin: '7px 0 0', fontSize: 'var(--fs-body)', fontWeight: 400, letterSpacing: '.005em', color: 'var(--text-muted)', lineHeight: 'var(--lh-normal)', maxWidth: 'var(--measure-prose)' }}>
             {subtitle}
-          </div>
+          </p>
         )}
       </div>
-      {actions && <div style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flex: 'none' }}>{actions}</div>}
+      {actions && <div className="me-page-header-actions" style={{ display: 'flex', alignItems: 'center', gap: 'var(--space-2)', flex: 'none' }}>{actions}</div>}
     </div>
   )
 }
@@ -159,8 +152,8 @@ const BTN_STYLES: Record<BtnVariant, CSSProperties> = {
   },
   ghost: {
     border: '1px solid var(--border-3)',
-    background: '#15181f',
-    color: '#c4cad3'
+    background: 'var(--bg-control)',
+    color: 'var(--text-control)'
   },
   danger: {
     border: '1px solid #4a2530',
@@ -249,8 +242,8 @@ export function IconBtn({
         justifyContent: 'center',
         border: active ? '1px solid var(--accent)' : danger ? '1px solid #4a2530' : '1px solid var(--border-3)',
         borderRadius: 8,
-        background: active ? 'var(--accent-soft)' : danger ? '#1a1216' : '#15181f',
-        color: disabled ? 'var(--text-fainter)' : active ? 'var(--accent)' : danger ? 'var(--err-2)' : '#c4cad3',
+        background: active ? 'var(--accent-soft)' : danger ? '#1a1216' : 'var(--bg-control)',
+        color: disabled ? 'var(--text-fainter)' : active ? 'var(--accent)' : danger ? 'var(--err-2)' : 'var(--text-control)',
         fontSize: 11,
         fontWeight: 800,
         cursor: disabled ? 'not-allowed' : 'pointer'
@@ -405,7 +398,7 @@ export function ToggleRow({
   return (
     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
       <div style={{ flex: 1, minWidth: 0 }}>
-        <div style={{ fontSize: 12, color: on ? 'var(--text-bright)' : '#cdd2da', fontWeight: on ? 600 : 500 }}>{label}</div>
+        <div style={{ fontSize: 12, color: on ? 'var(--text-bright)' : 'var(--text-soft)', fontWeight: on ? 600 : 500 }}>{label}</div>
         {hint && <div style={{ fontSize: 10, color: 'var(--text-dim)', marginTop: 2, lineHeight: 1.35 }}>{hint}</div>}
       </div>
       <Switch on={on} onToggle={onToggle} disabled={disabled} label={label} />
@@ -493,7 +486,7 @@ export function SliderRow({
         onPointerUp={debounceMs > 0 ? flush : undefined}
         onBlur={debounceMs > 0 ? flush : undefined}
       />
-      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: '#cdd2da', textAlign: 'right' }}>{format ? format(local) : local}</span>
+      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-soft)', textAlign: 'right' }}>{format ? format(local) : local}</span>
     </label>
   )
 }
@@ -629,6 +622,106 @@ export function Swatches({
 
 // ---- feedback ----
 
+export function ConfirmDialog({
+  open,
+  title,
+  body,
+  confirmLabel = 'Confirm',
+  cancelLabel = 'Cancel',
+  confirmVariant = 'danger',
+  busy = false,
+  onConfirm,
+  onCancel
+}: {
+  open: boolean
+  title: string
+  body: ReactNode
+  confirmLabel?: string
+  cancelLabel?: string
+  confirmVariant?: 'primary' | 'danger'
+  busy?: boolean
+  onConfirm: () => void
+  onCancel: () => void
+}): JSX.Element | null {
+  const titleId = useId()
+  const bodyId = useId()
+  const dialogRef = useRef<HTMLDivElement>(null)
+  const cancelRef = useRef<HTMLButtonElement>(null)
+  const onCancelRef = useRef(onCancel)
+  const busyRef = useRef(busy)
+  onCancelRef.current = onCancel
+  busyRef.current = busy
+
+  useEffect(() => {
+    if (!open) return
+    const opener = document.activeElement instanceof HTMLElement ? document.activeElement : null
+    const frame = window.requestAnimationFrame(() => cancelRef.current?.focus())
+    const onKeyDown = (event: KeyboardEvent): void => {
+      if (event.key === 'Escape' && !busyRef.current) {
+        event.preventDefault()
+        onCancelRef.current()
+        return
+      }
+      if (event.key !== 'Tab') return
+      const focusable = Array.from(dialogRef.current?.querySelectorAll<HTMLElement>(
+        'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+      ) ?? [])
+      if (focusable.length === 0) { event.preventDefault(); return }
+      const first = focusable[0]
+      const last = focusable[focusable.length - 1]
+      if (event.shiftKey && document.activeElement === first) {
+        event.preventDefault()
+        last.focus()
+      } else if (!event.shiftKey && document.activeElement === last) {
+        event.preventDefault()
+        first.focus()
+      }
+    }
+    document.addEventListener('keydown', onKeyDown)
+    return () => {
+      window.cancelAnimationFrame(frame)
+      document.removeEventListener('keydown', onKeyDown)
+      opener?.focus()
+    }
+  }, [open])
+
+  if (!open) return null
+  return (
+    <div
+      className="me-modal-backdrop"
+      onMouseDown={(event) => {
+        if (event.target === event.currentTarget && !busy) onCancel()
+      }}
+    >
+      <div
+        ref={dialogRef}
+        className="me-confirm-dialog"
+        role="alertdialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        aria-describedby={bodyId}
+      >
+        <h2 id={titleId}>{title}</h2>
+        <div id={bodyId} className="me-confirm-body">{body}</div>
+        <div className="me-confirm-actions">
+          <button
+            ref={cancelRef}
+            type="button"
+            className="me-btn ed-focus"
+            disabled={busy}
+            onClick={onCancel}
+          >
+            {cancelLabel}
+          </button>
+          <Btn variant={confirmVariant} disabled={busy} onClick={onConfirm}>
+            {busy ? 'Working…' : confirmLabel}
+          </Btn>
+        </div>
+      </div>
+    </div>
+  )
+}
+
 export function Banner({ kind, children, style }: { kind: 'error' | 'success' | 'info'; children: ReactNode; style?: CSSProperties }): JSX.Element {
   const palette =
     kind === 'error'
@@ -638,6 +731,7 @@ export function Banner({ kind, children, style }: { kind: 'error' | 'success' | 
         : { border: 'var(--border-3)', bg: 'var(--bg-inset)', color: 'var(--text-muted)' }
   return (
     <div
+      role={kind === 'error' ? 'alert' : kind === 'success' ? 'status' : undefined}
       className="ed-fade me-clamp-2"
       style={{ border: `1px solid ${palette.border}`, background: palette.bg, color: palette.color, borderRadius: 10, padding: '9px 12px', fontSize: 11.5, lineHeight: 1.45, ...style }}
     >

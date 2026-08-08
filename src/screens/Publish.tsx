@@ -1,9 +1,10 @@
-import { useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useState } from 'react'
 import { ScreenPad } from '../components/primitives'
 import { PageHeader, Card, Btn, StatusPill, EmptyState, Banner } from '../components/ui/kit'
 import { useData } from '../store/useData'
 import type { PublishItem } from '@shared/types'
 import { mediaSrc } from '../lib/media'
+import { errorMessage } from '../lib/errors'
 
 // Hand-off hub (P2 H): the "did I already upload this" view. Removes the manual
 // folder-hunting — lists every finished render with the upload status persisted by
@@ -172,8 +173,18 @@ export function Publish(): JSX.Element {
   const detectUploads = useData((s) => s.detectUploads)
   const [filter, setFilter] = useState<Filter>('all')
   const [checking, setChecking] = useState(false)
+  const [error, setError] = useState('')
 
-  useEffect(() => { void loadPublishItems() }, [loadPublishItems])
+  const refresh = useCallback(async (): Promise<void> => {
+    setError('')
+    try {
+      await loadPublishItems()
+    } catch (e) {
+      setError(errorMessage(e, 'Could not load finished renders. Try again.'))
+    }
+  }, [loadPublishItems])
+
+  useEffect(() => { void refresh() }, [refresh])
 
   const filtered = useMemo(() => filter === 'all' ? items : items.filter((i) => i.uploadStatus === filter), [items, filter])
   const counts = useMemo(() => {
@@ -188,9 +199,12 @@ export function Publish(): JSX.Element {
 
   const runDetection = async (): Promise<void> => {
     setChecking(true)
+    setError('')
     try {
       await detectUploads()
       await loadPublishItems()
+    } catch (e) {
+      setError(errorMessage(e, 'Could not check upload status. Try again.'))
     } finally {
       setChecking(false)
     }
@@ -199,20 +213,21 @@ export function Publish(): JSX.Element {
   return (
     <ScreenPad>
       <PageHeader
-        eyebrow="Output"
-        title="Ready to upload"
-        subtitle="Every finished render, with whether it already appears on one of your channels. Drag the video and its thumbnail straight into your YouTube upload tab — no folder-hunting. The app hands the files off; it does not upload for you."
+        title="Ready to Upload"
+        subtitle="Review finished renders, then drag each video and thumbnail into YouTube. Studio prepares the files but never uploads them for you."
         actions={(
           <>
-            <Btn variant="ghost" onClick={() => void runDetection()} disabled={checking} title="Re-match every video against the uploads scraped from your own channels">{checking ? 'Checking…' : 'Check uploads'}</Btn>
-            <Btn variant="ghost" onClick={() => void loadPublishItems()} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh'}</Btn>
+            <Btn variant="ghost" onClick={() => void runDetection()} disabled={checking} title="Compare each render with uploads found on your publishing channels">{checking ? 'Checking uploads…' : 'Check uploads'}</Btn>
+            <Btn variant="ghost" onClick={() => void refresh()} disabled={loading}>{loading ? 'Refreshing…' : 'Refresh'}</Btn>
           </>
         )}
       />
 
+      {error && <Banner kind="error" style={{ marginBottom: 12 }}>{error}</Banner>}
+
       {items.length > 0 && counts.unchecked === items.length && (
         <Banner kind="info" style={{ marginBottom: 12 }}>
-          None of these have been checked against your own channels' uploads yet, so no card can tell you whether you already uploaded it. Hit “Check uploads” — if they stay unchecked, refresh a channel on My Channels so there are uploads to match against.
+          Upload status has not been checked yet. Select “Check uploads.” If items remain unchecked, refresh the relevant publishing channel first.
         </Banner>
       )}
 
@@ -242,7 +257,7 @@ export function Publish(): JSX.Element {
       ) : filtered.length === 0 ? (
         <EmptyState
           title={items.length === 0 ? 'No finished renders yet' : 'Nothing matches this filter'}
-          body={items.length === 0 ? 'Render a video and it will show up here with its upload status.' : 'Try a different filter above.'}
+          body={items.length === 0 ? 'Finish a render first. Its video, thumbnail, and upload status will appear here.' : 'Try a different filter above.'}
         />
       ) : (
         <div style={{ display: 'flex', flexDirection: 'column', gap: 10 }}>

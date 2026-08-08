@@ -77,8 +77,8 @@ export function StylePanel(): JSX.Element {
                   boxShadow: on ? '0 0 0 2px var(--accent-soft)' : 'none'
                 }}
               >
-                <div style={{ fontSize: 11.5, fontWeight: 700, color: on ? 'var(--text-strong)' : '#aab0bb' }}>{s.id}</div>
-                <div style={{ fontSize: 9.5, color: on ? '#cdd2da' : 'var(--text-dim)', lineHeight: 1.3, marginTop: 3 }}>{s.tip}</div>
+                <div style={{ fontSize: 11.5, fontWeight: 700, color: on ? 'var(--text-strong)' : 'var(--text-muted)' }}>{s.id}</div>
+                <div style={{ fontSize: 9.5, color: on ? 'var(--text-soft)' : 'var(--text-dim)', lineHeight: 1.3, marginTop: 3 }}>{s.tip}</div>
               </button>
             )
           })}

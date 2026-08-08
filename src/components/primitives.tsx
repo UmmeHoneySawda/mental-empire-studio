@@ -31,7 +31,7 @@ export function Title({ children, size = 25 }: { children: ReactNode; size?: num
 }
 
 export function ScreenPad({ children, style }: { children: ReactNode; style?: CSSProperties }): JSX.Element {
-  return <div className="me-screen" style={{ padding: '30px 34px 40px', ...style }}>{children}</div>
+  return <div className="me-screen" style={{ width: '100%', maxWidth: 1600, margin: '0 auto', padding: 'var(--space-7) clamp(var(--space-4), 3vw, var(--space-7)) var(--space-8)', ...style }}>{children}</div>
 }
 
 export function PrimaryButton({ children, style, onClick, disabled }: { children: ReactNode; style?: CSSProperties; onClick?: () => void; disabled?: boolean }): JSX.Element {
@@ -48,7 +48,7 @@ export function PrimaryButton({ children, style, onClick, disabled }: { children
 
 export function GhostButton({ children, style }: { children: ReactNode; style?: CSSProperties }): JSX.Element {
   return (
-    <div className="me-btn" style={{ display: 'flex', alignItems: 'center', gap: 8, border: '1px solid #262b34', background: '#15181f', borderRadius: 10, padding: '9px 14px', fontSize: 12.5, color: '#c4cad3', cursor: 'pointer', ...style }}>
+    <div className="me-btn" style={{ display: 'flex', alignItems: 'center', gap: 8, border: '1px solid var(--border-3)', background: 'var(--bg-control)', borderRadius: 10, padding: '9px 14px', fontSize: 12.5, color: 'var(--text-control)', cursor: 'pointer', ...style }}>
       {children}
     </div>
   )

@@ -35,6 +35,7 @@ import type {
 } from '@shared/types'
 import type { GpuRenderSpec } from '@shared/renderSpec'
 import { dropIdleRenderProgress } from '../lib/renderProgress'
+import { errorMessage } from '../lib/errors'
 
 // Live data layer — everything sourced from the SQLite DB / scrape / download /
 // transcription services over window.api. Separate from useStore (UI state) so the
@@ -119,6 +120,7 @@ interface DataState {
   pendingSources: PendingSource[]
   visualTemplates: VisualTemplate[]
   ready: boolean
+  startupError: string
 
   init: () => Promise<void>
   loadVisualTemplates: () => Promise<void>
@@ -204,6 +206,7 @@ interface DataState {
 
 let subscribed = false
 let previewSpecRequestSeq = 0
+let sourceRequestSeq = 0
 
 /** Debounced trailing-edge call to loadPreviewSpec. Coalesces rapid effect changes
  *  (slider drags, quick toggle clicks) into a single IPC round-trip after a short quiet
@@ -282,15 +285,34 @@ export const useData = create<DataState>((set, get) => ({
   pendingSources: [],
   visualTemplates: [],
   ready: false,
+  startupError: '',
 
   init: async () => {
     const a = api()
     if (!a) {
-      set({ ready: true })
+      set({ ready: true, startupError: '' })
       return
     }
-    await Promise.all([get().loadChannels(), get().loadDownloads(), get().loadActivity(), get().loadProfiles(), get().loadRenderJobs(), get().loadWorkItems(), get().loadNiches(), get().loadSources(), get().loadAutomationJobs(), get().loadVisualTemplates()])
-    set({ ready: true })
+    set({ startupError: '' })
+    const results = await Promise.allSettled([
+      get().loadChannels(),
+      get().loadDownloads(),
+      get().loadActivity(),
+      get().loadProfiles(),
+      get().loadRenderJobs(),
+      get().loadWorkItems(),
+      get().loadNiches(),
+      get().loadSources(),
+      get().loadAutomationJobs(),
+      get().loadVisualTemplates()
+    ])
+    const failedLoads = results.filter((result) => result.status === 'rejected').length
+    set({
+      ready: true,
+      startupError: failedLoads > 0
+        ? `${failedLoads} workspace ${failedLoads === 1 ? 'section could' : 'sections could'} not be loaded. Your other data is available.`
+        : ''
+    })
     a.reminders.check().catch(() => {})
 
     if (subscribed) return
@@ -456,7 +478,7 @@ export const useData = create<DataState>((set, get) => ({
       await get().loadSources()
       return source
     } catch (e) {
-      const message = (e as Error).message || 'Could not add this source.'
+      const message = errorMessage(e, 'Could not add this source.')
       set((s) => ({
         pendingSources: s.pendingSources.map((p) => (p.key === key ? { ...p, status: 'error' as const, error: message } : p)),
         sourceError: message
@@ -478,31 +500,36 @@ export const useData = create<DataState>((set, get) => ({
   refreshSource: async (id) => {
     const a = api()
     if (!a) return
+    const requestSeq = ++sourceRequestSeq
     set({ fetching: true, sourceError: '' })
     try {
       await a.sources.refresh(id)
       const sourceVideos = await a.sources.videos(id)
-      set({ sourceVideos, sourceError: '' })
+      if (requestSeq === sourceRequestSeq) set({ sourceVideos, sourceError: '' })
       await get().loadSources()
     } catch (e) {
-      set({ sourceError: (e as Error).message || 'Could not refresh this source.' })
+      if (requestSeq === sourceRequestSeq) set({ sourceError: errorMessage(e, 'Could not refresh this source.') })
     } finally {
-      set({ fetching: false })
+      if (requestSeq === sourceRequestSeq) set({ fetching: false })
     }
   },
   removeSource: async (id) => {
     const a = api()
     if (!a) return
+    sourceRequestSeq++
     const sourceChannels = await a.sources.remove(id)
     set({ sourceChannels, sourceVideos: [] })
   },
   openSource: async (id) => {
     const a = api()
     if (!a) return
-    set({ sourceError: '' })
+    const requestSeq = ++sourceRequestSeq
+    set({ sourceError: '', fetching: false })
     const sourceVideos = await a.sources.videos(id)
+    if (requestSeq !== sourceRequestSeq) return
     set({ sourceVideos })
     const sourceChannels = await a.sources.markVisited(id)
+    if (requestSeq !== sourceRequestSeq) return
     set({ sourceChannels })
     // Only re-scrape a stale source. Every refresh raises `fetching`, which disables the whole
     // add/fetch row, so refreshing on every single open made opening a source feel like a fetch.
@@ -526,7 +553,7 @@ export const useData = create<DataState>((set, get) => ({
       set({ sourceVideos, sourceError: '' })
       await get().loadSources()
     } catch (e) {
-      const msg = (e as Error).message || 'Could not fetch videos from this source.'
+      const msg = errorMessage(e, 'Could not fetch videos from this source.')
       set({ sourceVideos: [], sourceError: msg })
     } finally {
       set({ fetching: false })
@@ -605,7 +632,7 @@ export const useData = create<DataState>((set, get) => ({
       const previewSpec = await a.compose.previewSpec(id)
       if (get().activeProject?.id === id && requestSeq === previewSpecRequestSeq) set({ previewSpec, previewError: '' })
     } catch (e) {
-      if (get().activeProject?.id === id && requestSeq === previewSpecRequestSeq) set({ previewSpec: null, previewError: (e as Error).message })
+      if (get().activeProject?.id === id && requestSeq === previewSpecRequestSeq) set({ previewSpec: null, previewError: errorMessage(e, 'Could not load the video preview.') })
     } finally {
       if (get().activeProject?.id === id && requestSeq === previewSpecRequestSeq) set({ previewLoading: false })
     }
@@ -697,7 +724,7 @@ export const useData = create<DataState>((set, get) => ({
       set({ transcript, transcribeError: '', transcribeMessage: 'Done' })
       await get().loadPreviewSpec(p.id)
     } catch (e) {
-      set({ transcribeError: transcribeErrorMessage((e as Error).message), transcribeMessage: '' })
+      set({ transcribeError: transcribeErrorMessage(errorMessage(e, 'Transcription failed.')), transcribeMessage: '' })
     } finally {
       set({ transcribing: false })
     }
@@ -716,7 +743,7 @@ export const useData = create<DataState>((set, get) => ({
       // Roll back the optimistic flip so the UI doesn't diverge from the DB.
       set((s) => ({
         transcript: s.transcript.map((w) => (w.id === wordId ? { ...w, emphasis: !w.emphasis } : w)),
-        transcribeError: (e as Error).message
+        transcribeError: errorMessage(e, 'Could not update word emphasis.')
       }))
     }
   },
@@ -731,7 +758,7 @@ export const useData = create<DataState>((set, get) => ({
       await a.transcribe.setEmphasis(wordIds, emphasis)
       debouncedLoadPreviewSpec(p.id, get)
     } catch (e) {
-      set({ transcript: previous, transcribeError: (e as Error).message })
+      set({ transcript: previous, transcribeError: errorMessage(e, 'Could not update word emphasis.') })
     }
   },
   sendActiveToRender: async () => {
@@ -852,7 +879,7 @@ export const useData = create<DataState>((set, get) => ({
       await Promise.all([get().loadDownloads(), get().loadProfiles(), get().loadSources(), get().loadRenderJobs(), get().loadWorkItems(), get().loadActivity()])
       return projectIds
     } catch (e) {
-      const msg = (e as Error).message
+      const msg = errorMessage(e, 'Could not run this production template.')
       set((s) => ({ automationErrors: { ...s.automationErrors, [id]: msg } }))
       await get().loadActivity()
       return []
@@ -874,7 +901,7 @@ export const useData = create<DataState>((set, get) => ({
       await Promise.all([get().loadDownloads(), get().loadSources(), get().loadRenderJobs(), get().loadWorkItems(), get().loadActivity()])
       return projectIds
     } catch (e) {
-      const msg = (e as Error).message
+      const msg = errorMessage(e, 'Could not run this source automation.')
       set((s) => ({ automationErrors: { ...s.automationErrors, [id]: msg } }))
       await get().loadActivity()
       return []

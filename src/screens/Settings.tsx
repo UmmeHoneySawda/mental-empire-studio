@@ -221,7 +221,7 @@ export function Settings(): JSX.Element {
     scraping: (
       <div>
         <Card label="AUTO-SCRAPE · NO API">
-          <ToggleRow on={autoScrape.enabled} label="Auto-scrape enabled" onToggle={() => saved({ autoScrape: { enabled: !autoScrape.enabled } })} />
+          <ToggleRow on={autoScrape.enabled} label="Check sources automatically" onToggle={() => saved({ autoScrape: { enabled: !autoScrape.enabled } })} />
           <div style={{ display: 'flex', gap: 11, flexWrap: 'wrap', margin: '13px 0' }}>
             <div>
               <div style={{ fontSize: 11, color: 'var(--text-muted)', marginBottom: 6 }}>Frequency</div>
@@ -297,7 +297,7 @@ export function Settings(): JSX.Element {
         <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10, marginBottom: 10 }}>
           <div style={{ width: 8, height: 8, borderRadius: '50%', background: 'var(--accent)', marginTop: 5, flex: 'none' }} />
           <div style={{ flex: 1 }}>
-            <div style={{ fontSize: 12.5, color: 'var(--text-bright)' }}>Compose controls are always available per project.</div>
+            <div style={{ fontSize: 12.5, color: 'var(--text-bright)' }}>Video Studio controls are saved with each project.</div>
             <div style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-dim)', marginTop: 2, lineHeight: 1.45 }}>Hook, auto-highlight, gradient overlay, auto-zoom, B-roll, and style transitions are saved on each project/profile. Defaults render with no extra effects.</div>
           </div>
         </div>
@@ -310,7 +310,7 @@ export function Settings(): JSX.Element {
           <ToggleRow
             on={settings.detection.auto}
             label="Auto-detect uploaded matches"
-            hint="Runs after downloads, renders and channel scrapes."
+            hint="Runs after downloads, renders, and source checks."
             onToggle={() => saved({ detection: { auto: !settings.detection.auto } })}
           />
           <div style={{ display: 'flex', gap: 12, flexWrap: 'wrap', marginTop: 12 }}>
@@ -383,7 +383,6 @@ export function Settings(): JSX.Element {
   return (
     <ScreenPad>
       <PageHeader
-        eyebrow="Configure"
         title="Settings"
         actions={(Date.now() - savedAt < 2500) ? <StatusPill tone="ok">Saved</StatusPill> : undefined}
       />
