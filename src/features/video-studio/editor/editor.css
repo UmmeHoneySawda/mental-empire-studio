@@ -456,8 +456,8 @@ textarea.ve-input { resize: vertical; min-height: 52px; }
 
 /* Active Transition */
 .ve-active-transition {
-  background-color: var(--ve-bg-surface);
-  border: 1px solid var(--ve-color-accent);
+  background-color: rgb(var(--ve-card));
+  border: 1px solid rgb(var(--ve-accent));
   border-radius: 8px;
   padding: 12px;
   margin-bottom: 16px;
@@ -469,7 +469,7 @@ textarea.ve-input { resize: vertical; min-height: 52px; }
 .ve-transition-icon {
   width: 32px;
   height: 32px;
-  background: linear-gradient(135deg, var(--ve-color-accent), #8b5cf6);
+  background: linear-gradient(135deg, rgb(var(--ve-accent)), #8b5cf6);
   border-radius: 6px;
   display: flex;
   justify-content: center;
@@ -488,7 +488,7 @@ textarea.ve-input { resize: vertical; min-height: 52px; }
 }
 .ve-slider-row label {
   font-size: 13px;
-  color: var(--ve-text-muted);
+  color: rgb(var(--ve-fg-dim));
   width: 60px;
 }
 .ve-slider-value {
@@ -496,10 +496,10 @@ textarea.ve-input { resize: vertical; min-height: 52px; }
   font-weight: 500;
   width: 36px;
   text-align: right;
-  background: var(--ve-bg-surface);
+  background: rgb(var(--ve-card));
   padding: 4px 6px;
   border-radius: 4px;
-  border: 1px solid var(--ve-border);
+  border: 1px solid rgb(var(--ve-border));
 }
 
 /* Grid */
@@ -510,8 +510,8 @@ textarea.ve-input { resize: vertical; min-height: 52px; }
 }
 
 .ve-transition-card {
-  background-color: var(--ve-bg-surface);
-  border: 1px solid var(--ve-border);
+  background-color: rgb(var(--ve-card));
+  border: 1px solid rgb(var(--ve-border));
   border-radius: 8px;
   padding: 8px;
   cursor: pointer;
@@ -522,21 +522,21 @@ textarea.ve-input { resize: vertical; min-height: 52px; }
   align-items: center;
 }
 .ve-transition-card:hover {
-  border-color: #555;
+  border-color: rgb(var(--ve-muted));
 }
 .ve-transition-card.is-on {
-  border-color: var(--ve-color-accent);
-  background-color: rgba(99, 102, 241, 0.1);
+  border-color: rgb(var(--ve-accent));
+  background-color: rgb(var(--ve-accent) / 0.14);
 }
 .ve-transition-card svg {
   width: 20px;
   height: 20px;
-  stroke: var(--ve-text-muted);
+  stroke: rgb(var(--ve-fg-dim));
   fill: none;
   stroke-width: 2;
 }
 .ve-transition-card.is-on svg {
-  stroke: var(--ve-color-accent);
+  stroke: rgb(var(--ve-accent));
 }
 .ve-transition-name {
   font-size: 12px;
