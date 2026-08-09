@@ -71,6 +71,8 @@ export function visualTemplateToStyleConfig(template?: VisualTemplate): Automati
     transition: template.transition,
     aspectRatio: template.aspectRatio,
     imageMode: autoBroll ? 'pool' : 'sequence',
+    imageDurationSec: template.imageDurationSec ?? DEFAULT_AUTOMATION_STYLE.imageDurationSec,
+    imageShuffle: template.order === 'Shuffle',
     crossfadeSec: resolveTransitionPreset(template.transition).durationFrames / PRESET_FPS,
     motionPreset: MOTION_TO_PRESET[template.motion],
     hookEnabled: true,

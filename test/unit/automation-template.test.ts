@@ -36,6 +36,8 @@ describe('visualTemplateToStyleConfig', () => {
     expect(style.captionPreset).toBe('Hormozi')
     expect(style.transition).toBe('crossfade')
     expect(style.brollShufflePolicy).toBe('per-video')
+    expect(style.imageDurationSec).toBe(5)
+    expect(style.imageShuffle).toBe(true)
   })
 
   it('turns b-roll off for an image slideshow, and on for Auto B-roll', () => {
@@ -151,5 +153,7 @@ describe('buildAutomationDraft', () => {
       template: template({ mode: 'Image slideshow', imagePaths: ['/path/to/img1.jpg', '/path/to/img2.jpg'] })
     })
     expect(draft.config.assetPaths).toEqual(['/path/to/img1.jpg', '/path/to/img2.jpg'])
+    expect(draft.config.styleConfig.imageDurationSec).toBe(5)
+    expect(draft.config.styleConfig.imageShuffle).toBe(true)
   })
 })

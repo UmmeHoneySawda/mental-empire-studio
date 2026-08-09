@@ -25,15 +25,14 @@ import { getRepos } from '../db'
 import { getSettings } from '../store/settings'
 import { refreshChannel, sourceVideos } from '../ipc/scrape'
 import { startDownloads } from '../ipc/download'
-import { createProject, runTranscribe, sendToRender, setImages } from '../ipc/compose'
-import { runJob } from './queue'
+import { createProject, runTranscribe, setImages } from '../ipc/compose'
 import { cancelDownload } from './downloader'
 import { cancelRender, markCancelIntent } from './render'
 import { emit, hhmm, pushActivity } from '../ipc/events'
 import { notifyMessage } from './notify'
 import { postWebhook } from './webhook'
 import { logger } from './logger'
-import { cachedBrollClipCount, hasConfiguredBrollSource, readBrollManifestClipIds } from './broll'
+import { cachedBrollClipCount, hasConfiguredBrollSource } from './broll'
 import { probeDuration } from './audio'
 import { createScriptVideo, createUploadedAudioVideo } from '../providers/talkingphotos/creation'
 import { reconcileNonTerminalProviderJobs } from '../providers/talkingphotos/poller'
@@ -41,6 +40,11 @@ import { createProviderSubtitles } from '../providers/talkingphotos/subtitles'
 import { applyLocalCaptions } from '../providers/talkingphotos/localCaptions'
 import { transcribeAudio } from './transcribe'
 import { TALKINGPHOTOS_CONNECTION_ID, projectScaleSpeedPitchFromTtsApi, reconstructScriptFromWords } from '../../shared/talkingphotos'
+import {
+  cancelAutomationRemotionRender,
+  prepareAutomationRemotionProject,
+  runAutomationRemotionRender
+} from './automation-remotion'
 
 const LOG = logger.scope('automation-supervisor')
 let pumping = false
@@ -621,41 +625,60 @@ async function runStep(job: AutomationJob, step: AutomationWorkflowStep): Promis
     return { transcribedAt: now() }
   }
   if (step.key === 'edit') {
-    await eachItem(job, step, async (item) => saveItem(item, { status: 'completed', currentStep: step.label, progress: 100 }))
-    return { style: config.style, editedAt: now() }
+    await eachItem(job, step, async (item) => {
+      const prepared = await prepareAutomationRemotionProject(item, config)
+      log(job.id, `${item.title}: choices applied to Remotion project ${prepared.projectId}.`, 'info', item)
+      return saveItem(item, {
+        brollClipIds: prepared.brollClipIds,
+        status: 'completed',
+        currentStep: step.label,
+        progress: 100
+      })
+    })
+    return { renderer: 'remotion', style: config.style, editedAt: now() }
   }
   if (step.key === 'render') {
     await eachItem(job, step, async (item) => {
       if (!item.projectId) throw new Error('Project checkpoint is missing; resume from Build projects.')
-      const renderId = `job-${item.projectId}`
-      let render = repos.renderJob(renderId)
-      if (render?.status === 'done' && render.outputPath && existsSync(render.outputPath)) {
-        return saveItem(item, { renderJobId: renderId, outputPath: render.outputPath, brollClipIds: readBrollManifestClipIds(renderId), status: 'completed', currentStep: step.label, progress: 100 })
+      const legacyRenderId = `job-${item.projectId}`
+      const legacy = repos.renderJob(legacyRenderId)
+      if (legacy && (legacy.status === 'queued' || legacy.status === 'rendering')) {
+        if (!cancelRender(legacyRenderId, 'cancel')) markCancelIntent(legacyRenderId, 'cancel')
+        repos.setRenderStatus(legacyRenderId, { status: 'cancelled', pct: 0, error: '' })
+        log(job.id, `${item.title}: retired the legacy automation render and moved this item to Remotion.`, 'warning', item)
       }
-      if (!render || render.status === 'error') {
-        sendToRender(item.projectId)
-        render = repos.renderJob(renderId)
-      }
-      if (!render) throw new Error('The render job could not be created.')
-      const poll = setInterval(() => {
-        const live = repos.renderJob(renderId)
-        if (!live || live.status !== 'rendering') return
-        saveItem(item, { renderJobId: renderId, status: 'processing', currentStep: step.label, progress: live.pct })
+      const result = await runAutomationRemotionRender({
+        item,
+        config,
+        shouldCancel: () => controlState(job.id) === 'cancel',
+        onQueued: (renderJobId) => {
+          item = saveItem(item, { renderJobId, status: 'processing', currentStep: step.label, progress: 0 })
+        },
+        onProgress: (pct, stage) => {
+          item = saveItem(item, { status: 'processing', currentStep: step.label, progress: pct })
         const currentItems = repos.automationItems(job.id)
         const finished = currentItems.filter((candidate) => !!candidate.outputPath && existsSync(candidate.outputPath)).length
-        repos.updateAutomationStep(step.id, { progress: Math.round(((finished + live.pct / 100) / Math.max(1, currentItems.length)) * 100) })
-        refreshJobProgress(job.id, `${step.label} · ${item.title} · ${live.pct}%`)
-      }, 800)
-      poll.unref?.()
-      try { await runJob(render) } finally { clearInterval(poll) }
-      if (controlState(job.id) === 'cancel') return saveItem(item, { renderJobId: renderId, status: 'cancelled', currentStep: step.label, progress: 0 })
-      render = repos.renderJob(renderId)
-      if (render?.status !== 'done' || !render.outputPath || !existsSync(render.outputPath)) throw new Error(render?.error || 'Render did not produce an output file.')
-      const brollClipIds = readBrollManifestClipIds(renderId)
-      if (brollClipIds.length) log(job.id, `${item.title}: rendered with ${brollClipIds.length} B-roll clips in deterministic order.`, 'info', item)
-      return saveItem(item, { renderJobId: renderId, outputPath: render.outputPath, brollClipIds, status: 'completed', currentStep: step.label, progress: 100 })
+          repos.updateAutomationStep(step.id, { progress: Math.round(((finished + pct / 100) / Math.max(1, currentItems.length)) * 100) })
+          refreshJobProgress(job.id, `${step.label} · ${item.title} · Remotion ${stage} · ${pct}%`)
+        }
+      })
+      const classicProject = repos.getProject(item.projectId)
+      repos.createRenderJob({
+        id: legacyRenderId,
+        title: item.title,
+        channel: classicProject?.channel ?? '',
+        projectId: item.projectId
+      })
+      repos.setRenderStatus(legacyRenderId, {
+        status: 'done',
+        pct: 100,
+        outputPath: result.outputPath,
+        error: ''
+      })
+      if (result.brollClipIds.length) log(job.id, `${item.title}: Remotion rendered with ${result.brollClipIds.length} B-roll clips.`, 'info', item)
+      return saveItem(item, { ...result, status: 'completed', currentStep: step.label, progress: 100 })
     })
-    return { renderedAt: now() }
+    return { renderer: 'remotion', renderedAt: now() }
   }
   if (step.key === 'quality-check') {
     await eachItem(job, step, async (item) => {
@@ -892,7 +915,13 @@ export function cancelAutomationJob(id: string): void {
   repos.updateAutomationJob(id, { cancelRequested: true, status: job.status === 'running' || job.status === 'pausing' ? job.status : 'cancelled', currentStep: 'Cancellation requested' })
   for (const item of repos.automationItems(id)) {
     cancelDownload(`dl-${item.sourceVideoId}`)
-    if (item.renderJobId && !cancelRender(item.renderJobId, 'cancel')) markCancelIntent(item.renderJobId, 'cancel')
+    if (item.renderJobId) {
+      if (repos.renderJob(item.renderJobId)) {
+        if (!cancelRender(item.renderJobId, 'cancel')) markCancelIntent(item.renderJobId, 'cancel')
+      } else {
+        void cancelAutomationRemotionRender(item.renderJobId).catch(() => undefined)
+      }
+    }
   }
   if (job.status !== 'running' && job.status !== 'pausing') repos.updateAutomationJob(id, { completedAt: now() })
   log(id, 'Cancellation requested. Completed checkpoints and output files are kept.', 'warning')

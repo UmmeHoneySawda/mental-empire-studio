@@ -458,6 +458,10 @@ export interface AutomationStyleConfig {
   highlightColor: string
   boxColor: string
   imageMode: ImageMode
+  /** Slideshow cadence selected by the production template. */
+  imageDurationSec: number
+  /** Deterministic per-video image ordering. */
+  imageShuffle: boolean
   transition?: string
   crossfadeSec: number
   motionPreset: MotionPreset

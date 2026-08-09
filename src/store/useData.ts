@@ -353,7 +353,12 @@ export const useData = create<DataState>((set, get) => ({
           : s.automationErrors
       }))
     })
-    a.onAutomationJob(() => { void get().loadAutomationJobs() })
+    a.onAutomationJob((job) => {
+      void get().loadAutomationJobs()
+      if (['completed', 'completed_with_warnings', 'failed', 'attention', 'cancelled'].includes(job.status)) {
+        void Promise.all([get().loadRenderJobs(), get().loadWorkItems()])
+      }
+    })
     // Held in the store, not in Niches.tsx: <Screen key={active}> remounts the screen on every
     // nav, and a warm outlives that. No loadNiches() on the terminal frame — `warmNiche` already
     // reloads once its invoke resolves, and that resolves after this frame.
