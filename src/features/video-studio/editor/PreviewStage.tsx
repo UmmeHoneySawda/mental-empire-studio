@@ -2,6 +2,9 @@ import { Suspense, lazy, useCallback, useEffect, useMemo, useRef, useState } fro
 import { timecode } from './constants'
 import { gradeFilter, gradeTintLayer, gradeVignetteLayer } from './gradePreview'
 import { useEditor } from './useEditor'
+import { ChevronDown, Maximize2, Pause, Play, StepBack, StepForward } from 'lucide-react'
+import { EditorIconButton } from './EditorChrome'
+import { previewAspectLabel } from './editorUiModel'
 
 const EditorPlayer = lazy(() =>
   import('./EditorPlayer').then((module) => ({ default: module.EditorPlayer })))
@@ -73,8 +76,8 @@ export function PreviewStage(): JSX.Element {
   const previewScale = project && project.canvas.width > 0 ? size.width / project.canvas.width : 1
 
   return (
-    <div className="ve-preview">
-      <div className="ve-stage" ref={ref}>
+    <section className="preview-region" aria-label="Video preview" data-testid="video-editor-preview">
+      <div className="preview-stage" ref={ref}>
         {!project ? (
           <div className="ve-stage-empty">Open a clip to start editing.</div>
         ) : (
@@ -103,53 +106,56 @@ export function PreviewStage(): JSX.Element {
         )}
       </div>
 
-      <div className="ve-transport">
-        <button
-          type="button"
-          className={`ve-btn ${playing ? 've-btn--soft' : 've-btn--ghost'}`}
-          disabled={!project}
-          onClick={() => setPlaying(!playing)}
-          title={playing ? 'Pause (Space)' : 'Play (Space)'}
-        >
-          {playing ? '❙❙' : '▶'}
-        </button>
+      <div className="transport-bar">
         <input
-          className="ve-scrub"
+          className="ve-playhead-input"
           type="range"
-          min={rangeStart}
-          max={Math.max(rangeStart, rangeEnd - 1)}
-          step={1}
-          value={Math.min(Math.max(playheadFrame, rangeStart), Math.max(rangeStart, rangeEnd - 1))}
-          disabled={!project}
+          min={0}
+          max={Math.max(0, total - 1)}
+          value={playheadFrame}
           aria-label="Playhead"
           onChange={(event) => setPlayhead(Number(event.target.value))}
         />
-        <span className="ve-mono ve-transport-clock">
-          {timecode(playheadFrame, fps)} · {playheadFrame}/{total}f
-        </span>
-        {loopRange && (
-          <button
-            type="button"
-            className="ve-btn ve-btn--soft"
-            onClick={() => setLoopRange(null)}
-            title={`Looping ${rangeStart}–${rangeEnd}f. Click to play the whole video again.`}
-          >
-            ⟲ {((rangeEnd - rangeStart) / fps).toFixed(1)}s ✕
-          </button>
-        )}
-        <button
-          type="button"
-          className="ve-btn ve-btn--ghost"
-          disabled={!canSolo}
-          onClick={soloSelection}
-          title={canSolo ? 'Loop just the selected clip' : 'Select a clip on the timeline to loop it'}
-        >
-          Solo
-        </button>
-        <span className={`ve-save${saving ? ' is-saving' : dirty ? ' is-dirty' : ''}`}>
-          {saving ? 'Saving…' : dirty ? 'Unsaved' : 'Saved'}
-        </span>
+        <time>{timecode(playheadFrame, fps)} / {timecode(total, fps)}</time>
+        <div className="transport-controls">
+          <EditorIconButton
+            label="Previous frame"
+            icon={StepBack}
+            disabled={!project || playheadFrame <= rangeStart}
+            onClick={() => setPlayhead(Math.max(rangeStart, playheadFrame - 1))}
+          />
+          <EditorIconButton
+            label={playing ? 'Pause' : 'Play'}
+            icon={playing ? Pause : Play}
+            active={playing}
+            disabled={!project}
+            onClick={() => setPlaying(!playing)}
+          />
+          <EditorIconButton
+            label="Next frame"
+            icon={StepForward}
+            disabled={!project || playheadFrame >= rangeEnd - 1}
+            onClick={() => setPlayhead(Math.min(rangeEnd - 1, playheadFrame + 1))}
+          />
+        </div>
+        <div className="preview-options">
+          {loopRange ? (
+            <button type="button" onClick={() => setLoopRange(null)} title="Return to the full project range">
+              Loop {((rangeEnd - rangeStart) / fps).toFixed(1)}s ×
+            </button>
+          ) : (
+            <button type="button" disabled={!canSolo} onClick={soloSelection} title="Loop the selected clip">
+              Solo
+            </button>
+          )}
+          <button type="button">Fit <ChevronDown size={13} aria-hidden="true" /></button>
+          <span>{project ? previewAspectLabel(project.canvas) : '—'}</span>
+          <span className={`ve-save${saving ? ' is-saving' : dirty ? ' is-dirty' : ''}`}>
+            {saving ? 'Saving…' : dirty ? 'Unsaved' : 'Saved'}
+          </span>
+          <Maximize2 size={14} aria-hidden="true" />
+        </div>
       </div>
-    </div>
+    </section>
   )
 }

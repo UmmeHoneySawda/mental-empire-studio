@@ -16,6 +16,7 @@ import { Niches } from './screens/Niches'
 import { Settings } from './screens/Settings'
 import { ErrorBoundary } from './components/ErrorBoundary'
 import type { ScreenKey } from '@shared/types'
+import { isImmersiveVideoStudio } from './features/video-studio/editor/editorUiModel'
 
 // The Thumbnails editor pulls in Konva/react-konva (~heavy). Lazy-load it so it's a
 // separate chunk fetched on first navigation, keeping the initial bundle small.
@@ -44,6 +45,7 @@ export function App(): JSX.Element {
   const initData = useData((s) => s.init)
   const ready = useData((s) => s.ready)
   const startupError = useData((s) => s.startupError)
+  const activeProject = useData((s) => s.activeProject)
 
   // load persisted settings (electron-store) + live data once on boot
   useEffect(() => {
@@ -64,6 +66,7 @@ export function App(): JSX.Element {
     : 'var(--bg-window)'
 
   const Screen = SCREENS[active]
+  const immersiveEditor = isImmersiveVideoStudio(active, Boolean(activeProject))
 
   return (
     <div style={{ height: '100%', background: pageBg, display: 'flex', flexDirection: 'column', overflow: 'hidden' }}>
@@ -75,8 +78,19 @@ export function App(): JSX.Element {
         </div>
       )}
       <div style={{ flex: 1, display: 'flex', minHeight: 0 }}>
-        <Sidebar />
-        <main id="main-content" style={{ flex: 1, minWidth: 0, background: mainBg, position: 'relative', overflowY: 'auto', overflowX: 'hidden' }}>
+        {!immersiveEditor && <Sidebar />}
+        <main
+          id="main-content"
+          className={immersiveEditor ? 'is-video-studio-immersive' : undefined}
+          style={{
+            flex: 1,
+            minWidth: 0,
+            background: mainBg,
+            position: 'relative',
+            overflowY: immersiveEditor ? 'hidden' : 'auto',
+            overflowX: 'hidden'
+          }}
+        >
           {!ready ? (
             <div role="status" aria-live="polite" style={{ padding: 40, color: 'var(--text-muted)', fontSize: 13 }}>Loading workspace…</div>
           ) : (

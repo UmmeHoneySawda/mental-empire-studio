@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import type { VideoAsset, VideoProject, VideoScene, VideoTrack } from '@shared/video-engine'
+import { ChevronRight, Eye, EyeOff, GripVertical, Lock, Unlock } from 'lucide-react'
 import {
   CLIP_HANDLE_PX,
   RULER_HEIGHT,
@@ -345,8 +346,10 @@ export function Timeline(): JSX.Element | null {
   }
 
   return (
-    <section className="ve-timeline" aria-label="Timeline">
-      <header className="ve-timeline-bar">
+    <section className="ve-timeline timeline" aria-label="Project timeline" data-testid="video-editor-timeline">
+      <header className="ve-timeline-bar timeline-ruler">
+        <span className="ruler-gutter">Overview</span>
+        <div className="timeline-toolbar">
         <span className="ve-mono ve-timeline-clock">{timecode(playheadFrame, fps)}</span>
         <span className="ve-dim">/ {timecode(total, fps)}</span>
         <button type="button" className="ve-btn ve-btn--ghost" onClick={splitAtPlayhead} title="Split the selected clip at the playhead (S)">
@@ -388,9 +391,10 @@ export function Timeline(): JSX.Element | null {
         <button type="button" className="ve-btn ve-btn--ghost" onClick={() => addTrack('video')} title="Add a video lane">
           + Track
         </button>
+        </div>
       </header>
 
-      <div className="ve-timeline-body">
+      <div className="ve-timeline-body timeline-body">
         <div className="ve-labels" style={{ width: TRACK_LABEL_WIDTH }}>
           <div className="ve-labels-spacer" style={{ height: RULER_HEIGHT }} />
           <div className="ve-labels-inner" style={{ transform: `translateY(${-laneScrollTop}px)` }}>
@@ -484,6 +488,12 @@ export function Timeline(): JSX.Element | null {
                     const asset = scene.assetId ? assetsById.get(scene.assetId) : undefined
                     const isSelected = isClipSelected(selection, scene.id)
                     const tiny = clipWidthPx(scene.durationFrames, fps, zoom) < CLIP_HANDLE_PX * 3
+                    const captionWords = scene.kind === 'caption'
+                      ? (project.captions?.words ?? []).filter((word) =>
+                          word.endFrame > scene.startFrame
+                          && word.startFrame < scene.startFrame + scene.durationFrames
+                        )
+                      : []
                     return (
                       <div
                         key={scene.id}
@@ -562,7 +572,25 @@ export function Timeline(): JSX.Element | null {
                           }}
                           role="presentation"
                         />
-                        <span className="ve-clip-label">{clipLabel(scene, asset)}</span>
+                        {captionWords.length > 0 ? (
+                          <span className="ve-caption-word-strip" aria-hidden="true">
+                            {captionWords.map((word) => {
+                              const left = ((word.startFrame - scene.startFrame) / scene.durationFrames) * 100
+                              const width = ((word.endFrame - word.startFrame) / scene.durationFrames) * 100
+                              return (
+                                <span
+                                  key={word.id}
+                                  className={(word.importance ?? 0) > 0 ? 'is-emphasis' : ''}
+                                  style={{ left: `${Math.max(0, left)}%`, width: `${Math.max(0.6, width)}%` }}
+                                >
+                                  {word.text}
+                                </span>
+                              )
+                            })}
+                          </span>
+                        ) : (
+                          <span className="ve-clip-label">{clipLabel(scene, asset)}</span>
+                        )}
                         <span
                           className="ve-clip-handle ve-clip-handle--end"
                           style={{ width: CLIP_HANDLE_PX }}
@@ -676,7 +704,7 @@ function TrackLabel({
         title={canReorder ? `Drag ${track.name} to change its layer order` : 'Audio lanes do not affect visual layering'}
         aria-label={`Reorder ${track.name}`}
       >
-        ⠿
+        <GripVertical size={13} aria-hidden="true" />
       </button>
       <span className="ve-label-name me-ellipsis" title={track.name}>{track.name}</span>
       {/* State is the chip's fill, not the letter's case. `m` vs `M` and `l` vs `L` at 10px
@@ -691,7 +719,7 @@ function TrackLabel({
           aria-pressed={track.muted}
           aria-label={`${track.muted ? 'Unmute' : 'Mute'} ${track.name}`}
         >
-          M
+          {track.muted ? <EyeOff size={13} aria-hidden="true" /> : <Eye size={13} aria-hidden="true" />}
         </button>
         <button
           type="button"
@@ -701,7 +729,7 @@ function TrackLabel({
           aria-pressed={track.locked}
           aria-label={`${track.locked ? 'Unlock' : 'Lock'} ${track.name}`}
         >
-          L
+          {track.locked ? <Lock size={12} aria-hidden="true" /> : <Unlock size={12} aria-hidden="true" />}
         </button>
         <button
           type="button"
@@ -710,7 +738,7 @@ function TrackLabel({
           title="Close every gap on this lane"
           aria-label={`Close gaps on ${track.name}`}
         >
-          ⇥
+          <ChevronRight size={13} aria-hidden="true" />
         </button>
       </span>
     </div>

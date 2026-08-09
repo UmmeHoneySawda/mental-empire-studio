@@ -1,9 +1,11 @@
 import { useMemo, useRef, useState } from 'react'
 import type { DragEvent } from 'react'
 import type { VideoAsset } from '@shared/video-engine'
+import { Plus } from 'lucide-react'
 import { previewUrlForPath } from './assetUrl'
 import { useEditor, orderedTracks } from './useEditor'
 import { addClip, placementFrame } from './operations'
+import { transcriptRows } from './editorUiModel'
 
 /* The media rail: everything imported into the project, and one click to put it on the
  * timeline at the playhead.
@@ -48,6 +50,8 @@ export function MediaBin(): JSX.Element {
   const [cycleSelection, setCycleSelection] = useState<string[]>([])
   const [cycleInterval, setCycleInterval] = useState<3 | 4>(3)
   const [cycleOrder, setCycleOrder] = useState<'sequential' | 'shuffle'>('sequential')
+  const [panelTab, setPanelTab] = useState<'media' | 'transcript'>('media')
+  const [activeWord, setActiveWord] = useState<number | null>(null)
   const picker = useRef<HTMLInputElement>(null)
 
   const assets = useMemo(() => {
@@ -59,6 +63,7 @@ export function MediaBin(): JSX.Element {
     .filter((asset) => asset.kind === 'image')
     .map((asset) => asset.id)
   const selectedImageIds = allImageIds.filter((id) => cycleSelection.includes(id))
+  const transcript = transcriptRows(project ?? {})
 
   /** Resolving a picked or dropped File to a real absolute path is the one thing the
    *  renderer cannot do alone — `webUtils` lives on the preload bridge, and the engine
@@ -128,11 +133,42 @@ export function MediaBin(): JSX.Element {
       onDragLeave={() => setDropping(false)}
       onDrop={onDrop}
     >
-      <div className="ve-bin-head">
-        <span className="ve-eyebrow">Media</span>
-        <button type="button" className="ve-btn ve-btn--soft" disabled={!!busy} onClick={() => picker.current?.click()}>
-          Import
+      <div className="panel-tabs" role="tablist" aria-label="Library view">
+        <button
+          className={panelTab === 'media' ? 'is-active' : ''}
+          type="button"
+          role="tab"
+          aria-selected={panelTab === 'media'}
+          onClick={() => setPanelTab('media')}
+        >
+          Media
         </button>
+        <button
+          className={panelTab === 'transcript' ? 'is-active' : ''}
+          type="button"
+          role="tab"
+          aria-selected={panelTab === 'transcript'}
+          onClick={() => setPanelTab('transcript')}
+        >
+          Transcript
+        </button>
+      </div>
+
+      {panelTab === 'media' ? (
+        <div className="panel-body media-panel-body">
+      <button
+        type="button"
+        className="import-zone"
+        disabled={!!busy}
+        onClick={() => picker.current?.click()}
+      >
+        <Plus size={18} aria-hidden="true" />
+        <span>Import media</span>
+        <small>Video, images, and audio</small>
+      </button>
+      <div className="media-heading">
+        <span>Project media</span>
+        <span>{assets.length} items</span>
       </div>
       <input
         ref={picker}
@@ -156,11 +192,11 @@ export function MediaBin(): JSX.Element {
         onChange={(event) => setFilter(event.target.value)}
       />
 
-      <div className="ve-bin-cycle">
-        <div className="ve-bin-head">
+      <details className="ve-bin-cycle">
+        <summary className="ve-bin-head">
           <span className="ve-eyebrow">Full-timeline image cycle</span>
           <span className="ve-chip">{selectedImageIds.length} selected</span>
-        </div>
+        </summary>
         <div className="ve-bin-cycle-actions">
           <button
             type="button"
@@ -210,7 +246,7 @@ export function MediaBin(): JSX.Element {
         <p className="ve-hint">
           Pick two or more stills. The final item is trimmed to the exact project end; one undo removes the full sequence.
         </p>
-      </div>
+      </details>
 
       {assets.length === 0 ? (
         <p className="ve-hint">
@@ -270,6 +306,47 @@ export function MediaBin(): JSX.Element {
             )
           })}
         </ul>
+      )}
+        </div>
+      ) : (
+        <div className="panel-body transcript-panel">
+          <div className="transcript-meta">
+            <span>{project?.captions?.language ? project.captions.language.toUpperCase() : 'Project transcript'}</span>
+            <span>{transcript.length} words</span>
+          </div>
+          {transcript.length > 0 ? (
+            <p className="transcript-copy">
+              {transcript.map((word, index) => (
+                <button
+                  type="button"
+                  key={`${word.startFrame}:${word.endFrame}:${index}`}
+                  className={activeWord === index
+                    ? 'is-current'
+                    : (project?.captions?.words[index]?.importance ?? 0) > 0
+                      ? 'is-keyword'
+                      : ''}
+                  onClick={() => {
+                    setActiveWord(index)
+                    useEditor.getState().setPlayhead(word.startFrame)
+                  }}
+                  title={`Seek to ${(word.startFrame / (project?.canvas.fps ?? 30)).toFixed(2)}s`}
+                >
+                  {word.text}
+                </button>
+              ))}
+            </p>
+          ) : (
+            <p className="ve-hint">No transcript is attached to this project yet.</p>
+          )}
+          <button
+            className="text-action"
+            type="button"
+            disabled
+            title="Transcript range editing is not available in this editor version"
+          >
+            Edit selection in timeline
+          </button>
+        </div>
       )}
     </div>
   )

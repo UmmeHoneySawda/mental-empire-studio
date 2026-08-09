@@ -114,7 +114,7 @@ try {
   // A scratch profile is by definition a first run, so the onboarding overlay comes up
   // and covers the whole app. It mounts after an async appMeta read, so wait for it
   // rather than sampling once. Dismissing it is what a user does, and exercises that path.
-  const skip = page.getByRole('button', { name: 'Skip' }).first()
+  const skip = page.getByRole('button', { name: /^(Skip|Explore on my own)$/ }).first()
   await skip.waitFor({ state: 'visible', timeout: 8000 }).catch(() => undefined)
   if (await skip.count() > 0 && await skip.isVisible()) {
     await skip.click()
@@ -216,16 +216,16 @@ try {
 
   // --- the Compose screen ---------------------------------------------------------
   console.log('\ncompose screen')
-  const composeNav = page.getByRole('button', { name: 'Compose' }).first()
+  const composeNav = page.getByRole('button', { name: 'Video Studio' }).first()
   await composeNav.click({ timeout: 10_000 })
   await page.waitForTimeout(600)
   check(await page.getByText('Video studio').first().isVisible(), 'Compose screen renders')
 
-  // Compose offers one engine, so the render head is a readout, not a control: it must
-  // name the engine and report whether that renderer's runtime came up. A button here
-  // would be the old three-way switch, which had a no-op handler.
+  // The picker shows the renderer lamp; once the only obvious project auto-opens, the
+  // immersive workspace replaces that picker and carries the active renderer itself.
   const head = page.locator('.vs-engine').first()
-  check(await head.count() > 0, 'render head renders')
+  const immersiveWorkspace = page.getByTestId('video-editor-workspace')
+  check(await head.count() > 0 || await immersiveWorkspace.count() > 0, 'render context renders')
   if (await head.count() > 0) {
     check((await head.innerText()).trim().toLowerCase() === 'editor', 'render head names the engine')
     check(
@@ -234,6 +234,8 @@ try {
     )
     const lamp = await page.locator('.vs-engine-lamp').first().getAttribute('data-live')
     console.log(`        renderer available: ${lamp === '1' ? 'yes' : 'no'}`)
+  } else {
+    check(await immersiveWorkspace.getAttribute('data-engine') === 'remotion', 'workspace names the active renderer')
   }
 
   // --- the edit loop --------------------------------------------------------------
@@ -434,7 +436,7 @@ try {
       'the project dropdown is gone'
     )
     const libraryCard = page.getByRole('button', { name: new RegExp(CLIP_TITLE, 'i') }).first()
-    const backToLibrary = page.getByRole('button', { name: /Library/ })
+    const backToLibrary = page.getByRole('button', { name: 'Choose another video' }).first()
     if (await backToLibrary.count() === 0) await libraryCard.click()
     await backToLibrary.waitFor({ state: 'visible', timeout: 10_000 })
     check(true, 'a library card opens the editor')
@@ -447,7 +449,8 @@ try {
     check(true, 'the library re-opens the project')
 
     await page.getByText('Full-timeline image cycle', { exact: true }).waitFor({ state: 'visible', timeout: 10_000 })
-    const cycleProjectId = await page.locator('.ve-foot span[title]').first().getAttribute('title') ?? projectId
+    await page.locator('details.ve-bin-cycle > summary').click()
+    const cycleProjectId = await page.getByTestId('video-editor-workspace').getAttribute('data-project-id') ?? projectId
     check(cycleProjectId === projectId, 'the mounted editor uses the IPC-bound Remotion project', `${cycleProjectId} vs ${projectId}`)
 
     const readCycle = async () => page.evaluate(async (id) => {
@@ -512,7 +515,7 @@ try {
     }
 
     const sequentialScenes = sequential.scenes
-    await page.getByTitle('Undo (Ctrl+Z)').click()
+    await page.getByRole('button', { name: 'Undo' }).click()
     await page.waitForTimeout(700)
     await page.waitForFunction(async (id) => {
       const project = await window.api.videoEngine.project(id)
@@ -520,7 +523,7 @@ try {
     }, cycleProjectId, { timeout: 10_000 })
     check((await readCycle()).scenes.length === 0, 'one undo removes the complete generated sequence')
 
-    await page.getByTitle('Redo (Ctrl+Shift+Z)').click()
+    await page.getByRole('button', { name: 'Redo' }).click()
     await page.waitForTimeout(700)
     await page.waitForFunction(async ([id, count]) => {
       const project = await window.api.videoEngine.project(id)
@@ -592,7 +595,8 @@ try {
   // must survive save/reload, live preview staging, random seeking, and preflight.
   if (ENGINE === 'remotion') {
     console.log('\nvideo-hook library')
-    await page.getByRole('tab', { name: 'Hook', exact: true }).click()
+    await page.getByRole('button', { name: 'Sparkle', exact: true }).click()
+    await page.getByRole('tab', { name: 'Hook generator', exact: true }).click()
     await page.getByText('Hook template', { exact: true }).waitFor({ state: 'visible', timeout: 10_000 })
 
     for (const name of ['Motivational Punch', 'Mind Shift', 'Progress Path', 'Lesson Board']) {
@@ -814,12 +818,12 @@ try {
       //   from the component and write the response in with `setState`, so it never
       //   reached the undo stack. Re-bind the editor first — the transition above was
       //   applied over raw IPC, so the mounted project has not seen it.
-      const backButton = page.getByRole('button', { name: /Library/ })
+      const backButton = page.getByRole('button', { name: 'Choose another video' }).first()
       const clipCard = page.getByRole('button', { name: new RegExp(CLIP_TITLE, 'i') }).first()
       await backButton.click()
       await clipCard.click()
       await backButton.waitFor({ state: 'visible', timeout: 10_000 })
-      await page.getByRole('tab', { name: 'Transitions' }).click()
+      await page.getByRole('button', { name: 'Transitions', exact: true }).click()
       const removeButton = page.getByRole('button', { name: 'Remove this transition' }).first()
       await removeButton.waitFor({ state: 'visible', timeout: 10_000 })
 
@@ -837,7 +841,7 @@ try {
       await saved()
       check(await countTransitions() === 0, 'the panel removes the transition')
 
-      await page.getByRole('button', { name: '↶' }).click()
+      await page.getByRole('button', { name: 'Undo' }).click()
       await saved()
       check(await countTransitions() === 1, 'removing a transition is undoable')
     }
@@ -878,7 +882,8 @@ try {
   let captioned
   if (ENGINE === 'remotion') {
     console.log('\ncaptions')
-    await page.getByRole('tab', { name: 'Captions', exact: true }).click()
+    await page.getByRole('button', { name: 'Sparkle', exact: true }).click()
+    await page.getByRole('tab', { name: 'Active captions', exact: true }).click()
     const srtInput = page.locator('textarea[placeholder*="Hello there"]')
     await srtInput.fill(srt)
     await page.getByRole('button', { name: 'Import SRT', exact: true }).click()
@@ -1190,6 +1195,17 @@ try {
     console.log(`        ${problems.problems.length} problem(s), ${errors.length} blocking`)
     for (const problem of errors.slice(0, 4)) console.log(`        - ${problem.code}: ${problem.message}`)
   }
+
+  // The reference workspace is desktop-only by design. At a narrow viewport it must
+  // replace the dense editor with the intentional fallback instead of clipping controls.
+  console.log('\nresponsive shell')
+  await page.setViewportSize({ width: 1000, height: 760 })
+  await page.waitForTimeout(100)
+  check(await page.locator('.desktop-required').isVisible(), 'narrow windows show the desktop-size guidance')
+  check(!(await page.getByTestId('video-editor-workspace').isVisible()), 'narrow windows hide the dense editor workspace')
+  await page.setViewportSize({ width: 1440, height: 900 })
+  await page.waitForTimeout(100)
+  check(await page.getByTestId('video-editor-workspace').isVisible(), 'the workspace returns at desktop width')
 
   await page.screenshot({ path: join(ROOT, 'browser-test-out', 'e2e-studio.png') }).catch(() => undefined)
 

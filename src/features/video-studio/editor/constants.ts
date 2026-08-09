@@ -8,16 +8,16 @@
 export const PIXELS_PER_SECOND = 100
 
 /** Height of one track lane, excluding its keyframe lanes. */
-export const TRACK_HEIGHT = 52
+export const TRACK_HEIGHT = 43
 
 /** The sticky ruler strip above the lanes. */
-export const RULER_HEIGHT = 40
+export const RULER_HEIGHT = 28
 
 /** The fixed left column holding track names, mute and lock. */
-export const TRACK_LABEL_WIDTH = 200
+export const TRACK_LABEL_WIDTH = 166
 
 /** Gap between lanes, so adjacent clips on different tracks stay legible. */
-export const TRACK_GAP = 4
+export const TRACK_GAP = 0
 
 export const MIN_ZOOM = 0.001
 export const MAX_ZOOM = 4

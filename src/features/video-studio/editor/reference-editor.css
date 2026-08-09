@@ -1,0 +1,1841 @@
+.video-editor-screen {
+  font-family: 'Archivo Variable', 'Segoe UI', sans-serif;
+  color: #eef1f5;
+  background: #111318;
+  font-synthesis: none;
+  text-rendering: optimizeLegibility;
+  --shell: #111318;
+  --surface-1: #171a1f;
+  --surface-2: #1d2026;
+  --surface-3: #242830;
+  --surface-4: #2b3039;
+  --line: #30353e;
+  --line-soft: #272c34;
+  --text: #eef1f5;
+  --muted: #a8b0bc;
+  --quiet: #8a94a3;
+  --blue: #4f7dff;
+  --blue-strong: #3165f5;
+  --amber: #e4a93f;
+  --purple: #8f6ade;
+  --green: #4fa981;
+  --danger: #dd6a6a;
+  --topbar-height: 52px;
+}
+
+.video-editor-screen * {
+  box-sizing: border-box;
+}
+
+.video-editor-screen button,
+.video-editor-screen input,
+.video-editor-screen select {
+  font: inherit;
+}
+
+.video-editor-screen button {
+  color: inherit;
+}
+
+.video-editor-screen button:focus-visible,
+.video-editor-screen input:focus-visible,
+.video-editor-screen select:focus-visible {
+  outline: 2px solid #89a7ff;
+  outline-offset: 2px;
+}
+
+.video-editor-screen button:disabled {
+  cursor: not-allowed;
+  opacity: 0.48;
+}
+
+.video-editor-screen .desktop-app {
+  height: 100%;
+  background: var(--shell);
+  display: grid;
+  grid-template-rows: var(--topbar-height) minmax(0, 1fr);
+  color: var(--text);
+}
+
+.video-editor-screen .topbar {
+  position: relative;
+  z-index: 20;
+  display: grid;
+  grid-template-columns: minmax(270px, 1fr) auto minmax(230px, 1fr);
+  align-items: stretch;
+  min-width: 0;
+  border-bottom: 1px solid var(--line);
+  background: #121419;
+}
+
+.video-editor-screen .brand-cluster,
+.video-editor-screen .utility-cluster {
+  display: flex;
+  align-items: center;
+  min-width: 0;
+  gap: 6px;
+  padding: 0 10px;
+}
+
+.video-editor-screen .utility-cluster {
+  justify-content: flex-end;
+}
+
+.video-editor-screen .wordmark {
+  margin-left: 2px;
+  padding-right: 13px;
+  color: #f8f9fb;
+  font-size: 12px;
+  font-weight: 760;
+  letter-spacing: 0.045em;
+  white-space: nowrap;
+}
+
+.video-editor-screen .project-switcher {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  border: 0;
+  border-left: 1px solid var(--line);
+  padding: 5px 10px 5px 14px;
+  background: transparent;
+  color: #d9dee6;
+  font-size: 12px;
+  cursor: pointer;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.video-editor-screen .icon-button {
+  width: 30px;
+  height: 30px;
+  display: inline-grid;
+  place-items: center;
+  flex: 0 0 auto;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: transparent;
+  color: var(--muted);
+  cursor: pointer;
+}
+
+.video-editor-screen .icon-button:hover {
+  background: var(--surface-3);
+  color: var(--text);
+}
+
+.video-editor-screen .icon-button.is-active {
+  color: #fff;
+  background: #263b70;
+  border-color: #3f64be;
+}
+
+.video-editor-screen .top-tools {
+  display: flex;
+  align-items: stretch;
+  justify-content: center;
+  height: 100%;
+}
+
+.video-editor-screen .top-tool {
+  position: relative;
+  width: 62px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+  border: 0;
+  background: transparent;
+  color: #939ca9;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.video-editor-screen .top-tool::after {
+  content: '';
+  position: absolute;
+  inset: auto 12px 0;
+  height: 2px;
+  background: transparent;
+}
+
+.video-editor-screen .top-tool:hover {
+  color: #d9dee6;
+  background: #181b21;
+}
+
+.video-editor-screen .top-tool.is-active {
+  color: #fff;
+}
+
+.video-editor-screen .top-tool.is-active::after {
+  background: var(--blue);
+}
+
+.video-editor-screen .export-button {
+  height: 34px;
+  display: inline-flex;
+  align-items: center;
+  gap: 7px;
+  margin-left: 5px;
+  padding: 0 12px;
+  border: 1px solid #608cff;
+  border-radius: 5px;
+  background: var(--blue-strong);
+  color: #fff;
+  font-size: 12px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.video-editor-screen .export-button:hover {
+  background: #4273f6;
+}
+
+.video-editor-screen .editor-main {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: minmax(340px, 1fr) 39px minmax(242px, 29vh);
+  overflow: hidden;
+}
+
+.video-editor-screen .stage-grid {
+  position: relative;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: 56px minmax(560px, 1fr) 270px;
+  border-bottom: 1px solid var(--line);
+}
+
+.video-editor-screen .left-panel,
+.video-editor-screen .inspector,
+.video-editor-screen .preview-region {
+  min-width: 0;
+  min-height: 0;
+}
+
+.video-editor-screen .left-panel,
+.video-editor-screen .inspector {
+  background: var(--surface-1);
+}
+
+.video-editor-screen .left-panel {
+  border-right: 1px solid var(--line);
+  height: 100%;
+}
+
+.video-editor-screen .collapsed-rail {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 7px;
+  padding: 9px 0;
+  border-right: 1px solid var(--line);
+  background: #15181d;
+}
+
+.video-editor-screen .collapsed-rail .icon-button {
+  width: 36px;
+  height: 36px;
+}
+
+.video-editor-screen .context-flyout {
+  position: absolute;
+  z-index: 12;
+  top: 0;
+  bottom: 0;
+  left: 56px;
+  width: 250px;
+  overflow: hidden;
+  border-right: 1px solid #424956;
+  background: var(--surface-1);
+  box-shadow: 10px 0 24px rgba(0, 0, 0, 0.28);
+  animation: panel-open 180ms cubic-bezier(.2, .8, .2, 1);
+}
+
+@keyframes panel-open {
+  from { transform: translateX(-10px); opacity: 0.65; }
+  to { transform: translateX(0); opacity: 1; }
+}
+
+.video-editor-screen .inspector {
+  border-left: 1px solid var(--line);
+}
+
+.video-editor-screen .panel-tabs,
+.video-editor-screen .inspector-tabs,
+.video-editor-screen .inspector-context {
+  height: 42px;
+  display: flex;
+  align-items: stretch;
+  border-bottom: 1px solid var(--line);
+}
+
+.video-editor-screen .panel-tabs button,
+.video-editor-screen .inspector-tabs button {
+  position: relative;
+  flex: 1;
+  border: 0;
+  background: transparent;
+  color: #98a1ae;
+  font-size: 12px;
+  cursor: pointer;
+}
+
+.video-editor-screen .inspector-context {
+  justify-content: space-between;
+  align-items: center;
+  padding: 0 14px;
+  font-size: 11px;
+}
+
+.video-editor-screen .inspector-context strong {
+  position: relative;
+  align-self: stretch;
+  display: flex;
+  align-items: center;
+}
+
+.video-editor-screen .inspector-context strong::after {
+  content: '';
+  position: absolute;
+  right: 0;
+  bottom: 0;
+  left: 0;
+  height: 2px;
+  background: var(--blue);
+}
+
+.video-editor-screen .inspector-context span {
+  color: var(--muted);
+}
+
+.video-editor-screen .panel-tabs button::after,
+.video-editor-screen .inspector-tabs button::after {
+  content: '';
+  position: absolute;
+  inset: auto 13px 0;
+  height: 2px;
+  background: transparent;
+}
+
+.video-editor-screen .panel-tabs button:hover,
+.video-editor-screen .inspector-tabs button:hover {
+  color: #e5e8ed;
+}
+
+.video-editor-screen .panel-tabs button.is-active,
+.video-editor-screen .inspector-tabs button.is-active {
+  color: #fff;
+}
+
+.video-editor-screen .panel-tabs button.is-active::after,
+.video-editor-screen .inspector-tabs button.is-active::after {
+  background: var(--blue);
+}
+
+.video-editor-screen .panel-body {
+  min-height: 0;
+  height: calc(100% - 42px);
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #4a515d transparent;
+}
+
+.video-editor-screen .media-panel-body {
+  padding: 11px;
+}
+
+.video-editor-screen .import-zone {
+  width: 100%;
+  min-height: 72px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 3px;
+  border: 1px dashed #414852;
+  border-radius: 6px;
+  background: #1a1d23;
+  color: #e1e5eb;
+  cursor: pointer;
+}
+
+.video-editor-screen .import-zone:hover {
+  border-color: #6688d8;
+  background: #1d2330;
+}
+
+.video-editor-screen .import-zone span {
+  font-size: 11px;
+  font-weight: 650;
+}
+
+.video-editor-screen .import-zone small {
+  color: var(--quiet);
+  font-size: 10px;
+}
+
+.video-editor-screen .media-heading {
+  display: flex;
+  justify-content: space-between;
+  margin: 14px 1px 7px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.video-editor-screen .media-grid {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 7px;
+}
+
+.video-editor-screen .media-item {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #aeb6c2;
+  font-size: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.video-editor-screen .media-item:hover {
+  color: #fff;
+}
+
+.video-editor-screen .media-item > span:last-child {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.video-editor-screen .media-thumb {
+  position: relative;
+  aspect-ratio: 16 / 9;
+  overflow: hidden;
+  border: 1px solid #343943;
+  border-radius: 4px;
+  background: #0b0d10;
+}
+
+.video-editor-screen .media-thumb img {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  display: block;
+}
+
+.video-editor-screen .media-thumb svg,
+.video-editor-screen .media-thumb small {
+  position: absolute;
+  bottom: 4px;
+  filter: drop-shadow(0 1px 2px #000);
+}
+
+.video-editor-screen .media-thumb svg {
+  left: 4px;
+}
+
+.video-editor-screen .media-thumb small {
+  right: 4px;
+  color: #fff;
+  font-size: 10px;
+}
+
+.video-editor-screen .transcript-panel {
+  padding: 14px 13px;
+}
+
+.video-editor-screen .transcript-meta {
+  display: flex;
+  justify-content: space-between;
+  gap: 8px;
+  padding-bottom: 11px;
+  border-bottom: 1px solid var(--line-soft);
+  color: var(--quiet);
+  font-size: 10px;
+}
+
+.video-editor-screen .transcript-copy {
+  margin: 15px 0 18px;
+  color: #cbd1da;
+  font-size: 13px;
+  line-height: 1.75;
+}
+
+.video-editor-screen .transcript-copy button {
+  margin: 0 3px 0 0;
+  padding: 1px 2px;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: inherit;
+  cursor: pointer;
+}
+
+.video-editor-screen .transcript-copy button:hover {
+  background: #2c3340;
+}
+
+.video-editor-screen .transcript-copy button.is-current {
+  background: var(--blue);
+  color: #fff;
+}
+
+.video-editor-screen .transcript-copy button.is-keyword {
+  color: #ffd27a;
+  text-decoration: underline;
+  text-decoration-color: #9d6d1b;
+  text-underline-offset: 3px;
+}
+
+.video-editor-screen .text-action {
+  width: 100%;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  border: 1px solid #3b465b;
+  border-radius: 5px;
+  background: #202630;
+  color: #dce2eb;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.video-editor-screen .panel-title-row {
+  min-height: 58px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 14px;
+  border-bottom: 1px solid var(--line);
+}
+
+.video-editor-screen .panel-title-row > div {
+  display: flex;
+  flex-direction: column;
+  gap: 3px;
+}
+
+.video-editor-screen .panel-title-row strong {
+  font-size: 13px;
+}
+
+.video-editor-screen .panel-title-row span {
+  color: var(--quiet);
+  font-size: 10px;
+}
+
+.video-editor-screen .panel-title-row > svg {
+  color: var(--blue);
+}
+
+.video-editor-screen .automation-tabs {
+  display: flex;
+  flex-direction: column;
+  padding: 6px;
+  border-bottom: 1px solid var(--line);
+}
+
+.video-editor-screen .automation-tabs button {
+  min-height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 9px;
+  border: 0;
+  border-radius: 4px;
+  background: transparent;
+  color: #9ea7b4;
+  font-size: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.video-editor-screen .automation-tabs button:hover,
+.video-editor-screen .automation-tabs button.is-active {
+  background: #242a34;
+  color: #fff;
+}
+
+.video-editor-screen .automation-tabs button.is-active svg {
+  color: var(--blue);
+}
+
+.video-editor-screen .automation-detail {
+  padding: 18px 14px;
+}
+
+.video-editor-screen .feature-icon {
+  width: 32px;
+  height: 32px;
+  display: grid;
+  place-items: center;
+  border: 1px solid #415477;
+  border-radius: 7px;
+  color: #8dabff;
+  background: #202838;
+}
+
+.video-editor-screen .automation-detail h2 {
+  margin: 14px 0 5px;
+  font-size: 15px;
+  letter-spacing: -0.015em;
+}
+
+.video-editor-screen .automation-detail p {
+  margin: 0;
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1.5;
+}
+
+.video-editor-screen .automation-detail dl {
+  margin: 16px 0;
+  border-top: 1px solid var(--line-soft);
+}
+
+.video-editor-screen .automation-detail dl div {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 8px 0;
+  border-bottom: 1px solid var(--line-soft);
+  font-size: 10px;
+}
+
+.video-editor-screen .automation-detail dt {
+  color: var(--quiet);
+}
+
+.video-editor-screen .automation-detail dd {
+  margin: 0;
+  color: #d6dbe3;
+  text-align: right;
+}
+
+.video-editor-screen .primary-panel-action {
+  width: 100%;
+  min-height: 34px;
+  border: 1px solid #5f88f3;
+  border-radius: 5px;
+  background: var(--blue-strong);
+  color: #fff;
+  font-size: 10px;
+  font-weight: 650;
+  cursor: pointer;
+}
+
+.video-editor-screen .primary-panel-action:hover:not(:disabled) {
+  background: #4273f6;
+}
+
+.video-editor-screen .analysis-progress {
+  height: 3px;
+  margin-top: 10px;
+  overflow: hidden;
+  background: #2c3139;
+}
+
+.video-editor-screen .analysis-progress span {
+  display: block;
+  width: 46%;
+  height: 100%;
+  background: var(--blue);
+  animation: analyze 1.15s cubic-bezier(.2, .8, .2, 1) infinite alternate;
+}
+
+@keyframes analyze {
+  from { transform: translateX(-20%); }
+  to { transform: translateX(130%); }
+}
+
+.video-editor-screen .ready-state {
+  display: flex;
+  align-items: flex-start;
+  gap: 8px;
+  margin-top: 11px;
+  padding: 9px 0;
+  border-top: 1px solid #32443e;
+  color: #b9d9cc;
+  font-size: 10px;
+  line-height: 1.4;
+}
+
+.video-editor-screen .ready-state svg {
+  flex: 0 0 auto;
+  color: #6ec49f;
+}
+
+.video-editor-screen .ready-state span {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+
+.video-editor-screen .catalog-list {
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+  padding: 8px;
+}
+
+.video-editor-screen .catalog-list button {
+  display: grid;
+  grid-template-columns: 58px 1fr auto;
+  align-items: center;
+  gap: 10px;
+  min-height: 54px;
+  padding: 6px;
+  border: 0;
+  border-radius: 5px;
+  background: transparent;
+  color: #c7cdd6;
+  font-size: 10px;
+  text-align: left;
+  cursor: pointer;
+}
+
+.video-editor-screen .catalog-list button:hover {
+  background: #23272e;
+  color: #fff;
+}
+
+.video-editor-screen .catalog-preview {
+  height: 38px;
+  border: 1px solid #3b414b;
+  border-radius: 3px;
+  background: #101217;
+}
+
+.video-editor-screen .preview-1 { background: linear-gradient(140deg, #101217 40%, #354a7f); }
+.video-editor-screen .preview-2 { background: linear-gradient(45deg, #17191d 45%, #724b7b 45% 55%, #17191d 55%); }
+.video-editor-screen .preview-3 { background: radial-gradient(circle at 30% 40%, #74603b, #15171b 52%); }
+.video-editor-screen .preview-4 { background: linear-gradient(150deg, #111318, #39424e); }
+
+.video-editor-screen .preview-region {
+  display: grid;
+  grid-template-rows: minmax(0, 1fr) 42px;
+  background: #0b0d10;
+}
+
+.video-editor-screen .preview-stage {
+  position: relative;
+  min-height: 0;
+  display: grid;
+  place-items: center;
+  overflow: hidden;
+  padding: clamp(14px, 2vw, 26px);
+  background: #090b0e;
+}
+
+.video-editor-screen .preview-stage img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+  border: 1px solid #292e36;
+  background: #0e1115;
+}
+
+.video-editor-screen .caption-preview {
+  position: absolute;
+  left: 50%;
+  bottom: 15%;
+  transform: translateX(-50%);
+  padding: 7px 10px;
+  border-radius: 6px;
+  background: rgba(8, 10, 14, 0.86);
+  color: #fff;
+  font-size: clamp(13px, 1.25vw, 19px);
+  font-weight: 710;
+  letter-spacing: -0.018em;
+  white-space: nowrap;
+}
+
+.video-editor-screen .project-title-preview {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  transform: translate(-50%, -50%);
+  max-width: 80%;
+  color: #fff;
+  font-size: clamp(28px, 4vw, 64px);
+  font-weight: 770;
+  letter-spacing: -0.035em;
+  line-height: 0.98;
+  text-align: center;
+  text-wrap: balance;
+  text-shadow: 0 3px 16px rgba(0, 0, 0, 0.65);
+}
+
+.video-editor-screen .caption-preview strong {
+  display: inline-block;
+  margin-left: 2px;
+  padding: 1px 5px;
+  border-radius: 4px;
+  background: var(--blue);
+}
+
+.video-editor-screen .transport-bar {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  border-top: 1px solid var(--line-soft);
+  padding: 0 13px;
+  background: #13161a;
+}
+
+.video-editor-screen .transport-bar time {
+  color: #7da1ff;
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.video-editor-screen .transport-controls {
+  display: flex;
+  align-items: center;
+  gap: 4px;
+}
+
+.video-editor-screen .preview-options {
+  display: flex;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 12px;
+  color: var(--quiet);
+  font-size: 10px;
+}
+
+.video-editor-screen .preview-options button {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  border: 0;
+  background: transparent;
+  color: #aab2be;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.video-editor-screen .inspector-body {
+  height: calc(100% - 42px);
+  overflow: auto;
+  padding: 14px 14px 20px;
+}
+
+.video-editor-screen .inspector-body h2 {
+  margin: 0 0 16px;
+  font-size: 13px;
+}
+
+.video-editor-screen .inspector-section-title {
+  min-height: 32px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 8px;
+  font-size: 11px;
+}
+
+.video-editor-screen .inspector-divider {
+  height: 1px;
+  margin: 18px 0 8px;
+  background: var(--line-soft);
+}
+
+.video-editor-screen .coordinate-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin-bottom: 15px;
+}
+
+.video-editor-screen .coordinate-grid label,
+.video-editor-screen .select-control,
+.video-editor-screen .range-control {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  color: #aeb6c1;
+  font-size: 10px;
+}
+
+.video-editor-screen .coordinate-grid input,
+.video-editor-screen .select-control select,
+.video-editor-screen .export-popover input,
+.video-editor-screen .export-popover select {
+  width: 100%;
+  height: 30px;
+  border: 1px solid #383e48;
+  border-radius: 4px;
+  background: #15181d;
+  color: #e7eaf0;
+  padding: 0 8px;
+  font-size: 10px;
+}
+
+.video-editor-screen .range-control {
+  margin-top: 14px;
+}
+
+.video-editor-screen .range-control > span {
+  display: flex;
+  justify-content: space-between;
+}
+
+.video-editor-screen .range-control output {
+  color: #dce1e8;
+  font-variant-numeric: tabular-nums;
+}
+
+.video-editor-screen input[type='range'] {
+  accent-color: var(--blue);
+}
+
+.video-editor-screen .select-control {
+  margin-top: 10px;
+}
+
+.video-editor-screen .compact-options {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+}
+
+.video-editor-screen .compact-options h2 {
+  margin-bottom: 6px;
+}
+
+.video-editor-screen .compact-options button {
+  display: flex;
+  flex-direction: column;
+  align-items: flex-start;
+  gap: 2px;
+  padding: 10px;
+  border: 1px solid transparent;
+  border-radius: 5px;
+  background: #1d2026;
+  color: #dce1e7;
+  text-align: left;
+  cursor: pointer;
+}
+
+.video-editor-screen .compact-options button:hover {
+  border-color: #425278;
+  background: #202735;
+}
+
+.video-editor-screen .compact-options button span {
+  font-size: 10px;
+}
+
+.video-editor-screen .compact-options button small {
+  color: var(--quiet);
+  font-size: 10px;
+}
+
+.video-editor-screen .inspector-collapsed {
+  width: 100%;
+  height: 34px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-top: 8px;
+  padding: 0;
+  border: 0;
+  border-top: 1px solid var(--line-soft);
+  background: transparent;
+  color: #c7cdd6;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.video-editor-screen .edit-strip {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  min-width: 0;
+  padding: 0 10px;
+  border-bottom: 1px solid var(--line);
+  background: #15181d;
+}
+
+.video-editor-screen .edit-actions,
+.video-editor-screen .timeline-zoom {
+  display: flex;
+  align-items: center;
+}
+
+.video-editor-screen .edit-actions {
+  gap: 2px;
+  min-width: 0;
+}
+
+.video-editor-screen .edit-actions button {
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  padding: 0 8px;
+  border: 1px solid transparent;
+  border-radius: 4px;
+  background: transparent;
+  color: #9ba4b1;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.video-editor-screen .edit-actions button:hover,
+.video-editor-screen .edit-actions button.is-active {
+  color: #fff;
+  background: #242830;
+}
+
+.video-editor-screen .edit-actions button.is-active svg {
+  color: var(--blue);
+}
+
+.video-editor-screen .timeline-zoom {
+  flex: 0 0 auto;
+  gap: 7px;
+  color: var(--quiet);
+}
+
+.video-editor-screen .timeline-zoom input {
+  width: 88px;
+}
+
+.video-editor-screen .timeline {
+  min-height: 0;
+  display: grid;
+  grid-template-rows: 28px minmax(0, 1fr);
+  background: #14171b;
+  overflow: hidden;
+}
+
+.video-editor-screen .timeline-ruler {
+  display: grid;
+  grid-template-columns: 166px 1fr;
+  border-bottom: 1px solid var(--line);
+  color: var(--quiet);
+  font-size: 10px;
+  font-variant-numeric: tabular-nums;
+}
+
+.video-editor-screen .ruler-gutter {
+  display: flex;
+  align-items: center;
+  padding-left: 12px;
+  border-right: 1px solid var(--line);
+}
+
+.video-editor-screen .ruler-ticks {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 0 10px;
+  background-image: linear-gradient(to right, transparent calc(100% - 1px), #292e36 1px);
+  background-size: calc(100% / 28) 7px;
+  background-position: bottom;
+  background-repeat: repeat-x;
+}
+
+.video-editor-screen .timeline-body {
+  position: relative;
+  min-height: 0;
+  overflow: auto;
+  scrollbar-width: thin;
+  scrollbar-color: #4a515d #1c2025;
+}
+
+.video-editor-screen .timeline-row {
+  height: 43px;
+  min-height: 43px;
+  display: grid;
+  grid-template-columns: 166px minmax(900px, 1fr);
+  border-bottom: 1px solid #2a2f37;
+  transition: opacity 160ms ease-out;
+}
+
+.video-editor-screen .timeline-row.is-hidden .track-lane {
+  opacity: 0.17;
+}
+
+.video-editor-screen .track-controls {
+  display: grid;
+  grid-template-columns: 16px 22px 22px minmax(0, 1fr);
+  align-items: center;
+  padding: 0 8px;
+  border-right: 1px solid var(--line);
+  color: #d8dde5;
+  font-size: 10px;
+}
+
+.video-editor-screen .track-controls > svg {
+  color: #626b78;
+}
+
+.video-editor-screen .track-controls button {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  border: 0;
+  background: transparent;
+  color: #8e98a5;
+  cursor: pointer;
+}
+
+.video-editor-screen .track-controls button:hover {
+  color: #fff;
+}
+
+.video-editor-screen .track-lane {
+  position: relative;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 4px 7px;
+  background: #121519;
+  transition: opacity 160ms ease-out;
+  overflow: hidden;
+}
+
+.video-editor-screen .track-caption {
+  height: 35px;
+  min-height: 35px;
+}
+
+.video-editor-screen .track-main {
+  height: 54px;
+  min-height: 54px;
+}
+
+.video-editor-screen .track-audio {
+  height: 38px;
+  min-height: 38px;
+}
+
+.video-editor-screen .visual-clip,
+.video-editor-screen .caption-clip,
+.video-editor-screen .audio-clip {
+  position: relative;
+  height: auto;
+  align-self: stretch;
+  min-width: 0;
+  overflow: hidden;
+  border: 1px solid #38404b;
+  border-radius: 3px;
+  background: #1c2025;
+  cursor: pointer;
+}
+
+.video-editor-screen .visual-clip:hover,
+.video-editor-screen .caption-clip:hover,
+.video-editor-screen .audio-clip:hover {
+  border-color: #647086;
+}
+
+.video-editor-screen .visual-clip.is-selected,
+.video-editor-screen .audio-clip.is-selected {
+  border-color: #6b97ff;
+  box-shadow: 0 2px 8px rgba(45, 91, 206, 0.25);
+}
+
+.video-editor-screen .visual-clip img {
+  width: 100%;
+  height: 100%;
+  display: block;
+  object-fit: cover;
+}
+
+.video-editor-screen .broll-clip-0 { width: 21%; }
+.video-editor-screen .broll-clip-1 { width: 18%; }
+.video-editor-screen .broll-clip-2 { width: 26%; }
+.video-editor-screen .broll-clip-3 { width: 25%; }
+.video-editor-screen .main-clip-0 { width: 48%; }
+.video-editor-screen .main-clip-1 { width: 47%; }
+.video-editor-screen .images-clip-0 { width: 17%; }
+.video-editor-screen .images-clip-1 { width: 14%; }
+.video-editor-screen .images-clip-2 { width: 22%; }
+.video-editor-screen .images-clip-3 { width: 20%; }
+
+.video-editor-screen .trim-handle {
+  position: absolute;
+  top: 50%;
+  width: 5px;
+  height: 65%;
+  transform: translateY(-50%);
+  border-radius: 2px;
+  background: #edf2ff;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.55);
+}
+
+.video-editor-screen .trim-handle.start { left: 2px; }
+.video-editor-screen .trim-handle.end { right: 2px; }
+
+.video-editor-screen .caption-clip {
+  display: flex;
+  align-items: center;
+  padding: 0 10px;
+  border-color: #5d498e;
+  background: #49356f;
+  color: #f0eaff;
+  font-size: 10px;
+  text-align: left;
+}
+
+.video-editor-screen .caption-clip.clip-a { width: 29%; }
+.video-editor-screen .caption-clip.clip-b { width: 44%; margin-left: 5%; }
+
+.video-editor-screen .word-clips {
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 3px;
+  padding-right: 12%;
+}
+
+.video-editor-screen .word-clips button {
+  height: calc(100% - 2px);
+  padding: 0 9px;
+  border: 1px solid #5d498e;
+  border-radius: 3px;
+  background: #49356f;
+  color: #f0eaff;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.video-editor-screen .word-clips button:hover,
+.video-editor-screen .word-clips button.is-emphasis {
+  border-color: #ad91ed;
+  background: #684d9b;
+}
+
+.video-editor-screen .hook-clip {
+  width: 18%;
+  min-width: 160px;
+  align-self: stretch;
+  border: 1px solid #8a6c34;
+  border-radius: 3px;
+  background: #4e3b1d;
+  color: #f5dca5;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.video-editor-screen .is-generated {
+  animation: draft-arrive 300ms cubic-bezier(.2, .8, .2, 1);
+}
+
+.video-editor-screen .visual-clip.is-generated,
+.video-editor-screen .word-clips.is-generated button,
+.video-editor-screen .hook-clip.is-generated {
+  border-color: #7da1ff;
+  box-shadow: 0 2px 10px rgba(60, 105, 220, 0.28);
+}
+
+@keyframes draft-arrive {
+  from { clip-path: inset(0 100% 0 0); filter: brightness(1.25); }
+  to { clip-path: inset(0 0 0 0); filter: brightness(1); }
+}
+
+.video-editor-screen .audio-clip {
+  width: 94%;
+  padding: 0;
+  border-color: #31654f;
+  background: #193c2f;
+}
+
+.video-editor-screen .waveform {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  gap: 2px;
+  padding: 4px;
+}
+
+.video-editor-screen .waveform i {
+  width: 2px;
+  height: var(--bar);
+  display: block;
+  background: #74c6a2;
+  opacity: 0.75;
+}
+
+.video-editor-screen .playhead {
+  position: absolute;
+  z-index: 8;
+  top: 0;
+  bottom: 0;
+  width: 1px;
+  background: #4d82ff;
+  pointer-events: none;
+}
+
+.video-editor-screen .playhead span {
+  position: absolute;
+  top: 0;
+  left: -4px;
+  width: 9px;
+  height: 7px;
+  border-radius: 0 0 3px 3px;
+  background: #4d82ff;
+}
+
+.video-editor-screen .hidden-track-row {
+  min-height: 30px;
+  display: flex;
+  align-items: flex-start;
+  flex-direction: column;
+  gap: 10px;
+  padding: 4px 8px;
+  border-bottom: 1px solid var(--line-soft);
+  background: #171a1f;
+  color: var(--quiet);
+  font-size: 10px;
+}
+
+.video-editor-screen .hidden-track-row button {
+  width: 158px;
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  border: 0;
+  background: transparent;
+  color: #a8b0bc;
+  font-size: 10px;
+  cursor: pointer;
+}
+
+.video-editor-screen .hidden-track-row.is-expanded {
+  background: #1c2027;
+}
+
+.video-editor-screen .hidden-track-groups {
+  width: min(620px, calc(100% - 166px));
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 6px;
+  margin-left: 166px;
+  padding-bottom: 4px;
+}
+
+.video-editor-screen .hidden-track-groups button {
+  width: auto;
+  min-height: 28px;
+  display: grid;
+  grid-template-columns: auto 1fr auto;
+  gap: 6px;
+  padding: 0 7px;
+  border: 1px solid #333944;
+  border-radius: 4px;
+  background: #20242b;
+  text-align: left;
+}
+
+.video-editor-screen .hidden-track-groups button:hover {
+  border-color: #566174;
+  background: #252a32;
+}
+
+.video-editor-screen .hidden-track-groups strong {
+  color: #cbd2dc;
+  font-variant-numeric: tabular-nums;
+}
+
+.video-editor-screen .export-popover {
+  position: fixed;
+  z-index: 50;
+  top: 47px;
+  right: 10px;
+  width: 292px;
+  display: flex;
+  flex-direction: column;
+  gap: 13px;
+  padding: 15px;
+  border: 1px solid #3c424d;
+  border-radius: 10px;
+  background: #1b1e24;
+  box-shadow: 0 12px 30px rgba(0, 0, 0, 0.42);
+}
+
+.video-editor-screen .popover-heading {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+}
+
+.video-editor-screen .popover-heading strong {
+  font-size: 13px;
+}
+
+.video-editor-screen .popover-heading button {
+  width: 24px;
+  height: 24px;
+  border: 0;
+  background: transparent;
+  color: var(--muted);
+  font-size: 18px;
+  cursor: pointer;
+}
+
+.video-editor-screen .export-popover label {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  color: var(--muted);
+  font-size: 10px;
+}
+
+.video-editor-screen .popover-grid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+}
+
+.video-editor-screen .export-popover > small {
+  color: var(--quiet);
+  font-size: 10px;
+  line-height: 1.35;
+}
+
+.video-editor-screen .toast {
+  position: fixed;
+  z-index: 60;
+  left: 50%;
+  bottom: 18px;
+  transform: translateX(-50%);
+  padding: 9px 13px;
+  border: 1px solid #46516a;
+  border-radius: 6px;
+  background: #222935;
+  color: #eef2f8;
+  box-shadow: 0 8px 22px rgba(0, 0, 0, 0.35);
+  font-size: 10px;
+  animation: toast-in 180ms cubic-bezier(.2, .8, .2, 1);
+}
+
+@keyframes toast-in {
+  from { transform: translate(-50%, 7px); opacity: 0; }
+  to { transform: translate(-50%, 0); opacity: 1; }
+}
+
+.video-editor-screen .desktop-required {
+  display: none;
+}
+
+@media (max-width: 1260px) {
+  .video-editor-screen .topbar {
+    grid-template-columns: minmax(240px, 1fr) auto minmax(170px, 1fr);
+  }
+
+  .video-editor-screen .top-tool {
+    width: 49px;
+  }
+
+  .video-editor-screen .top-tool span {
+    font-size: 9.5px;
+  }
+
+  .video-editor-screen .stage-grid {
+    grid-template-columns: 52px minmax(520px, 1fr) 250px;
+  }
+
+  .video-editor-screen .context-flyout {
+    left: 52px;
+    width: 232px;
+  }
+
+  .video-editor-screen .edit-actions button span {
+    display: none;
+  }
+
+  .video-editor-screen .edit-actions button {
+    width: 30px;
+    justify-content: center;
+    padding: 0;
+  }
+}
+
+@media (max-width: 1023px) {
+  .video-editor-screen .desktop-app {
+    display: none;
+  }
+
+  .video-editor-screen .desktop-required {
+    min-height: 100%;
+    display: flex;
+    flex-direction: column;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 12vw;
+    background: #111318;
+    color: var(--text);
+  }
+
+  .video-editor-screen .desktop-required svg {
+    color: var(--blue);
+  }
+
+  .video-editor-screen .desktop-required h1 {
+    max-width: 16ch;
+    margin: 22px 0 10px;
+    font-size: clamp(30px, 9vw, 52px);
+    line-height: 0.98;
+    letter-spacing: -0.03em;
+  }
+
+  .video-editor-screen .desktop-required p {
+    max-width: 55ch;
+    margin: 0;
+    color: var(--muted);
+    font-size: 14px;
+    line-height: 1.55;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .video-editor-screen *,
+  .video-editor-screen *::before,
+  .video-editor-screen *::after {
+    scroll-behavior: auto !important;
+    animation-duration: 0.01ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: 0.01ms !important;
+  }
+}
+
+/* Production editor integration: the imported shell keeps the reference geometry while
+   these selectors adapt the existing, fully functional media bin and timeline markup. */
+.video-editor-screen .ve-bin {
+  height: 100%;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  padding: 0;
+  overflow: hidden;
+}
+
+.video-editor-screen .ve-bin .panel-tabs {
+  flex: 0 0 42px;
+}
+
+.video-editor-screen .ve-bin .panel-body {
+  flex: 1 1 auto;
+  height: auto;
+}
+
+.video-editor-screen .ve-bin .media-panel-body {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+}
+
+.video-editor-screen .ve-bin-head {
+  min-height: 28px;
+  margin: 0;
+}
+
+.video-editor-screen .ve-bin .ve-input {
+  min-height: 30px;
+  border-color: #343943;
+  border-radius: 4px;
+  background: #171a1f;
+  color: var(--text);
+  font-size: 11px;
+}
+
+.video-editor-screen .ve-bin-cycle {
+  gap: 7px;
+  padding: 9px;
+  border-color: #343943;
+  border-radius: 5px;
+  background: #171a1f;
+}
+
+.video-editor-screen .ve-bin-cycle > summary {
+  cursor: pointer;
+  list-style: none;
+}
+
+.video-editor-screen .ve-bin-cycle > summary::-webkit-details-marker {
+  display: none;
+}
+
+.video-editor-screen .ve-bin-cycle[open] > summary {
+  margin-bottom: 7px;
+}
+
+.video-editor-screen .ve-bin-cycle-actions {
+  gap: 5px;
+}
+
+.video-editor-screen .ve-bin-list {
+  display: grid;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
+  gap: 10px 7px;
+  padding: 0;
+}
+
+.video-editor-screen .ve-bin-item {
+  min-width: 0;
+  border: 0;
+  background: transparent;
+}
+
+.video-editor-screen .ve-bin-card {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: stretch;
+  gap: 5px;
+  padding: 0;
+  border: 0;
+  background: transparent;
+  color: #aeb6c2;
+  text-align: left;
+}
+
+.video-editor-screen .ve-bin-thumb {
+  width: 100%;
+  aspect-ratio: 16 / 9;
+  border: 1px solid #343943;
+  border-radius: 4px;
+  background: #0b0d10;
+}
+
+.video-editor-screen .ve-bin-meta {
+  min-width: 0;
+}
+
+.video-editor-screen .ve-bin-kind {
+  color: var(--quiet);
+  font-size: 9px;
+}
+
+.video-editor-screen .transcript-panel .text-action:disabled {
+  cursor: not-allowed;
+  opacity: 0.45;
+}
+
+.video-editor-screen .ve-timeline.timeline {
+  height: auto;
+  border-top: 0;
+}
+
+.video-editor-screen .ve-timeline-bar.timeline-ruler {
+  gap: 0;
+  padding: 0;
+  flex-wrap: nowrap;
+}
+
+.video-editor-screen .timeline-toolbar {
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  gap: 4px;
+  padding: 0 8px;
+  overflow: hidden;
+}
+
+.video-editor-screen .timeline-toolbar .ve-btn {
+  min-height: 21px;
+  height: 21px;
+  padding: 0 7px;
+  border-radius: 4px;
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.video-editor-screen .timeline-toolbar .ve-timeline-clock,
+.video-editor-screen .timeline-toolbar .ve-dim,
+.video-editor-screen .timeline-toolbar .ve-zoom-value {
+  font-size: 9px;
+  white-space: nowrap;
+}
+
+.video-editor-screen .ve-timeline-body.timeline-body {
+  display: flex;
+  overflow: hidden;
+}
+
+.video-editor-screen .ve-labels {
+  flex: none;
+  border-right: 1px solid var(--line);
+  background: #14171b;
+}
+
+.video-editor-screen .ve-labels-spacer {
+  border-bottom-color: var(--line);
+  background-image: linear-gradient(to right, transparent calc(100% - 1px), #292e36 1px);
+  background-size: 9px 7px;
+  background-position: bottom;
+  background-repeat: repeat-x;
+}
+
+.video-editor-screen .ve-label {
+  display: grid;
+  grid-template-columns: 16px minmax(0, 1fr) auto;
+  gap: 4px;
+  padding: 0 7px;
+  border-bottom: 1px solid #2a2f37;
+  border-left: 2px solid transparent;
+  border-radius: 0;
+  background: #14171b;
+  color: #d8dde5;
+  font-size: 10px;
+}
+
+.video-editor-screen .ve-label:hover {
+  background: #1b1f25;
+}
+
+.video-editor-screen .ve-label-name {
+  font-size: 10px;
+}
+
+.video-editor-screen .ve-label-actions {
+  gap: 0;
+}
+
+.video-editor-screen .ve-label-grip,
+.video-editor-screen .ve-label-actions .ve-chip {
+  width: 22px;
+  height: 22px;
+  display: grid;
+  place-items: center;
+  padding: 0;
+  border: 0;
+  border-radius: 3px;
+  background: transparent;
+  color: #8e98a5;
+}
+
+.video-editor-screen .ve-label-actions .ve-chip:hover,
+.video-editor-screen .ve-label-actions .ve-chip.is-on {
+  background: #272d36;
+  color: #fff;
+}
+
+.video-editor-screen .ve-lanes {
+  background: #121519;
+  scrollbar-color: #4a515d #1c2025;
+}
+
+.video-editor-screen .ve-ruler {
+  border-bottom-color: var(--line);
+  border-radius: 0;
+  background-color: #14171b;
+  background-image: linear-gradient(to right, transparent calc(100% - 1px), #292e36 1px);
+  background-size: 9px 7px;
+  background-position: bottom;
+  background-repeat: repeat-x;
+}
+
+.video-editor-screen .ve-lane {
+  border-bottom: 1px solid #2a2f37;
+  border-radius: 0;
+  background: #121519;
+}
+
+.video-editor-screen .ve-clip {
+  top: 4px;
+  bottom: 4px;
+  border-color: #38404b;
+  border-radius: 3px;
+  background: #1c2025;
+}
+
+.video-editor-screen .ve-clip--audio {
+  border-color: #31654f;
+  background: #193c2f;
+}
+
+.video-editor-screen .ve-clip--caption {
+  border-color: #5d498e;
+  background: #49356f;
+}
+
+.video-editor-screen .ve-caption-word-strip {
+  position: absolute;
+  inset: 0 8px;
+  pointer-events: none;
+}
+
+.video-editor-screen .ve-caption-word-strip > span {
+  position: absolute;
+  top: 1px;
+  bottom: 1px;
+  min-width: 20px;
+  display: flex;
+  align-items: center;
+  padding: 0 7px;
+  overflow: hidden;
+  border: 1px solid #5d498e;
+  border-radius: 3px;
+  background: #49356f;
+  color: #f0eaff;
+  font-size: 10px;
+  white-space: nowrap;
+}
+
+.video-editor-screen .ve-caption-word-strip > span.is-emphasis {
+  border-color: #ad91ed;
+  background: #684d9b;
+}
+
+.video-editor-screen .ve-clip--video,
+.video-editor-screen .ve-clip--image {
+  border-color: #38404b;
+  background: #1c2025;
+}
+
+.video-editor-screen .ve-clip.is-selected {
+  border-color: #6b97ff;
+  box-shadow: 0 2px 8px rgba(45, 91, 206, 0.25);
+}
+
+.video-editor-screen .ve-playhead {
+  background: #4d82ff;
+}
+
+.video-editor-screen .ve-playhead-grip {
+  left: -4px;
+  width: 9px;
+  height: 7px;
+  clip-path: none;
+  border-radius: 0 0 3px 3px;
+  background: #4d82ff;
+}
+
+.video-editor-screen .ve-playhead-input {
+  position: absolute;
+  width: 1px;
+  height: 1px;
+  padding: 0;
+  margin: -1px;
+  overflow: hidden;
+  clip: rect(0, 0, 0, 0);
+  white-space: nowrap;
+  border: 0;
+}
+
+.video-editor-screen .inspector-body .ve-panel {
+  overflow: visible;
+}

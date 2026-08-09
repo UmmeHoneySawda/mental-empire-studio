@@ -2,25 +2,15 @@ import { useEffect, useState } from 'react'
 import { Banner } from '../../../components/ui/kit'
 import { PreviewStage } from './PreviewStage'
 import { Timeline } from './Timeline'
-import { MediaBin } from './MediaBin'
 import { Inspector } from './Inspector'
-import { timecode } from './constants'
-import { getSelectedClipIds, useEditor, type PanelTab } from './useEditor'
+import { getSelectedClipIds, useEditor } from './useEditor'
 import { openRendererEditor, reseedRendererEditor } from './rendererSession'
 import { useData } from '../../../store/useData'
-
-const TABS: ReadonlyArray<{ id: PanelTab; label: string }> = [
-  { id: 'media', label: 'Media' },
-  { id: 'templates', label: 'Templates' },
-  { id: 'hook', label: 'Hook' },
-  { id: 'text', label: 'Text' },
-  { id: 'captions', label: 'Captions' },
-  { id: 'transitions', label: 'Transitions' },
-  { id: 'grade', label: 'Grade' },
-  { id: 'effects', label: 'Effects' },
-  { id: 'broll', label: 'B-roll' },
-  { id: 'export', label: 'Export' }
-]
+import { EditorChrome } from './EditorChrome'
+import { CollapsedToolRail, EditorToolPanel } from './EditorToolPanel'
+import { EditorExportPopover } from './EditorExportPopover'
+import { EditorEditStrip } from './EditorEditStrip'
+import { panelForDestination, type AutomationDestination, type EditorDestination } from './editorUiModel'
 
 const FAST_PREVIEW_EXPORT_COMMAND = 'videoEngine.fastPreviewExport'
 
@@ -38,18 +28,24 @@ function readableError(error: unknown): string {
     .replace(/^Error:\s*/u, '')
 }
 
-export function EditorShell({ downloadId }: { downloadId: string }): JSX.Element {
+export function EditorShell({
+  downloadId,
+  onChooseProject
+}: {
+  downloadId: string
+  onChooseProject: () => void
+}): JSX.Element {
   const project = useEditor((state) => state.project)
   const loading = useEditor((state) => state.loading)
   const error = useEditor((state) => state.error)
   const notice = useEditor((state) => state.notice)
   const busy = useEditor((state) => state.busy)
   const progressNote = useEditor((state) => state.progressNote)
-  const tab = useEditor((state) => state.tab)
   const jobs = useEditor((state) => state.jobs)
   const past = useEditor((state) => state.past)
   const future = useEditor((state) => state.future)
   const flush = useEditor((state) => state.flush)
+  const inspectorTab = useEditor((state) => state.tab)
   const setTab = useEditor((state) => state.setTab)
   const clearMessages = useEditor((state) => state.clearMessages)
   const setError = useEditor((state) => state.setError)
@@ -58,6 +54,10 @@ export function EditorShell({ downloadId }: { downloadId: string }): JSX.Element
   const applyJob = useEditor((state) => state.applyJob)
   const setProgressNote = useEditor((state) => state.setProgressNote)
   const [fastPreviewBusy, setFastPreviewBusy] = useState(false)
+  const [activeDestination, setActiveDestination] = useState<EditorDestination>('media')
+  const [activeAutomation, setActiveAutomation] = useState<AutomationDestination>('broll')
+  const [panelOpen, setPanelOpen] = useState(true)
+  const [exportOpen, setExportOpen] = useState(false)
   const fastPreviewProgress = useData((s) => s.fastPreviewProgress)
   const isFastPreviewing = fastPreviewBusy || fastPreviewProgress?.status === 'recording' || fastPreviewProgress?.status === 'encoding'
   const fastPreviewPct = fastPreviewProgress?.percent ?? 0
@@ -161,6 +161,13 @@ export function EditorShell({ downloadId }: { downloadId: string }): JSX.Element
     (job) => job.projectId === project?.id && !['completed', 'failed', 'canceled'].includes(job.stage)
   )
 
+  const openDestination = (destination: EditorDestination): void => {
+    setActiveDestination(destination)
+    setPanelOpen(true)
+    const panel = panelForDestination(destination)
+    if (panel) setTab(panel)
+  }
+
   const exportFastPreview = async (): Promise<void> => {
     if (!project || fastPreviewBusy) return
     setFastPreviewBusy(true)
@@ -207,105 +214,89 @@ export function EditorShell({ downloadId }: { downloadId: string }): JSX.Element
     )
   }
 
+  const exportBusy = Boolean(busy || isFastPreviewing || activeJob)
+  const exportProgress = activeJob
+    ? `${activeJob.stage} · ${Math.round(activeJob.progress * 100)}%`
+    : isFastPreviewing
+      ? `Recording fast preview · ${fastPreviewPct}%`
+      : progressNote || busy
+
   return (
-    <div className="ve" data-engine="remotion">
-      <header className="ve-head">
-        <div className="ve-head-title">
-          <span className="me-ellipsis" title={project.name}>{project.name}</span>
-          <span className="ve-head-spec ve-mono">
-            Remotion ·{' '}
-            {project.canvas.width}×{project.canvas.height} · {project.canvas.fps}fps ·{' '}
-            {timecode(project.canvas.durationFrames, project.canvas.fps)} · rev {project.revision}
-          </span>
-        </div>
-        <div className="ve-head-actions">
-          <button
-            type="button"
-            className="ve-btn ve-btn--ghost"
-            disabled={past.length === 0}
-            onClick={() => useEditor.getState().undo()}
-            title="Undo (Ctrl+Z)"
-          >
-            ↶
-          </button>
-          <button
-            type="button"
-            className="ve-btn ve-btn--ghost"
-            disabled={future.length === 0}
-            onClick={() => useEditor.getState().redo()}
-            title="Redo (Ctrl+Shift+Z)"
-          >
-            ↷
-          </button>
-          <button
-            type="button"
-            className="ve-btn ve-btn--soft"
-            disabled={!!busy || isFastPreviewing || !!activeJob}
-            onClick={() => void exportFastPreview()}
-            title={isFastPreviewing ? `Fast preview recording in progress (${fastPreviewPct}%)` : "Record the live preview in real time inside a hidden Chromium window."}
-          >
-            {isFastPreviewing ? `Previewing ${fastPreviewPct}%…` : 'Fast preview'}
-          </button>
-          {activeJob ? (
-            <button type="button" className="ve-btn ve-btn--soft" onClick={() => setTab('export')}>
-              {activeJob.stage} · {Math.round(activeJob.progress * 100)}%
-            </button>
-          ) : (
-            <button type="button" className="ve-btn ve-btn--primary" disabled={!!busy || isFastPreviewing} onClick={() => void enqueueRender()}>
-              {busy === 'Queueing the render' || busy === 'Checking the project' ? busy : 'Render'}
-            </button>
-          )}
-        </div>
-      </header>
-
-      {(error || notice) && (
-        <div className="ve-messages">
-          {error && (
-            <Banner kind="error" style={{ cursor: 'pointer' }}>
-              <span onClick={clearMessages} role="presentation">{error}</span>
-            </Banner>
-          )}
-          {notice && !error && (
-            <Banner kind="success" style={{ cursor: 'pointer' }}>
-              <span onClick={clearMessages} role="presentation">{notice}</span>
-            </Banner>
-          )}
-        </div>
-      )}
-
-      <div className="ve-body">
-        <aside className="ve-rail ed-scroll" aria-label="Media">
-          <MediaBin />
-        </aside>
-
-        <PreviewStage />
-
-        <aside className="ve-inspector" aria-label="Inspector">
-          <div className="ve-tabs" role="tablist" aria-label="Editor panels">
-            {TABS.map((entry) => (
-              <button
-                key={entry.id}
-                type="button"
-                role="tab"
-                aria-selected={tab === entry.id}
-                className="ve-tab"
-                onClick={() => setTab(entry.id)}
-              >
-                {entry.label}
-              </button>
-            ))}
+    <>
+      <div
+        className="desktop-app ve-ui"
+        data-engine="remotion"
+        data-project-id={project.id}
+        data-testid="video-editor-workspace"
+      >
+        <EditorChrome
+          projectName={project.name}
+          activeDestination={activeDestination}
+          exportOpen={exportOpen}
+          canUndo={past.length > 0}
+          canRedo={future.length > 0}
+          onChooseProject={onChooseProject}
+          onDestination={openDestination}
+          onUndo={() => useEditor.getState().undo()}
+          onRedo={() => useEditor.getState().redo()}
+          onExport={() => setExportOpen((open) => !open)}
+        />
+        <main className="editor-main">
+          <div className="stage-grid">
+            <CollapsedToolRail
+              activeDestination={activeDestination}
+              panelOpen={panelOpen}
+              onOpen={openDestination}
+            />
+            {panelOpen && (
+              <div className="context-flyout">
+                <EditorToolPanel
+                  destination={activeDestination}
+                  activeAutomation={activeAutomation}
+                  onAutomation={setActiveAutomation}
+                  onClose={() => setPanelOpen(false)}
+                />
+              </div>
+            )}
+            <PreviewStage />
+            <aside className="inspector" aria-label="Inspector">
+              <div className="inspector-context">
+                <strong>Video</strong>
+                <span>Basic</span>
+              </div>
+              <div key={inspectorTab} className="inspector-body ed-scroll" role="tabpanel"><Inspector /></div>
+            </aside>
           </div>
-          <div className="ve-panel ed-scroll" role="tabpanel">
-            <Inspector />
-          </div>
-          <footer className="ve-foot">
-            <span className="me-ellipsis" title={project.id}>{project.id}</span>
-            <span>{progressNote || busy || (fastPreviewBusy ? 'Recording fast preview' : `${project.scenes.length} clips`)}</span>
-          </footer>
-        </aside>
+          <EditorEditStrip />
+          <Timeline />
+        </main>
+        {exportOpen && (
+          <EditorExportPopover
+            width={project.canvas.width}
+            height={project.canvas.height}
+            fps={project.canvas.fps}
+            busy={exportBusy}
+            progress={exportProgress}
+            onFastPreview={() => void exportFastPreview()}
+            onRender={() => void enqueueRender()}
+            onClose={() => setExportOpen(false)}
+          />
+        )}
+        {(error || notice) && (
+          <button
+            type="button"
+            className="toast"
+            role={error ? 'alert' : 'status'}
+            onClick={clearMessages}
+          >
+            {error || notice}
+          </button>
+        )}
       </div>
-
-      <Timeline />
-    </div>
+      <div className="desktop-required">
+        <h1>Video editing needs a wider window</h1>
+        <p>Use a window at least 1024 pixels wide to keep the preview, controls, and timeline usable.</p>
+      </div>
+    </>
   )
 }
