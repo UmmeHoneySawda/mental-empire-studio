@@ -1,4 +1,4 @@
-import { useMemo, useRef, useState } from 'react'
+import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   AUTO_BROLL_DENSITY_PER_MINUTE,
   REMOTION_CUSTOM_HOOK_TEMPLATE_ID,
@@ -983,6 +983,22 @@ function CaptionsPanel(): JSX.Element {
 
 // --------------------------------------------------------------------- transitions
 
+function getTransitionIcon(id: string) {
+  switch (id) {
+    case 'cut': return <svg viewBox="0 0 24 24"><line x1="4" y1="12" x2="20" y2="12"></line></svg>
+    case 'crossfade': case 'fade-quick': case 'fade-slow': return <svg viewBox="0 0 24 24"><path d="M20 6L9 17l-5-5"></path></svg>
+    case 'slide-left': return <svg viewBox="0 0 24 24"><polyline points="13 17 18 12 13 7"></polyline><polyline points="6 17 11 12 6 7"></polyline></svg>
+    case 'slide-right': return <svg viewBox="0 0 24 24"><polyline points="11 17 6 12 11 7"></polyline><polyline points="18 17 13 12 18 7"></polyline></svg>
+    case 'slide-up': return <svg viewBox="0 0 24 24"><polyline points="17 11 12 6 7 11"></polyline><polyline points="17 18 12 13 7 18"></polyline></svg>
+    case 'slide-down': return <svg viewBox="0 0 24 24"><polyline points="7 13 12 18 17 13"></polyline><polyline points="7 6 12 11 17 6"></polyline></svg>
+    case 'wipe-left': case 'wipe-right': return <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="12" y1="3" x2="12" y2="21"></line></svg>
+    case 'zoom': return <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle></svg>
+    case 'blur': return <svg viewBox="0 0 24 24"><path d="M12 2v20"></path><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
+    case 'dip-to-black': return <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="currentColor"></circle></svg>
+    default: return <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle></svg>
+  }
+}
+
 function TransitionsPanel(): JSX.Element {
   const project = useEditor((state) => state.project)
   const selection = useEditor((state) => state.selection)
@@ -1047,6 +1063,26 @@ function TransitionsPanel(): JSX.Element {
   }, [allPairs, selectedTracks, project])
 
   const targetPairs = applyToAll ? applyToAllPairs : selectedPairs
+
+  const fps = project?.canvas.fps ?? 30
+
+  const activeTransitionIds = useMemo(() => {
+    if (!project || targetPairs.length === 0) return []
+    const ids = targetPairs.map(tp => {
+      const existing = project.transitions.find(t => t.fromSceneId === tp.from.id && t.toSceneId === tp.to.id)
+      return existing ? existing.type : 'cut'
+    })
+    return [...new Set(ids)]
+  }, [project, targetPairs])
+
+  const activePresetId = activeTransitionIds.length === 1 ? activeTransitionIds[0] : null
+  const activePreset = TRANSITION_PRESETS.find(p => p.templateId?.includes(activePresetId || '') || (activePresetId === 'cut' && !p.templateId)) || TRANSITION_PRESETS[0]
+
+  const [localDuration, setLocalDuration] = useState<number>(activePreset.durationFrames)
+
+  useEffect(() => {
+    setLocalDuration(activePreset.durationFrames)
+  }, [activePreset])
 
   const apply = async (preset: (typeof TRANSITION_PRESETS)[number]): Promise<void> => {
     if (targetPairs.length === 0 || !project) return
@@ -1120,6 +1156,10 @@ function TransitionsPanel(): JSX.Element {
     }
   }
 
+  const applyDuration = (frames: number) => {
+    void apply({ ...activePreset, durationFrames: frames })
+  }
+
   const existing = project?.transitions ?? []
 
   return (
@@ -1147,7 +1187,7 @@ function TransitionsPanel(): JSX.Element {
           </p>
         ) : (
           <>
-            <p className="ve-hint">
+            <p className="ve-hint" style={{ marginBottom: 20 }}>
               {applyToAll
                 ? `Applying to ${applyToAllPairs.length} join${applyToAllPairs.length === 1 ? '' : 's'} on ${selectedTracks.size > 0 ? 'the selected layer' : 'all layers'}.`
                 : selectedClipIds.length > 1
@@ -1156,18 +1196,52 @@ function TransitionsPanel(): JSX.Element {
                     ? `Between ${pair.from.id.slice(0, 12)} and ${pair.to.id.slice(0, 12)}${pair.touching ? '' : ' — closing gap.'}`
                     : `Applying to ${targetPairs.length} join${targetPairs.length === 1 ? '' : 's'}.`}
             </p>
-            <div className="ve-list">
+
+            <div className="section-title" style={{ fontSize: 12, textTransform: 'uppercase', color: '#888', marginBottom: 12, fontWeight: 600 }}>Active Transition</div>
+            <div className="ve-active-transition">
+              <div className="ve-transition-icon">
+                {getTransitionIcon(activePreset.id)}
+              </div>
+              <div style={{ flex: 1 }}>
+                <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 2 }}>{activePreset.label}</div>
+                <div style={{ fontSize: 12, color: '#888' }}>{(localDuration / fps).toFixed(1)}s</div>
+              </div>
+            </div>
+
+            <div className="ve-slider-row">
+              <label>Duration</label>
+              <input
+                type="range"
+                className="ve-input"
+                style={{ flex: 1, height: 4, padding: 0 }}
+                min={3}
+                max={90}
+                step={3}
+                value={localDuration}
+                disabled={activePreset.id === 'cut' || !!busy}
+                onChange={(e) => setLocalDuration(Number(e.target.value))}
+                onMouseUp={(e) => applyDuration(Number((e.target as HTMLInputElement).value))}
+                onTouchEnd={(e) => applyDuration(Number((e.target as HTMLInputElement).value))}
+              />
+              <div className="ve-slider-value">{(localDuration / fps).toFixed(1)}s</div>
+            </div>
+
+            <div className="section-title" style={{ fontSize: 12, textTransform: 'uppercase', color: '#888', marginTop: 16, marginBottom: 12, fontWeight: 600 }}>Presets</div>
+            <div className="ve-transitions-grid">
               {TRANSITION_PRESETS.map((preset) => (
                 <button
                   key={preset.id}
                   type="button"
-                  className="ve-listitem"
+                  className={`ve-transition-card ${activePreset.id === preset.id ? 'is-on' : ''}`}
                   disabled={!!busy}
-                  onClick={() => void apply(preset)}
+                  onClick={() => {
+                     setLocalDuration(preset.durationFrames)
+                     void apply(preset)
+                  }}
                   title={preset.hint}
                 >
-                  <span className="ve-listitem-title">{preset.label}</span>
-                  <span className="ve-listitem-sub">{preset.hint}</span>
+                  {getTransitionIcon(preset.id)}
+                  <span className="ve-transition-name">{preset.label}</span>
                 </button>
               ))}
             </div>
