@@ -1,5 +1,7 @@
 import { useEffect, useState } from 'react'
+import type { VideoEngineStatus } from '@shared/video-engine'
 import { Banner } from '../../../components/ui/kit'
+import { EngineStatusLamp } from '../EngineStatusLamp'
 import { PreviewStage } from './PreviewStage'
 import { Timeline } from './Timeline'
 import { MediaBin } from './MediaBin'
@@ -32,13 +34,29 @@ interface FastPreviewExportResult {
   durationSec: number
 }
 
+interface EditorShellProps {
+  downloadId: string
+  engineStatus: VideoEngineStatus | null
+  choosingVideo: boolean
+  onChooseVideo: () => void
+}
+
 function readableError(error: unknown): string {
   return (error instanceof Error ? error.message : String(error))
     .replace(/^Error invoking remote method '[^']*':\s*/u, '')
     .replace(/^Error:\s*/u, '')
 }
 
-export function EditorShell({ downloadId }: { downloadId: string }): JSX.Element {
+/*
+ * IMPECCABLE DIRECTION CONTRACT — seed 509e3e94
+ * THESIS: Focus Deck makes the active cut—not editor chrome—the center of attention.
+ * OWN-WORLD: Graphite planes, 1px quiet structure, compact workhorse type, and one amber edit signal.
+ * STORY: Find media, judge the frame, adjust context, cut precisely, preview, then render.
+ * FIRST VIEWPORT: One command bar above a media shelf, dominant stage, vertical inspector, and inlaid timeline.
+ * FORM: Grounded structure 7, translated from `.impeccable/mocks/video-studio-focus-deck.png`.
+ * FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the verdict, and DESIGN.md
+ */
+export function EditorShell({ downloadId, engineStatus, choosingVideo, onChooseVideo }: EditorShellProps): JSX.Element {
   const project = useEditor((state) => state.project)
   const loading = useEditor((state) => state.loading)
   const error = useEditor((state) => state.error)
@@ -49,6 +67,9 @@ export function EditorShell({ downloadId }: { downloadId: string }): JSX.Element
   const jobs = useEditor((state) => state.jobs)
   const past = useEditor((state) => state.past)
   const future = useEditor((state) => state.future)
+  const selection = useEditor((state) => state.selection)
+  const dirty = useEditor((state) => state.dirty)
+  const saving = useEditor((state) => state.saving)
   const flush = useEditor((state) => state.flush)
   const setTab = useEditor((state) => state.setTab)
   const clearMessages = useEditor((state) => state.clearMessages)
@@ -160,6 +181,8 @@ export function EditorShell({ downloadId }: { downloadId: string }): JSX.Element
   const activeJob = jobs.find(
     (job) => job.projectId === project?.id && !['completed', 'failed', 'canceled'].includes(job.stage)
   )
+  const selectedCount = getSelectedClipIds(selection).length
+  const activeTab = TABS.find((entry) => entry.id === tab) ?? TABS[0]
 
   const exportFastPreview = async (): Promise<void> => {
     if (!project || fastPreviewBusy) return
@@ -184,6 +207,13 @@ export function EditorShell({ downloadId }: { downloadId: string }): JSX.Element
   if (loading && !project) {
     return (
       <div className="ve">
+        <header className="ve-head ve-head--placeholder">
+          <div className="ve-head-brand">
+            <span className="ve-product-mark" aria-hidden="true">ME</span>
+            <h1>Video Studio</h1>
+            <EngineStatusLamp status={engineStatus} />
+          </div>
+        </header>
         <div className="ve-empty">
           <h3>Opening the Remotion project</h3>
           <p>Loading this clip&apos;s audio, stills and transcript into the editor.</p>
@@ -195,6 +225,13 @@ export function EditorShell({ downloadId }: { downloadId: string }): JSX.Element
   if (!project) {
     return (
       <div className="ve">
+        <header className="ve-head ve-head--placeholder">
+          <div className="ve-head-brand">
+            <span className="ve-product-mark" aria-hidden="true">ME</span>
+            <h1>Video Studio</h1>
+            <EngineStatusLamp status={engineStatus} />
+          </div>
+        </header>
         {error && <div className="ve-messages"><Banner kind="error">{error}</Banner></div>}
         <div className="ve-empty">
           <h3>This clip has no project yet</h3>
@@ -208,35 +245,73 @@ export function EditorShell({ downloadId }: { downloadId: string }): JSX.Element
   }
 
   return (
-    <div className="ve" data-engine="remotion">
+    <div
+      className="ve"
+      data-engine="remotion"
+      data-impeccable-seed="509e3e94"
+      data-selected={selectedCount > 0 ? '1' : '0'}
+    >
       <header className="ve-head">
-        <div className="ve-head-title">
-          <span className="me-ellipsis" title={project.name}>{project.name}</span>
-          <span className="ve-head-spec ve-mono">
-            Remotion ·{' '}
-            {project.canvas.width}×{project.canvas.height} · {project.canvas.fps}fps ·{' '}
-            {timecode(project.canvas.durationFrames, project.canvas.fps)} · rev {project.revision}
-          </span>
+        <div className="ve-head-brand">
+          <span className="ve-product-mark" aria-hidden="true">ME</span>
+          <div className="ve-head-title">
+            <h1>Video Studio</h1>
+            <span className="me-ellipsis" title={project.name}>{project.name}</span>
+          </div>
+          <EngineStatusLamp status={engineStatus} />
+        </div>
+        <div className="ve-head-spec ve-mono" aria-label="Project format">
+          <span>{project.canvas.width}×{project.canvas.height}</span>
+          <span>{project.canvas.fps} fps</span>
+          <span className="ve-head-spec-optional">{timecode(project.canvas.durationFrames, project.canvas.fps)}</span>
+          <span className="ve-head-spec-optional">rev {project.revision}</span>
         </div>
         <div className="ve-head-actions">
           <button
             type="button"
-            className="ve-btn ve-btn--ghost"
-            disabled={past.length === 0}
-            onClick={() => useEditor.getState().undo()}
-            title="Undo (Ctrl+Z)"
+            className="ve-btn ve-btn--ghost ve-library-btn"
+            disabled={choosingVideo}
+            onClick={onChooseVideo}
+            title="Save this project and choose another video"
           >
-            ↶
+            <svg className="ve-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M6.5 3 2 8l4.5 5M2.5 8H14" />
+            </svg>
+            {choosingVideo ? 'Saving…' : 'Videos'}
           </button>
           <button
             type="button"
-            className="ve-btn ve-btn--ghost"
+            className="ve-btn ve-btn--ghost ve-icon-btn"
+            disabled={past.length === 0}
+            onClick={() => useEditor.getState().undo()}
+            title="Undo (Ctrl+Z)"
+            aria-label="Undo"
+          >
+            <svg className="ve-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="M6 4 2.5 7.5 6 11M3 7.5h6a4 4 0 0 1 4 4" />
+            </svg>
+          </button>
+          <button
+            type="button"
+            className="ve-btn ve-btn--ghost ve-icon-btn"
             disabled={future.length === 0}
             onClick={() => useEditor.getState().redo()}
             title="Redo (Ctrl+Shift+Z)"
+            aria-label="Redo"
           >
-            ↷
+            <svg className="ve-icon" viewBox="0 0 16 16" aria-hidden="true">
+              <path d="m10 4 3.5 3.5L10 11m3-3.5H7a4 4 0 0 0-4 4" />
+            </svg>
           </button>
+          <span
+            className="ve-save-state"
+            data-state={saving ? 'saving' : dirty ? 'dirty' : 'saved'}
+            role="status"
+            aria-live="polite"
+          >
+            <span className="ve-save-dot" aria-hidden="true" />
+            {saving ? 'Saving…' : dirty ? 'Unsaved' : 'Saved'}
+          </span>
           <button
             type="button"
             className="ve-btn ve-btn--soft"
@@ -281,13 +356,15 @@ export function EditorShell({ downloadId }: { downloadId: string }): JSX.Element
         <PreviewStage />
 
         <aside className="ve-inspector" aria-label="Inspector">
-          <div className="ve-tabs" role="tablist" aria-label="Editor panels">
+          <div className="ve-tabs ed-scroll" role="tablist" aria-label="Editor panels">
             {TABS.map((entry) => (
               <button
                 key={entry.id}
+                id={`ve-tab-${entry.id}`}
                 type="button"
                 role="tab"
                 aria-selected={tab === entry.id}
+                aria-controls="ve-inspector-panel"
                 className="ve-tab"
                 onClick={() => setTab(entry.id)}
               >
@@ -295,13 +372,24 @@ export function EditorShell({ downloadId }: { downloadId: string }): JSX.Element
               </button>
             ))}
           </div>
-          <div className="ve-panel ed-scroll" role="tabpanel">
-            <Inspector />
+          <div className="ve-inspector-work">
+            <div className="ve-inspector-head">
+              <strong>{activeTab.label}</strong>
+              <span>Controls</span>
+            </div>
+            <div
+              id="ve-inspector-panel"
+              className="ve-panel ed-scroll"
+              role="tabpanel"
+              aria-labelledby={`ve-tab-${activeTab.id}`}
+            >
+              <Inspector />
+            </div>
+            <footer className="ve-foot">
+              <span className="me-ellipsis" title={project.id}>{project.id}</span>
+              <span>{progressNote || busy || (fastPreviewBusy ? 'Recording fast preview' : `${project.scenes.length} clips`)}</span>
+            </footer>
           </div>
-          <footer className="ve-foot">
-            <span className="me-ellipsis" title={project.id}>{project.id}</span>
-            <span>{progressNote || busy || (fastPreviewBusy ? 'Recording fast preview' : `${project.scenes.length} clips`)}</span>
-          </footer>
         </aside>
       </div>
 

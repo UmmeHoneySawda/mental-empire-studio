@@ -1,7 +1,7 @@
 import { useEffect, useRef, useState } from 'react'
 import { useStore } from '../store/useStore'
 import { useData } from '../store/useData'
-import { Banner, Btn } from '../components/ui/kit'
+import { Banner } from '../components/ui/kit'
 import { ProjectGate } from '../components/ProjectGate'
 import { EngineStatusLamp } from '../features/video-studio/EngineStatusLamp'
 import { useVideoStudio } from '../features/video-studio/store/useVideoStudio'
@@ -82,30 +82,18 @@ export function Compose(): JSX.Element {
   }
 
   return (
-    <div className="me-screen" style={{ height: '100%', display: 'flex', flexDirection: 'column', padding: '18px 22px 16px', gap: 12, minHeight: 0 }}>
-      {/* header */}
-      <div style={{ display: 'flex', alignItems: 'center', gap: 12, flex: 'none' }}>
-        <div style={{ minWidth: 0 }}>
-          <h1 style={{ margin: 0, fontFamily: 'var(--font-display)', fontWeight: 600, fontSize: 'var(--fs-title)', letterSpacing: '-.4px', color: 'var(--text-strong)', lineHeight: 'var(--lh-tight)' }}>Video Studio</h1>
+    <div className={`me-screen compose-screen${project ? ' compose-screen--editing' : ''}`}>
+      {!project && (
+        <div className="compose-screen-head">
+          <h1>Video Studio</h1>
+          <EngineStatusLamp status={engineStatus} />
         </div>
-        <EngineStatusLamp status={engineStatus} />
-        <div style={{ flex: 1 }} />
-        {project && (
-          <Btn
-            variant="soft"
-            disabled={closing}
-            title="Save this project and pick another video"
-            onClick={() => void backToLibrary()}
-          >
-            {closing ? 'Saving…' : 'Choose another video'}
-          </Btn>
-        )}
-      </div>
+      )}
 
-      {error && <Banner kind="error" style={{ flex: 'none' }}>{error}</Banner>}
+      {error && <div className="compose-screen-error"><Banner kind="error">{error}</Banner></div>}
 
       {!project ? (
-        <div className="ed-scroll" style={{ flex: 1, minHeight: 0, paddingTop: 10 }}>
+        <div className="compose-screen-library ed-scroll">
           <ProjectGate
             headline="Choose a video to edit"
             sub="Add captions, media, motion, and a visual treatment before rendering."
@@ -117,7 +105,12 @@ export function Compose(): JSX.Element {
           />
         </div>
       ) : (
-        <EditorShell downloadId={project.downloadId} />
+        <EditorShell
+          downloadId={project.downloadId}
+          engineStatus={engineStatus}
+          choosingVideo={closing}
+          onChooseVideo={() => void backToLibrary()}
+        />
       )}
     </div>
   )

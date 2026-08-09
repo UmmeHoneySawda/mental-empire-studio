@@ -56,8 +56,6 @@ export function PreviewStage(): JSX.Element {
   const setLoopRange = useEditor((state) => state.setLoopRange)
   const soloSelection = useEditor((state) => state.soloSelection)
   const canSolo = useEditor((state) => state.selection.kind === 'clip')
-  const dirty = useEditor((state) => state.dirty)
-  const saving = useEditor((state) => state.saving)
 
   const fps = project?.canvas.fps ?? 30
   const total = Math.max(1, project?.canvas.durationFrames ?? 1)
@@ -111,7 +109,13 @@ export function PreviewStage(): JSX.Element {
           onClick={() => setPlaying(!playing)}
           title={playing ? 'Pause (Space)' : 'Play (Space)'}
         >
-          {playing ? '❙❙' : '▶'}
+          <svg className="ve-icon" viewBox="0 0 16 16" aria-hidden="true">
+            {playing ? (
+              <path d="M5.25 3.5v9M10.75 3.5v9" />
+            ) : (
+              <path d="m5 3.5 7 4.5-7 4.5Z" />
+            )}
+          </svg>
         </button>
         <input
           className="ve-scrub"
@@ -134,7 +138,7 @@ export function PreviewStage(): JSX.Element {
             onClick={() => setLoopRange(null)}
             title={`Looping ${rangeStart}–${rangeEnd}f. Click to play the whole video again.`}
           >
-            ⟲ {((rangeEnd - rangeStart) / fps).toFixed(1)}s ✕
+            Clear loop · {((rangeEnd - rangeStart) / fps).toFixed(1)}s
           </button>
         )}
         <button
@@ -146,9 +150,6 @@ export function PreviewStage(): JSX.Element {
         >
           Solo
         </button>
-        <span className={`ve-save${saving ? ' is-saving' : dirty ? ' is-dirty' : ''}`}>
-          {saving ? 'Saving…' : dirty ? 'Unsaved' : 'Saved'}
-        </span>
       </div>
     </div>
   )
