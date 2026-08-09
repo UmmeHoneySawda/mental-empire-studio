@@ -1,6 +1,12 @@
 {
   "version": 1,
   "skills": {
+    "impeccable": {
+      "source": "pbakaus/impeccable",
+      "sourceType": "github",
+      "skillPath": ".agents/skills/impeccable/SKILL.md",
+      "computedHash": "b83d8c84a9974ab785ada2a88a09b756637ac92fe1f208302a2749a8b0c8428e"
+    },
     "release": {
       "source": "av/remotion-bits",
       "sourceType": "github",

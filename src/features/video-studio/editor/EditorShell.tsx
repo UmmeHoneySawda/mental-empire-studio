@@ -7,7 +7,7 @@ import { getSelectedClipIds, useEditor } from './useEditor'
 import { openRendererEditor, reseedRendererEditor } from './rendererSession'
 import { useData } from '../../../store/useData'
 import { EditorChrome } from './EditorChrome'
-import { CollapsedToolRail, EditorToolPanel } from './EditorToolPanel'
+import { EditorToolPanel } from './EditorToolPanel'
 import { EditorExportPopover } from './EditorExportPopover'
 import { EditorEditStrip } from './EditorEditStrip'
 import { panelForDestination, type AutomationDestination, type EditorDestination } from './editorUiModel'
@@ -243,11 +243,6 @@ export function EditorShell({
         />
         <main className="editor-main">
           <div className="stage-grid">
-            <CollapsedToolRail
-              activeDestination={activeDestination}
-              panelOpen={panelOpen}
-              onOpen={openDestination}
-            />
             {panelOpen && (
               <div className="context-flyout">
                 <EditorToolPanel
@@ -255,6 +250,7 @@ export function EditorShell({
                   activeAutomation={activeAutomation}
                   onAutomation={setActiveAutomation}
                   onClose={() => setPanelOpen(false)}
+                  onOpen={openDestination}
                 />
               </div>
             )}

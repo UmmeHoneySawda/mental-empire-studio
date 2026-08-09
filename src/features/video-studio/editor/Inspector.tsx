@@ -1023,7 +1023,30 @@ function TransitionsPanel(): JSX.Element {
   }, [allPairs, selectedClipIds])
 
   const pair = selectedPairs.length === 1 ? selectedPairs[0] : null
-  const targetPairs = applyToAll ? allPairs : (selectedPairs.length > 0 ? selectedPairs : allPairs)
+
+  const selectedTracks = useMemo(() => {
+    if (!project || selectedClipIds.length === 0) return new Set<string>()
+    const tracks = new Set<string>()
+    for (const track of project.tracks) {
+      const ordered = clipsOnTrack(project, track.id)
+      if (ordered.some(c => selectedClipIds.includes(c.id))) {
+        tracks.add(track.id)
+      }
+    }
+    return tracks
+  }, [project, selectedClipIds])
+
+  const applyToAllPairs = useMemo(() => {
+    if (selectedTracks.size > 0 && project) {
+      return allPairs.filter(p => {
+        const track = project.tracks.find(t => clipsOnTrack(project, t.id).some(c => c.id === p.from.id))
+        return track && selectedTracks.has(track.id)
+      })
+    }
+    return allPairs
+  }, [allPairs, selectedTracks, project])
+
+  const targetPairs = applyToAll ? applyToAllPairs : selectedPairs
 
   const apply = async (preset: (typeof TRANSITION_PRESETS)[number]): Promise<void> => {
     if (targetPairs.length === 0 || !project) return
@@ -1112,21 +1135,21 @@ function TransitionsPanel(): JSX.Element {
               checked={applyToAll}
               onChange={(e) => setApplyToAll(e.target.checked)}
             />
-            <span>Apply transition to all joins ({allPairs.length})</span>
+            <span>Apply transition to all joins on {selectedTracks.size > 0 ? 'selected layer' : 'all layers'} ({applyToAllPairs.length})</span>
           </label>
         </div>
 
         {targetPairs.length === 0 ? (
           <p className="ve-hint">
             {selection.kind === 'clip'
-              ? 'The selected clip has nothing after it on its lane. Select clips that are followed by another or check "Apply transition to all joins".'
+              ? 'The selected clip has nothing after it on its lane. Select clips that are followed by another or check "Apply transition to all joins on selected layer".'
               : 'Select one or more clips on the timeline or check "Apply transition to all joins".'}
           </p>
         ) : (
           <>
             <p className="ve-hint">
               {applyToAll
-                ? `Applying to all ${allPairs.length} join${allPairs.length === 1 ? '' : 's'} in the project.`
+                ? `Applying to ${applyToAllPairs.length} join${applyToAllPairs.length === 1 ? '' : 's'} on ${selectedTracks.size > 0 ? 'the selected layer' : 'all layers'}.`
                 : selectedClipIds.length > 1
                   ? `Applying to ${selectedPairs.length} join${selectedPairs.length === 1 ? '' : 's'} between ${selectedClipIds.length} selected clips.`
                   : pair

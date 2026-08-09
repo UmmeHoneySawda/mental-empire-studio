@@ -69,12 +69,14 @@ export function EditorToolPanel({
   destination,
   activeAutomation,
   onAutomation,
-  onClose
+  onClose,
+  onOpen
 }: {
   destination: EditorDestination
   activeAutomation: AutomationDestination
   onAutomation: (automation: AutomationDestination) => void
   onClose: () => void
+  onOpen?: (destination: EditorDestination) => void
 }): JSX.Element {
   const setTab = useEditor((state) => state.setTab)
   const selectedAutomation = AUTOMATION_COPY[activeAutomation]
@@ -119,7 +121,13 @@ export function EditorToolPanel({
           <button
             className="primary-panel-action"
             type="button"
-            onClick={() => setTab(panelForAutomation(activeAutomation))}
+            onClick={() => {
+              if (activeAutomation === 'images' && onOpen) {
+                onOpen('media')
+              } else {
+                setTab(panelForAutomation(activeAutomation))
+              }
+            }}
           >
             Open {selectedAutomation.label}
           </button>
