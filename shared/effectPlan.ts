@@ -97,6 +97,26 @@ export function styleTransition(style: VideoStyle): TransitionType {
   }
 }
 
+export function presetToTransitionType(presetId: string | undefined, style: VideoStyle): TransitionType {
+  if (!presetId) return styleTransition(style)
+  switch (presetId) {
+    case 'zoom': return 'zoomin'
+    case 'slide-left': return 'smoothleft'
+    case 'slide-right': return 'smoothright'
+    case 'slide-up': return 'slideup'
+    case 'slide-down': return 'slidedown'
+    case 'wipe-left': return 'wipeleft'
+    case 'wipe-right': return 'wiperight'
+    case 'dip-to-black': return 'fadeblack'
+    case 'blur': return 'dissolve'
+    case 'crossfade':
+    case 'fade-quick':
+    case 'fade-slow': return 'fade'
+    case 'cut': return 'fade'
+    default: return styleTransition(style)
+  }
+}
+
 /** A leading ASS override tag applied to every caption line for the style's "feel". */
 export function styleCaptionLead(style: VideoStyle): string {
   switch (style) {

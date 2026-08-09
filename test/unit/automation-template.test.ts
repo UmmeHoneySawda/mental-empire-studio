@@ -32,7 +32,9 @@ describe('visualTemplateToStyleConfig', () => {
     expect(style.motionPreset).toBe('cinematic')
     expect(style.brollDensity).toBe('full')
     expect(style.aspectRatio).toBe('9:16')
+    expect(style.captionStyle).toBe('motivation-bold')
     expect(style.captionPreset).toBe('Hormozi')
+    expect(style.transition).toBe('crossfade')
     expect(style.brollShufflePolicy).toBe('per-video')
   })
 

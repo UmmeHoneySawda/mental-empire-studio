@@ -527,12 +527,46 @@ export async function bindDownload(
   if (transcript.length > 0) {
     const converted = captionWordsFromTranscript(transcript, fps, durationFrames)
     if (converted.words.length > 0) {
+      const styleId = classic.project?.captionPreset || 'motivation-bold'
+      const cleanStyleId = styleId.replace(/^(remotion|hyperframes)-caption-/u, '')
+      const candidateTemplateId = `${rendererId}-caption-${cleanStyleId}`
+      const templates = engine.templates.list({ rendererId })
+      const templateExists = templates.some((t) => t.id === candidateTemplateId)
+      const templateId = templateExists ? candidateTemplateId : `${rendererId}-caption-motivation-bold`
+
       project = await engine.setCaptions({
         projectId: project.id,
         language: 'en',
-        templateId: `${rendererId}-caption-highlight`,
+        templateId,
         words: converted.words
       })
+    }
+  }
+
+  // Transitions: apply chosen transition template between consecutive media scenes if set
+  if (classic.project?.transition && scenes.length > 1) {
+    const transPreset = classic.project.transition
+    const cleanTransId = transPreset.replace(/^(remotion|hyperframes)-transition-/u, '')
+    const candidateTransId = `${rendererId}-transition-${cleanTransId}`
+    const templates = engine.templates.list({ rendererId })
+    const transExists = templates.some((t) => t.id === candidateTransId)
+    if (transExists) {
+      for (let i = 0; i < scenes.length - 1; i++) {
+        const fromScene = project.scenes.find((s) => s.id === `still-${String(i + 1).padStart(4, '0')}`)
+        const toScene = project.scenes.find((s) => s.id === `still-${String(i + 2).padStart(4, '0')}`)
+        if (fromScene && toScene && fromScene.kind === 'media' && toScene.kind === 'media') {
+          try {
+            project = await engine.applyTransitionTemplate(project.id, {
+              templateId: candidateTransId,
+              fromSceneId: fromScene.id,
+              toSceneId: toScene.id,
+              startFrame: Math.max(0, toScene.startFrame)
+            })
+          } catch {
+            // Ignore alignment mismatch in binding
+          }
+        }
+      }
     }
   }
 

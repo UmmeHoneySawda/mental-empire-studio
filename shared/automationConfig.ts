@@ -3,6 +3,7 @@ import type {
   AutomationRules,
   AutomationStyleConfig,
   BrollDensity,
+  CaptionStyleId,
   ImageMode,
   MotionPreset,
   VideoStyle
@@ -20,6 +21,7 @@ export const DEFAULT_AUTOMATION_STYLE: AutomationStyleConfig = {
   highlightColor: '#f5b323',
   boxColor: '#111111',
   imageMode: 'sequence',
+  transition: 'crossfade',
   crossfadeSec: 0.8,
   motionPreset: 'subtle',
   gradientEdge: 'none',
@@ -107,8 +109,11 @@ export function normalizeAutomationStyle(value: unknown, legacy: Partial<Automat
   const offsetRaw = raw.captionOffsetY
   const offset = offsetRaw == null || offsetRaw === '' ? undefined : finiteNumber(offsetRaw, 82, 4, 96)
   const videoStyle = oneOf<VideoStyle>(raw.videoStyle, ['None', 'Cinematic', 'Intense', 'Heartfelt', 'Clean'], legacyStyle)
+  const captionStyle = typeof raw.captionStyle === 'string' && raw.captionStyle.trim() ? raw.captionStyle.trim() as CaptionStyleId : undefined
+  const transition = typeof raw.transition === 'string' && raw.transition.trim() ? raw.transition.trim() : undefined
   return {
     videoStyle,
+    ...(captionStyle ? { captionStyle } : {}),
     captionPreset: typeof raw.captionPreset === 'string' && raw.captionPreset.trim() ? raw.captionPreset.trim().slice(0, 80) : legacy.captionPreset || DEFAULT_AUTOMATION_STYLE.captionPreset,
     captionFont: typeof raw.captionFont === 'string' && raw.captionFont.trim() ? raw.captionFont.trim().slice(0, 80) : DEFAULT_AUTOMATION_STYLE.captionFont,
     captionAnimation: captionAnimation(raw.captionAnimation),
@@ -120,6 +125,7 @@ export function normalizeAutomationStyle(value: unknown, legacy: Partial<Automat
     highlightColor: color(raw.highlightColor, DEFAULT_AUTOMATION_STYLE.highlightColor),
     boxColor: color(raw.boxColor, DEFAULT_AUTOMATION_STYLE.boxColor),
     imageMode: oneOf<ImageMode>(raw.imageMode, ['sequence', 'pool'], DEFAULT_AUTOMATION_STYLE.imageMode),
+    ...(transition ? { transition } : {}),
     crossfadeSec: finiteNumber(raw.crossfadeSec, DEFAULT_AUTOMATION_STYLE.crossfadeSec, 0, 5),
     motionPreset: oneOf<MotionPreset>(raw.motionPreset, ['off', 'subtle', 'cinematic'], DEFAULT_AUTOMATION_STYLE.motionPreset),
     gradientEdge: oneOf(raw.gradientEdge, ['none', 'top', 'bottom', 'left', 'right'], DEFAULT_AUTOMATION_STYLE.gradientEdge),

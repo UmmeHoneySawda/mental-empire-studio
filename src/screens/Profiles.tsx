@@ -852,7 +852,7 @@ export function Profiles(): JSX.Element {
                         </div>
                         <div className="automation-job-actions">
                           {(job.status === 'running' || job.status === 'queued') && <Btn size="sm" onClick={() => void runJobAction(job.id, pauseJob)}>Pause</Btn>}
-                          {(job.status === 'paused' || job.status === 'failed') && <Btn size="sm" onClick={() => void runJobAction(job.id, resumeJob)}>Resume</Btn>}
+                          {(job.status === 'paused' || job.status === 'failed' || job.status === 'attention') && <Btn size="sm" onClick={() => void runJobAction(job.id, resumeJob)}>Resume</Btn>}
                           <Btn size="sm" onClick={() => void showDetails(job)}>{expanded?.id === job.id ? 'Hide details' : 'View details'}</Btn>
                         </div>
                       </div>

@@ -3,7 +3,7 @@ import { appendFileSync, existsSync, mkdirSync, writeFileSync, rmSync } from 'no
 import { join } from 'node:path'
 import type { Project, ProjectImage, RenderJob, RenderProgress, RenderStage } from '../../shared/types'
 import { projectVideoOpts } from '../../shared/types'
-import { styleCaptionLead, styleTransition, deriveStylePlan, validateEffectPlan } from '../../shared/effectPlan'
+import { styleCaptionLead, styleTransition, presetToTransitionType, deriveStylePlan, validateEffectPlan } from '../../shared/effectPlan'
 import { buildSfxTrack } from './sfx'
 import { getRepos } from '../db'
 import { getSettings } from '../store/settings'
@@ -245,7 +245,7 @@ export async function runJob(job: RenderJob): Promise<void> {
   // built-in rule engine; both pass through validateEffectPlan's guardrails.
   const style = beta.style
   const styleLead = styleCaptionLead(style)
-  const transition = style !== 'None' ? styleTransition(style) : undefined
+  const transition = renderProject.transition ? presetToTransitionType(renderProject.transition, style) : (style !== 'None' ? styleTransition(style) : undefined)
   // The effect plan (pasted/LLM JSON overrides the rule engine) drives per-boundary
   // transitions + the SFX track. Both go through validateEffectPlan's guardrails.
   const plan = beta.effectPlanJson.trim()

@@ -7,9 +7,10 @@ export function automationStyleProjectPatch(style: AutomationStyleConfig, autoBr
   return {
     imageMode: style.imageMode,
     crossfade: style.crossfadeSec,
+    transition: style.transition,
     motionPreset: style.motionPreset,
     seed,
-    captionPreset: style.captionPreset,
+    captionPreset: style.captionStyle ?? style.captionPreset,
     captionFont: style.captionFont,
     captionAnim: style.captionAnimation,
     captionAspect: style.aspectRatio,

@@ -66,7 +66,9 @@ export function visualTemplateToStyleConfig(template?: VisualTemplate): Automati
   return {
     ...DEFAULT_AUTOMATION_STYLE,
     videoStyle: GRADE_TO_VIDEO_STYLE[template.grade],
+    captionStyle: template.captionStyle,
     captionPreset: CAPTION_STYLE_TO_PRESET[template.captionStyle],
+    transition: template.transition,
     aspectRatio: template.aspectRatio,
     imageMode: autoBroll ? 'pool' : 'sequence',
     crossfadeSec: resolveTransitionPreset(template.transition).durationFrames / PRESET_FPS,

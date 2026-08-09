@@ -185,7 +185,17 @@ export const CAPTION_PRESET_IDS = CAPTION_PRESET_SPECS.map((p) => p.id)
 const PRESET_ALIASES: Record<string, string> = {
   Submagic: 'Boxed',
   Pop: 'Karaoke',
-  Bold: 'Beast'
+  Bold: 'Beast',
+  'motivation-bold': 'Hormozi',
+  'mindset-pill': 'Boxed',
+  'progress-underline': 'Karaoke',
+  'coach-clean': 'Minimal',
+  'emoji-pop': 'Beast',
+  'clip-wipe': 'Karaoke',
+  'neon-accent': 'Neon',
+  'particle-burst': 'Beast',
+  'weight-shift': 'Word',
+  highlight: 'Hormozi'
 }
 
 export function captionPresetSpec(id: string | undefined): CaptionPresetSpec {

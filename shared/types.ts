@@ -18,6 +18,7 @@ import type {
   TalkingPhotosRemoteMedia,
   TalkingPhotosScriptCreateInput
 } from './talkingphotos'
+export type { CaptionStyleId }
 import type {
   AddVideoScenePatch,
   ApplyVideoTransitionInput,
@@ -445,6 +446,7 @@ export type AutomationGradientEdge = 'none' | 'top' | 'bottom' | 'left' | 'right
 /** One shared style contract from setup through project, preview, and final render. */
 export interface AutomationStyleConfig {
   videoStyle: VideoStyle
+  captionStyle?: CaptionStyleId
   captionPreset: string
   captionFont: string
   captionAnimation: string
@@ -456,6 +458,7 @@ export interface AutomationStyleConfig {
   highlightColor: string
   boxColor: string
   imageMode: ImageMode
+  transition?: string
   crossfadeSec: number
   motionPreset: MotionPreset
   gradientEdge: AutomationGradientEdge
@@ -949,6 +952,7 @@ export interface Project {
   kenBurns: boolean
   seed: number
   crossfade: number
+  transition?: string
   captionPreset: string
   captionFont: string
   captionAnim: string

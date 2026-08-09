@@ -845,7 +845,40 @@ export function resumeAutomationJob(id: string): void {
   const repos = getRepos()
   const job = repos.automationJob(id)
   if (!job || ['completed','completed_with_warnings','cancelled'].includes(job.status)) return
-  for (const step of repos.automationSteps(id)) if (step.status === 'failed' || step.status === 'paused') repos.updateAutomationStep(step.id, { status: 'pending', error: '' })
+  const steps = repos.automationSteps(id)
+  const items = repos.automationItems(id)
+  const failedItems = items.filter((item) => item.status === 'failed' || item.error)
+  const restartOrd = failedItems.reduce((min, item) => {
+    const step = steps.find((candidate) => candidate.label === item.currentStep)
+    return step ? Math.min(min, step.ord) : min
+  }, Number.POSITIVE_INFINITY)
+
+  for (const step of steps) {
+    if (step.status === 'failed' || step.status === 'paused' || (Number.isFinite(restartOrd) && step.ord >= restartOrd)) {
+      repos.updateAutomationStep(step.id, { status: 'pending', error: '', progress: 0 })
+    }
+  }
+
+  for (const item of items) {
+    if (item.status === 'failed' || item.status === 'processing' || item.error) {
+      const stepStates = { ...item.stepStates }
+      for (const [k, s] of Object.entries(stepStates)) {
+        if (s.status === 'failed' || s.status === 'pending') {
+          stepStates[k] = { ...s, status: 'pending', error: undefined }
+        }
+      }
+      repos.upsertAutomationItem({
+        ...item,
+        status: 'waiting',
+        progress: 0,
+        error: undefined,
+        retryAt: undefined,
+        stepStates,
+        updatedAt: now()
+      })
+    }
+  }
+
   repos.updateAutomationJob(id, { pauseRequested: false, cancelRequested: false, status: 'queued', error: '', currentStep: 'Queued to resume', nextRetryAt: '' })
   log(id, 'Resume requested. The worker will continue from the latest completed checkpoint.')
   broadcast(id)
