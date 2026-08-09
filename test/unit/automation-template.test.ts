@@ -141,4 +141,13 @@ describe('buildAutomationDraft', () => {
   it('names the job after the source when no channel or template is given', () => {
     expect(buildAutomationDraft({ source, count: 1 }).name).toBe('Example Source')
   })
+
+  it('maps template imagePaths into draft assetPaths for image slideshow templates', () => {
+    const draft = buildAutomationDraft({
+      source,
+      count: 1,
+      template: template({ mode: 'Image slideshow', imagePaths: ['/path/to/img1.jpg', '/path/to/img2.jpg'] })
+    })
+    expect(draft.config.assetPaths).toEqual(['/path/to/img1.jpg', '/path/to/img2.jpg'])
+  })
 })

@@ -907,6 +907,7 @@
 /* Choice Rows / Mode Picker */
 .at-choice-row {
   display: flex;
+  flex-wrap: wrap;
   gap: 10px;
 }
 
@@ -1095,6 +1096,83 @@
 .at-grade-heartfelt { background: linear-gradient(135deg, #3a2a3a, #1a1a2a); }
 .at-grade-clean { background: linear-gradient(135deg, #2a3a4a, #1a2a3a); }
 .at-grade-gold { background: linear-gradient(135deg, #3a301a, #1a150a); }
+
+/* Aspect Ratio & Transitions — stacks on narrow viewports */
+.at-split-row {
+  display: flex;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.at-split-row > div {
+  flex: 1;
+  min-width: 200px;
+}
+
+/* Slideshow Header */
+.at-slideshow-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 10px;
+  flex-wrap: wrap;
+}
+
+/* Image Grid — replaces inline grid styles */
+.at-image-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(90px, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+  max-height: 180px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.at-image-thumb {
+  position: relative;
+  border-radius: 8px;
+  border: 1px solid var(--border-2);
+  overflow: hidden;
+  background: #000;
+  aspect-ratio: 16/9;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.at-image-name {
+  position: absolute;
+  bottom: 0;
+  left: 0;
+  right: 0;
+  background: rgba(0,0,0,0.75);
+  color: #fff;
+  font-size: 9.5px;
+  padding: 2px 4px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.at-image-remove {
+  position: absolute;
+  top: 3px;
+  right: 3px;
+  width: 18px;
+  height: 18px;
+  border-radius: 999px;
+  background: rgba(255,50,50,0.9);
+  color: #fff;
+  border: none;
+  font-size: 11px;
+  cursor: pointer;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  line-height: 1;
+}
 
 /* Sub Options Container */
 .at-sub-options {

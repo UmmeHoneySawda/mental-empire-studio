@@ -25,6 +25,9 @@
   --ve-danger: 239 68 68;
   --ve-ok: 74 222 128;
 
+  /* Custom dark theme tokens */
+  --ve-aura-bg: #100b22;
+
   /* Video-editor specifics, same roles kimu declares. */
   --ve-timeline-bg: 9 9 11;
   --ve-lane: 24 24 27;
@@ -130,6 +133,51 @@ textarea.ve-input { resize: vertical; min-height: 52px; }
   color: rgb(var(--ve-fg-dim));
 }
 .ve-hint { margin: 0; font-size: 11px; line-height: 1.5; color: rgb(var(--ve-fg-dim)); }
+
+/* ---------------------------------------------------------------------- switches */
+
+.ve-switch {
+  appearance: none;
+  -webkit-appearance: none;
+  width: 36px;
+  height: 20px;
+  border-radius: 10px;
+  background: rgb(var(--ve-card));
+  border: 1px solid rgb(var(--ve-border));
+  position: relative;
+  cursor: pointer;
+  outline: none;
+  transition: background 0.2s, border-color 0.2s;
+  flex: none;
+}
+.ve-switch::after {
+  content: '';
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  width: 14px;
+  height: 14px;
+  border-radius: 50%;
+  background: rgb(var(--ve-fg-dim));
+  transition: transform 0.2s, background 0.2s;
+  box-shadow: 0 1px 2px rgba(0,0,0,0.2);
+}
+.ve-switch:checked {
+  background: rgb(var(--ve-accent) / 0.15);
+  border-color: rgb(var(--ve-accent));
+}
+.ve-switch:checked::after {
+  transform: translateX(16px);
+  background: rgb(var(--ve-accent));
+}
+.ve-switch:focus-visible {
+  outline: 2px solid rgb(var(--ve-accent) / 0.6);
+  outline-offset: 2px;
+}
+.ve-switch:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
 
 /* ------------------------------------------------------------------------ header */
 
@@ -423,20 +471,26 @@ textarea.ve-input { resize: vertical; min-height: 52px; }
 .ve-swatch:hover { outline: 2px solid rgb(var(--ve-accent) / 0.6); outline-offset: 1px; }
 .ve-swatch--wide { width: 46px; }
 
-.ve-words { display: flex; flex-wrap: wrap; gap: 3px; }
+.ve-words { display: flex; flex-wrap: wrap; gap: 6px; }
 .ve-word {
-  padding: 2px 5px;
+  padding: 4px 10px;
   border: 1px solid rgb(var(--ve-border));
-  border-radius: 4px;
+  border-radius: 6px;
   background: rgb(var(--ve-card));
   color: rgb(var(--ve-fg-dim));
   font: inherit;
-  font-size: 11px;
+  font-size: 12px;
   cursor: pointer;
+  transition: all 0.15s ease;
+  user-select: none;
 }
-.ve-word.is-i1 { color: rgb(var(--ve-fg)); border-color: rgb(var(--ve-accent) / 0.35); }
-.ve-word.is-i2 { color: rgb(var(--ve-accent)); border-color: rgb(var(--ve-accent) / 0.6); font-weight: 600; }
-.ve-word.is-i3 { background: rgb(var(--ve-accent)); border-color: rgb(var(--ve-accent)); color: rgb(var(--ve-accent-fg)); font-weight: 700; }
+.ve-word:hover {
+  background: rgb(var(--ve-muted));
+  color: rgb(var(--ve-fg));
+}
+.ve-word.is-i1 { color: rgb(var(--ve-fg)); border-color: rgb(var(--ve-accent) / 0.4); background: rgb(var(--ve-accent) / 0.08); }
+.ve-word.is-i2 { color: rgb(var(--ve-accent)); border-color: rgb(var(--ve-accent)); font-weight: 600; background: rgb(var(--ve-accent) / 0.15); box-shadow: inset 0 1px 0 rgba(255,255,255,0.1); }
+.ve-word.is-i3 { background: rgb(var(--ve-accent)); border-color: rgb(var(--ve-accent)); color: rgb(var(--ve-accent-fg)); font-weight: 700; transform: scale(1.05); box-shadow: 0 2px 8px rgb(var(--ve-accent) / 0.3); z-index: 1; }
 
 .ve-problems { list-style: none; margin: 0; padding: 0; display: grid; gap: 4px; }
 .ve-problem { font-size: 11px; line-height: 1.45; padding: 5px 7px; border-radius: 4px; background: rgb(var(--ve-card)); }
@@ -467,16 +521,24 @@ textarea.ve-input { resize: vertical; min-height: 52px; }
 }
 
 .ve-transition-icon {
-  width: 32px;
-  height: 32px;
-  background: linear-gradient(135deg, rgb(var(--ve-accent)), rgb(var(--ve-accent) / 0.7));
+  width: 36px;
+  height: 36px;
+  background: linear-gradient(135deg, rgb(var(--ve-accent) / 0.2), rgb(var(--ve-accent) / 0.1));
+  border: 1px solid rgb(var(--ve-accent) / 0.3);
   border-radius: 8px;
   display: flex;
   justify-content: center;
   align-items: center;
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.1);
 }
 .ve-transition-icon svg {
-  stroke: #ffffff;
+  width: 20px;
+  height: 20px;
+  stroke: rgb(var(--ve-accent));
+  fill: none;
+  stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
 }
 
 /* Slider */
@@ -529,18 +591,24 @@ textarea.ve-input { resize: vertical; min-height: 52px; }
   background-color: rgb(var(--ve-accent) / 0.14);
 }
 .ve-transition-card svg {
-  width: 20px;
-  height: 20px;
+  width: 24px;
+  height: 24px;
   stroke: rgb(var(--ve-fg-dim));
   fill: none;
   stroke-width: 2;
+  stroke-linecap: round;
+  stroke-linejoin: round;
+  margin-bottom: 4px;
+  transition: stroke 0.2s ease;
 }
 .ve-transition-card.is-on svg {
   stroke: rgb(var(--ve-accent));
 }
 .ve-transition-name {
   font-size: 12px;
+  font-weight: 500;
   text-align: center;
+  color: rgb(var(--ve-fg));
 }
 
 /* ---------------------------------------------------------------------- timeline */

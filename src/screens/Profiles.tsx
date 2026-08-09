@@ -8,7 +8,8 @@ import { mediaSrc } from '../lib/media'
 import { errorMessage } from '../lib/errors'
 import type { CaptionStyleId } from '@shared/video-engine/caption-style'
 import type { VideoTemplate } from '@shared/video-engine/ipc'
-import type { AutomationJob, AutomationJobDetail, VisualTemplate } from '@shared/types'
+import type { AutomationJob, AutomationJobDetail, LibraryAsset, VisualTemplate } from '@shared/types'
+import { AssetLibraryModal } from '../features/automation/AssetLibraryModal'
 
 /* The Automations screen: Channels & Batch, the Visual System (template) gallery, and Jobs
  * & History. The step-by-step "New automation" wizard used to live under Jobs & History and
@@ -130,10 +131,28 @@ export function Profiles(): JSX.Element {
   const [templateSaving, setTemplateSaving] = useState(false)
   const [templateToDelete, setTemplateToDelete] = useState<VisualTemplate | null>(null)
   const [templateDeleting, setTemplateDeleting] = useState(false)
+  const [showAssetLibrary, setShowAssetLibrary] = useState(false)
+  const [libraryAssets, setLibraryAssets] = useState<LibraryAsset[]>([])
+  const imageFileInputRef = useRef<HTMLInputElement>(null)
   const editorRef = useRef<HTMLDivElement>(null)
   const toastTimerRef = useRef<number | null>(null)
   /** The renderer's own template manifests — the hook and caption lists Compose shows. */
   const [engineTemplates, setEngineTemplates] = useState<VideoTemplate[]>([])
+
+  const handlePickTemplateImages = (e: React.ChangeEvent<HTMLInputElement>): void => {
+    const files = e.target.files
+    if (!files || !files.length || !editingTemplate) return
+    const paths = Array.from(files)
+      .map((f) => window.api.pathForFile(f))
+      .filter((p): p is string => typeof p === 'string' && p.length > 0)
+    if (paths.length) {
+      const existing = editingTemplate.imagePaths || []
+      const combined = Array.from(new Set([...existing, ...paths]))
+      setEditingTemplate({ ...editingTemplate, imagePaths: combined })
+      void window.api.assets.import(paths)
+    }
+    e.target.value = ''
+  }
 
   // Channels & Batch state
   const [selectedChannelId, setSelectedChannelId] = useState<string>('')
@@ -346,6 +365,8 @@ export function Profiles(): JSX.Element {
       id: `tpl-${Date.now()}`,
       name: 'New Production Template',
       mode: 'Auto B-roll',
+      imagePaths: [],
+      imageDurationSec: 5,
       density: 'Full',
       order: 'Shuffle',
       motion: 'Cinematic',
@@ -366,6 +387,11 @@ export function Profiles(): JSX.Element {
     if (!name) {
       setWizardStep(0)
       setTemplateError('Enter a template name before saving.')
+      return
+    }
+    if (saved.mode === 'Image slideshow' && (!saved.imagePaths || saved.imagePaths.length === 0)) {
+      setWizardStep(0)
+      setTemplateError('Add at least 1 image for Image Slideshow mode, or select Auto B-roll.')
       return
     }
     setTemplateSaving(true)
@@ -899,10 +925,100 @@ export function Profiles(): JSX.Element {
                     </div>
                   </div>
 
+                  {/* Image Slideshow Asset Pool */}
+                  {editingTemplate.mode === 'Image slideshow' && (
+                    <div className="at-editor-section" style={{ border: '1px solid var(--border-3)', padding: 14, borderRadius: 12, background: 'var(--bg-inset)' }}>
+                      <div className="at-slideshow-header">
+                        <div>
+                          <span className="at-field-label" style={{ marginBottom: 2 }}>Slideshow Images · {editingTemplate.imagePaths?.length || 0}</span>
+                          <small style={{ color: 'var(--text-dim)', fontSize: 11 }}>Add images or photos to be animated as Ken-Burns slideshow clips.</small>
+                        </div>
+                        <div style={{ display: 'flex', gap: 6, flexShrink: 0 }}>
+                          <Btn
+                            size="sm"
+                            variant="soft"
+                            onClick={() => void window.api.assets.list().then((rows) => { setLibraryAssets(rows); setShowAssetLibrary(true) })}
+                          >
+                            Asset Library
+                          </Btn>
+                          <Btn size="sm" variant="primary" onClick={() => imageFileInputRef.current?.click()}>
+                            + Add images
+                          </Btn>
+                          <input ref={imageFileInputRef} type="file" multiple accept="image/*" onChange={handlePickTemplateImages} style={{ display: 'none' }} />
+                        </div>
+                      </div>
+
+                      {(!editingTemplate.imagePaths || editingTemplate.imagePaths.length === 0) ? (
+                        <Banner kind="error">
+                          Add at least 1 image for Image Slideshow mode, or select Auto B-roll.
+                        </Banner>
+                      ) : (
+                        <div className="at-image-grid">
+                          {editingTemplate.imagePaths.map((imgPath, idx) => {
+                            const fileName = imgPath.split(/[\\/]/).pop() || 'image'
+                            return (
+                              <div
+                                key={`${imgPath}-${idx}`}
+                                className="at-image-thumb"
+                              >
+                                <img src={mediaSrc(imgPath)} alt="" style={{ width: '100%', height: '100%', objectFit: 'cover' }} />
+                                <span className="at-image-name" title={fileName}>
+                                  {fileName}
+                                </span>
+                                <button
+                                  type="button"
+                                  className="at-image-remove"
+                                  title="Remove image"
+                                  onClick={() => {
+                                    const updated = (editingTemplate.imagePaths || []).filter((_, i) => i !== idx)
+                                    setEditingTemplate({ ...editingTemplate, imagePaths: updated })
+                                  }}
+                                >
+                                  ✕
+                                </button>
+                              </div>
+                            )
+                          })}
+                        </div>
+                      )}
+
+                      {/* Image Duration */}
+                      <div className="at-sub-row">
+                        <span>Duration per image</span>
+                        <div className="at-slider-cell">
+                          <input
+                            type="range"
+                            min={1}
+                            max={15}
+                            step={1}
+                            value={editingTemplate.imageDurationSec ?? 5}
+                            onChange={(e) => setEditingTemplate({ ...editingTemplate, imageDurationSec: Number(e.target.value) })}
+                            aria-label="Image duration in seconds"
+                          />
+                          <span className="at-slider-val">{editingTemplate.imageDurationSec ?? 5}s</span>
+                        </div>
+                      </div>
+
+                      {/* Shuffle Toggle */}
+                      <button
+                        type="button"
+                        className={`at-toggle-row ${editingTemplate.order === 'Shuffle' ? 'on' : ''}`}
+                        aria-pressed={editingTemplate.order === 'Shuffle'}
+                        onClick={() => setEditingTemplate({ ...editingTemplate, order: editingTemplate.order === 'Shuffle' ? 'In order' : 'Shuffle' })}
+                      >
+                        <div>
+                          <b>Shuffle images</b>
+                          <small>Randomize image order for each video instead of playing in sequence.</small>
+                        </div>
+                        <div className="at-switch" />
+                      </button>
+                    </div>
+                  )}
+
                   {/* Aspect Ratio & Transitions */}
                   <div className="at-editor-section">
                     <span className="at-field-label">Aspect Ratio & Transitions</span>
-                    <div style={{ display: 'flex', gap: 12 }}>
+                    <div className="at-split-row">
                       <div style={{ flex: 1 }}>
                         <span className="at-summary-label">Aspect Ratio</span>
                         <div className="at-chip-row" style={{ marginTop: 6 }}>
@@ -1052,6 +1168,20 @@ export function Profiles(): JSX.Element {
             </div>
           </div>
         </div>
+      )}
+
+      {showAssetLibrary && editingTemplate && (
+        <AssetLibraryModal
+          assets={libraryAssets}
+          selectedPaths={editingTemplate.imagePaths || []}
+          onApply={(paths) => {
+            const existing = editingTemplate.imagePaths || []
+            const combined = Array.from(new Set([...existing, ...paths]))
+            setEditingTemplate({ ...editingTemplate, imagePaths: combined })
+            setShowAssetLibrary(false)
+          }}
+          onClose={() => setShowAssetLibrary(false)}
+        />
       )}
 
       <ConfirmDialog

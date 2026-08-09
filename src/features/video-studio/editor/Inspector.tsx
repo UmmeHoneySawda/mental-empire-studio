@@ -68,49 +68,66 @@ function PromptExchange({
   hint,
   disabled
 }: {
-  buildPrompt: () => Promise<string>
-  onApply: (json: string) => Promise<void>
+  buildPrompt: () => Promise<string> | string
+  onApply: (text: string) => Promise<void>
   applyLabel: string
   pasteLabel: string
   hint: string
   disabled?: boolean
-}): JSX.Element {
+}) {
   const [copied, setCopied] = useState(false)
   const [answer, setAnswer] = useState('')
 
-  const copy = async (): Promise<void> => {
-    const prompt = await buildPrompt()
-    if (!prompt) return
-    await navigator.clipboard.writeText(prompt)
-    setCopied(true)
-    setTimeout(() => setCopied(false), 2000)
+  const copy = async () => {
+    try {
+      const prompt = await buildPrompt()
+      if (!prompt) return
+      await navigator.clipboard.writeText(prompt)
+      setCopied(true)
+      setTimeout(() => setCopied(false), 2000)
+    } catch {
+      // Best effort
+    }
   }
 
   return (
-    <>
-      <div className="ve-actions">
-        <button type="button" className="ve-btn ve-btn--soft" disabled={disabled} onClick={() => void copy()}>
-          {copied ? '✓ Copied to clipboard' : 'Copy prompt'}
+    <div style={{
+      display: 'flex',
+      flexDirection: 'column',
+      gap: '12px',
+      marginTop: '12px',
+      padding: '16px',
+      background: 'rgb(var(--ve-card))',
+      border: '1px solid rgb(var(--ve-border))',
+      borderRadius: '8px',
+      boxShadow: '0 2px 8px rgba(0,0,0,0.1)'
+    }}>
+      <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
+        <h4 className="ve-eyebrow" style={{ color: 'rgb(var(--ve-fg))', margin: 0 }}>Copy & Paste Prompt</h4>
+        <button type="button" className={`ve-btn ${copied ? 've-btn--primary' : 've-btn--soft'}`} disabled={disabled} onClick={() => void copy()}>
+          {copied ? '✓ Copied!' : 'Copy prompt'}
         </button>
       </div>
-      <p className="ve-hint">{hint}</p>
+      <p className="ve-hint" style={{ marginTop: '-4px' }}>{hint}</p>
       <textarea
-        className="ve-input"
-        rows={4}
+        className="ve-input ve-custom-hook-json"
+        rows={6}
         spellCheck={false}
         placeholder={pasteLabel}
         value={answer}
+        style={{ minHeight: '120px' }}
         onChange={(event) => setAnswer(event.target.value)}
       />
       <button
         type="button"
-        className="ve-btn ve-btn--soft"
+        className="ve-btn ve-btn--primary"
+        style={{ width: '100%', padding: '10px', justifyContent: 'center', fontWeight: '600' }}
         disabled={disabled || answer.trim().length === 0}
         onClick={() => { void onApply(answer).then(() => setAnswer('')) }}
       >
         {applyLabel}
       </button>
-    </>
+    </div>
   )
 }
 
@@ -551,7 +568,7 @@ const CUSTOM_HOOK_EXAMPLE = JSON.stringify({
   colors: {
     text: '#FFFFFF',
     accent: '#BFA7FF',
-    background: '#100B22'
+    background: 'var(--ve-aura-bg)'
   },
   alignment: 'left',
   position: 'center',
@@ -992,7 +1009,7 @@ function getTransitionIcon(id: string) {
     case 'slide-up': return <svg viewBox="0 0 24 24"><polyline points="17 11 12 6 7 11"></polyline><polyline points="17 18 12 13 7 18"></polyline></svg>
     case 'slide-down': return <svg viewBox="0 0 24 24"><polyline points="7 13 12 18 17 13"></polyline><polyline points="7 6 12 11 17 6"></polyline></svg>
     case 'wipe-left': case 'wipe-right': return <svg viewBox="0 0 24 24"><rect x="3" y="3" width="18" height="18" rx="2" ry="2"></rect><line x1="12" y1="3" x2="12" y2="21"></line></svg>
-    case 'zoom': return <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle></svg>
+    case 'zoom': return <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle><line x1="12" y1="8" x2="12" y2="16"></line><line x1="8" y1="12" x2="16" y2="12"></line></svg>
     case 'blur': return <svg viewBox="0 0 24 24"><path d="M12 2v20"></path><path d="M17 5H9.5a3.5 3.5 0 0 0 0 7h5a3.5 3.5 0 0 1 0 7H6"></path></svg>
     case 'dip-to-black': return <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10" fill="currentColor"></circle></svg>
     default: return <svg viewBox="0 0 24 24"><circle cx="12" cy="12" r="10"></circle></svg>
@@ -1062,7 +1079,7 @@ function TransitionsPanel(): JSX.Element {
     return allPairs
   }, [allPairs, selectedTracks, project])
 
-  const targetPairs = applyToAll ? applyToAllPairs : selectedPairs
+  const targetPairs = applyToAll ? applyToAllPairs : (selectedPairs.length > 0 ? selectedPairs : allPairs)
 
   const fps = project?.canvas.fps ?? 30
 
@@ -1178,87 +1195,84 @@ function TransitionsPanel(): JSX.Element {
         title="Add a transition"
         blurb="A transition plays where two clips meet on the same lane. It borrows frames from both sides, so it can never run longer than the shorter clip."
       >
-        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 8 }}>
-          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 6, fontSize: 12, cursor: 'pointer', userSelect: 'none' }}>
+        <div style={{ display: 'flex', alignItems: 'center', justifyContent: 'space-between', marginBottom: 16 }}>
+          <label style={{ display: 'inline-flex', alignItems: 'center', gap: 10, fontSize: 13, cursor: 'pointer', userSelect: 'none', color: 'rgb(var(--ve-fg))' }}>
             <input
               type="checkbox"
+              className="ve-switch"
               checked={applyToAll}
               onChange={(e) => setApplyToAll(e.target.checked)}
             />
-            <span>Apply transition to all joins on {selectedTracks.size > 0 ? 'selected layer' : 'all layers'} ({applyToAllPairs.length})</span>
+            <span>Apply to all joins on {selectedTracks.size > 0 ? 'selected layer' : 'all layers'} ({applyToAllPairs.length})</span>
           </label>
         </div>
 
-        {targetPairs.length === 0 ? (
-          <p className="ve-hint">
-            {selection.kind === 'clip'
-              ? 'The selected clip has nothing after it on its lane. Select clips that are followed by another or check "Apply transition to all joins on selected layer".'
-              : 'Select one or more clips on the timeline or check "Apply transition to all joins".'}
+        {allPairs.length === 0 ? (
+          <p className="ve-hint" style={{ marginBottom: 16 }}>
+            No adjacent clips on timeline yet. Place 2 clips back-to-back on a track to join them with a transition.
           </p>
         ) : (
-          <>
-            <p className="ve-hint" style={{ marginBottom: 16 }}>
-              {applyToAll
-                ? `Applying to ${applyToAllPairs.length} join${applyToAllPairs.length === 1 ? '' : 's'} on ${selectedTracks.size > 0 ? 'the selected layer' : 'all layers'}.`
-                : selectedClipIds.length > 1
-                  ? `Applying to ${selectedPairs.length} join${selectedPairs.length === 1 ? '' : 's'} between ${selectedClipIds.length} selected clips.`
-                  : pair
-                    ? `Between ${pair.from.id.slice(0, 12)} and ${pair.to.id.slice(0, 12)}${pair.touching ? '' : ' — closing gap.'}`
-                    : `Applying to ${targetPairs.length} join${targetPairs.length === 1 ? '' : 's'}.`}
-            </p>
-
-            <h4 className="ve-eyebrow" style={{ marginBottom: 12 }}>Active Transition</h4>
-            <div className="ve-active-transition">
-              <div className="ve-transition-icon">
-                {getTransitionIcon(activePreset.id)}
-              </div>
-              <div style={{ flex: 1 }}>
-                <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 2 }}>{activePreset.label}</div>
-                <div style={{ fontSize: 12, color: 'rgb(var(--ve-fg-dim))' }}>{(localDuration / fps).toFixed(1)}s</div>
-              </div>
-            </div>
-
-            <div className="ve-slider-row">
-              <label htmlFor="transition-duration-slider">Duration</label>
-              <input
-                id="transition-duration-slider"
-                type="range"
-                className="ve-input"
-                style={{ flex: 1, height: 4, padding: 0 }}
-                min={3}
-                max={90}
-                step={3}
-                value={localDuration}
-                disabled={activePreset.id === 'cut' || !!busy}
-                onChange={(e) => setLocalDuration(Number(e.target.value))}
-                onMouseUp={(e) => applyDuration(Number((e.target as HTMLInputElement).value))}
-                onTouchEnd={(e) => applyDuration(Number((e.target as HTMLInputElement).value))}
-                onKeyUp={(e) => applyDuration(Number((e.target as HTMLInputElement).value))}
-              />
-              <div className="ve-slider-value">{(localDuration / fps).toFixed(1)}s</div>
-            </div>
-
-            <h4 className="ve-eyebrow" style={{ marginTop: 16, marginBottom: 12 }}>Presets</h4>
-            <div className="ve-transitions-grid">
-              {TRANSITION_PRESETS.map((preset) => (
-                <button
-                  key={preset.id}
-                  type="button"
-                  className={`ve-transition-card ${activePreset.id === preset.id ? 'is-on' : ''}`}
-                  disabled={!!busy}
-                  onClick={() => {
-                     setLocalDuration(preset.durationFrames)
-                     void apply(preset)
-                  }}
-                  title={preset.hint}
-                >
-                  {getTransitionIcon(preset.id)}
-                  <span className="ve-transition-name">{preset.label}</span>
-                </button>
-              ))}
-            </div>
-          </>
+          <p className="ve-hint" style={{ marginBottom: 16 }}>
+            {applyToAll
+              ? `Applying to ${applyToAllPairs.length} join${applyToAllPairs.length === 1 ? '' : 's'} on ${selectedTracks.size > 0 ? 'the selected layer' : 'all layers'}.`
+              : selectedClipIds.length > 1
+                ? `Applying to ${selectedPairs.length} join${selectedPairs.length === 1 ? '' : 's'} between ${selectedClipIds.length} selected clips.`
+                : pair
+                  ? `Between ${pair.from.id.slice(0, 12)} and ${pair.to.id.slice(0, 12)}${pair.touching ? '' : ' — closing gap.'}`
+                  : `Applying to ${targetPairs.length} join${targetPairs.length === 1 ? '' : 's'}.`}
+          </p>
         )}
+
+        <h4 className="ve-eyebrow" style={{ marginBottom: 12 }}>Active Transition</h4>
+        <div className="ve-active-transition">
+          <div className="ve-transition-icon">
+            {getTransitionIcon(activePreset.id)}
+          </div>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 2 }}>{activePreset.label}</div>
+            <div style={{ fontSize: 12, color: 'rgb(var(--ve-fg-dim))' }}>{(localDuration / fps).toFixed(1)}s</div>
+          </div>
+        </div>
+
+        <div className="ve-slider-row">
+          <label htmlFor="transition-duration-slider">Duration</label>
+          <input
+            id="transition-duration-slider"
+            type="range"
+            className="ve-input"
+            style={{ flex: 1, height: 4, padding: 0 }}
+            min={3}
+            max={90}
+            step={3}
+            value={localDuration}
+            disabled={activePreset.id === 'cut' || !!busy}
+            onChange={(e) => setLocalDuration(Number(e.target.value))}
+            onMouseUp={(e) => applyDuration(Number((e.target as HTMLInputElement).value))}
+            onTouchEnd={(e) => applyDuration(Number((e.target as HTMLInputElement).value))}
+            onKeyUp={(e) => applyDuration(Number((e.target as HTMLInputElement).value))}
+          />
+          <div className="ve-slider-value">{(localDuration / fps).toFixed(1)}s</div>
+        </div>
+
+        <h4 className="ve-eyebrow" style={{ marginTop: 16, marginBottom: 12 }}>Presets</h4>
+        <div className="ve-transitions-grid">
+          {TRANSITION_PRESETS.map((preset) => (
+            <button
+              key={preset.id}
+              type="button"
+              className={`ve-transition-card ${activePreset.id === preset.id ? 'is-on' : ''}`}
+              disabled={!!busy}
+              onClick={() => {
+                 setLocalDuration(preset.durationFrames)
+                 void apply(preset)
+              }}
+              title={preset.hint}
+            >
+              {getTransitionIcon(preset.id)}
+              <span className="ve-transition-name">{preset.label}</span>
+            </button>
+          ))}
+        </div>
       </Section>
 
       {existing.length > 0 && (
@@ -1331,12 +1345,15 @@ function GradePanel(): JSX.Element {
       >
         {caveat && <p className="ve-hint">Close, but not exact — {caveat}.</p>}
         <Row label="Colour grade" hint={grading.enabled ? 'On' : 'Off — passes the render through untouched'}>
-          <input
-            type="checkbox"
-            checked={grading.enabled}
-            disabled={!!busy}
-            onChange={(event) => patch({ enabled: event.target.checked })}
-          />
+          <div style={{ display: 'flex', justifyContent: 'flex-end', paddingTop: '4px' }}>
+            <input
+              type="checkbox"
+              className="ve-switch"
+              checked={grading.enabled}
+              disabled={!!busy}
+              onChange={(event) => patch({ enabled: event.target.checked })}
+            />
+          </div>
         </Row>
       </Section>
 

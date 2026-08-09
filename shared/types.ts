@@ -1273,6 +1273,8 @@ export interface VisualTemplate {
   id: string
   name: string
   mode: 'Auto B-roll' | 'Image slideshow'
+  imagePaths?: string[]
+  imageDurationSec?: number
   density: 'Full' | 'Sparse' | 'Keywords'
   order: 'In order' | 'Shuffle'
   motion: 'Static' | 'Subtle' | 'Cinematic'

@@ -128,6 +128,7 @@ export function buildAutomationDraft(opts: {
       // already supplies 16:9, so the template's ratio must be written explicitly here.
       sourceCount: opts.count,
       aspectRatios: [styleConfig.aspectRatio],
+      assetPaths: opts.template?.imagePaths ?? [],
       styleConfig,
       rules: { ...draft.config.rules, autoBroll: styleConfig.brollMode !== 'off' }
     })
