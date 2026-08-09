@@ -1076,7 +1076,7 @@ function TransitionsPanel(): JSX.Element {
   }, [project, targetPairs])
 
   const activePresetId = activeTransitionIds.length === 1 ? activeTransitionIds[0] : null
-  const activePreset = TRANSITION_PRESETS.find(p => p.templateId?.includes(activePresetId || '') || (activePresetId === 'cut' && !p.templateId)) || TRANSITION_PRESETS[0]
+  const activePreset = activePresetId ? (TRANSITION_PRESETS.find(p => p.templateId?.includes(activePresetId) || (activePresetId === 'cut' && !p.templateId)) || TRANSITION_PRESETS[0]) : TRANSITION_PRESETS[0]
 
   const [localDuration, setLocalDuration] = useState<number>(activePreset.durationFrames)
 
@@ -1222,6 +1222,7 @@ function TransitionsPanel(): JSX.Element {
                 onChange={(e) => setLocalDuration(Number(e.target.value))}
                 onMouseUp={(e) => applyDuration(Number((e.target as HTMLInputElement).value))}
                 onTouchEnd={(e) => applyDuration(Number((e.target as HTMLInputElement).value))}
+                onKeyUp={(e) => applyDuration(Number((e.target as HTMLInputElement).value))}
               />
               <div className="ve-slider-value">{(localDuration / fps).toFixed(1)}s</div>
             </div>
