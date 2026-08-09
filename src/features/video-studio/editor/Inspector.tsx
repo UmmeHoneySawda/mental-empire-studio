@@ -1187,7 +1187,7 @@ function TransitionsPanel(): JSX.Element {
           </p>
         ) : (
           <>
-            <p className="ve-hint" style={{ marginBottom: 20 }}>
+            <p className="ve-hint" style={{ marginBottom: 16 }}>
               {applyToAll
                 ? `Applying to ${applyToAllPairs.length} join${applyToAllPairs.length === 1 ? '' : 's'} on ${selectedTracks.size > 0 ? 'the selected layer' : 'all layers'}.`
                 : selectedClipIds.length > 1
@@ -1197,14 +1197,14 @@ function TransitionsPanel(): JSX.Element {
                     : `Applying to ${targetPairs.length} join${targetPairs.length === 1 ? '' : 's'}.`}
             </p>
 
-            <div className="section-title" style={{ fontSize: 12, textTransform: 'uppercase', color: '#888', marginBottom: 12, fontWeight: 600 }}>Active Transition</div>
+            <h4 className="ve-eyebrow" style={{ marginBottom: 12 }}>Active Transition</h4>
             <div className="ve-active-transition">
               <div className="ve-transition-icon">
                 {getTransitionIcon(activePreset.id)}
               </div>
               <div style={{ flex: 1 }}>
                 <div style={{ fontSize: 14, fontWeight: 500, marginBottom: 2 }}>{activePreset.label}</div>
-                <div style={{ fontSize: 12, color: '#888' }}>{(localDuration / fps).toFixed(1)}s</div>
+                <div style={{ fontSize: 12, color: 'rgb(var(--ve-fg-dim))' }}>{(localDuration / fps).toFixed(1)}s</div>
               </div>
             </div>
 
@@ -1227,7 +1227,7 @@ function TransitionsPanel(): JSX.Element {
               <div className="ve-slider-value">{(localDuration / fps).toFixed(1)}s</div>
             </div>
 
-            <div className="section-title" style={{ fontSize: 12, textTransform: 'uppercase', color: '#888', marginTop: 16, marginBottom: 12, fontWeight: 600 }}>Presets</div>
+            <h4 className="ve-eyebrow" style={{ marginTop: 16, marginBottom: 12 }}>Presets</h4>
             <div className="ve-transitions-grid">
               {TRANSITION_PRESETS.map((preset) => (
                 <button
