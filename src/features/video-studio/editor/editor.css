@@ -469,7 +469,7 @@ textarea.ve-input { resize: vertical; min-height: 52px; }
 .ve-transition-icon {
   width: 32px;
   height: 32px;
-  background: linear-gradient(135deg, rgb(var(--ve-accent)), #8b5cf6);
+  background: linear-gradient(135deg, rgb(var(--ve-accent)), rgb(var(--ve-accent) / 0.7));
   border-radius: 6px;
   display: flex;
   justify-content: center;
