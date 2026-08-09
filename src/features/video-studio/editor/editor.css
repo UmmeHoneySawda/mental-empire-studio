@@ -452,6 +452,97 @@ textarea.ve-input { resize: vertical; min-height: 52px; }
 .ve-empty h3 { margin: 0; font-size: 15px; }
 .ve-empty p { margin: 0; max-width: 44ch; font-size: 12px; line-height: 1.6; color: rgb(var(--ve-fg-dim)); }
 
+/* ------------------------------------------------------------------- transitions */
+
+/* Active Transition */
+.ve-active-transition {
+  background-color: var(--ve-bg-surface);
+  border: 1px solid var(--ve-color-accent);
+  border-radius: 8px;
+  padding: 12px;
+  margin-bottom: 16px;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+.ve-transition-icon {
+  width: 32px;
+  height: 32px;
+  background: linear-gradient(135deg, var(--ve-color-accent), #8b5cf6);
+  border-radius: 6px;
+  display: flex;
+  justify-content: center;
+  align-items: center;
+}
+.ve-transition-icon svg {
+  stroke: #ffffff;
+}
+
+/* Slider */
+.ve-slider-row {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.ve-slider-row label {
+  font-size: 13px;
+  color: var(--ve-text-muted);
+  width: 60px;
+}
+.ve-slider-value {
+  font-size: 13px;
+  font-weight: 500;
+  width: 36px;
+  text-align: right;
+  background: var(--ve-bg-surface);
+  padding: 4px 6px;
+  border-radius: 4px;
+  border: 1px solid var(--ve-border);
+}
+
+/* Grid */
+.ve-transitions-grid {
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  gap: 8px;
+}
+
+.ve-transition-card {
+  background-color: var(--ve-bg-surface);
+  border: 1px solid var(--ve-border);
+  border-radius: 8px;
+  padding: 8px;
+  cursor: pointer;
+  transition: all 0.2s ease;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  align-items: center;
+}
+.ve-transition-card:hover {
+  border-color: #555;
+}
+.ve-transition-card.is-on {
+  border-color: var(--ve-color-accent);
+  background-color: rgba(99, 102, 241, 0.1);
+}
+.ve-transition-card svg {
+  width: 20px;
+  height: 20px;
+  stroke: var(--ve-text-muted);
+  fill: none;
+  stroke-width: 2;
+}
+.ve-transition-card.is-on svg {
+  stroke: var(--ve-color-accent);
+}
+.ve-transition-name {
+  font-size: 12px;
+  text-align: center;
+}
+
 /* ---------------------------------------------------------------------- timeline */
 
 .ve-timeline {
