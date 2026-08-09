@@ -1078,11 +1078,21 @@ function TransitionsPanel(): JSX.Element {
   const activePresetId = activeTransitionIds.length === 1 ? activeTransitionIds[0] : null
   const activePreset = activePresetId ? (TRANSITION_PRESETS.find(p => p.templateId?.includes(activePresetId) || (activePresetId === 'cut' && !p.templateId)) || TRANSITION_PRESETS[0]) : TRANSITION_PRESETS[0]
 
-  const [localDuration, setLocalDuration] = useState<number>(activePreset.durationFrames)
+  const activeDuration = useMemo(() => {
+    if (!project || targetPairs.length === 0) return activePreset.durationFrames
+    const durations = targetPairs.map(tp => {
+      const existing = project.transitions.find(t => t.fromSceneId === tp.from.id && t.toSceneId === tp.to.id)
+      return existing ? existing.durationFrames : activePreset.durationFrames
+    })
+    const unique = [...new Set(durations)]
+    return unique.length === 1 ? unique[0] : activePreset.durationFrames
+  }, [project, targetPairs, activePreset.durationFrames])
+
+  const [localDuration, setLocalDuration] = useState<number>(activeDuration)
 
   useEffect(() => {
-    setLocalDuration(activePreset.durationFrames)
-  }, [activePreset])
+    setLocalDuration(activeDuration)
+  }, [activeDuration])
 
   const apply = async (preset: (typeof TRANSITION_PRESETS)[number]): Promise<void> => {
     if (targetPairs.length === 0 || !project) return
@@ -1209,8 +1219,9 @@ function TransitionsPanel(): JSX.Element {
             </div>
 
             <div className="ve-slider-row">
-              <label>Duration</label>
+              <label htmlFor="transition-duration-slider">Duration</label>
               <input
+                id="transition-duration-slider"
                 type="range"
                 className="ve-input"
                 style={{ flex: 1, height: 4, padding: 0 }}
