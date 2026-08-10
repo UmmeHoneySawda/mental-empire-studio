@@ -74,3 +74,10 @@ test/fixtures/bench-render/assets.lock.json
 .codex/
 .kilo/
 .superpowers/
+.env
+.env.*
+*.env
+credentials.json
+*.pem
+*.key
+.credentials
