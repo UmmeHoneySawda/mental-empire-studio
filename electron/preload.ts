@@ -240,6 +240,7 @@ const api: NativeApi = {
     pauseJob: (id: string) => ipcRenderer.invoke('automation:pauseJob', id),
     resumeJob: (id: string) => ipcRenderer.invoke('automation:resumeJob', id),
     cancelJob: (id: string) => ipcRenderer.invoke('automation:cancelJob', id),
+    deleteJob: (id: string) => ipcRenderer.invoke('automation:deleteJob', id),
     retryJob: (id: string) => ipcRenderer.invoke('automation:retryJob', id)
   },
 

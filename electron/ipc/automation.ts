@@ -12,6 +12,7 @@ import { L } from '../services/logger'
 import {
   cancelAutomationJob,
   createAutomationJob,
+  deleteAutomationJob,
   getAutomationJob,
   listAutomationJobs,
   pauseAutomationJob,
@@ -288,5 +289,6 @@ export function registerAutomationIpc(): void {
   ipcMain.handle('automation:pauseJob', (_e, id: string) => pauseAutomationJob(id))
   ipcMain.handle('automation:resumeJob', (_e, id: string) => resumeAutomationJob(id))
   ipcMain.handle('automation:cancelJob', (_e, id: string) => cancelAutomationJob(id))
+  ipcMain.handle('automation:deleteJob', (_e, id: string) => deleteAutomationJob(id))
   ipcMain.handle('automation:retryJob', (_e, id: string) => retryAutomationJob(id))
 }

@@ -769,6 +769,7 @@ export interface Repositories {
   updateAutomationStep(id: string, patch: Partial<AutomationWorkflowStep>): void
   upsertAutomationItem(item: AutomationJobItem): void
   addAutomationLog(jobId: string, level: AutomationJobLog['level'], message: string, itemId?: string): void
+  deleteAutomationJob(id: string): void
   // ---- TalkingPhotos provider (cloud provider, separate from local render_jobs) ----
   providerConnection(id: string): ProviderConnection | undefined
   providerConnections(): ProviderConnection[]
@@ -1686,6 +1687,15 @@ function buildRepositories(d: Database.Database): Repositories {
     addAutomationLog: (jobId, level, message, itemId) => {
       d.prepare('INSERT INTO automation_job_logs (jobId,itemId,level,message,createdAt) VALUES (?,?,?,?,?)')
         .run(jobId, itemId ?? null, level, message, new Date().toISOString())
+    },
+    deleteAutomationJob: (id) => {
+      const tx = d.transaction(() => {
+        d.prepare('DELETE FROM automation_job_logs WHERE jobId=?').run(id)
+        d.prepare('DELETE FROM automation_job_items WHERE jobId=?').run(id)
+        d.prepare('DELETE FROM automation_job_steps WHERE jobId=?').run(id)
+        d.prepare('DELETE FROM automation_jobs WHERE id=?').run(id)
+      })
+      tx()
     },
 
     // ---- TalkingPhotos provider ----

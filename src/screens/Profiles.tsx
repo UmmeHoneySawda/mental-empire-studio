@@ -117,6 +117,9 @@ export function Profiles(): JSX.Element {
   const loadAutomationJobs = useData((state) => state.loadAutomationJobs)
   const pauseJob = useData((state) => state.pauseAutomationJob)
   const resumeJob = useData((state) => state.resumeAutomationJob)
+  const cancelJob = useData((state) => state.cancelAutomationJob)
+  const deleteJob = useData((state) => state.deleteAutomationJob)
+  const retryJob = useData((state) => state.retryAutomationJob)
   const openProjectById = useData((state) => state.openProjectById)
   const setActive = useStore((state) => state.setActive)
 
@@ -175,6 +178,8 @@ export function Profiles(): JSX.Element {
   const [expanded, setExpanded] = useState<AutomationJobDetail | null>(null)
   const [jobsError, setJobsError] = useState('')
   const [jobActionPending, setJobActionPending] = useState<Record<string, boolean>>({})
+  const [jobToDelete, setJobToDelete] = useState<AutomationJob | null>(null)
+  const [deleting, setDeleting] = useState(false)
 
   /* The caption list is the renderer's registered templates, fetched once. The Remotion
    * renderer is the one Compose edits with, so a Visual System can only promise a caption
@@ -237,8 +242,27 @@ export function Profiles(): JSX.Element {
 
   useEffect(() => {
     if (!expanded?.id) return
-    void window.api.automation.job(expanded.id).then((next) => { if (next) setExpanded(next) })
+    void window.api.automation.job(expanded.id).then((next) => { if (next) setExpanded(next); else setExpanded(null) })
   }, [automationJobs, expanded?.id])
+
+  useEffect(() => {
+    if (expanded && !automationJobs.some((j) => j.id === expanded.id)) setExpanded(null)
+  }, [automationJobs, expanded])
+
+  const confirmDeleteJob = async (): Promise<void> => {
+    if (!jobToDelete) return
+    setDeleting(true)
+    try {
+      await deleteJob(jobToDelete.id)
+      if (expanded?.id === jobToDelete.id) setExpanded(null)
+      showToast(`Deleted "${jobToDelete.name}" – files and history removed.`)
+      setJobToDelete(null)
+    } catch (error) {
+      setJobsError(errorMessage(error, 'Could not delete this run.'))
+    } finally {
+      setDeleting(false)
+    }
+  }
 
   const showDetails = async (job: AutomationJob): Promise<void> => {
     if (expanded?.id === job.id) { setExpanded(null); return }
@@ -840,25 +864,50 @@ export function Profiles(): JSX.Element {
                 <EmptyState title="No automation runs yet" body="Create a batch by choosing a publishing channel, linked sources, batch size, and production template. Its progress will appear here." action={<Btn variant="primary" onClick={() => setMainTab('channels')}>Create a batch</Btn>} />
               ) : (
                 <div style={{ display: 'flex', flexDirection: 'column', gap: 11 }}>
-                  {automationJobs.map((job) => (
-                    <article key={job.id} className="automation-job-card">
+                  {automationJobs.map((job) => {
+                    const isActive = job.status === 'running' || job.status === 'queued' || job.status === 'pausing'
+                    const isPaused = job.status === 'paused'
+                    const isFailed = job.status === 'failed' || job.status === 'attention'
+                    const canPause = job.status === 'running' || job.status === 'queued'
+                    const canResume = isPaused || isFailed
+                    const canCancel = ['queued', 'running', 'pausing', 'paused', 'failed', 'attention'].includes(job.status)
+                    const canRetry = isFailed
+                    const pending = !!jobActionPending[job.id]
+                    return (
+                    <article key={job.id} className="automation-job-card" style={{ opacity: pending ? 0.7 : 1 }}>
                       <div className="automation-job-body">
                         <div className="automation-job-title">
-                          <div style={{ flex: 1 }}>
-                            <strong>{job.name}</strong>
+                          <div style={{ flex: 1, minWidth: 0, display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>
+                            <strong className="me-ellipsis" style={{ minWidth: 0 }}>{job.name}</strong>
                             <JobStatus status={job.status} />
+                            {job.error && (isFailed || job.status === 'cancelled') && <span style={{ fontSize: 10, color: 'var(--text-faint)', maxWidth: 320 }} className="me-ellipsis" title={job.error}>{job.error.slice(0, 80)}</span>}
                           </div>
-                          <b>{job.progress}%</b>
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, flexShrink: 0 }}>
+                            <b style={{ fontFamily: 'var(--font-mono)', fontSize: 12 }}>{job.progress}%</b>
+                            {job.status === 'completed' && job.result?.outputPaths?.length ? <span style={{ fontSize: 10, color: 'var(--ok-2)' }}>{job.result.outputPaths.length} file{job.result.outputPaths.length === 1 ? '' : 's'}</span> : null}
+                          </div>
                         </div>
-                        <div className="automation-job-actions">
-                          {(job.status === 'running' || job.status === 'queued') && <Btn size="sm" onClick={() => void runJobAction(job.id, pauseJob)}>Pause</Btn>}
-                          {(job.status === 'paused' || job.status === 'failed' || job.status === 'attention') && <Btn size="sm" onClick={() => void runJobAction(job.id, resumeJob)}>Resume</Btn>}
-                          <Btn size="sm" onClick={() => void showDetails(job)}>{expanded?.id === job.id ? 'Hide details' : 'View details'}</Btn>
+                        {/* Progress bar */}
+                        <div role="progressbar" aria-valuenow={job.progress} aria-valuemin={0} aria-valuemax={100} style={{ height: 3, borderRadius: 3, background: 'var(--border-2)', overflow: 'hidden', marginTop: 8 }}>
+                          <div style={{ height: '100%', width: `${job.progress}%`, background: job.status === 'failed' || job.status === 'attention' ? 'var(--err)' : job.status === 'completed' ? 'var(--ok)' : job.status === 'cancelled' ? 'var(--text-faint)' : 'var(--accent)', transition: 'width 0.3s ease' }} />
+                        </div>
+                        <div style={{ display: 'flex', gap: 8, marginTop: 8, alignItems: 'center', justifyContent: 'space-between', flexWrap: 'wrap' }}>
+                          <span style={{ fontSize: 10.5, color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}>{job.currentStep || '—'} · {job.completedCount}/{Math.max(1, job.totalItems)} items{job.warningCount ? ` · ${job.warningCount} warnings` : ''}{job.failedCount ? ` · ${job.failedCount} failed` : ''}</span>
+                          <span style={{ fontSize: 10, color: 'var(--text-faint)' }}>{new Date(job.updatedAt).toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}</span>
+                        </div>
+                        <div className="automation-job-actions" style={{ marginTop: 10, gap: 6, flexWrap: 'wrap' }}>
+                          {canPause && <Btn size="sm" disabled={pending} onClick={() => void runJobAction(job.id, pauseJob)}>Pause</Btn>}
+                          {job.status === 'pausing' && <Btn size="sm" disabled variant="soft" title="Finishing current unit before pausing">Pausing…</Btn>}
+                          {canResume && <Btn size="sm" disabled={pending} onClick={() => void runJobAction(job.id, resumeJob)}>Resume</Btn>}
+                          {canRetry && <Btn size="sm" disabled={pending} onClick={() => void runJobAction(job.id, retryJob)}>Retry failed</Btn>}
+                          {canCancel && <Btn size="sm" variant="soft" disabled={pending} onClick={() => void runJobAction(job.id, cancelJob)}>{isActive ? 'Cancel' : 'Cancel run'}</Btn>}
+                          <Btn size="sm" variant="soft" onClick={() => void showDetails(job)}>{expanded?.id === job.id ? 'Hide details' : 'View details'}</Btn>
+                          <Btn size="sm" variant="soft" disabled={pending} onClick={() => setJobToDelete(job)} style={{ color: 'var(--err-2)', borderColor: 'rgba(255,90,110,.25)' }} title="Delete job, output files, and history – stops the run if it is still active">Delete</Btn>
                         </div>
                       </div>
                       {expanded?.id === job.id && <JobDetails detail={expanded} onOpenProject={(projectId) => void openAutomationProject(projectId)} />}
                     </article>
-                  ))}
+                  )})}
                 </div>
               )}
             </>
@@ -1192,6 +1241,16 @@ export function Profiles(): JSX.Element {
         busy={templateDeleting}
         onCancel={() => setTemplateToDelete(null)}
         onConfirm={() => void confirmDeleteTemplate()}
+      />
+
+      <ConfirmDialog
+        open={!!jobToDelete}
+        title="Delete automation run?"
+        body={jobToDelete ? `“${jobToDelete.name}” will be permanently removed – its history, output files, and any queued renders will be deleted. This cannot be undone.` : ''}
+        confirmLabel="Delete run"
+        busy={deleting}
+        onCancel={() => setJobToDelete(null)}
+        onConfirm={() => void confirmDeleteJob()}
       />
 
       {/* Toast popup */}

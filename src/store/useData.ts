@@ -190,6 +190,7 @@ interface DataState {
   pauseAutomationJob: (id: string) => Promise<void>
   resumeAutomationJob: (id: string) => Promise<void>
   cancelAutomationJob: (id: string) => Promise<void>
+  deleteAutomationJob: (id: string) => Promise<void>
   retryAutomationJob: (id: string) => Promise<void>
   loadWorkItems: () => Promise<void>
   detectUploads: () => Promise<void>
@@ -959,6 +960,10 @@ export const useData = create<DataState>((set, get) => ({
   cancelAutomationJob: async (id) => {
     const a = api(); if (!a) return
     await a.automation.cancelJob(id); await get().loadAutomationJobs()
+  },
+  deleteAutomationJob: async (id) => {
+    const a = api(); if (!a) return
+    await a.automation.deleteJob(id); await get().loadAutomationJobs()
   },
   retryAutomationJob: async (id) => {
     const a = api(); if (!a) return

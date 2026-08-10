@@ -1538,6 +1538,7 @@ export interface NativeApi {
     pauseJob(id: string): Promise<void>
     resumeJob(id: string): Promise<void>
     cancelJob(id: string): Promise<void>
+    deleteJob(id: string): Promise<void>
     retryJob(id: string): Promise<void>
   }
   /** TalkingPhotos.ai cloud provider — session, catalogs, sync, and confirmed

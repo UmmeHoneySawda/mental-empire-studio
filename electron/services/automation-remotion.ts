@@ -162,6 +162,7 @@ export async function runAutomationRemotionRender(options: {
   onQueued: (renderJobId: string) => void
   onProgress: (progress: number, stage: string) => void
   shouldCancel: () => boolean
+  shouldPause?: () => boolean
 }): Promise<AutomationRemotionRenderResult> {
   const engine = await getVideoEngine()
   const downloadId = downloadIdFor(options.item)
@@ -187,6 +188,10 @@ export async function runAutomationRemotionRender(options: {
     if (options.shouldCancel()) {
       await engine.cancelRender(render.id).catch(() => undefined)
       throw new Error('Remotion render cancelled by automation control state.')
+    }
+    if (options.shouldPause?.()) {
+      await engine.cancelRender(render.id).catch(() => undefined)
+      throw new Error('automation paused')
     }
     render = await engine.getRenderJob(render.id)
     options.onProgress(Math.round(render.progress * 100), render.stage)

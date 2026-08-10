@@ -1,5 +1,5 @@
 import { app, powerSaveBlocker } from 'electron'
-import { existsSync, statfsSync, statSync } from 'node:fs'
+import { existsSync, statfsSync, statSync, unlinkSync } from 'node:fs'
 import { randomUUID } from 'node:crypto'
 import { basename, dirname, extname, resolve } from 'node:path'
 import { createHash } from 'node:crypto'
@@ -594,6 +594,8 @@ async function runStep(job: AutomationJob, step: AutomationWorkflowStep): Promis
         }
         await new Promise((resolveDelay) => setTimeout(resolveDelay, 5_000))
       }
+      const ctrl = controlState(job.id)
+      if (ctrl === 'pause') throw new Error('automation paused')
       throw new Error('TalkingPhotos wait interrupted by automation control state.')
     })
     return { providerCompletedAt: now() }
@@ -651,11 +653,17 @@ async function runStep(job: AutomationJob, step: AutomationWorkflowStep): Promis
         item,
         config,
         shouldCancel: () => controlState(job.id) === 'cancel',
+        shouldPause: () => controlState(job.id) === 'pause',
         onQueued: (renderJobId) => {
           item = saveItem(item, { renderJobId, status: 'processing', currentStep: step.label, progress: 0 })
         },
         onProgress: (pct, stage) => {
-          item = saveItem(item, { status: 'processing', currentStep: step.label, progress: pct })
+          // If pause/cancel was requested mid-render, persist the paused state so the item
+          // does not look like it is still "processing" after the queue unblocks.
+          const ctrl = controlState(job.id)
+          if (ctrl === 'pause') item = saveItem(item, { status: 'waiting', currentStep: step.label, progress: pct })
+          else if (ctrl === 'cancel') item = saveItem(item, { status: 'cancelled', currentStep: step.label, progress: pct })
+          else item = saveItem(item, { status: 'processing', currentStep: step.label, progress: pct })
         const currentItems = repos.automationItems(job.id)
         const finished = currentItems.filter((candidate) => !!candidate.outputPath && existsSync(candidate.outputPath)).length
           repos.updateAutomationStep(step.id, { progress: Math.round(((finished + pct / 100) / Math.max(1, currentItems.length)) * 100) })
@@ -747,6 +755,36 @@ async function processJob(jobId: string): Promise<void> {
       refreshJobProgress(jobId, step.label)
       log(jobId, `${step.label} completed and checkpointed.`)
     } catch (error) {
+      // Pause is not a failure – it is a cooperative interruption (render/talkingphotos
+      // cancelled the child on pause). Treat it as a clean pause so the queue unblocks
+      // and new jobs at 0% can start (the "new jobs dont work" bug).
+      const msg = error instanceof Error ? error.message : String(error)
+      if (msg === 'automation paused' || controlState(jobId) === 'pause') {
+        repos.updateAutomationStep(step.id, { status: 'pending', error: '' })
+        // Items that were in-flight should look "waiting" not "failed" after a pause,
+        // so Resume can pick them up and the card does not permanently show an error.
+        for (const it of repos.automationItems(jobId)) {
+          if (it.status === 'processing' || (it.status === 'failed' && it.error === msg)) {
+            repos.upsertAutomationItem({ ...it, status: 'waiting', progress: it.progress, error: undefined, updatedAt: now() })
+          }
+        }
+        repos.updateAutomationJob(jobId, { status: 'paused', currentStep: `Paused during ${step.label}`, pauseRequested: true })
+        log(jobId, `${step.label} paused at a safe item checkpoint.`)
+        broadcast(jobId)
+        return
+      }
+      if (msg.includes('cancelled by automation') || msg === 'download cancelled' || controlState(jobId) === 'cancel') {
+        repos.updateAutomationStep(step.id, { status: 'pending', error: '' })
+        for (const it of repos.automationItems(jobId)) {
+          if (it.status === 'processing') {
+            repos.upsertAutomationItem({ ...it, status: 'cancelled', progress: it.progress, error: undefined, updatedAt: now() })
+          }
+        }
+        repos.updateAutomationJob(jobId, { status: 'cancelled', completedAt: now(), currentStep: 'Cancelled', cancelRequested: true })
+        log(jobId, 'Job cancelled. Completed checkpoints were kept.', 'warning')
+        broadcast(jobId)
+        return
+      }
       const failure = classifyStepError(error, step.key)
       const stepLevelFailure = step.key === 'preflight' || step.key === 'discover'
       if (stepLevelFailure && failure.retryable && attempts < step.maxAttempts) {
@@ -860,7 +898,20 @@ export function pauseAutomationJob(id: string): void {
   const job = repos.automationJob(id)
   if (!job || ['completed','completed_with_warnings','cancelled'].includes(job.status)) return
   repos.updateAutomationJob(id, { pauseRequested: true, status: job.status === 'running' ? 'pausing' : 'paused', currentStep: job.status === 'running' ? `Finishing ${job.currentStep} before pausing` : 'Paused' })
-  log(id, job.status === 'running' ? 'Pause requested; the current safe unit will finish first.' : 'Job paused.')
+  // Pause must actually stop the CPU work immediately – otherwise the remotion
+  // ffmpeg/yt-dlp children keep pegging the CPU while the job sits in `pausing`
+  // forever and blocks the queue (new jobs appear stuck at 0%).
+  for (const item of repos.automationItems(id)) {
+    cancelDownload(`dl-${item.sourceVideoId}`)
+    if (item.renderJobId) {
+      if (repos.renderJob(item.renderJobId)) {
+        if (!cancelRender(item.renderJobId, 'cancel')) markCancelIntent(item.renderJobId, 'cancel')
+      } else {
+        void cancelAutomationRemotionRender(item.renderJobId).catch(() => undefined)
+      }
+    }
+  }
+  log(id, job.status === 'running' ? 'Pause requested; stopping current work so the queue can continue.' : 'Job paused.')
   broadcast(id)
 }
 
@@ -926,6 +977,56 @@ export function cancelAutomationJob(id: string): void {
   if (job.status !== 'running' && job.status !== 'pausing') repos.updateAutomationJob(id, { completedAt: now() })
   log(id, 'Cancellation requested. Completed checkpoints and output files are kept.', 'warning')
   broadcast(id)
+}
+
+export function deleteAutomationJob(id: string): void {
+  const repos = getRepos()
+  const job = repos.automationJob(id)
+  if (!job) return
+  // If it is still active, stop the CPU work first – otherwise ffmpeg/yt-dlp
+  // children keep running after the DB rows are gone (the original "still running
+  // and slowing my computer" bug).
+  if (['running', 'pausing', 'queued', 'paused'].includes(job.status)) {
+    for (const item of repos.automationItems(id)) {
+      cancelDownload(`dl-${item.sourceVideoId}`)
+      if (item.renderJobId) {
+        if (repos.renderJob(item.renderJobId)) {
+          if (!cancelRender(item.renderJobId, 'delete')) markCancelIntent(item.renderJobId, 'delete')
+        } else {
+          void cancelAutomationRemotionRender(item.renderJobId).catch(() => undefined)
+        }
+      }
+    }
+  }
+  // Remove output files and render-queue leftovers so the delete is not just a
+  // history row removal – the file, history, and any rendering leftovers are gone.
+  for (const item of repos.automationItems(id)) {
+    if (item.outputPath && existsSync(item.outputPath)) {
+      try { unlinkSync(item.outputPath) } catch { /* keep going */ }
+    }
+    if (item.renderJobId && repos.renderJob(item.renderJobId)) {
+      const legacy = repos.renderJob(item.renderJobId)
+      if (legacy?.outputPath && existsSync(legacy.outputPath)) {
+        try { unlinkSync(legacy.outputPath) } catch { /* keep going */ }
+      }
+      try { repos.deleteRenderJob(item.renderJobId) } catch { /* keep going */ }
+    }
+    if (item.projectId) {
+      const maybeLegacyRender = repos.renderJob(`job-${item.projectId}`)
+      if (maybeLegacyRender) {
+        if (maybeLegacyRender.outputPath && existsSync(maybeLegacyRender.outputPath)) {
+          try { unlinkSync(maybeLegacyRender.outputPath) } catch { /* keep going */ }
+        }
+        try { repos.deleteRenderJob(maybeLegacyRender.id) } catch { /* keep going */ }
+      }
+    }
+  }
+  // Delete the job itself (steps/items/logs cascade via repos method).
+  repos.deleteAutomationJob(id)
+  log(id, 'Job deleted – history, output files, and render queue leftovers removed.', 'warning')
+  // Broadcast a deletion so the renderer can drop its cached detail view.
+  emit('automation:job:deleted', { id })
+  kickAutomationSupervisor()
 }
 
 export function retryAutomationJob(id: string): void {
