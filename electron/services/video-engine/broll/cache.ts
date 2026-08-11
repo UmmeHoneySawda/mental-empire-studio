@@ -8,6 +8,7 @@ import { fileURLToPath, pathToFileURL } from 'node:url'
 import { VideoEngineError } from '../errors'
 import { ensureDirectory } from '../paths'
 import { writeJsonAtomic } from '../storage/atomic-json'
+import { normalizeBrollForRemotion, type BrollNormalizeResult } from './normalize'
 import type { BrollCandidate, CachedBrollAsset } from './types'
 
 const ALLOWED_EXTENSIONS = new Set(['.mp4', '.mov', '.mkv', '.webm', '.m4v'])
@@ -32,6 +33,11 @@ export class BrollCache {
     options: { maxBytes?: number } = {}
   ) {
     this.maxBytes = options.maxBytes ?? 2 * 1024 * 1024 * 1024
+  }
+
+  /** Overridable seam so tests can exercise `store` without invoking ffmpeg. */
+  protected async normalize(path: string, signal?: AbortSignal): Promise<BrollNormalizeResult> {
+    return normalizeBrollForRemotion(path, { signal })
   }
 
   async store(candidate: BrollCandidate, signal?: AbortSignal): Promise<CachedBrollAsset> {
@@ -104,7 +110,8 @@ export class BrollCache {
       }
       const sha256 = hash.digest('hex')
       const destination = join(root, `${sha256}${extensionFor(candidate, contentType)}`)
-      if (await exists(destination)) {
+      const alreadyCached = await exists(destination)
+      if (alreadyCached) {
         await rm(temporaryPath, { force: true })
       } else {
         try {
@@ -114,12 +121,23 @@ export class BrollCache {
           else throw error
         }
       }
+      // Resample high-frame-rate clips before anything records a path: Remotion's
+      // frame extractor times out on them even though the files are valid. See
+      // `normalize.ts` for the measurements. This deliberately runs for
+      // already-cached files too, so clips stored before this step existed get
+      // repaired the next time they are referenced. The no-op path is a single
+      // ffprobe, so re-checking a healthy file is cheap.
+      const normalized = await this.normalize(destination, signal)
+      const finalPath = normalized.path
+      const finalBytes = normalized.normalized
+        ? await stat(finalPath).then((info) => info.size, () => bytes)
+        : bytes
       const record: CachedBrollAsset = {
         id: candidate.id,
         provider: candidate.provider,
-        absolutePath: destination,
+        absolutePath: finalPath,
         sha256,
-        bytes,
+        bytes: finalBytes,
         sourceUrl: candidate.sourceUrl,
         cachedAt: new Date().toISOString(),
         license: candidate.license,
@@ -135,7 +153,7 @@ export class BrollCache {
         author: candidate.author?.trim().slice(0, 256),
         downloadUrl: candidate.downloadUrl
       }
-      await writeJsonAtomic(`${destination}.license.json`, record)
+      await writeJsonAtomic(`${finalPath}.license.json`, record)
       return record
     } catch (error) {
       await rm(temporaryPath, { force: true }).catch(() => undefined)

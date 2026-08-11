@@ -14,6 +14,7 @@ import { cacheDir } from './storage'
 import { poolKeyForNiche, nicheSearchThemes, dimsForOrientation, planPoolPrune } from './niche'
 import { seededBrollOrder } from '../../shared/automationBroll'
 import { resolveBrollLibraryRoot } from './video-engine/broll/library-root'
+import { normalizeBrollForRemotion } from './video-engine/broll/normalize'
 
 // Auto B-roll: themed stock-footage pool driven by the transcript. We pick the
 // video's dominant themes, fetch a small pool of clips (Pexels → Pixabay → Coverr),
@@ -824,6 +825,18 @@ async function cacheCandidateForLibrary(c: BrollCandidate, sourceKey: string, ke
       brollInfo(logPath, `library clip downloaded provider=${c.provider} id=${c.id} keyword=${keyword} bytes=${fileBytes(path)} path=${path}`)
     }
   }
+  // Resample high-frame-rate clips at ingest. Remotion's frame extractor stalls
+  // on them (see video-engine/broll/normalize.ts for the measurements), and this
+  // library is also read by the video engine, so a clip stored raw here can hang
+  // a render later. Adopted files are included: earlier warms predate this step.
+  const normalized = await normalizeBrollForRemotion(path)
+  if (normalized.normalized) {
+    brollInfo(
+      logPath,
+      `library clip normalized provider=${c.provider} id=${c.id} keyword=${keyword} reason=${normalized.reason} fps=${normalized.sourceFps ?? '?'} bytes=${fileBytes(normalized.path)} path=${normalized.path}`
+    )
+  }
+  path = normalized.path
   return {
     provider: c.provider,
     id: c.id,
