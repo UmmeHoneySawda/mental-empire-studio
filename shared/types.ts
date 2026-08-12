@@ -1142,8 +1142,11 @@ export interface AppSettings {
   /** experimental features + stock-footage API keys (gated; default off).
    *  `geminiKey` is the Auto B-roll fallback model: a free Groq key's daily token budget
    *  does not cover a long video twice, and Gemini's does. Optional — Groq alone still
-   *  works, it just runs out sooner. */
-  beta: { enabled: boolean; pexelsKey: string; pixabayKey: string; coverrKey: string; geminiKey?: string }
+   *  works, it just runs out sooner.
+   *  `metaKey` is the Meta (muse-spark) LLM key for hook/effect/auto-broll prompts. When
+   *  set it is tried first; Groq remains the default fallback when empty. Env fallback is
+   *  `META_API_KEY`. */
+  beta: { enabled: boolean; pexelsKey: string; pixabayKey: string; coverrKey: string; geminiKey?: string; metaKey?: string }
   /** additive redesign flags, so each shipped slice remains rollback-friendly */
   features: { workflowP1: boolean; videoEditorV2: boolean; thumbEditorV2: boolean }
   /** upload detection automation + pending/high confidence band */
@@ -1203,7 +1206,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoScrape: { enabled: true, frequency: 'Every 6 hours', delaySec: 1.5, retries: 3, proxy: '', cookiesPath: '' },
   background: { tray: true, startOnSignIn: false, notifications: true, webhook: '' },
   transcription: { apiKey: '', model: 'whisper-large-v3-turbo' },
-  beta: { enabled: false, pexelsKey: '', pixabayKey: '', coverrKey: '', geminiKey: '' },
+  beta: { enabled: false, pexelsKey: '', pixabayKey: '', coverrKey: '', geminiKey: '', metaKey: '' },
   features: { workflowP1: true, videoEditorV2: true, thumbEditorV2: true },
   detection: { auto: true, confirmBand: [0.6, 0.82] },
   dedup: { allowReupload: false },

@@ -1,6 +1,7 @@
 import { HookPlanSchema, safeParseHookPlan, type HookPlan } from '../../../shared/video-engine'
 import { logger } from '../logger'
 import { VideoEngineError } from './errors'
+import { askMeta } from '../llm/meta'
 
 /* In-app hook generation.
  *
@@ -118,22 +119,51 @@ function coerceToBudget(plan: HookPlan, fps: number, durationFrames: number): Ho
 
 export interface GenerateHookPlanOptions {
   apiKey: string
+  /** Preferred Meta key (muse-spark). When present Meta is tried first; Groq is the fallback. */
+  metaApiKey?: string
   prompt: string
   fps: number
   durationFrames: number
 }
 
-/** Asks Groq for a hook plan and returns one that is valid for this project. */
+async function askWithFallback(
+  prompt: string,
+  keys: { meta?: string; groq: string }
+): Promise<string> {
+  const meta = keys.meta?.trim()
+  const groq = keys.groq?.trim()
+  // Prefer Meta when available; otherwise Groq. If preferred fails, fall back.
+  if (meta) {
+    try {
+      HOOK_LOG.info(`request start provider=meta fps=${keys.meta ? 'meta-first' : 'groq'} budget-pending`)
+      return await askMeta(meta, prompt)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      // If Groq is also available, fall back on any Meta failure (network, 5xx, 429, empty, timeout).
+      // If Groq is not configured, surface Meta's own error.
+      if (!groq) throw new VideoEngineError('INVALID_IMPORT', msg)
+      HOOK_LOG.warn(`meta failed, falling back to groq error=${msg.slice(0, 200)}`)
+    }
+  }
+  return askGroq(groq, prompt)
+}
+
+/** Asks Meta (preferred) or Groq for a hook plan and returns one that is valid for this project. */
 export async function generateHookPlan(options: GenerateHookPlanOptions): Promise<HookPlan> {
-  if (!options.apiKey) {
+  const metaKey = options.metaApiKey?.trim() ?? ''
+  const groqKey = options.apiKey?.trim() ?? ''
+  if (!metaKey && !groqKey) {
     throw new VideoEngineError(
       'INVALID_IMPORT',
-      'No Groq API key set. Add one in Settings > Integrations > Transcription, then try again.'
+      'No Meta or Groq API key set. Add a Meta key (Settings > Integrations) or a Groq key (Settings > Transcription), then try again.'
     )
   }
-  HOOK_LOG.info(`request start provider=groq model=${GROQ_MODEL} fps=${options.fps} budget=${options.durationFrames}`)
+  const preferred = metaKey ? 'meta' : 'groq'
+  const model = metaKey ? 'muse-spark-1.2' : GROQ_MODEL
+  HOOK_LOG.info(`request start provider=${preferred} model=${model} fps=${options.fps} budget=${options.durationFrames}`)
 
-  const first = safeParseHookPlan(await askGroq(options.apiKey, options.prompt))
+  const firstRaw = await askWithFallback(options.prompt, { meta: metaKey, groq: groqKey })
+  const first = safeParseHookPlan(firstRaw)
   if (first.success) return coerceToBudget(first.data, options.fps, options.durationFrames)
 
   // One repair attempt, quoting the exact validation failures back. Cheaper and far more
@@ -144,10 +174,11 @@ export async function generateHookPlan(options: GenerateHookPlanOptions): Promis
     .join('\n')
   HOOK_LOG.warn(`first answer invalid, repairing issues=${first.error.issues.length}`)
 
-  const repaired = safeParseHookPlan(await askGroq(
-    options.apiKey,
-    `${options.prompt}\n\nYour previous answer was rejected. Fix exactly these problems and return the corrected JSON only:\n${issues}`
-  ))
+  const repairedRaw = await askWithFallback(
+    `${options.prompt}\n\nYour previous answer was rejected. Fix exactly these problems and return the corrected JSON only:\n${issues}`,
+    { meta: metaKey, groq: groqKey }
+  )
+  const repaired = safeParseHookPlan(repairedRaw)
   if (!repaired.success) {
     throw new VideoEngineError(
       'INVALID_IMPORT',

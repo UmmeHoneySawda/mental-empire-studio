@@ -267,6 +267,11 @@ export function Settings(): JSX.Element {
           <input type="password" value={settings.transcription.apiKey} onChange={(e) => saved({ transcription: { apiKey: e.target.value } })} placeholder="gsk_…" aria-label="Groq API key" className="ed-input" style={{ ...inputStyle, fontFamily: 'var(--font-mono)', marginBottom: 8 }} />
           <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>Model <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>{settings.transcription.model}</span> · get a free key at console.groq.com</div>
         </Card>
+        <Card label="LLM · META (MUSE SPARK)">
+          <div style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-dim)', marginBottom: 11 }}>Optional — when set, hook / effect / Auto B-roll prompts use Meta first (muse-spark-1.2 via <span style={{ fontFamily: 'var(--font-mono)' }}>api.meta.ai/v1/responses</span>). Falls back to Groq when empty or down. Env fallback is <span style={{ fontFamily: 'var(--font-mono)' }}>META_API_KEY</span>.</div>
+          <input type="password" value={settings.beta.metaKey ?? ''} onChange={(e) => saved({ beta: { metaKey: e.target.value } })} placeholder="meta_… or Bearer token" aria-label="Meta API key" className="ed-input" style={{ ...inputStyle, fontFamily: 'var(--font-mono)', marginBottom: 8 }} />
+          <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>Header <span style={{ fontFamily: 'var(--font-mono)', color: 'var(--text-muted)' }}>Authorization: Bearer $META_API_KEY</span></div>
+        </Card>
         <Card label="AUTO B-ROLL · FALLBACK MODEL">
           <div style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-dim)', marginBottom: 11 }}>Optional. A free Groq key&rsquo;s daily token budget does not cover a long video twice — when it runs out mid-run, Auto B-roll finishes on Gemini instead of stopping.</div>
           <input type="password" value={settings.beta.geminiKey ?? ''} onChange={(e) => saved({ beta: { geminiKey: e.target.value } })} placeholder="AIza…" aria-label="Gemini API key" className="ed-input" style={{ ...inputStyle, fontFamily: 'var(--font-mono)', marginBottom: 8 }} />

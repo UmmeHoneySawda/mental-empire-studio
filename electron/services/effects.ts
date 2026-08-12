@@ -1,6 +1,7 @@
 import type { TranscriptWord, VideoStyle } from '../../shared/types'
 import { buildMasterPrompt, validateEffectPlan, type EffectPlan } from '../../shared/effectPlan'
 import { logger } from './logger'
+import { askMeta } from './llm/meta'
 
 // Optional in-app effect-plan generation via Groq's free LLM (reuses the Groq key
 // already configured for transcription). Produces the same JSON a user would get by
@@ -19,21 +20,10 @@ function redactSensitive(s: string): string {
     .replace(/(Authorization["']?\s*[:=]\s*["']?)[^"',\s]+/gi, '$1[redacted]')
 }
 
-export async function generatePlanViaGroq(
-  apiKey: string,
-  words: TranscriptWord[],
-  style: VideoStyle,
-  durationSec: number
-): Promise<{ plan: EffectPlan; json: string; warnings: string[] }> {
-  if (!apiKey) {
-    EFFECT_LOG.warn(`generate skipped: missing Groq key style=${style}`)
-    throw new Error('No Groq API key (Settings → Transcription)')
-  }
-  const prompt = buildMasterPrompt(words, style)
+async function askGroq(apiKey: string, prompt: string): Promise<string> {
   const controller = new AbortController()
   const timeout = setTimeout(() => controller.abort(), REQUEST_TIMEOUT_MS)
   const started = Date.now()
-  EFFECT_LOG.info(`request start provider=groq model=${GROQ_MODEL} style=${style} words=${words.length} duration=${durationSec.toFixed(2)} url=${GROQ_URL}`)
   try {
     const res = await fetch(GROQ_URL, {
       method: 'POST',
@@ -50,10 +40,7 @@ export async function generatePlanViaGroq(
     EFFECT_LOG.info(`response provider=groq status=${res.status} ms=${ms}`)
     if (!res.ok) throw new Error(`Groq HTTP ${res.status}: ${redactSensitive((await res.text()).slice(0, 200))}`)
     const data = (await res.json()) as { choices?: Array<{ message?: { content?: string } }> }
-    const content = data.choices?.[0]?.message?.content ?? '{}'
-    const { plan, warnings } = validateEffectPlan(content, durationSec)
-    EFFECT_LOG.info(`validated provider=groq warnings=${warnings.length} transitions=${plan.transitions.length} textEffects=${plan.textEffects.length}`)
-    return { plan, json: JSON.stringify(plan, null, 2), warnings }
+    return data.choices?.[0]?.message?.content ?? '{}'
   } catch (e) {
     const msg = e instanceof Error && e.name === 'AbortError'
       ? `Groq request timed out after ${REQUEST_TIMEOUT_MS / 1000}s`
@@ -63,4 +50,48 @@ export async function generatePlanViaGroq(
   } finally {
     clearTimeout(timeout)
   }
+}
+
+export async function generatePlanViaGroq(
+  apiKey: string,
+  words: TranscriptWord[],
+  style: VideoStyle,
+  durationSec: number
+): Promise<{ plan: EffectPlan; json: string; warnings: string[] }> {
+  return generatePlanWithFallback({ groqKey: apiKey }, words, style, durationSec)
+}
+
+/** Preferred Meta, fallback Groq. Keeps generatePlanViaGroq API stable for existing callers. */
+export async function generatePlanWithFallback(
+  keys: { groqKey?: string; metaKey?: string },
+  words: TranscriptWord[],
+  style: VideoStyle,
+  durationSec: number
+): Promise<{ plan: EffectPlan; json: string; warnings: string[] }> {
+  const groqKey = keys.groqKey?.trim() ?? ''
+  const metaKey = keys.metaKey?.trim() ?? ''
+  if (!groqKey && !metaKey) {
+    EFFECT_LOG.warn(`generate skipped: missing Meta/Groq key style=${style}`)
+    throw new Error('No Meta or Groq API key (Settings → Integrations)')
+  }
+  const prompt = buildMasterPrompt(words, style)
+  const preferred = metaKey ? 'meta' : 'groq'
+  EFFECT_LOG.info(`request start provider=${preferred} style=${style} words=${words.length} duration=${durationSec.toFixed(2)}`)
+  let content: string
+  if (metaKey) {
+    try {
+      content = await askMeta(metaKey, prompt)
+      EFFECT_LOG.info(`validated provider=meta style=${style}`)
+    } catch (e) {
+      const msg = e instanceof Error ? e.message : String(e)
+      if (!groqKey) throw new Error(msg)
+      EFFECT_LOG.warn(`meta failed, falling back to groq style=${style} error=${msg.slice(0, 200)}`)
+      content = await askGroq(groqKey, prompt)
+    }
+  } else {
+    content = await askGroq(groqKey, prompt)
+  }
+  const { plan, warnings } = validateEffectPlan(content, durationSec)
+  EFFECT_LOG.info(`validated provider=${preferred} warnings=${warnings.length} transitions=${plan.transitions.length} textEffects=${plan.textEffects.length}`)
+  return { plan, json: JSON.stringify(plan, null, 2), warnings }
 }

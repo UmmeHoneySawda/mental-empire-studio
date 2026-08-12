@@ -71,7 +71,7 @@ function JobDetails({ detail, onOpenProject }: { detail: AutomationJobDetail; on
     <SectionLabel>Effective configuration</SectionLabel>
     <div className="automation-job-metrics" style={{ marginBottom: 14 }}>
       <div><span>CAPTIONS</span><b>{detail.config.rules.captions ? `${style.captionPreset} · ${style.captionFont} · ${style.captionPosition}${style.captionOffsetY != null ? ` @ ${style.captionOffsetY}%` : ''} · ${style.captionLines} line${style.captionLines === 1 ? '' : 's'} · ${style.captionPace}` : 'Disabled'}</b></div>
-      <div><span>VISUALS</span><b>{detail.config.assetPaths.length} assets · {style.imageMode} · {style.motionPreset} · {style.crossfadeSec}s · gradient {style.gradientEdge} {style.gradientIntensity}%</b></div>
+      <div><span>VISUALS</span><b>{detail.config.assetPaths.length} assets · {style.imageMode} · {style.imageDurationSec % 1 === 0 ? `${style.imageDurationSec}s` : `${style.imageDurationSec.toFixed(1)}s`}/img · {style.motionPreset} · {style.crossfadeSec}s · gradient {style.gradientEdge} {style.gradientIntensity}%</b></div>
       <div><span>B-ROLL</span><b>{detail.config.rules.autoBroll ? `${style.brollPoolKey || 'automatic pool'} · ${style.brollFallbackPolicy} · ${style.brollShufflePolicy}` : 'Disabled'}</b></div>
       <div><span>EXPORT</span><b>{style.videoStyle} · {style.aspectRatio}</b></div>
     </div>
@@ -148,12 +148,34 @@ export function Profiles(): JSX.Element {
     const paths = Array.from(files)
       .map((f) => window.api.pathForFile(f))
       .filter((p): p is string => typeof p === 'string' && p.length > 0)
-    if (paths.length) {
-      const existing = editingTemplate.imagePaths || []
-      const combined = Array.from(new Set([...existing, ...paths]))
-      setEditingTemplate({ ...editingTemplate, imagePaths: combined })
-      void window.api.assets.import(paths)
+    if (!paths.length) {
+      setTemplateError('No valid file paths were returned for the selected images. Try again or use the Asset Library after adding images in Compose.')
+      e.target.value = ''
+      return
     }
+    // Phase 4 fix: persist via asset-library with channel context so Asset Library
+    // groups under the publishing channel instead of "Unsorted", and use the
+    // returned canonical paths (content-addressed) so the saved template survives
+    // temp-file cleanup. Fire-and-forget kept for responsiveness, but we replace
+    // paths once the canonical rows return.
+    const existing = editingTemplate.imagePaths || []
+    const optimistic = Array.from(new Set([...existing, ...paths]))
+    setEditingTemplate({ ...editingTemplate, imagePaths: optimistic })
+    const channel = myChannels.find((c) => c.id === selectedChannelId)
+    const context = channel ? { channel: channel.name, channelHandle: channel.handle, channelAvatar: channel.avatar } : {}
+    void window.api.assets.import(paths, context).then((rows) => {
+      if (!rows.length) {
+        setTemplateError('Images could not be saved to the library (file missing or unreadable).')
+        return
+      }
+      const canonicals = rows.filter((r) => !r.missing).map((r) => r.canonicalPath)
+      if (!canonicals.length) {
+        setTemplateError('Images were imported but are marked missing — check file permissions.')
+        return
+      }
+      const merged = Array.from(new Set([...existing, ...canonicals]))
+      setEditingTemplate((prev) => (prev && prev.id === editingTemplate.id ? { ...prev, imagePaths: merged } : prev))
+    }).catch((err) => setTemplateError(errorMessage(err, 'Could not save images to the library.')))
     e.target.value = ''
   }
 
@@ -740,7 +762,7 @@ export function Profiles(): JSX.Element {
                     <span className="at-summary-val">{selectedTemplate?.name}</span>
 
                     <span className="at-summary-label">Output</span>
-                    <span className="at-summary-val">{selectedTemplate?.aspectRatio} · {selectedTemplate?.mode}</span>
+                    <span className="at-summary-val">{selectedTemplate?.aspectRatio} · {selectedTemplate?.mode}{selectedTemplate?.mode === 'Image slideshow' ? ` · ${(selectedTemplate?.imageDurationSec ?? 5) % 1 === 0 ? `${selectedTemplate?.imageDurationSec ?? 5}s` : `${(selectedTemplate?.imageDurationSec ?? 5).toFixed(1)}s`}/img` : ''}</span>
 
                     <span className="at-summary-label">Captions</span>
                     <span className="at-summary-val">{selectedTemplate?.captionStyle}</span>
@@ -798,6 +820,12 @@ export function Profiles(): JSX.Element {
                       <span>{tpl.captionStyle} captions</span>
                       <span>•</span>
                       <span>{resolveTransitionPreset(tpl.transition).label}</span>
+                      {tpl.mode === 'Image slideshow' && (
+                        <>
+                          <span>•</span>
+                          <span style={{ color: 'var(--accent)', fontWeight: 600 }}>{(tpl.imageDurationSec ?? 5) % 1 === 0 ? `${tpl.imageDurationSec ?? 5}s` : `${(tpl.imageDurationSec ?? 5).toFixed(1)}s`}/img</span>
+                        </>
+                      )}
                     </div>
                   </div>
                   <div className="at-card-actions">
@@ -986,7 +1014,7 @@ export function Profiles(): JSX.Element {
                           <Btn
                             size="sm"
                             variant="soft"
-                            onClick={() => void window.api.assets.list().then((rows) => { setLibraryAssets(rows); setShowAssetLibrary(true) })}
+                            onClick={() => void window.api.assets.list().then((rows) => { setLibraryAssets(rows); setShowAssetLibrary(true) }).catch((err) => setTemplateError(errorMessage(err, 'Could not load the asset library.')))}
                           >
                             Asset Library
                           </Btn>
@@ -1031,22 +1059,57 @@ export function Profiles(): JSX.Element {
                         </div>
                       )}
 
-                      {/* Image Duration */}
-                      <div className="at-sub-row">
-                        <span>Duration per image</span>
-                        <div className="at-slider-cell">
-                          <input
-                            type="range"
-                            min={1}
-                            max={15}
-                            step={1}
-                            value={editingTemplate.imageDurationSec ?? 5}
-                            onChange={(e) => setEditingTemplate({ ...editingTemplate, imageDurationSec: Number(e.target.value) })}
-                            aria-label="Image duration in seconds"
-                          />
-                          <span className="at-slider-val">{editingTemplate.imageDurationSec ?? 5}s</span>
-                        </div>
-                      </div>
+                      {/* Image Duration — polished control (impeccable: operate) */}
+                      {(() => {
+                        const dur = editingTemplate.imageDurationSec ?? 5
+                        const count = editingTemplate.imagePaths?.length ?? 0
+                        const presets: number[] = [1, 2, 3, 5, 8]
+                        const formatDur = (n: number) => (Number.isInteger(n) ? `${n}s` : `${n.toFixed(1).replace(/\.0$/, '')}s`)
+                        const pct = ((dur - 1) / 29) * 100
+                        return (
+                          <div className="at-duration-panel">
+                            <div className="at-duration-head">
+                              <div>
+                                <span className="at-field-label">Duration per image</span>
+                                <small>How long each still holds before the next cut. Longer holds feel calmer; shorter feels faster.</small>
+                              </div>
+                              <span className="at-duration-badge" aria-live="polite">{formatDur(dur)}</span>
+                            </div>
+                            <div className="at-duration-presets" role="group" aria-label="Quick durations">
+                              {presets.map((p) => (
+                                <button
+                                  key={p}
+                                  type="button"
+                                  className={`at-duration-chip ${dur === p ? 'active' : ''}`}
+                                  aria-pressed={dur === p}
+                                  onClick={() => setEditingTemplate({ ...editingTemplate, imageDurationSec: p })}
+                                >
+                                  {p}s
+                                </button>
+                              ))}
+                            </div>
+                            <div className="at-duration-slider">
+                              <input
+                                type="range"
+                                min={1}
+                                max={30}
+                                step={0.5}
+                                value={dur}
+                                onChange={(e) => setEditingTemplate({ ...editingTemplate, imageDurationSec: Number(e.target.value) })}
+                                aria-label="Image duration in seconds"
+                                aria-valuetext={formatDur(dur)}
+                                style={{ ['--pct' as string]: `${pct}%` }}
+                              />
+                              <div className="at-duration-scale" aria-hidden="true">
+                                <span>1s</span><span>15s</span><span>30s</span>
+                              </div>
+                            </div>
+                            <div className="at-duration-foot">
+                              <span>{count ? `${count} images · ~${formatDur(dur * count)} total · loops to fill audio` : 'Add images to estimate total runtime'}</span>
+                            </div>
+                          </div>
+                        )
+                      })()}
 
                       {/* Shuffle Toggle */}
                       <button

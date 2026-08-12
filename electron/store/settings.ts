@@ -15,7 +15,7 @@ type Schema = { settings: AppSettings }
 let store: Store<Schema> | null = null
 
 // Field names (anywhere in the settings tree) whose string values are secrets.
-const SECRET_FIELDS = new Set(['apiKey', 'pexelsKey', 'pixabayKey', 'coverrKey', 'geminiKey'])
+const SECRET_FIELDS = new Set(['apiKey', 'pexelsKey', 'pixabayKey', 'coverrKey', 'geminiKey', 'metaKey'])
 const ENC_PREFIX = 'enc:v1:'
 
 function canEncrypt(): boolean {
@@ -136,6 +136,7 @@ function applyEnvFallback(settings: AppSettings): AppSettings {
   if (!out.beta.pixabayKey) out.beta.pixabayKey = process.env.PIXABAY_API_KEY ?? ''
   if (!out.beta.coverrKey) out.beta.coverrKey = process.env.COVERR_API_KEY ?? ''
   if (!out.beta.geminiKey) out.beta.geminiKey = process.env.GEMINI_API_KEY ?? process.env.GOOGLE_API_KEY ?? ''
+  if (!out.beta.metaKey) out.beta.metaKey = process.env.META_API_KEY ?? process.env.MODEL_API_KEY ?? ''
   return out
 }
 

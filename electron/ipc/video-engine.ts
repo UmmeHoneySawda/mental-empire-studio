@@ -604,6 +604,10 @@ async function executeAutoBroll(
   // 22-minute video twice over, and when it runs out no amount of waiting brings it back —
   // so the run continues on Gemini rather than ending with half a timeline.
   const modelKeys = {
+    metaApiKey: settings.beta.metaKey?.trim()
+      || process.env['META_API_KEY']
+      || process.env['MODEL_API_KEY']
+      || '',
     groqApiKey: settings.transcription.apiKey.trim() || process.env['GROQ_API_KEY'] || '',
     geminiApiKey: settings.beta.geminiKey?.trim()
       || process.env['GEMINI_API_KEY']
@@ -1035,8 +1039,10 @@ async function generateHookPlanFor(projectId: string, input: HookPromptInput): P
   const engine = await getVideoEngine()
   const project = await engine.openProject(projectId)
   const durationSeconds = Math.min(30, Math.max(1, input.durationSeconds ?? 30))
+  const settings = getSettings()
   const plan = await generateHookPlan({
-    apiKey: getSettings().transcription.apiKey.trim() || process.env['GROQ_API_KEY'] || '',
+    apiKey: settings.transcription.apiKey.trim() || process.env['GROQ_API_KEY'] || '',
+    metaApiKey: settings.beta.metaKey?.trim() || process.env['META_API_KEY'] || process.env['MODEL_API_KEY'] || '',
     prompt: await hookPrompt(projectId, input),
     fps: project.canvas.fps,
     durationFrames: Math.max(1, Math.round(durationSeconds * project.canvas.fps))

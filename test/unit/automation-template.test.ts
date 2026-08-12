@@ -72,6 +72,19 @@ describe('visualTemplateToStyleConfig', () => {
     expect(visualTemplateToStyleConfig(template({ zoomAtStart: false })).zoomAtStart).toBe(false)
     expect(visualTemplateToStyleConfig(template({ zoomAtStart: true })).zoomAtStart).toBe(true)
   })
+
+  it('respects a custom imageDurationSec including half-second steps', () => {
+    expect(visualTemplateToStyleConfig(template({ imageDurationSec: 2.5 })).imageDurationSec).toBe(2.5)
+    expect(visualTemplateToStyleConfig(template({ imageDurationSec: 8 })).imageDurationSec).toBe(8)
+    expect(visualTemplateToStyleConfig(template({ imageDurationSec: 30 })).imageDurationSec).toBe(30)
+  })
+
+  it('clamps imageDurationSec to 1..60 when built into a draft', () => {
+    const low = buildAutomationDraft({ source, count: 1, template: template({ imageDurationSec: 0.2 }) })
+    const high = buildAutomationDraft({ source, count: 1, template: template({ imageDurationSec: 100 }) })
+    expect(low.config.styleConfig.imageDurationSec).toBe(1)
+    expect(high.config.styleConfig.imageDurationSec).toBe(60)
+  })
 })
 
 describe('pickRotationSource', () => {
@@ -155,5 +168,14 @@ describe('buildAutomationDraft', () => {
     expect(draft.config.assetPaths).toEqual(['/path/to/img1.jpg', '/path/to/img2.jpg'])
     expect(draft.config.styleConfig.imageDurationSec).toBe(5)
     expect(draft.config.styleConfig.imageShuffle).toBe(true)
+  })
+
+  it('carries a custom imageDurationSec through to the draft styleConfig', () => {
+    const draft = buildAutomationDraft({
+      source,
+      count: 1,
+      template: template({ mode: 'Image slideshow', imageDurationSec: 2.5, imagePaths: ['/a.jpg'] })
+    })
+    expect(draft.config.styleConfig.imageDurationSec).toBe(2.5)
   })
 })

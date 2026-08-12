@@ -1,6 +1,7 @@
 import { readFileSync } from 'node:fs'
 import { logger } from '../../logger'
 import { VideoEngineError } from '../errors'
+import { META_URL, META_MODEL } from '../../llm/meta'
 
 /* The language model behind Auto B-roll.
  *
@@ -163,6 +164,60 @@ export interface ModelBackend {
   ask(prompt: string, signal?: AbortSignal): Promise<string>
 }
 
+function metaBackend(apiKey: string): ModelBackend {
+  return {
+    name: 'meta',
+    async ask(prompt, signal) {
+      const started = Date.now()
+      const response = await fetch(META_URL, {
+        method: 'POST',
+        headers: { Authorization: `Bearer ${apiKey}`, 'Content-Type': 'application/json' },
+        signal: timeoutSignal(signal),
+        body: JSON.stringify({
+          model: META_MODEL,
+          input: [{ role: 'user', content: [{ type: 'input_text', text: prompt }] }],
+          stream: false
+        })
+      })
+      AUTO_LOG.info(`response provider=meta status=${response.status} ms=${Date.now() - started}`)
+      if (!response.ok) throw await failureFor(response, 'Meta')
+      let data: unknown
+      try {
+        data = await response.json()
+      } catch {
+        throw new Error('Meta returned no JSON')
+      }
+      // Reuse shared extractor shape but inline to avoid extra import cycle for logs;
+      // keep same redaction semantics.
+      const d = data as Record<string, unknown>
+      if (typeof d['output_text'] === 'string' && (d['output_text'] as string).trim()) return d['output_text'] as string
+      if (Array.isArray(d['output'])) {
+        const parts: string[] = []
+        for (const item of d['output'] as Array<Record<string, unknown>>) {
+          const content = item?.['content']
+          if (Array.isArray(content)) {
+            for (const c of content as Array<Record<string, unknown>>) {
+              if (typeof c['text'] === 'string') parts.push(c['text'] as string)
+            }
+          } else if (typeof item['text'] === 'string') parts.push(item['text'] as string)
+        }
+        const joined = parts.join('').trim()
+        if (joined) return joined
+      }
+      const choices = d['choices'] as Array<Record<string, unknown>> | undefined
+      if (Array.isArray(choices) && choices[0]) {
+        const msg = choices[0]['message'] as Record<string, unknown> | undefined
+        if (typeof msg?.['content'] === 'string' && (msg['content'] as string).trim()) return msg['content'] as string
+      }
+      if (typeof d['content'] === 'string' && (d['content'] as string).trim()) return d['content'] as string
+      // Fallback: if it is already a JSON object stringified?
+      const fallback = JSON.stringify(data)
+      if (fallback && fallback !== '{}') return fallback
+      throw new Error('Meta returned empty response')
+    }
+  }
+}
+
 function groqBackend(apiKey: string): ModelBackend {
   return {
     name: 'groq',
@@ -231,6 +286,7 @@ function geminiBackend(apiKey: string, model: string): ModelBackend {
 // --------------------------------------------------------------------------- ladder
 
 export interface AutoBrollModelKeys {
+  metaApiKey?: string
   groqApiKey?: string
   geminiApiKey?: string
 }
@@ -244,9 +300,12 @@ export interface AutoBrollModelOptions {
 }
 
 /** Which providers this run can use, in the order it will try them. One Gemini key becomes
- *  one rung per model, because each model carries its own daily free-tier budget. */
+ *  one rung per model, because each model carries its own daily free-tier budget.
+ *  Meta (muse-spark) leads when configured, then Groq, then Gemini — Groq stays the
+ *  default when Meta is empty so existing installs are unchanged. */
 export function backendsFor(keys: AutoBrollModelKeys): ModelBackend[] {
   const backends: ModelBackend[] = []
+  if (keys.metaApiKey?.trim()) backends.push(metaBackend(keys.metaApiKey.trim()))
   if (keys.groqApiKey?.trim()) backends.push(groqBackend(keys.groqApiKey.trim()))
   const geminiKey = keys.geminiApiKey?.trim()
   if (geminiKey) {
@@ -290,7 +349,7 @@ export function createAutoBrollModel(
   if (backends.length === 0) {
     throw new VideoEngineError(
       'INVALID_IMPORT',
-      'No Groq or Gemini API key set. Add one in Settings > Integrations, then try again.'
+      'No Meta, Groq or Gemini API key set. Add one in Settings > Integrations, then try again.'
     )
   }
 

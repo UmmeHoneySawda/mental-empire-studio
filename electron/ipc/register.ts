@@ -187,13 +187,17 @@ export function registerIpc(): void {
   // ---- template video engine: Remotion + HyperFrames Compose studio ----
   registerVideoEngineIpc()
 
-  // ---- beta: effect-plan generation via Groq (reuses the transcription key) ----
+  // ---- beta: effect-plan generation (Meta preferred, Groq fallback; reuses transcription key if Meta missing) ----
   ipcMain.handle('effects:generate', async (_e, projectId: string, style: import('../../shared/types').VideoStyle) => {
     const project = getRepos().getProject(reqId(projectId, 'projectId'))
     if (!project) throw new Error('project missing')
     const words = getRepos().getTranscript(projectId)
-    const { generatePlanViaGroq } = await import('../services/effects')
-    const { json } = await generatePlanViaGroq(getSettings().transcription.apiKey, words, style, project.durationSec)
+    const { generatePlanWithFallback } = await import('../services/effects')
+    const settings = getSettings()
+    const { json } = await generatePlanWithFallback({
+      groqKey: settings.transcription.apiKey.trim() || process.env['GROQ_API_KEY'] || '',
+      metaKey: settings.beta.metaKey?.trim() || process.env['META_API_KEY'] || process.env['MODEL_API_KEY'] || ''
+    }, words, style, project.durationSec)
     return json
   })
 }

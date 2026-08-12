@@ -1029,7 +1029,7 @@
   color: var(--text-faint);
 }
 
-/* Slider Cell */
+/* Slider Cell (legacy) */
 .at-slider-cell {
   display: flex;
   align-items: center;
@@ -1046,6 +1046,129 @@
   font-size: 11px;
   color: var(--accent);
   min-width: 36px;
+}
+
+/* Duration Panel — polished Operate control (impeccable) */
+.at-duration-panel {
+  background: var(--bg-card);
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  padding: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.at-duration-head {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.at-duration-head small {
+  display: block;
+  margin-top: 4px;
+  color: var(--text-dim);
+  font-size: 11px;
+  line-height: 1.5;
+  max-width: 48ch;
+}
+
+.at-duration-badge {
+  font-family: var(--font-mono);
+  font-size: 13px;
+  font-weight: 700;
+  color: var(--accent);
+  background: var(--accent-soft);
+  border: 1px solid rgba(245, 179, 35, 0.22);
+  padding: 6px 10px;
+  border-radius: 999px;
+  min-width: 56px;
+  text-align: center;
+  flex-shrink: 0;
+}
+
+.at-duration-presets {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 6px;
+}
+
+.at-duration-chip {
+  padding: 6px 11px;
+  border-radius: 999px;
+  border: 1px solid var(--border-2);
+  background: var(--bg-inset);
+  color: var(--text-muted);
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 600;
+  cursor: pointer;
+  transition: border-color 0.15s ease, background 0.15s ease, color 0.15s ease;
+}
+
+.at-duration-chip:hover {
+  border-color: var(--border-3, #3a4150);
+  color: var(--text-bright);
+}
+
+.at-duration-chip.active {
+  background: var(--accent);
+  border-color: var(--accent);
+  color: #0b0c0e;
+  font-weight: 700;
+}
+
+.at-duration-slider input[type="range"] {
+  width: 100%;
+  -webkit-appearance: none;
+  appearance: none;
+  height: 4px;
+  border-radius: 999px;
+  background: linear-gradient(to right, var(--accent) 0%, var(--accent) var(--pct, 13.7%), var(--border-2) var(--pct, 13.7%), var(--border-2) 100%);
+  outline: none;
+}
+
+.at-duration-slider input[type="range"]::-webkit-slider-thumb {
+  -webkit-appearance: none;
+  appearance: none;
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid #0b0c0e;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+}
+
+.at-duration-slider input[type="range"]::-moz-range-thumb {
+  width: 18px;
+  height: 18px;
+  border-radius: 50%;
+  background: var(--accent);
+  border: 2px solid #0b0c0e;
+  box-shadow: 0 1px 6px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+}
+
+.at-duration-slider input[type="range"]:focus-visible::-webkit-slider-thumb {
+  box-shadow: 0 0 0 3px rgba(245, 179, 35, 0.28), 0 1px 6px rgba(0, 0, 0, 0.35);
+}
+
+.at-duration-scale {
+  display: flex;
+  justify-content: space-between;
+  margin-top: 6px;
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-faint);
+}
+
+.at-duration-foot {
+  font-size: 11px;
+  color: var(--text-dim);
+  line-height: 1.45;
 }
 
 /* Thumbnail Swatches (Grades, Effects, Captions, Hooks) */
