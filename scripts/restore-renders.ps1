@@ -83,12 +83,14 @@ if (-not (Test-Path -LiteralPath $sumFile)) {
 
 if (Test-Path -LiteralPath $sumFile) {
   $bad = $false
+  $matched = 0
   foreach ($line in Get-Content -LiteralPath $sumFile) {
     if ($line -notmatch '^([0-9a-f]{64})\s+\*(.+)$') { continue }
     $want = $Matches[1]; $name = $Matches[2]
     # Manifest stores "*<zip filename>"; it should match the zip we are restoring
     $leaf = Split-Path $zip -Leaf
     if ($name -ne $leaf) { continue }
+    $matched++
     $got = (Get-FileHash -LiteralPath $zip -Algorithm SHA256).Hash.ToLower()
     if ($got -ne $want) {
       Say "VERIFY FAILED: $leaf hash mismatch (want $want got $got)" 'Red'
@@ -98,6 +100,11 @@ if (Test-Path -LiteralPath $sumFile) {
     }
   }
   if ($bad) { exit 1 }
+  if ($matched -eq 0) {
+    $leaf = Split-Path $zip -Leaf
+    Say "VERIFY FAILED: no checksum for $leaf" 'Red'
+    exit 1
+  }
 } else {
   Say "WARNING: no SHA256SUMS.txt found for $zip - skipping verification" 'Yellow'
   if (-not $Force) {
