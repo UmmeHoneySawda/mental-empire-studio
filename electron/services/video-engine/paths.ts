@@ -10,10 +10,21 @@ import { getSettings as getSettingsEsm } from '../../store/settings'
  * OR settings-driven D: (getSettings().libraryFolder / outputFolder).
  * Uses lazy dynamic import via createRequire to avoid the cycle
  * paths -> studio -> storage, with a static fallback for test mocking.
- * Note: preferredDefaultRoot / existsSync D: is intentionally not part of
- * the hard guard — it would block every C: temp dir on D: machines and
- * break isolated test roots. The storage layer's warn guard covers that
- * via preferredDefaultRoot, while this hard guard stays explicit.
+ *
+ * Divergence from the soft warn guard in storage.ts is intentional:
+ * - Soft guard (isAnyDConfigured) includes preferredDefaultRoot / existsSync('D:\\')
+ *   so libraryRoot/cacheDir warn whenever D:\ exists and a C: path is resolved.
+ * - Hard guard (this function) EXCLUDES the D:\-exists fallback and only fires
+ *   on explicit user configuration (env var or Settings libraryFolder/outputFolder
+ *   on D:). Brief Task 5 suggested videoEngineDataRoot().startsWith('d:') which
+ *   would return true whenever D:\ exists (via existence probe in
+ *   videoEngineDataRoot), turning every C:\ temp write into a hard error on
+ *   D: machines. With preferredDefaultRoot included, even isolated mkdtemp(tmpdir())
+ *   fixtures on C:\ would be blocked despite the tmpdir bypass.
+ *   Keeping the hard guard explicit avoids breaking tests and transient fixtures,
+ *   while the soft guard still surfaces the misconfiguration via Sentry warn.
+ *   Re-evaluate if D:\-exists should ever become a hard error — it would need
+ *   the tmpdir bypass to remain robust on all temp layouts (including 8.3 short paths).
  */
 function isConfiguredOnD(): boolean {
   const candidates = [
@@ -61,9 +72,11 @@ export function assertNotOnCDrive(target: string): void {
   try {
     const tmp = tmpdir().toLowerCase()
     if (tmp && lower.startsWith(tmp)) return
-    // 8.3 short-path variant (e.g. SIFAHI~1 when username contains a space)
-    if (lower.includes('\\temp\\mental-empire')) return
-    if (lower.includes('\\appdata\\local\\temp\\')) return
+    // 8.3 short-path variant (e.g. SIFAHI~1 when username contains a space).
+    // Tightened: only bypass C: paths that are actually under a temp root, not any
+    // path that merely contains the substring. Requires a C: prefix and temp marker.
+    if (lower.startsWith('c:') && lower.includes('\\temp\\mental-empire')) return
+    if (lower.startsWith('c:') && lower.includes('\\appdata\\local\\temp\\')) return
   } catch {}
   const configuredOnD = (() => {
     try {

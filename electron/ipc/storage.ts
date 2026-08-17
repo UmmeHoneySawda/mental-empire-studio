@@ -1,14 +1,7 @@
 import { ipcMain } from 'electron'
 import { envLibraryRoot, envVideoEngineRoot, libraryRoot, preferredDefaultRoot } from '../services/storage'
 import { videoEngineDataRoot } from '../services/video-engine/studio'
-
-export interface StorageEnvRoots {
-  libraryEnv?: string
-  videoEngineEnv?: string
-  libraryRoot: string
-  videoEngineRoot: string
-  preferredDefaultRoot: string
-}
+import type { StorageEnvRoots } from '../../shared/types'
 
 export function registerStorageIpc(): void {
   ipcMain.handle('storage:envRoots', (): StorageEnvRoots => ({

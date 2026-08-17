@@ -46,11 +46,43 @@ export async function migrateVideoEngineIfNeeded(
         continue
       }
       if (!entry.isFile()) continue
-      // Only migrate files that live under a renders/ directory (brief verbatim)
+      // Only migrate files that live under a renders/ directory (brief verbatim).
+      // Additionally migrate sibling sidecars (.ass / .render.log) that live next to
+      // a renders/ directory (e.g. projects/proj/.render.log or proj/sample.ass
+      // beside proj/renders/). These sidecars are render outputs too; without them
+      // the ZIP backup is the only copy. Data is not lost (zip exists) but we
+      // migrate siblings for completeness when their parent contains a renders/
+      // subdirectory. Non-render .ass/.log elsewhere are skipped.
       const rel = relative(cRoot, full)
       // Normalize to forward slashes for check, but also handle Windows separators
       const parts = rel.split(/[\\/]/)
-      if (!parts.includes('renders')) continue
+      if (!parts.includes('renders')) {
+        const lowerName = entry.name.toLowerCase()
+        const isSidecar = lowerName.endsWith('.ass') || lowerName.endsWith('.log')
+        if (!isSidecar) continue
+        // Check if this file is a sibling of a renders/ directory (parent has renders child)
+        const parent = dirname(full)
+        let hasRendersSibling = false
+        try {
+          const siblings = readdirSync(parent, { withFileTypes: true } as unknown as Parameters<typeof readdirSync>[1])
+          for (const s of siblings as unknown as Array<{ name: string; isDirectory: () => boolean }>) {
+            if (s.isDirectory() && s.name.toLowerCase() === 'renders') { hasRendersSibling = true; break }
+          }
+        } catch { hasRendersSibling = false }
+        if (!hasRendersSibling) {
+          // Also check one level up (e.g. projects/proj/sub/file.log where renders is at projects/proj/renders)
+          const grandParent = dirname(parent)
+          if (grandParent && grandParent !== parent) {
+            try {
+              const gpSiblings = readdirSync(grandParent, { withFileTypes: true } as unknown as Parameters<typeof readdirSync>[1])
+              for (const s of gpSiblings as unknown as Array<{ name: string; isDirectory: () => boolean }>) {
+                if (s.isDirectory() && s.name.toLowerCase() === 'renders') { hasRendersSibling = true; break }
+              }
+            } catch { /* ignore */ }
+          }
+        }
+        if (!hasRendersSibling) continue
+      }
 
       const dest = join(dRoot, rel)
       // Skip if D: file exists and is newer (size/mtime)

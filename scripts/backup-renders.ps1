@@ -37,10 +37,22 @@ if(-not (Test-Path -LiteralPath $VideoEngineC)){
 }
 
 # Collect every file under **/renders/** plus sibling subtitle/log sidecars.
-# The -match mirrors the brief verbatim; the extension set covers .ass and
-# .render.log siblings that live next to renders/ (e.g. project/.render.log).
+# Tightened from brief verbatim (was: \renders\ OR Extension in .mp4/.ass/.log
+# anywhere) which over-captured every .mp4 under projects/. Now only:
+# - any file under a renders/ directory, OR
+# - .ass/.log sidecars whose parent (or grandparent) contains a renders/ sibling
+#   (e.g. projects/proj/sample.render.log next to projects/proj/renders/).
 $toZip = @(Get-ChildItem -LiteralPath $VideoEngineC -Recurse -File -ErrorAction SilentlyContinue |
-  Where-Object { $_.FullName -match '\\renders\\' -or $_.Extension -in @('.mp4','.ass','.log') })
+  Where-Object {
+    if ($_.FullName -match '\\renders\\') { return $true }
+    if ($_.Extension -in @('.ass','.log')) {
+      $dir = $_.DirectoryName
+      if (Test-Path (Join-Path $dir 'renders')) { return $true }
+      $parent = Split-Path $dir -Parent
+      if ($parent -and (Test-Path (Join-Path $parent 'renders'))) { return $true }
+    }
+    return $false
+  })
 if(-not $toZip -or $toZip.Count -eq 0){
   Say "No render files found under $VideoEngineC" 'Yellow'
   exit 0

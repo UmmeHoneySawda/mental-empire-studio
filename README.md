@@ -104,7 +104,7 @@ live pipeline.
 
 ## Storage
 
-Storage roots (Windows): set `MENTAL_EMPIRE_LIBRARY=D:\MentalEmpireStudio` to move the entire library (per-video `output/` folders), or `MENTAL_EMPIRE_VIDEO_ENGINE=D:\MentalEmpireStudio\video-engine` to move only the Remotion engine (automation renders). When either is set, new automation renders never touch C:. On first launch with the variable set, existing `AppData\...\video-engine\projects\remotion-dl-*\renders` are zipped to `D:\MentalEmpireStudio\_backups\renders-<timestamp>.zip` (with SHA256SUMS) before being copied to D:.
+Storage roots (Windows): set `MENTAL_EMPIRE_LIBRARY=D:\MentalEmpireStudio` to move the entire library (per-video `output/` folders), or `MENTAL_EMPIRE_VIDEO_ENGINE=D:\MentalEmpireStudio\video-engine` to move only the Remotion engine (automation renders). When either is set, new automation renders never touch C:. On first launch with the variable set, existing `AppData\...\video-engine\projects\remotion-dl-*\renders` plus sibling sidecars (`*.ass`, `*.render.log` next to a `renders/` folder) are zipped to `D:\MentalEmpireStudio\_backups\renders-<timestamp>.zip` (with SHA256SUMS) before being copied to D: (renders subtree and sidecars whose parent contains a `renders/` sibling; data remains in the ZIP if a sidecar is outside that pattern).
 
 ### Verify D: migration (manual)
 
