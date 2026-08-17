@@ -6,6 +6,8 @@ import { Readable } from 'node:stream'
 import { execFileSync, spawnSync } from 'node:child_process'
 import { applyLoginItem, trayIconPath } from './services/background'
 import * as scheduler from './services/scheduler'
+import { videoEngineDataRoot } from './services/video-engine/studio'
+import { migrateVideoEngineIfNeeded } from './services/video-engine/migration/video-engine-migrate'
 import { initAutoUpdate, checkForUpdates } from './services/updater'
 import { initSettings, setSettings, getSettings } from './store/settings'
 import { initDatabase, getRepos, closeDatabase, seedDemoForSmoke } from './db'
@@ -1965,6 +1967,16 @@ function studioPreviewMimeType(filePath: string): string | undefined {
 
 app.whenReady().then(async () => {
   initPersistence()
+  // Task 3: migrate existing C: renders to D: after backup (idempotent, safe on every startup)
+  try {
+    const legacyCRoot = join(app.getPath('userData'), 'video-engine')
+    const newRoot = videoEngineDataRoot()
+    if (legacyCRoot.toLowerCase() !== newRoot.toLowerCase()) {
+      await migrateVideoEngineIfNeeded(legacyCRoot, newRoot).catch(() => undefined)
+    }
+  } catch {
+    // migration is best-effort; startup must continue
+  }
   // Awaited, not fired off: the renderer asks for downloads as soon as IPC is up, and a
   // seed that lands after that read leaves the E2E looking at an empty library.
   await seedE2EClip()
