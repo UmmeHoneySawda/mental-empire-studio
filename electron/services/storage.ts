@@ -23,9 +23,55 @@ import type { Project } from '../../shared/types'
 /** Folder under the library root for transient scratch that is safe to delete. */
 export const CACHE_DIR = '_cache'
 
-/** The master library root. Prefers the explicit setting, falls back to the legacy
- *  outputFolder, then to <Documents>/MentalEmpireStudio. */
+const LIBRARY_ENV_KEYS = [
+  'MENTAL_EMPIRE_LIBRARY',
+  'ME_LIBRARY_ROOT',
+  'ME_LIBRARY_DIR',
+  'MENTAL_EMPIRE_OUTPUT',
+  'ME_OUTPUT_DIR'
+] as const
+
+/** First non-empty trim of the Windows env vars above; used to redirect the library to D:. */
+export function envLibraryRoot(): string | undefined {
+  for (const key of LIBRARY_ENV_KEYS) {
+    const v = (process.env[key] || '').trim()
+    if (v) return v
+  }
+  return undefined
+}
+
+export const VIDEO_ENGINE_ENV_KEYS = [
+  'MENTAL_EMPIRE_VIDEO_ENGINE',
+  'ME_VIDEO_ENGINE_DIR',
+  'ME_VIDEO_ENGINE_ROOT',
+] as const
+
+export function envVideoEngineRoot(): string | undefined {
+  for (const key of VIDEO_ENGINE_ENV_KEYS) {
+    const v = (process.env[key] || '').trim()
+    if (v) return v
+  }
+  // Derive from library env: libraryRoot already on D: → video-engine lives beside it
+  const lib = envLibraryRoot()
+  if (lib) return join(lib, 'video-engine')
+  return undefined
+}
+
+export function preferredDefaultRoot(): string {
+  // User asked: D: is preferred, C: is legacy fallback. Probe D: existence.
+  try {
+    if (existsSync('D:\\')) return join('D:\\', 'MentalEmpireStudio')
+  } catch {}
+  return join(app.getPath('documents'), 'MentalEmpireStudio')
+}
+
+/** The master library root. Precedence: Windows env var → settings.libraryFolder → legacy
+ *  outputFolder → <Documents>/MentalEmpireStudio (C: default). Env wins so a system
+ *  variable like `setx MENTAL_EMPIRE_LIBRARY "D:\MentalEmpireStudio"` moves all automation
+ *  renders to D: without touching Settings; unsetting the var falls straight back to C:. */
 export function libraryRoot(): string {
+  const env = envLibraryRoot()
+  if (env) return env
   const s = getSettings()
   const chosen = (s.libraryFolder || '').trim() || (s.outputFolder || '').trim()
   return chosen || join(app.getPath('documents'), 'MentalEmpireStudio')

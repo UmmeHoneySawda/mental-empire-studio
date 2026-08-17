@@ -27,7 +27,7 @@ import type { Project, ProjectImage, TranscriptWord } from '../../../shared/type
 import { getRepos } from '../../db'
 import { getSettings } from '../../store/settings'
 import { ffmpegPath, ffprobePath } from '../bin'
-import { cacheDir } from '../storage'
+import { cacheDir, envLibraryRoot, envVideoEngineRoot } from '../storage'
 import { brollLibraryDir } from '../broll'
 import { createVideoEngine } from './factory'
 import { VideoEngineError } from './errors'
@@ -48,6 +48,17 @@ let engineOptionsKey = ''
 let engineFailure = ''
 
 export function videoEngineDataRoot(): string {
+  const env = envVideoEngineRoot() ?? (() => {
+    const libEnv = envLibraryRoot()
+    if (libEnv) return join(libEnv, 'video-engine')
+    return undefined
+  })()
+  if (env) return resolve(env)
+  const s = getSettings()
+  const chosen = (s.libraryFolder || '').trim() || (s.outputFolder || '').trim()
+  if (chosen) return resolve(join(chosen, 'video-engine'))
+  // Prefer D: drive when present; this is the "nothing on C" guarantee
+  if (existsSync('D:\\')) return resolve('D:\\MentalEmpireStudio\\video-engine')
   return join(app.getPath('userData'), 'video-engine')
 }
 
