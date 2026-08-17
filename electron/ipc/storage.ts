@@ -1,5 +1,5 @@
 import { ipcMain } from 'electron'
-import { envLibraryRoot, envVideoEngineRoot, libraryRoot, preferredDefaultRoot } from '../services/storage'
+import { cFallbackRoot, envLibraryRoot, envVideoEngineRoot, libraryRoot, preferredDefaultRoot } from '../services/storage'
 import { videoEngineDataRoot } from '../services/video-engine/studio'
 import type { StorageEnvRoots } from '../../shared/types'
 
@@ -9,6 +9,7 @@ export function registerStorageIpc(): void {
     videoEngineEnv: envVideoEngineRoot() || undefined,
     libraryRoot: libraryRoot(),
     videoEngineRoot: videoEngineDataRoot(),
-    preferredDefaultRoot: preferredDefaultRoot()
+    preferredDefaultRoot: preferredDefaultRoot(),
+    cFallbackRoot: cFallbackRoot()
   }))
 }

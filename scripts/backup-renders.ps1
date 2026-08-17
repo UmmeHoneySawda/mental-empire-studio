@@ -12,16 +12,21 @@
 
   Usage: powershell -ExecutionPolicy Bypass -File scripts\backup-renders.ps1
          powershell -ExecutionPolicy Bypass -File scripts\backup-renders.ps1 -OutDir "C:\tmp\backups"
-  Env overrides (for tests/CI): ME_VIDEO_ENGINE_ROOT, MENTAL_EMPIRE_LIBRARY / ME_LIBRARY_ROOT
+   Env overrides (for tests/CI): ME_RENDER_BACKUP_SRC (test seam), MENTAL_EMPIRE_LIBRARY / ME_LIBRARY_ROOT
+   Production source is always the legacy C: path (hardcoded); ME_RENDER_BACKUP_SRC
+   only redirects inside tests/CI so a manual `npm run renders:backup` on a
+   D-configured machine still zips the legacy AppData tree, not D:.
 #>
 [CmdletBinding()] param([string]$OutDir = "")
 $ErrorActionPreference = 'Stop'
 function Say([string]$m,[string]$c='Gray'){ Write-Host $m -ForegroundColor $c }
 
 $AppData = [Environment]::GetFolderPath('ApplicationData')
-# Test seam: allow env override so vitest can point at a temp fixture without
-# touching the real %APPDATA%\Mental Empire Studio tree.
-$VideoEngineC = if ($env:ME_VIDEO_ENGINE_ROOT) { $env:ME_VIDEO_ENGINE_ROOT } else { Join-Path $AppData 'Mental Empire Studio\video-engine\projects' }
+# Test seam: dedicated key (not a production env var) so vitest can point at a
+# temp fixture without touching the real %APPDATA%\Mental Empire Studio tree.
+# Production source is the hardcoded legacy C: location; ME_RENDER_BACKUP_SRC
+# only redirects when explicitly set (tests/CI).
+$VideoEngineC = if ($env:ME_RENDER_BACKUP_SRC) { $env:ME_RENDER_BACKUP_SRC } else { Join-Path $AppData 'Mental Empire Studio\video-engine\projects' }
 $EnvD = $env:MENTAL_EMPIRE_LIBRARY; if(-not $EnvD){ $EnvD=$env:ME_LIBRARY_ROOT }
 if(-not $EnvD -and (Test-Path 'D:\')){ $EnvD='D:\MentalEmpireStudio' }
 $BackupRoot = if($EnvD){ Join-Path $EnvD '_backups' } else { Join-Path $AppData 'Mental Empire Studio - RENDERS-BACKUP' }

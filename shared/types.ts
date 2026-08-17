@@ -1244,6 +1244,8 @@ export interface StorageEnvRoots {
   libraryRoot: string
   videoEngineRoot: string
   preferredDefaultRoot: string
+  /** Explicit C: fallback (Documents\MentalEmpireStudio) for "Use C: default" — not D-aware. */
+  cFallbackRoot: string
 }
 
 /** A video's progress through the production pipeline. Stages are COMPUTED from existing

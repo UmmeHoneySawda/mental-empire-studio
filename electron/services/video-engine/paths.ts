@@ -1,6 +1,6 @@
 import { mkdir, realpath } from 'node:fs/promises'
 import { tmpdir } from 'node:os'
-import { dirname, isAbsolute, relative, resolve } from 'node:path'
+import { dirname, isAbsolute, join, relative, resolve } from 'node:path'
 import { createRequire } from 'node:module'
 import { VideoEngineError } from './errors'
 import { getSettings as getSettingsEsm } from '../../store/settings'
@@ -69,14 +69,20 @@ export function assertNotOnCDrive(target: string): void {
   if (!isC) return
   // Isolated test fixtures live in the OS temp dir — allow them even when D: is configured.
   // The hard guard is for library / video-engine writes, not transient test roots.
+  // Use relative() to ensure the target is actually inside the temp dir, not just
+  // a path that happens to contain a temp substring (crafted bypass).
   try {
-    const tmp = tmpdir().toLowerCase()
-    if (tmp && lower.startsWith(tmp)) return
-    // 8.3 short-path variant (e.g. SIFAHI~1 when username contains a space).
-    // Tightened: only bypass C: paths that are actually under a temp root, not any
-    // path that merely contains the substring. Requires a C: prefix and temp marker.
-    if (lower.startsWith('c:') && lower.includes('\\temp\\mental-empire')) return
-    if (lower.startsWith('c:') && lower.includes('\\appdata\\local\\temp\\')) return
+    const tmp = tmpdir()
+    if (tmp) {
+      const rel = relative(resolve(tmp), resolve(target))
+      if (rel === '' || (!rel.startsWith('..') && !isAbsolute(rel))) return
+    }
+    const localAppData = process.env['LOCALAPPDATA']
+    if (localAppData) {
+      const ladTemp = resolve(join(localAppData, 'Temp'))
+      const rel2 = relative(ladTemp, resolve(target))
+      if (rel2 === '' || (!rel2.startsWith('..') && !isAbsolute(rel2))) return
+    }
   } catch {}
   const configuredOnD = (() => {
     try {

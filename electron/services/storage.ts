@@ -58,12 +58,34 @@ export function envVideoEngineRoot(): string | undefined {
   return undefined
 }
 
+let _cachedPreferredRoot: string | null = null
+let _preferredRootProbed = false
+
 export function preferredDefaultRoot(): string {
-  // User asked: D: is preferred, C: is legacy fallback. Probe D: existence.
+  if (_preferredRootProbed && _cachedPreferredRoot !== null) return _cachedPreferredRoot
+  // User asked: D: is preferred, C: is legacy fallback. Probe D: existence (memoized).
   try {
-    if (existsSync('D:\\')) return join('D:\\', 'MentalEmpireStudio')
+    if (existsSync('D:\\')) {
+      _cachedPreferredRoot = join('D:\\', 'MentalEmpireStudio')
+      _preferredRootProbed = true
+      return _cachedPreferredRoot
+    }
   } catch {}
-  return join(app.getPath('documents'), 'MentalEmpireStudio')
+  const fallback = join(app.getPath('documents'), 'MentalEmpireStudio')
+  _cachedPreferredRoot = fallback
+  _preferredRootProbed = true
+  return fallback
+}
+
+/** Explicit C: fallback (Documents root) — never D-aware, for "Use C: default". */
+export function cFallbackRoot(): string {
+  try { return join(app.getPath('documents'), 'MentalEmpireStudio') } catch { return 'C:\\MentalEmpireStudio' }
+}
+
+/** Test-only reset for the memoized preferred root. */
+export function __resetPreferredRootCache(): void {
+  _cachedPreferredRoot = null
+  _preferredRootProbed = false
 }
 
 function isAnyDConfigured(): boolean {

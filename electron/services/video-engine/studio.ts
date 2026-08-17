@@ -47,6 +47,14 @@ let enginePromise: Promise<VideoEngineService> | null = null
 let engineOptionsKey = ''
 let engineFailure = ''
 
+let _cachedVideoEngineDProbe: boolean | null = null
+function hasDDrive(): boolean {
+  if (_cachedVideoEngineDProbe !== null) return _cachedVideoEngineDProbe
+  try { _cachedVideoEngineDProbe = existsSync('D:\\') } catch { _cachedVideoEngineDProbe = false }
+  return _cachedVideoEngineDProbe
+}
+export function __resetVideoEngineDProbeForTests(): void { _cachedVideoEngineDProbe = null }
+
 export function videoEngineDataRoot(): string {
   const env = envVideoEngineRoot() ?? (() => {
     const libEnv = envLibraryRoot()
@@ -57,8 +65,8 @@ export function videoEngineDataRoot(): string {
   const s = getSettings()
   const chosen = (s.libraryFolder || '').trim() || (s.outputFolder || '').trim()
   if (chosen) return resolve(join(chosen, 'video-engine'))
-  // Prefer D: drive when present; this is the "nothing on C" guarantee
-  if (existsSync('D:\\')) return resolve('D:\\MentalEmpireStudio\\video-engine')
+  // Prefer D: drive when present; this is the "nothing on C" guarantee (memoized)
+  if (hasDDrive()) return resolve('D:\\MentalEmpireStudio\\video-engine')
   return join(app.getPath('userData'), 'video-engine')
 }
 

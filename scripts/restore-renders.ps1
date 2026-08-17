@@ -28,8 +28,10 @@ if(-not $EnvD -and (Test-Path 'D:\')){ $EnvD='D:\MentalEmpireStudio' }
 $BackupRoot = if($EnvD){ Join-Path $EnvD '_backups' } else { Join-Path $AppData 'Mental Empire Studio - RENDERS-BACKUP' }
 if($OutDir){ $BackupRoot=$OutDir }
 
-# Test seam: allow test to redirect where renders are restored to.
-$DefaultTarget = if ($env:ME_VIDEO_ENGINE_ROOT) { $env:ME_VIDEO_ENGINE_ROOT } else { Join-Path $AppData 'Mental Empire Studio\video-engine\projects' }
+# Test seam: dedicated key (not a production env var) so tests can redirect restore
+# target without polluting production env handling. Manual restores always default
+# to the hardcoded legacy C: location unless -Target is passed.
+$DefaultTarget = if ($env:ME_RENDER_BACKUP_SRC) { $env:ME_RENDER_BACKUP_SRC } else { Join-Path $AppData 'Mental Empire Studio\video-engine\projects' }
 if(-not $Target){ $Target=$DefaultTarget }
 
 function Get-RenderBackups {

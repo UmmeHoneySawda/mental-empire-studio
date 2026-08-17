@@ -91,10 +91,10 @@ describe('renders backup end-to-end (self-contained)', () => {
 
     mkdirSync(outDir, { recursive: true })
 
-    // Run backup script with env seam and explicit OutDir
+    // Run backup script with test seam (ME_RENDER_BACKUP_SRC, not production ME_VIDEO_ENGINE_ROOT)
     const ps = `powershell -ExecutionPolicy Bypass -File ${SCRIPT_BACKUP} -OutDir "${outDir}"`
     execSync(ps, {
-      env: { ...process.env, ME_VIDEO_ENGINE_ROOT: sourceDir },
+      env: { ...process.env, ME_RENDER_BACKUP_SRC: sourceDir },
       stdio: 'pipe',
       timeout: 30_000,
     })

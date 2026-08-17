@@ -210,7 +210,7 @@ export function Settings(): JSX.Element {
             <Btn variant="soft" onClick={() => void pickLibraryFolder()}>Browse…</Btn>
           </div>
           <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
-            <Btn variant="ghost" onClick={() => saved({ libraryFolder: '' })}>Use C: default</Btn>
+            <Btn variant="ghost" onClick={() => saved({ libraryFolder: (envRoots?.cFallbackRoot || '').trim() || 'C:\\MentalEmpireStudio' })}>Use C: default</Btn>
             <Btn variant="ghost" onClick={() => saved({ libraryFolder: 'D:\\MentalEmpireStudio' })}>Use D:\MentalEmpireStudio</Btn>
           </div>
           <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>

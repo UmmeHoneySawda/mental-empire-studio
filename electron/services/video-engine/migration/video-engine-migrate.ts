@@ -21,10 +21,19 @@ export async function migrateVideoEngineIfNeeded(
       execSync('powershell -ExecutionPolicy Bypass -File scripts/backup-renders.ps1', {
         stdio: 'pipe',
         timeout: 10_000,
-        env: { ...process.env, ME_VIDEO_ENGINE_ROOT: cRoot }
+        env: { ...process.env, ME_RENDER_BACKUP_SRC: cRoot }
       })
-    } catch {
-      // backup failure must not block migration; will be logged as warn below if needed
+    } catch (err: unknown) {
+      const e = err as { message?: string; stdout?: Buffer | string; stderr?: Buffer | string; status?: number | null }
+      sentryLog.warn('video-engine backup failed, continuing migration', {
+        error: e.message ?? String(err),
+        stdout: e.stdout ? String(e.stdout).slice(0, 2000) : '',
+        stderr: e.stderr ? String(e.stderr).slice(0, 2000) : '',
+        status: e.status ?? -1,
+        oldRoot: cRoot,
+        newRoot: dRoot,
+        operation: 'video_render'
+      })
     }
   }
 

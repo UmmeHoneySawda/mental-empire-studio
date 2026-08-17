@@ -1,6 +1,7 @@
 import { existsSync } from 'node:fs'
+import { join } from 'node:path'
 import Store from 'electron-store'
-import { safeStorage } from 'electron'
+import { app, safeStorage } from 'electron'
 import { DEFAULT_SETTINGS, type AppSettings, type DeepPartial } from '../../shared/types'
 
 // electron-store persists JSON to <userData>/mental-empire-settings.json with atomic writes.
@@ -117,17 +118,35 @@ export function mergeDeep<T>(base: T, patch?: DeepPartial<T>): T {
 
 /** Open the store and reconcile any newly-added default keys onto the persisted object. */
 export function initSettings(): AppSettings {
+  const settingsFileExisted = (() => {
+    try {
+      if (existsSync(join(app.getPath('userData'), 'mental-empire-settings.json'))) return true
+    } catch {}
+    // Test stub: electron-store is in-memory via globalThis.__meStoreFiles; check there too
+    try {
+      const g = globalThis as unknown as { __meStoreFiles?: Map<string, Record<string, unknown>> }
+      const f = g.__meStoreFiles?.get('mental-empire-settings')
+      if (f && Object.prototype.hasOwnProperty.call(f, 'settings')) return true
+    } catch {}
+    return false
+  })()
   store = new Store<Schema>({
     name: 'mental-empire-settings',
     defaults: { settings: DEFAULT_SETTINGS }
   })
   const decoded = decodeSecrets(store.get('settings') as DeepPartial<AppSettings>)
   const reconciled = mergeDeep(DEFAULT_SETTINGS, decoded)
-  if (!reconciled.libraryFolder && !reconciled.outputFolder) {
+  if (!reconciled.libraryFolder && !reconciled.outputFolder && !settingsFileExisted) {
     try { if (existsSync('D:\\')) reconciled.libraryFolder = 'D:\\MentalEmpireStudio' } catch {}
   }
   persist(reconciled) // re-encrypts (migrates any legacy plaintext keys)
   return reconciled
+}
+
+/** Explicit C: fallback for the "Use C: default" button — preserves user intent
+ *  across restarts ('' would be reinterpreted as D: via preferredDefaultRoot). */
+export function cFallbackRoot(): string {
+  try { return join(app.getPath('documents'), 'MentalEmpireStudio') } catch { return 'C:\\MentalEmpireStudio' }
 }
 
 // Env-var fallbacks for secret fields left blank in the Settings UI — lets any locally
