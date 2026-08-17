@@ -4,6 +4,7 @@ import { join } from 'node:path'
 import { getSettings } from '../store/settings'
 import { safeName } from '../../shared/sanitize'
 import type { Project } from '../../shared/types'
+import { sentryLog } from './sentry'
 
 // Single source of truth for every on-disk path the app writes (P0 of the workflow
 // redesign). Before this, paths were duplicated across download/compose/queue/thumbnails/
@@ -75,7 +76,15 @@ export function libraryRoot(): string {
   if (env) return env
   const s = getSettings()
   const chosen = (s.libraryFolder || '').trim() || (s.outputFolder || '').trim()
-  return chosen || preferredDefaultRoot()
+  const resolved = chosen || preferredDefaultRoot()
+  // Guard log: if we still resolved to C: while a D: env is configured, that's a misroute
+  if (resolved.toLowerCase().startsWith('c:') && envLibraryRoot()?.toLowerCase().startsWith('d:')) {
+    sentryLog.warn('Library root resolved to C: while D: env is configured', {
+      target: resolved,
+      operation: 'storage_guard',
+    })
+  }
+  return resolved
 }
 
 /** A URL/filename-safe, lowercase slug for the per-video folder suffix. */
@@ -145,7 +154,14 @@ export function itemOutputDir(item: string): string { return join(item, 'output'
 
 /** Transient scratch dir (e.g. cacheDir('sfx'), cacheDir('previews'), cacheDir('broll')). */
 export function cacheDir(sub: string): string {
-  return join(libraryRoot(), CACHE_DIR, sub)
+  const dir = join(libraryRoot(), CACHE_DIR, sub)
+  if (dir.toLowerCase().startsWith('c:') && envVideoEngineRoot()?.toLowerCase().startsWith('d:')) {
+    sentryLog.warn('Cache dir resolved to C: while D: video-engine is configured', {
+      target: dir,
+      operation: 'storage_guard',
+    })
+  }
+  return dir
 }
 
 // ---- per-item project.json manifest (portable, human-browsable snapshot) ----

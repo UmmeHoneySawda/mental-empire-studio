@@ -6,7 +6,7 @@ import type { RendererId, VideoProject } from '../../../../shared/video-engine'
 import { captureException, sentryLog } from '../../sentry'
 import { errorMessage, VideoEngineError } from '../errors'
 import { sha256Json } from '../hash'
-import { ensureDirectory } from '../paths'
+import { assertNotOnCDrive, ensureDirectory } from '../paths'
 import { RenderJobStore } from '../storage/job-store'
 import { VideoTemplateRegistry } from '../templates/registry'
 import {
@@ -81,6 +81,20 @@ export class RenderQueue {
     }
     const now = new Date().toISOString()
     const id = randomUUID()
+    try {
+      assertNotOnCDrive(request.outputPath)
+      assertNotOnCDrive(request.workDirectory)
+      assertNotOnCDrive(join(request.workDirectory, id))
+    } catch (error) {
+      if (error instanceof VideoEngineError && error.code === 'PATH_OUTSIDE_WORKSPACE') {
+        sentryLog.error('Refusing to write to C: while D: is configured', {
+          target: error.message,
+          operation: 'video_render_guard',
+          project_id: identity.id,
+        })
+      }
+      throw error
+    }
     const workDirectory = await ensureDirectory(join(request.workDirectory, id))
     const extension = extname(request.outputPath) || '.mp4'
     const job: RenderJobRecord = {

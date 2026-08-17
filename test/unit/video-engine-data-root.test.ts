@@ -37,4 +37,9 @@ describe('videoEngineDataRoot env precedence', () => {
     const { videoEngineDataRoot } = await import('../../electron/services/video-engine/studio')
     expect(videoEngineDataRoot().toLowerCase().startsWith('c:')).toBe(false)
   })
+  it('throws when trying to resolve a C: path while D: env is active', async () => {
+    process.env['MENTAL_EMPIRE_VIDEO_ENGINE'] = 'D:\\MentalEmpireStudio\\video-engine'
+    const { resolveInside } = await import('../../electron/services/video-engine/paths')
+    expect(() => resolveInside('C:\\Users\\x\\AppData\\Roaming\\Mental Empire Studio', 'video-engine')).toThrow(/Refusing to write to C:/)
+  })
 })

@@ -8,8 +8,9 @@ import {
   type RendererId,
   type VideoProject
 } from '../../../../shared/video-engine'
+import { sentryLog } from '../../sentry'
 import { VideoEngineError } from '../errors'
-import { assertSafeId, ensureDirectory, resolveInside } from '../paths'
+import { assertNotOnCDrive, assertSafeId, ensureDirectory, resolveInside } from '../paths'
 import { readJsonFile, writeJsonAtomic } from './atomic-json'
 
 export interface CreateProjectInput {
@@ -125,7 +126,19 @@ export class VideoProjectStore {
   constructor(private readonly root: string) {}
 
   projectDirectory(id: string): string {
-    return resolveInside(this.root, assertSafeId(id, 'project id'))
+    const directory = resolveInside(this.root, assertSafeId(id, 'project id'))
+    try {
+      assertNotOnCDrive(directory)
+    } catch (error) {
+      if (error instanceof VideoEngineError && error.code === 'PATH_OUTSIDE_WORKSPACE') {
+        sentryLog.error('Refusing to write to C: while D: is configured', {
+          target: directory,
+          operation: 'video_engine_guard',
+        })
+      }
+      throw error
+    }
+    return directory
   }
 
   projectPath(id: string): string {
