@@ -1,14 +1,19 @@
 import { mkdir, realpath } from 'node:fs/promises'
+import { tmpdir } from 'node:os'
 import { dirname, isAbsolute, relative, resolve } from 'node:path'
+import { createRequire } from 'node:module'
 import { VideoEngineError } from './errors'
+import { getSettings as getSettingsEsm } from '../../store/settings'
 
 /**
- * Returns true when a D: video-engine or library root is configured via env.
- * Mirrors the precedence in storage.ts / studio.ts without importing either
- * (avoids the cycle: paths -> studio -> storage). Settings-based D: (libraryFolder)
- * is intentionally not covered here — that layer is checked by callers that can
- * safely import videoEngineDataRoot (e.g. storage.ts), while this env-only probe
- * is sufficient to make resolveInside refusal deterministic in tests.
+ * Returns true when a D: video-engine or library root is configured via env
+ * OR settings-driven D: (getSettings().libraryFolder / outputFolder).
+ * Uses lazy dynamic import via createRequire to avoid the cycle
+ * paths -> studio -> storage, with a static fallback for test mocking.
+ * Note: preferredDefaultRoot / existsSync D: is intentionally not part of
+ * the hard guard — it would block every C: temp dir on D: machines and
+ * break isolated test roots. The storage layer's warn guard covers that
+ * via preferredDefaultRoot, while this hard guard stays explicit.
  */
 function isConfiguredOnD(): boolean {
   const candidates = [
@@ -25,12 +30,41 @@ function isConfiguredOnD(): boolean {
     const trimmed = (value || '').trim()
     if (trimmed && trimmed.toLowerCase().startsWith('d:')) return true
   }
+  // settings-driven D: via lazy dynamic import (covers Settings UI without env)
+  try {
+    const require = createRequire(import.meta.url)
+    const mod = require('../../store/settings') as {
+      getSettings?: () => { libraryFolder?: string; outputFolder?: string }
+    }
+    const getSettings = mod?.getSettings
+    if (getSettings) {
+      const s = getSettings()
+      const chosen = (s.libraryFolder || s.outputFolder || '').trim()
+      if (chosen.toLowerCase().startsWith('d:')) return true
+    }
+  } catch {}
+  // ESM static fallback (mock-friendly in vitest)
+  try {
+    const s = getSettingsEsm()
+    const chosen = (s.libraryFolder || s.outputFolder || '').trim()
+    if (chosen.toLowerCase().startsWith('d:')) return true
+  } catch {}
   return false
 }
 
 export function assertNotOnCDrive(target: string): void {
-  const isC = target.toLowerCase().startsWith('c:')
+  const lower = target.toLowerCase()
+  const isC = lower.startsWith('c:')
   if (!isC) return
+  // Isolated test fixtures live in the OS temp dir — allow them even when D: is configured.
+  // The hard guard is for library / video-engine writes, not transient test roots.
+  try {
+    const tmp = tmpdir().toLowerCase()
+    if (tmp && lower.startsWith(tmp)) return
+    // 8.3 short-path variant (e.g. SIFAHI~1 when username contains a space)
+    if (lower.includes('\\temp\\mental-empire')) return
+    if (lower.includes('\\appdata\\local\\temp\\')) return
+  } catch {}
   const configuredOnD = (() => {
     try {
       return isConfiguredOnD()

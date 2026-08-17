@@ -66,6 +66,22 @@ export function preferredDefaultRoot(): string {
   return join(app.getPath('documents'), 'MentalEmpireStudio')
 }
 
+function isAnyDConfigured(): boolean {
+  const envLib = envLibraryRoot()
+  if (envLib && envLib.trim().toLowerCase().startsWith('d:')) return true
+  const envVe = envVideoEngineRoot()
+  if (envVe && envVe.trim().toLowerCase().startsWith('d:')) return true
+  try {
+    const s = getSettings()
+    const chosen = (s.libraryFolder || s.outputFolder || '').trim()
+    if (chosen.toLowerCase().startsWith('d:')) return true
+  } catch {}
+  try {
+    if (preferredDefaultRoot().toLowerCase().startsWith('d:')) return true
+  } catch {}
+  return false
+}
+
 /** The master library root. Precedence: Windows env var → settings.libraryFolder → legacy
  *  outputFolder → D:\MentalEmpireStudio when D: exists → <Documents>/MentalEmpireStudio
  *  (C: default). Env wins so a system variable like `setx MENTAL_EMPIRE_LIBRARY
@@ -73,13 +89,20 @@ export function preferredDefaultRoot(): string {
  *  Settings; unsetting the var falls straight back to C:. */
 export function libraryRoot(): string {
   const env = envLibraryRoot()
-  if (env) return env
+  if (env) {
+    if (env.toLowerCase().startsWith('c:') && isAnyDConfigured()) {
+      sentryLog.warn('Library root resolved to C: while D: is configured', {
+        target: env,
+        operation: 'storage_guard',
+      })
+    }
+    return env
+  }
   const s = getSettings()
   const chosen = (s.libraryFolder || '').trim() || (s.outputFolder || '').trim()
   const resolved = chosen || preferredDefaultRoot()
-  // Guard log: if we still resolved to C: while a D: env is configured, that's a misroute
-  if (resolved.toLowerCase().startsWith('c:') && envLibraryRoot()?.toLowerCase().startsWith('d:')) {
-    sentryLog.warn('Library root resolved to C: while D: env is configured', {
+  if (resolved.toLowerCase().startsWith('c:') && isAnyDConfigured()) {
+    sentryLog.warn('Library root resolved to C: while D: is configured', {
       target: resolved,
       operation: 'storage_guard',
     })
@@ -155,8 +178,8 @@ export function itemOutputDir(item: string): string { return join(item, 'output'
 /** Transient scratch dir (e.g. cacheDir('sfx'), cacheDir('previews'), cacheDir('broll')). */
 export function cacheDir(sub: string): string {
   const dir = join(libraryRoot(), CACHE_DIR, sub)
-  if (dir.toLowerCase().startsWith('c:') && envVideoEngineRoot()?.toLowerCase().startsWith('d:')) {
-    sentryLog.warn('Cache dir resolved to C: while D: video-engine is configured', {
+  if (dir.toLowerCase().startsWith('c:') && isAnyDConfigured()) {
+    sentryLog.warn('Cache dir resolved to C: while D: is configured', {
       target: dir,
       operation: 'storage_guard',
     })
