@@ -7,6 +7,25 @@ import { useTalkingPhotos } from '../store/useTalkingPhotos'
 import { describeTalkingPhotosCapabilities } from '@shared/talkingphotos'
 import type { AccentName, AppSettings, RenderCapabilities } from '@shared/types'
 
+const LIBRARY_ENV_KEYS = ['MENTAL_EMPIRE_LIBRARY', 'ME_LIBRARY_ROOT', 'ME_LIBRARY_DIR', 'MENTAL_EMPIRE_OUTPUT', 'ME_OUTPUT_DIR'] as const
+const VIDEO_ENGINE_ENV_KEYS = ['MENTAL_EMPIRE_VIDEO_ENGINE', 'ME_VIDEO_ENGINE_DIR', 'ME_VIDEO_ENGINE_ROOT'] as const
+function envLibraryRoot(): string | undefined {
+  for (const k of LIBRARY_ENV_KEYS) {
+    const v = (typeof process !== 'undefined' ? ((process as unknown as { env?: Record<string, string> }).env?.[k] || '').trim() : '')
+    if (v) return v
+  }
+  return undefined
+}
+function envVideoEngineRoot(): string | undefined {
+  for (const k of VIDEO_ENGINE_ENV_KEYS) {
+    const v = (typeof process !== 'undefined' ? ((process as unknown as { env?: Record<string, string> }).env?.[k] || '').trim() : '')
+    if (v) return v
+  }
+  const lib = envLibraryRoot()
+  if (lib) return `${lib.replace(/\\+$/, '')}\\video-engine`
+  return undefined
+}
+
 const ACCENTS: AccentName[] = ['Amber', 'Violet', 'Emerald', 'Crimson']
 const ACCENT_SWATCH: Record<AccentName, string> = { Amber: '#f5b323', Violet: '#8b7cff', Emerald: '#36c98e', Crimson: '#ff5a6e' }
 
@@ -129,6 +148,11 @@ export function Settings(): JSX.Element {
     window.location.reload()
   }
 
+  const pickLibraryFolder = async (): Promise<void> => {
+    const dir = await window.api?.chooseFolder?.()
+    if (dir) saved({ libraryFolder: dir })
+  }
+
   const qualities: AppSettings['quality'][] = ['720p', '1080p', '1440p']
   const nvidiaName = caps?.nvidiaGpuName?.trim()
   const nvencProbeHint = caps?.nvencProbeError ? ` Probe: ${caps.nvencProbeError.slice(0, 180)}` : ''
@@ -152,6 +176,15 @@ export function Settings(): JSX.Element {
   const selectedEncoder = encoders.find((e) => e.value === (settings.encoder ?? 'cpu')) ?? encoders[0]
   const confirmFloor = settings.detection.confirmBand[0] ?? 0.6
   const confirmCeil = settings.detection.confirmBand[1] ?? 0.82
+  function videoEngineDataRoot(): string {
+    const env = envVideoEngineRoot()
+    if (env) return env
+    const libEnv = envLibraryRoot()
+    if (libEnv) return `${libEnv.replace(/\\+$/, '')}\\video-engine`
+    const chosen = (settings.libraryFolder || '').trim() || (settings.outputFolder || '').trim()
+    if (chosen) return `${chosen.replace(/\\+$/, '')}\\video-engine`
+    return 'D:\\MentalEmpireStudio\\video-engine'
+  }
   const chooseEncoder = (value: typeof encoders[number]['value']): void => {
     const enc = encoders.find((e) => e.value === value) ?? encoders[0]
     saved({ encoder: enc.value, renderEngine: enc.value === 'cpu' ? 'ffmpeg' : 'gpu' })
@@ -180,6 +213,24 @@ export function Settings(): JSX.Element {
     ),
     output: (
       <div>
+        <Card label="LIBRARY FOLDER · AUTOMATION OUTPUT">
+          <div style={{ ...keyRowStyle, gap: 8 }}>
+            <input value={settings.libraryFolder ?? ''} onChange={(e) => saved({ libraryFolder: e.target.value })} placeholder="Empty = D:\MentalEmpireStudio when D: exists, else Documents\MentalEmpireStudio" aria-label="Library folder" className="ed-input" style={{ flex: 1, fontFamily: 'var(--font-mono)', fontSize: 12 }} />
+            <Btn variant="soft" onClick={() => void pickLibraryFolder()}>Browse…</Btn>
+          </div>
+          <div style={{ display: 'flex', gap: 8, flexWrap: 'wrap', marginBottom: 8 }}>
+            <Btn variant="ghost" onClick={() => saved({ libraryFolder: '' })}>Use C: default</Btn>
+            <Btn variant="ghost" onClick={() => saved({ libraryFolder: 'D:\\MentalEmpireStudio' })}>Use D:\MentalEmpireStudio</Btn>
+          </div>
+          <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
+            {envLibraryRoot() || envVideoEngineRoot()
+              ? `Using ${videoEngineDataRoot()} via environment variable — change the variable to move storage.`
+              : 'Where automation downloads, renders, and per-video folders live. Default is D:\\MentalEmpireStudio when D: exists — switch in Settings or set MENTAL_EMPIRE_LIBRARY / MENTAL_EMPIRE_VIDEO_ENGINE to override.'}
+            {videoEngineDataRoot().toLowerCase().startsWith('c:') && !envLibraryRoot() && !envVideoEngineRoot()
+              ? <span style={{ color: '#f5b323', marginLeft: 8 }}>⚠ Still on C: — set MENTAL_EMPIRE_LIBRARY=D:\MentalEmpireStudio</span>
+              : null}
+          </div>
+        </Card>
         <Card label="FILE NAMING">
           <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>Template</div>
           <div style={{ display: 'flex', gap: 8, marginBottom: 9 }}>

@@ -1122,8 +1122,10 @@ export interface AppSettings {
   lastWorkspaceChannel?: string
   namingTemplate: string
   /** master library root: where all per-video folders (audio/images/captions/broll/
-   *  thumb/output) live. Empty = <Documents>/MentalEmpireStudio. Supersedes outputFolder
-   *  as the single storage root; outputFolder is kept as a back-compat fallback. */
+   *  thumb/output) live. Empty = D:\MentalEmpireStudio when D: exists, else
+   *  <Documents>/MentalEmpireStudio. Supersedes outputFolder as the single storage
+   *  root; outputFolder is kept as a back-compat fallback. Override via
+   *  MENTAL_EMPIRE_LIBRARY / MENTAL_EMPIRE_VIDEO_ENGINE env vars or Settings UI. */
   libraryFolder?: string
   /** custom directory for fast preview outputs; empty = <Library>/fast-preview-exports */
   fastPreviewFolder?: string

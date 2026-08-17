@@ -1,6 +1,15 @@
-import { describe, it, expect } from 'vitest'
+import { describe, it, expect, vi, beforeEach, afterEach } from 'vitest'
 import { slug, videoIdFromDownloadId, videoIdFromProjectId, itemFolderName } from '../../electron/services/storage'
 import { planReorg, type ReorgInputs } from '../../electron/services/storage-migrate'
+
+const mockFsState = { dExists: false }
+vi.mock('node:fs', async () => {
+  const actual = await vi.importActual<typeof import('node:fs')>('node:fs')
+  return {
+    ...actual,
+    existsSync: (p: unknown) => mockFsState.dExists && String(p).toLowerCase().startsWith('d:') ? true : (actual.existsSync as (p: unknown) => boolean)(p)
+  }
+})
 
 describe('storage path helpers', () => {
   it('slug is lowercase, dash-separated, trimmed, bounded', () => {
@@ -87,5 +96,43 @@ describe('planReorg', () => {
       jobs: []
     }))
     expect(plan.moves).toHaveLength(0)
+  })
+})
+
+describe('libraryRoot D: fallback', () => {
+  const LIBRARY_ENV_KEYS = ['MENTAL_EMPIRE_LIBRARY', 'ME_LIBRARY_ROOT', 'ME_LIBRARY_DIR', 'MENTAL_EMPIRE_OUTPUT', 'ME_OUTPUT_DIR']
+  const VIDEO_ENV_KEYS = ['MENTAL_EMPIRE_VIDEO_ENGINE', 'ME_VIDEO_ENGINE_DIR', 'ME_VIDEO_ENGINE_ROOT']
+  const originalEnv: Record<string, string | undefined> = {}
+
+  beforeEach(async () => {
+    for (const k of [...LIBRARY_ENV_KEYS, ...VIDEO_ENV_KEYS]) {
+      originalEnv[k] = process.env[k]
+      delete process.env[k]
+    }
+    const { __resetStores } = await import('../stubs/electron-store')
+    __resetStores()
+  })
+
+  afterEach(async () => {
+    for (const k of [...LIBRARY_ENV_KEYS, ...VIDEO_ENV_KEYS]) {
+      if (originalEnv[k] === undefined) delete process.env[k]
+      else process.env[k] = originalEnv[k]!
+    }
+    vi.restoreAllMocks()
+    const { __resetStores } = await import('../stubs/electron-store')
+    __resetStores()
+  })
+
+  it('libraryRoot prefers D: when libraryFolder empty and D: exists', async () => {
+    mockFsState.dExists = true
+    // Need fresh modules so they pick up mocked existsSync
+    vi.resetModules()
+    const { libraryRoot } = await import('../../electron/services/storage')
+    const { initSettings } = await import('../../electron/store/settings')
+    const settings = initSettings()
+    expect(settings.libraryFolder).toBe('D:\\MentalEmpireStudio')
+    expect(libraryRoot()).toBe('D:\\MentalEmpireStudio')
+    mockFsState.dExists = false
+    vi.resetModules()
   })
 })

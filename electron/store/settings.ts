@@ -1,3 +1,4 @@
+import { existsSync } from 'node:fs'
 import Store from 'electron-store'
 import { safeStorage } from 'electron'
 import { DEFAULT_SETTINGS, type AppSettings, type DeepPartial } from '../../shared/types'
@@ -122,6 +123,9 @@ export function initSettings(): AppSettings {
   })
   const decoded = decodeSecrets(store.get('settings') as DeepPartial<AppSettings>)
   const reconciled = mergeDeep(DEFAULT_SETTINGS, decoded)
+  if (!reconciled.libraryFolder && !reconciled.outputFolder) {
+    try { if (existsSync('D:\\')) reconciled.libraryFolder = 'D:\\MentalEmpireStudio' } catch {}
+  }
   persist(reconciled) // re-encrypts (migrates any legacy plaintext keys)
   return reconciled
 }

@@ -66,15 +66,16 @@ export function preferredDefaultRoot(): string {
 }
 
 /** The master library root. Precedence: Windows env var → settings.libraryFolder → legacy
- *  outputFolder → <Documents>/MentalEmpireStudio (C: default). Env wins so a system
- *  variable like `setx MENTAL_EMPIRE_LIBRARY "D:\MentalEmpireStudio"` moves all automation
- *  renders to D: without touching Settings; unsetting the var falls straight back to C:. */
+ *  outputFolder → D:\MentalEmpireStudio when D: exists → <Documents>/MentalEmpireStudio
+ *  (C: default). Env wins so a system variable like `setx MENTAL_EMPIRE_LIBRARY
+ *  "D:\MentalEmpireStudio"` moves all automation renders to D: without touching
+ *  Settings; unsetting the var falls straight back to C:. */
 export function libraryRoot(): string {
   const env = envLibraryRoot()
   if (env) return env
   const s = getSettings()
   const chosen = (s.libraryFolder || '').trim() || (s.outputFolder || '').trim()
-  return chosen || join(app.getPath('documents'), 'MentalEmpireStudio')
+  return chosen || preferredDefaultRoot()
 }
 
 /** A URL/filename-safe, lowercase slug for the per-video folder suffix. */
