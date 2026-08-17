@@ -5,26 +5,7 @@ import { useData } from '../store/useData'
 import { useStore } from '../store/useStore'
 import { useTalkingPhotos } from '../store/useTalkingPhotos'
 import { describeTalkingPhotosCapabilities } from '@shared/talkingphotos'
-import type { AccentName, AppSettings, RenderCapabilities } from '@shared/types'
-
-const LIBRARY_ENV_KEYS = ['MENTAL_EMPIRE_LIBRARY', 'ME_LIBRARY_ROOT', 'ME_LIBRARY_DIR', 'MENTAL_EMPIRE_OUTPUT', 'ME_OUTPUT_DIR'] as const
-const VIDEO_ENGINE_ENV_KEYS = ['MENTAL_EMPIRE_VIDEO_ENGINE', 'ME_VIDEO_ENGINE_DIR', 'ME_VIDEO_ENGINE_ROOT'] as const
-function envLibraryRoot(): string | undefined {
-  for (const k of LIBRARY_ENV_KEYS) {
-    const v = (typeof process !== 'undefined' ? ((process as unknown as { env?: Record<string, string> }).env?.[k] || '').trim() : '')
-    if (v) return v
-  }
-  return undefined
-}
-function envVideoEngineRoot(): string | undefined {
-  for (const k of VIDEO_ENGINE_ENV_KEYS) {
-    const v = (typeof process !== 'undefined' ? ((process as unknown as { env?: Record<string, string> }).env?.[k] || '').trim() : '')
-    if (v) return v
-  }
-  const lib = envLibraryRoot()
-  if (lib) return `${lib.replace(/\\+$/, '')}\\video-engine`
-  return undefined
-}
+import type { AccentName, AppSettings, RenderCapabilities, StorageEnvRoots } from '@shared/types'
 
 const ACCENTS: AccentName[] = ['Amber', 'Violet', 'Emerald', 'Crimson']
 const ACCENT_SWATCH: Record<AccentName, string> = { Amber: '#f5b323', Violet: '#8b7cff', Emerald: '#36c98e', Crimson: '#ff5a6e' }
@@ -126,6 +107,7 @@ export function Settings(): JSX.Element {
   const { quality, autoScrape, background } = settings
   const [caps, setCaps] = useState<RenderCapabilities | null>(null)
   const [checkingCaps, setCheckingCaps] = useState(true)
+  const [envRoots, setEnvRoots] = useState<StorageEnvRoots | null>(null)
   const [section, setSection] = useState<Section>('looks')
   const [savedAt, setSavedAt] = useState(0)
   const [confirmReset, setConfirmReset] = useState<'soft' | 'hard' | null>(null)
@@ -135,11 +117,18 @@ export function Settings(): JSX.Element {
     setSavedAt(Date.now())
   }, [updateSettings])
 
-  useEffect(() => { void refreshCaps() }, [])
+  useEffect(() => { void refreshCaps(); void refreshEnvRoots() }, [])
 
   const refreshCaps = async (force = false): Promise<void> => {
     setCheckingCaps(true)
     try { setCaps(await window.api?.caps?.get?.(force) ?? null) } catch { setCaps(null) } finally { setCheckingCaps(false) }
+  }
+
+  const refreshEnvRoots = async (): Promise<void> => {
+    try {
+      const roots = (await (window.api?.storage?.getEnvRoots?.() ?? window.api?.settings?.getEnvRoots?.())) as StorageEnvRoots | undefined
+      if (roots) setEnvRoots(roots)
+    } catch { /* env roots unavailable in web preview */ }
   }
 
   const doHardReset = (): void => { void resetAll(); setConfirmReset(null) }
@@ -177,14 +166,16 @@ export function Settings(): JSX.Element {
   const confirmFloor = settings.detection.confirmBand[0] ?? 0.6
   const confirmCeil = settings.detection.confirmBand[1] ?? 0.82
   function videoEngineDataRoot(): string {
-    const env = envVideoEngineRoot()
-    if (env) return env
-    const libEnv = envLibraryRoot()
-    if (libEnv) return `${libEnv.replace(/\\+$/, '')}\\video-engine`
+    if (envRoots?.videoEngineEnv) return envRoots.videoEngineEnv
+    if (envRoots?.libraryEnv) return `${envRoots.libraryEnv.replace(/\\+$/, '')}\\video-engine`
     const chosen = (settings.libraryFolder || '').trim() || (settings.outputFolder || '').trim()
     if (chosen) return `${chosen.replace(/\\+$/, '')}\\video-engine`
-    return 'D:\\MentalEmpireStudio\\video-engine'
+    if (envRoots?.videoEngineRoot) return envRoots.videoEngineRoot
+    if (envRoots?.preferredDefaultRoot) return `${envRoots.preferredDefaultRoot.replace(/\\+$/, '')}\\video-engine`
+    if (envRoots?.libraryRoot) return `${envRoots.libraryRoot.replace(/\\+$/, '')}\\video-engine`
+    return ''
   }
+  const hasEnvBadge = !!(envRoots?.libraryEnv || envRoots?.videoEngineEnv)
   const chooseEncoder = (value: typeof encoders[number]['value']): void => {
     const enc = encoders.find((e) => e.value === value) ?? encoders[0]
     saved({ encoder: enc.value, renderEngine: enc.value === 'cpu' ? 'ffmpeg' : 'gpu' })
@@ -223,10 +214,10 @@ export function Settings(): JSX.Element {
             <Btn variant="ghost" onClick={() => saved({ libraryFolder: 'D:\\MentalEmpireStudio' })}>Use D:\MentalEmpireStudio</Btn>
           </div>
           <div style={{ fontSize: 11, color: 'var(--text-muted)', marginTop: 6 }}>
-            {envLibraryRoot() || envVideoEngineRoot()
+            {hasEnvBadge
               ? `Using ${videoEngineDataRoot()} via environment variable — change the variable to move storage.`
               : 'Where automation downloads, renders, and per-video folders live. Default is D:\\MentalEmpireStudio when D: exists — switch in Settings or set MENTAL_EMPIRE_LIBRARY / MENTAL_EMPIRE_VIDEO_ENGINE to override.'}
-            {videoEngineDataRoot().toLowerCase().startsWith('c:') && !envLibraryRoot() && !envVideoEngineRoot()
+            {videoEngineDataRoot().toLowerCase().startsWith('c:') && !hasEnvBadge
               ? <span style={{ color: '#f5b323', marginLeft: 8 }}>⚠ Still on C: — set MENTAL_EMPIRE_LIBRARY=D:\MentalEmpireStudio</span>
               : null}
           </div>

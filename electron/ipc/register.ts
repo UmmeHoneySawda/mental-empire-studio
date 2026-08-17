@@ -21,6 +21,7 @@ import { probeRenderCapabilities } from '../services/engine/caps'
 import { probeGpuEngine } from '../services/engine/gpu/host'
 import { runUploadDetection } from '../services/uploads-detect'
 import { setSentryEnabled, telemetryForcedOff } from '../services/sentry'
+import { registerStorageIpc } from './storage'
 import { registerTalkingPhotosIpc } from './talkingphotos'
 import { registerVideoEngineIpc } from './video-engine'
 import { clearProviderSessionStorage } from '../providers/talkingphotos/partition'
@@ -180,6 +181,9 @@ export function registerIpc(): void {
   // ---- automation: profiles + scheduler (M7) ----
   registerAutomationIpc()
   ipcMain.handle('automation:tick', () => tick())
+
+  // ---- storage env roots (settings badge + D-aware fallback) ----
+  registerStorageIpc()
 
   // ---- TalkingPhotos cloud provider: session, sync, and uploaded-audio Human creation ----
   registerTalkingPhotosIpc()

@@ -72,7 +72,12 @@ const api: NativeApi = {
     get: () => ipcRenderer.invoke('settings:get'),
     set: (patch: DeepPartial<AppSettings>) => ipcRenderer.invoke('settings:set', patch),
     reset: () => ipcRenderer.invoke('app:reset'),
-    softReset: () => ipcRenderer.invoke('app:softReset')
+    softReset: () => ipcRenderer.invoke('app:softReset'),
+    getEnvRoots: () => ipcRenderer.invoke('storage:envRoots')
+  },
+
+  storage: {
+    getEnvRoots: () => ipcRenderer.invoke('storage:envRoots')
   },
 
   appMeta: {

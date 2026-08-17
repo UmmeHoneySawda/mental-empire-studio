@@ -1238,6 +1238,14 @@ export interface LibraryReorgResult {
   undoLogPath?: string
 }
 
+export interface StorageEnvRoots {
+  libraryEnv?: string
+  videoEngineEnv?: string
+  libraryRoot: string
+  videoEngineRoot: string
+  preferredDefaultRoot: string
+}
+
 /** A video's progress through the production pipeline. Stages are COMPUTED from existing
  *  tables (download/project/images/transcript/render job); only uploaded/archived state is
  *  persisted (work_item_state). Surfaced as a per-channel checklist in the workspace. */
@@ -1342,6 +1350,11 @@ export interface NativeApi {
     reset(): Promise<AppSettings>
     /** data-only reset: wipe channels/projects/downloads/jobs/transcripts but keep API keys and settings */
     softReset(): Promise<void>
+    /** env-aware storage roots from the main process (renderer has no process.env) */
+    getEnvRoots(): Promise<StorageEnvRoots>
+  }
+  storage: {
+    getEnvRoots(): Promise<StorageEnvRoots>
   }
   appMeta: {
     /** read app-level onboarding/migration markers stored in app_meta */
