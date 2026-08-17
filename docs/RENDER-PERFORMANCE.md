@@ -163,6 +163,8 @@ inside the noise. The render cost is uniform per-frame raster and encode, not an
 to a decode/encode floor plus one unavoidable single-threaded filter. Everything left either trades
 visual quality or measures inside the noise.
 
+Storage path (D: migration via `MENTAL_EMPIRE_LIBRARY` / `MENTAL_EMPIRE_VIDEO_ENGINE`, see `README.md` Storage) only changes the file root and does not affect render flags, encoder settings, concurrency, or grade filters documented above.
+
 Do not open further performance work here speculatively. Revisit only if a future feature introduces
 a **measured** regression, and when that happens:
 

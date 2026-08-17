@@ -102,6 +102,22 @@ ME_SMOKE=m6 ME_YTDLP_FIXTURE=test/fixtures/ytdlp ME_DOWNLOAD_FIXTURE=test/fixtur
 (`.github/workflows/ci.yml`). On a real machine, paste real channel URLs + a Groq key to exercise the
 live pipeline.
 
+## Storage
+
+Storage roots (Windows): set `MENTAL_EMPIRE_LIBRARY=D:\MentalEmpireStudio` to move the entire library (per-video `output/` folders), or `MENTAL_EMPIRE_VIDEO_ENGINE=D:\MentalEmpireStudio\video-engine` to move only the Remotion engine (automation renders). When either is set, new automation renders never touch C:. On first launch with the variable set, existing `AppData\...\video-engine\projects\remotion-dl-*\renders` are zipped to `D:\MentalEmpireStudio\_backups\renders-<timestamp>.zip` (with SHA256SUMS) before being copied to D:.
+
+### Verify D: migration (manual)
+
+```powershell
+# Verify after fresh start with env var set
+setx MENTAL_EMPIRE_VIDEO_ENGINE "D:\MentalEmpireStudio\video-engine"
+# Restart app, run one automation render, then:
+Get-ChildItem -Recurse "D:\MentalEmpireStudio\video-engine\projects" | Where-Object { $_.Name -like '*.mp4' } | Select-Object FullName
+# Should show at least one .mp4 under D: and none under C:\Users\...\video-engine\projects\*\renders
+Get-ChildItem -Recurse "$env:APPDATA\Mental Empire Studio\video-engine\projects" -ErrorAction SilentlyContinue | Where-Object { $_.Name -like '*.mp4' } | Measure-Object
+# Expect count 0 for new renders; old renders remain only in the timestamped ZIP at D:\MentalEmpireStudio\_backups\
+```
+
 ## License
 
 UNLICENSED — © Mental Empire. Bundled fonts are OFL/Apache; `yt-dlp`/`ffmpeg` are fetched at build time.
