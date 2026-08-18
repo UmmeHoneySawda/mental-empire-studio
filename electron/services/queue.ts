@@ -20,15 +20,20 @@ import { selectEncoder } from './engine/encoder'
 import type { FfmpegProgress } from './engine/progress'
 import { emit, hhmm, pushActivity } from '../ipc/events'
 import { safeName } from '../../shared/sanitize'
-import { itemDirForProject, itemOutputDir, writeProjectManifest, videoIdFromProjectId } from './storage'
+import { itemDirForProject, itemOutputDir, writeProjectManifest, videoIdFromProjectId, envLibraryRoot } from './storage'
 import { runUploadDetection } from './uploads-detect'
 
 // Concurrency-limited render runner. Pulls queued render_jobs, renders up to
 // settings.concurrency at once, writes the .ass + mp4, and streams render:progress.
 
 export function outputDir(): string {
+  const env = envLibraryRoot()
+  if (env) return env
   const s = getSettings()
-  return s.outputFolder || join(app.getPath('downloads'), 'MentalEmpire_out')
+  // Prefer the canonical libraryFolder, fall back to the legacy outputFolder, then C: Downloads.
+  const chosen = (s.libraryFolder || '').trim() || (s.outputFolder || '').trim()
+  if (chosen) return chosen
+  return join(app.getPath('downloads'), 'MentalEmpire_out')
 }
 
 function emitR(p: RenderProgress): void {

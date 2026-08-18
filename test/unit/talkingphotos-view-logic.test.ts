@@ -193,7 +193,29 @@ describe('library unify / rollup / filter / paginate', () => {
       })
     ])
     expect(rolled).toHaveLength(1)
-    expect(rolled[0].title).toMatch(/part 1\/2/)
+    // M1.7: merge parent keeps its own title, not retitled as part 1/2.
+    expect(rolled[0].title).toBe('long-script')
+  })
+
+  it('hides internal segments that have a present parent — the whole point of the rollup', () => {
+    const rolled = rollupSegments([
+      item({ id: 'merge-1', title: 'being kind' }),
+      item({ id: 'seg-1', parentId: 'merge-1', internalSegment: true, title: 'being kind · part 01 of 25', segmentOrdinal: 0 }),
+      item({ id: 'seg-2', parentId: 'merge-1', internalSegment: true, title: 'being kind · part 02 of 25', segmentOrdinal: 1 })
+    ])
+    expect(rolled.map((r) => r.id)).toEqual(['merge-1'])
+  })
+
+  it('emits orphaned segments instead of silently dropping them when the parent is absent', () => {
+    // A remotely deleted merge, or one outside the listing window, used to make all
+    // 25 of its children vanish from the library with no trace — they were bucketed
+    // under a parent that was never in `tops`, so they were never emitted.
+    const rolled = rollupSegments([
+      item({ id: 'seg-1', parentId: 'missing-merge', internalSegment: true, title: 'orphan part 1', segmentOrdinal: 0 }),
+      item({ id: 'seg-2', parentId: 'missing-merge', internalSegment: true, title: 'orphan part 2', segmentOrdinal: 1 }),
+      item({ id: 'standalone', title: 'a real video' })
+    ])
+    expect(rolled.map((r) => r.id).sort()).toEqual(['seg-1', 'seg-2', 'standalone'])
   })
 
   it('filters by query and status', () => {

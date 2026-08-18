@@ -31,6 +31,42 @@ import {
 } from '../../../shared/talkingphotos'
 import { L } from '../../services/logger'
 import { sentryLog } from '../../services/sentry'
+import { getRepos } from '../../db'
+
+function shouldSuppressReauthLog(): boolean {
+  try {
+    const status = getRepos().providerConnection('default')?.status
+    return status === 'connecting' || status === 'waiting_for_login' || status === 'verifying'
+  } catch {
+    return false
+  }
+}
+
+export async function warmUpProviderSession(): Promise<void> {
+  const session = getProviderSession() as Electron.Session & {
+    fetch: (input: string, init?: RequestInit) => Promise<Response>
+  }
+  if (typeof session.fetch !== 'function') return
+  try {
+    const controller = new AbortController()
+    const timer = setTimeout(() => controller.abort(), 8_000)
+    try {
+      await session.fetch(`${TALKINGPHOTOS_BASE_URL}/`, {
+        method: 'GET',
+        headers: { accept: 'text/html' },
+        signal: controller.signal,
+        redirect: 'follow'
+      }).then(async (res) => {
+        // Consume body to let cookies settle, but never log it.
+        try { await res.text() } catch { /* ignore */ }
+      })
+    } finally {
+      clearTimeout(timer)
+    }
+  } catch {
+    // Warm-up is best-effort; a failure just falls through to normal healthCheck.
+  }
+}
 
 // Session-bound HTTP client for TalkingPhotos. Every request goes through
 // Electron Session.fetch on the isolated partition (never the global Node/undici
@@ -152,13 +188,15 @@ export async function fetchProviderJson<T>(path: string, opts: { method?: string
     bodyLooksHtml: looksLikeHtml(raw.bodyText)
   })
   if (reauthRequired) {
-    L.warn(`talkingphotos reauth required: ${path} (status=${raw.status})`)
-    sentryLog.warn('TalkingPhotos provider authentication required', {
-      operation: 'provider_http',
-      route,
-      method,
-      status_code: raw.status
-    })
+    if (!shouldSuppressReauthLog()) {
+      L.warn(`talkingphotos reauth required: ${path} (status=${raw.status})`)
+      sentryLog.warn('TalkingPhotos provider authentication required', {
+        operation: 'provider_http',
+        route,
+        method,
+        status_code: raw.status
+      })
+    }
     throw new ProviderRequestError(classifyProviderError({ reauthRequired: true, httpStatus: raw.status, message: 'TalkingPhotos session expired — reconnect required.' }))
   }
   if (raw.status < 200 || raw.status >= 300) {
@@ -208,7 +246,7 @@ async function fetchProviderBodyJson<T>(path: string, opts: { method: string; bo
   }
   const reauthRequired = detectReauthRequired({ status: raw.status, contentType: raw.contentType, bodyLooksHtml: looksLikeHtml(raw.bodyText) })
   if (reauthRequired) {
-    sentryLog.warn('TalkingPhotos provider upload needs authentication', { operation: 'provider_http', route, method: opts.method, status_code: raw.status })
+    if (!shouldSuppressReauthLog()) sentryLog.warn('TalkingPhotos provider upload needs authentication', { operation: 'provider_http', route, method: opts.method, status_code: raw.status })
     throw new ProviderRequestError(classifyProviderError({ reauthRequired: true, httpStatus: raw.status, message: 'TalkingPhotos session expired — reconnect required.' }))
   }
   if (raw.status < 200 || raw.status >= 300) {

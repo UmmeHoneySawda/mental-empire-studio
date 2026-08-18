@@ -22,6 +22,7 @@ import {
   normalizeSubtitleMode,
   normalizeSubtitleProject,
   normalizeVoice,
+  parseTalkingPhotosItemsIds,
   parseTtsCreateResponse,
   parseTtsSocketFrame,
   planTalkingPhotosScriptChunks,
@@ -519,5 +520,41 @@ describe('Preferred download route (strict allowlist)', () => {
     expect(sanitizeDownloadFilename('attachment; filename="my video.mp4"', 'fallback.mp4')).toBe('my_video.mp4')
     expect(sanitizeDownloadFilename(undefined, 'fallback.mp4')).toBe('fallback.mp4')
     expect(sanitizeDownloadFilename('attachment; filename="C:\\\\Windows\\\\evil.mp4"', 'fallback.mp4')).not.toContain('\\')
+  })
+})
+
+// The merge -> segment edge is the ONLY link the provider exposes: a video_merge's
+// options.itemsIds lists its child project ids, segments carry no back-reference, and
+// the paginated list endpoint omits `options` entirely. Every id this parser lets
+// through causes a job to be hidden from the library and never downloaded, so the
+// rejection cases below matter as much as the happy path.
+describe('Merge itemsIds parsing (merge -> internal-segment classification)', () => {
+  it('parses the verified comma-separated string form', () => {
+    expect(parseTalkingPhotosItemsIds('1047717,1047718,1047719')).toEqual(['1047717', '1047718', '1047719'])
+  })
+
+  it('preserves itemsIds order — the index becomes the segment ordinal', () => {
+    expect(parseTalkingPhotosItemsIds('300,100,200')).toEqual(['300', '100', '200'])
+  })
+
+  it('tolerates surrounding whitespace', () => {
+    expect(parseTalkingPhotosItemsIds(' 1047717 , 1047718 ')).toEqual(['1047717', '1047718'])
+  })
+
+  it('tolerates an array, since String([1,2]) === "1,2"', () => {
+    expect(parseTalkingPhotosItemsIds([1047717, 1047718])).toEqual(['1047717', '1047718'])
+  })
+
+  it('drops non-numeric, zero, negative and empty tokens rather than guessing', () => {
+    expect(parseTalkingPhotosItemsIds('abc,,-1,0,12.5,1047717')).toEqual(['1047717'])
+  })
+
+  it('returns an empty list for a missing, empty or wrong-typed field — never throws', () => {
+    expect(parseTalkingPhotosItemsIds(undefined)).toEqual([])
+    expect(parseTalkingPhotosItemsIds(null)).toEqual([])
+    expect(parseTalkingPhotosItemsIds('')).toEqual([])
+    expect(parseTalkingPhotosItemsIds('   ')).toEqual([])
+    expect(parseTalkingPhotosItemsIds({})).toEqual([])
+    expect(parseTalkingPhotosItemsIds(true)).toEqual([])
   })
 })

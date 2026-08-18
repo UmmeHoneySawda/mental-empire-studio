@@ -22,6 +22,7 @@ import './theme/pages/index.css'
 import { App } from './app'
 import { rasterizeLayers, withHeadline } from './features/thumbnail-editor/render'
 import type { ThumbnailLayer } from '@shared/types'
+import { startRendererTelemetry } from './lib/rendererTelemetry'
 
 // Headless test hook: exposes the SAME production Konva rasterizer used by batch
 // generate so the e2e harness can render a thumbnail from real background/subject
@@ -64,10 +65,9 @@ async function bootstrap(): Promise<void> {
   // Sentry's renderer SDK (and its bundle chunk) only ever loads when the user's
   // telemetry switch is on — flipping it off in Settings removes Sentry from the
   // running app entirely, not just from what it sends.
-  if (telemetryOn) {
-    const { initSentryRenderer } = await import('./lib/sentry')
-    initSentryRenderer()
-  }
+  // Telemetry is optional: a missing/corrupt cached SDK chunk must never prevent the
+  // application root from mounting. Initialization reports its own failure.
+  startRendererTelemetry(telemetryOn)
   root.render(
     <React.StrictMode>
       <App />

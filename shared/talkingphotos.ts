@@ -92,6 +92,8 @@ export interface ProviderJob {
   errorMessage?: string
   segmentOrdinal?: number
   internalSegment: boolean
+  /** Download attempt count — incremented on each failed download, reset on success. */
+  downloadAttempts?: number
   createdAt: string
   updatedAt: string
   lastPolledAt?: string
@@ -1053,6 +1055,30 @@ export function isAllowedProjectDownloadUrl(url: string): boolean {
     return false
   }
 }
+
+// ---- Merge → segment classification (Milestone 1.5) ----
+/** Parse `options.itemsIds` from a merge project's raw detail. Accepts the verified
+ *  comma-separated string and tolerates an array (String([1,2]) === "1,2"). Returns
+ *  only positive integer ids as strings — any other token is dropped. */
+export function parseTalkingPhotosItemsIds(raw: unknown): string[] {
+  if (raw == null) return []
+  let str: string
+  if (Array.isArray(raw)) str = String(raw)
+  else if (typeof raw === 'string') str = raw
+  else str = String(raw)
+  if (!str.trim()) return []
+  return str
+    .split(',')
+    .map((s) => s.trim())
+    .filter((s) => /^[1-9][0-9]*$/.test(s))
+}
+
+// Poll/download resilience (Milestone 1.1, 1.6): caps for retries and concurrency.
+export const TALKINGPHOTOS_MAX_DOWNLOAD_ATTEMPTS = 3
+export const TALKINGPHOTOS_DOWNLOAD_IDLE_TIMEOUT_MS = 60_000
+export const TALKINGPHOTOS_DOWNLOAD_MAX_DURATION_MS = 30 * 60_000
+export const TALKINGPHOTOS_POLL_CONCURRENCY = 3
+export const TALKINGPHOTOS_DOWNLOAD_CONCURRENCY = 3
 
 /** Sanitize a Content-Disposition filename: strips path separators and traversal so it
  *  can never escape the destination directory when used as a local file name. */

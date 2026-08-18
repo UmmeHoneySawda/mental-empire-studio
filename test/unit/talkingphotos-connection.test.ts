@@ -98,7 +98,7 @@ const emitMock = vi.fn()
 vi.mock('../../electron/ipc/events', () => ({ emit: emitMock }))
 
 const healthCheckMock = vi.fn(async () => ({ ok: false, reauthRequired: false }) as { ok: boolean; reauthRequired: boolean; message?: string })
-vi.mock('../../electron/providers/talkingphotos/client', () => ({ healthCheck: healthCheckMock }))
+vi.mock('../../electron/providers/talkingphotos/client', () => ({ healthCheck: healthCheckMock, warmUpProviderSession: vi.fn(async () => {}) }))
 
 const reconcileMock = vi.fn(async () => {})
 vi.mock('../../electron/providers/talkingphotos/poller', () => ({

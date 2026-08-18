@@ -1,7 +1,7 @@
 import { BrowserWindow } from 'electron'
 import { getRepos } from '../../db'
 import { clearProviderSessionStorage, getProviderSession } from './partition'
-import { healthCheck } from './client'
+import { healthCheck, warmUpProviderSession } from './client'
 import { emit } from '../../ipc/events'
 import {
   TALKINGPHOTOS_BASE_URL,
@@ -402,6 +402,8 @@ export async function connectTalkingPhotos(): Promise<ProviderConnection> {
  *  `settled` guard (which assumes it's only reached from within an active flow). */
 export async function reconnectTalkingPhotos(): Promise<ProviderConnection> {
   sentryLog.info('TalkingPhotos reconnect attempted', { operation: 'session' })
+  // Warm-up document request lets REMEMBERME mint a fresh PHPSESSID before the XHR healthCheck (plan M2).
+  await warmUpProviderSession()
   const health = await healthCheck()
   if (health.ok) {
     settled = true

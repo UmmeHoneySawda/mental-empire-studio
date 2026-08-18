@@ -1,4 +1,4 @@
-import { spawnSync } from 'node:child_process'
+import { spawn } from 'node:child_process'
 import { parseFile } from 'music-metadata'
 import { ffprobePath } from './bin'
 import { logger } from './logger'
@@ -7,16 +7,48 @@ import { logger } from './logger'
 // the Compose timeline. ffprobe is the source of truth because VBR MP3 headers can
 // mislead music-metadata and produce short final renders.
 const AUDIO_LOG = logger.scope('audio')
+const FFPROBE_TIMEOUT_MS = 10_000
 
-function probeDurationWithFfprobe(filePath: string): number {
-  const r = spawnSync(ffprobePath(), ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', filePath], { encoding: 'utf8' })
-  const n = Number.parseFloat((r.stdout ?? '').trim())
-  return Number.isFinite(n) && n > 0 ? n : 0
+function probeDurationWithFfprobe(filePath: string): Promise<number> {
+  return new Promise((resolve) => {
+    let stdout = ''
+    let killed = false
+    let timer: ReturnType<typeof setTimeout> | null = null
+    try {
+      const child = spawn(ffprobePath(), ['-v', 'error', '-show_entries', 'format=duration', '-of', 'csv=p=0', filePath], {
+        stdio: ['ignore', 'pipe', 'pipe']
+      })
+      timer = setTimeout(() => {
+        killed = true
+        try { child.kill('SIGKILL') } catch { /* ignore */ }
+        AUDIO_LOG.warn(`ffprobe timed out after ${FFPROBE_TIMEOUT_MS}ms path=${filePath}`)
+        resolve(0)
+      }, FFPROBE_TIMEOUT_MS)
+      // eslint-disable-next-line @typescript-eslint/no-explicit-any
+      ;(timer as unknown as { unref?: () => void }).unref?.()
+      child.stdout.on('data', (d: Buffer) => { stdout += d.toString('utf8') })
+      // Discard stderr but drain it to avoid buffer stall.
+      child.stderr.on('data', () => { /* drain */ })
+      child.on('error', () => {
+        if (timer) clearTimeout(timer)
+        if (!killed) resolve(0)
+      })
+      child.on('close', () => {
+        if (timer) clearTimeout(timer)
+        if (killed) return
+        const n = Number.parseFloat(stdout.trim())
+        resolve(Number.isFinite(n) && n > 0 ? n : 0)
+      })
+    } catch {
+      if (timer) clearTimeout(timer)
+      resolve(0)
+    }
+  })
 }
 
 /** Read an audio file's duration. ffprobe wins when it disagrees with headers. */
 export async function probeDuration(filePath: string): Promise<number> {
-  const ffprobeSec = probeDurationWithFfprobe(filePath)
+  const ffprobeSec = await probeDurationWithFfprobe(filePath)
   let metaSec = 0
   try {
     const meta = await parseFile(filePath)

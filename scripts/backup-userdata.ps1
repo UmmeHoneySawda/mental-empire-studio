@@ -46,15 +46,42 @@ if ((Test-Path $LegacyDir) -and ($LegacyDir -cne $SourceDir)) {
   if ($sawLegacy) { Say "backed up the legacy lowercase profile too" 'DarkGray' }
 }
 
+# A backup without SHA256SUMS.txt cannot be verified by restore-userdata.ps1, which
+# silently skips verification when the file is absent. This block used to swallow every
+# error, so a checksum failure still printed BACKUP OK and left an unverifiable backup
+# that looked good (that is exactly what happened to CLAUDE-BACKUP-20260814-221423).
+# A checksum failure now fails the backup.
+$sums    = Join-Path $dest 'SHA256SUMS.txt'
+$toHash  = @(Get-ChildItem -LiteralPath $dest -File |
+             Where-Object { $_.Name -in @('mental-empire.db','mental-empire-settings.json') })
+if ($toHash.Count -eq 0) {
+  Say ''
+  Say "BACKUP FAILED: no database or settings file was copied into $dest." 'Red'
+  exit 1
+}
 try {
-  Get-ChildItem -LiteralPath $dest -File |
-    Where-Object { $_.Name -in @('mental-empire.db','mental-empire-settings.json') } |
+  $toHash |
     Get-FileHash -Algorithm SHA256 |
     ForEach-Object { "{0} *{1}" -f $_.Hash.ToLower(), (Split-Path $_.Path -Leaf) } |
-    Set-Content -LiteralPath (Join-Path $dest 'SHA256SUMS.txt') -Encoding ascii
+    Set-Content -LiteralPath $sums -Encoding ascii
 } catch {
-  # SHA256 checksum skipped if Get-FileHash unavailable
+  Say ''
+  Say "BACKUP FAILED: could not write SHA256SUMS.txt - $($_.Exception.Message)" 'Red'
+  Say "Copies are in $dest but are NOT verifiable. Re-run the backup." 'Red'
+  exit 1
 }
+
+# Read it back — a truncated or half-written checksum file is as useless as a missing one.
+# The pattern is the one restore-userdata.ps1 parses, so a line it would skip fails here.
+$written = @(Get-Content -LiteralPath $sums -ErrorAction SilentlyContinue |
+             Where-Object { $_ -match '^[0-9a-f]{64}\s+\*.+$' })
+if ($written.Count -ne $toHash.Count) {
+  Say ''
+  Say "BACKUP FAILED: SHA256SUMS.txt has $($written.Count) valid line(s), expected $($toHash.Count)." 'Red'
+  Say "Copies are in $dest but are NOT verifiable. Re-run the backup." 'Red'
+  exit 1
+}
+Say "wrote SHA256SUMS.txt ($($written.Count) file(s))" 'DarkGray'
 
 Say ''
 Say "BACKUP OK -> $dest" 'Green'

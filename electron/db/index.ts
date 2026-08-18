@@ -240,6 +240,7 @@ CREATE TABLE IF NOT EXISTS provider_jobs (
   errorMessage TEXT,
   segmentOrdinal INTEGER,
   internalSegment INTEGER NOT NULL DEFAULT 0,
+  downloadAttempts INTEGER NOT NULL DEFAULT 0,
   createdAt TEXT NOT NULL,
   updatedAt TEXT NOT NULL,
   lastPolledAt TEXT,
@@ -428,6 +429,7 @@ function migrate(d: Database.Database): void {
   ensureColumn(d, 'provider_jobs', 'thumbnailUrl', 'TEXT')
   ensureColumn(d, 'provider_jobs', 'etaSeconds', 'INTEGER')
   ensureColumn(d, 'provider_jobs', 'hostName', 'TEXT')
+  ensureColumn(d, 'provider_jobs', 'downloadAttempts', 'INTEGER')
   d.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_assets_content_id ON assets(id) WHERE id IS NOT NULL')
   // The owned<->source edge is now looked up by channel on several paths (the back-fill below,
   // sourcesForMyChannel, the cache sync, setChannelSource, deleteMyChannel). Unindexed it was
@@ -1014,7 +1016,8 @@ function rowToProviderJob(r: Record<string, unknown>): ProviderJob {
     etaSeconds: r.etaSeconds == null ? undefined : coerceNum(r.etaSeconds, 0),
     thumbnailUrl: r.thumbnailUrl == null || r.thumbnailUrl === '' ? undefined : String(r.thumbnailUrl),
     hostName: r.hostName == null || r.hostName === '' ? undefined : String(r.hostName),
-    internalSegment: !!r.internalSegment
+    internalSegment: !!r.internalSegment,
+    downloadAttempts: r.downloadAttempts == null ? 0 : coerceNum(r.downloadAttempts, 0)
   }
 }
 
@@ -1025,6 +1028,7 @@ function providerJobToRow(job: ProviderJob): Record<string, unknown> {
     remoteStepsTotal: job.remoteStepsTotal ?? null,
     segmentOrdinal: job.segmentOrdinal ?? null,
     internalSegment: job.internalSegment ? 1 : 0,
+    downloadAttempts: job.downloadAttempts ?? 0,
     remoteProjectId: job.remoteProjectId ?? null,
     remoteTaskUuid: job.remoteTaskUuid ?? null,
     remotePreviousTaskUuid: job.remotePreviousTaskUuid ?? null,
@@ -1773,7 +1777,7 @@ function buildRepositories(d: Database.Database): Repositories {
         'operation', 'remoteProjectId', 'remoteTaskUuid', 'remotePreviousTaskUuid', 'parentProviderJobId',
         'automationJobId', 'automationItemId', 'projectId', 'requestFingerprint', 'requestJson', 'status', 'remoteStep',
         'remoteStepsTotal', 'progress', 'remoteMediaId', 'remoteMediaUrl', 'localOutputPath', 'localCaptionedOutputPath', 'errorCode',
-        'errorMessage', 'segmentOrdinal', 'internalSegment', 'lastPolledAt', 'downloadedAt'
+        'errorMessage', 'segmentOrdinal', 'internalSegment', 'downloadAttempts', 'lastPolledAt', 'downloadedAt'
       ])
       const sets: string[] = []
       const params: Record<string, unknown> = { id }

@@ -1,5 +1,52 @@
 # Current Objective
 
+Fix TalkingPhotos healthy-transfer timeouts and the black Electron window without losing live user data or silently restarting automation renders.
+
+# Verified Completed
+
+- Confirmed the 120-second deadline is total-duration rather than idle and production transfers were still receiving bytes when it fired.
+- Replaced the total-duration deadline with a 60-second no-byte stall watchdog plus a separate 30-minute ceiling; active transfers rearm only the idle watchdog.
+- Added red/green coverage for a healthy 150-second transfer, response and pre-response stalls, and the overall ceiling.
+- Created backup `CLAUDE-BACKUP-20260814-230531`; the bundled PowerShell lacks `Get-FileHash`, so generated `SHA256SUMS.txt` independently and verified both required hashes.
+- Paused all three live automation jobs and confirmed the Remotion headless-worker count reached zero before restarting Electron.
+- Disproved render/GPU starvation: the window stayed black with no render workers. CDP showed an empty React root and `ERR_CACHE_READ_FAILURE` loading the optional Sentry chunk.
+- Made renderer telemetry startup non-blocking and failure-contained so an optional chunk can never prevent `root.render`.
+- Moved the corrupt 15 MB cache to `Cache-corrupt-20260814-2324`; a clean-cache relaunch mounted the full UI with no renderer errors.
+- Focused tests: 3 files, 48 passed. `npm run typecheck`, `npm run build`, and scoped `git diff --check` passed.
+- Live production check: project `1086509` stayed healthy beyond the old 120-second cutoff, growing from 107 MB to 377 MB with `downloadAttempts=0` and no error.
+
+# Current Problem
+
+No implementation blocker. The three automation jobs intentionally remain paused until the user chooses to resume them.
+
+# Relevant Files
+
+- `shared/talkingphotos.ts`
+- `electron/providers/talkingphotos/downloader.ts`
+- `test/unit/talkingphotos-downloader.test.ts`
+- `src/main.tsx`
+- `src/lib/rendererTelemetry.ts`
+- `test/unit/renderer-telemetry.test.ts`
+
+# Do Not Modify
+
+- Render/grade filter chains, encoder flags, or Remotion render options without direct evidence and the render-performance baseline.
+- Unrelated dirty worktree changes or any provider job other than the five already recovered.
+
+# Next Action
+
+Relaunch normal dev mode and leave the recovered automation jobs paused for explicit user resumption.
+
+# Verification
+
+- Focused TalkingPhotos downloader tests.
+- TalkingPhotos test scope, `npm run typecheck`, `npm run build`, and scoped `git diff --check`.
+- Direct window/process evidence for the black-window outcome.
+
+---
+
+# Prior Completed Objective — Video Editor UI Port
+
 Port the completed `D:\Work\video-editor` mockup wholesale into the open-project Video Studio
 workspace while preserving the existing editor state, actions, persistence, and Remotion
 behavior.

@@ -267,7 +267,13 @@ export function rollupSegments(items: LibraryItem[]): LibraryItem[] {
     tops.push(item)
   }
 
-  return tops.map((parent) => {
+  const topIds = new Set(tops.map((t) => t.id))
+  const orphans: LibraryItem[] = []
+  for (const [parentId, kids] of childrenByParent) {
+    if (!topIds.has(parentId)) orphans.push(...kids)
+  }
+
+  const rolled = tops.map((parent) => {
     const kids = childrenByParent.get(parent.id)
     if (!kids || kids.length === 0) {
       // Title may already encode part X/Y from segment metadata on parent itself
@@ -280,19 +286,14 @@ export function rollupSegments(items: LibraryItem[]): LibraryItem[] {
       }
       return parent
     }
-    const ordinals = kids
-      .map((k) => k.segmentOrdinal)
-      .filter((n): n is number => typeof n === 'number')
-    const total = parent.segmentTotal ?? kids[0]?.segmentTotal ?? (ordinals.length ? Math.max(...ordinals) : kids.length)
-    const ordinal = parent.segmentOrdinal ?? (ordinals.length ? Math.min(...ordinals) : 1)
-    const base = parent.title.replace(/\s*·\s*part\s+\d+\s*\/\s*\d+\s*$/i, '').trim()
-    return {
-      ...parent,
-      title: `${base} · part ${ordinal}/${total}`,
-      segmentOrdinal: ordinal,
-      segmentTotal: total
-    }
+    // Parent has children (merge output) — keep its own title. Previously this
+    // retitled the merge as "· part 1/N" using child ordinals; with imported
+    // segments ordinals are now set from itemsIds position but the merge should
+    // never be retitled.
+    return parent
   })
+  // Emit orphans (segments whose merge parent is absent or deleted) rather than dropping them.
+  return [...rolled, ...orphans]
 }
 
 export function filterLibrary(
