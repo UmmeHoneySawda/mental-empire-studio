@@ -1934,6 +1934,141 @@ function registerStudioPreviewProtocol(): void {
   })
 }
 
+/**
+ * Live TalkingPhotos long-form run (ME_SMOKE=tp-live).
+ *
+ * The vendor contract was first proven with a standalone HTTP harness. That validated the wire
+ * format but never executed the shipped code, so client.ts, api.ts and pipeline.ts had no live
+ * coverage at all — a contract drift would have surfaced in a user's job. This drives the real path:
+ * createTpJob -> startTpJob -> split -> upload -> submit -> await -> merge -> awaitMerge -> download.
+ *
+ * This spends real render credits against a real account, so it is opt-in twice — the smoke value
+ * and ME_TP_LIVE=1 — and it reuses an existing character uuid rather than generating one, because
+ * generation bills against the same daily quota as a render.
+ *
+ *   ME_SMOKE=tp-live ME_TP_LIVE=1 ME_SMOKE_USERDATA_DIR=<throwaway> \
+ *   ME_TP_AUDIO=<mp3> ME_TP_CHARACTER_UUID=<uuid> [ME_TP_PART_SECONDS=45] [ME_TP_FEATURE=human-high-quality]
+ */
+async function runSmokeTpLive(): Promise<void> {
+  const label = 'SMOKE_TP_LIVE'
+  try {
+    if (process.env['ME_TP_LIVE'] !== '1') {
+      console.log(`${label}_SKIP refusing to spend render credits without ME_TP_LIVE=1`)
+      app.exit(0)
+      return
+    }
+    assertDisposableSmokeProfile(app.getPath('userData'))
+
+    const sourceAudio = process.env['ME_TP_AUDIO'] ?? ''
+    const characterUuid = process.env['ME_TP_CHARACTER_UUID'] ?? ''
+    if (!sourceAudio || !existsSync(sourceAudio)) throw new Error(`ME_TP_AUDIO missing or not a file: ${sourceAudio || '(unset)'}`)
+    if (!characterUuid) throw new Error('ME_TP_CHARACTER_UUID is required; generating a character would bill the same quota as a render')
+    const partSeconds = Math.max(1, Number(process.env['ME_TP_PART_SECONDS'] ?? '45') || 45)
+
+    // The pipeline derives its working dirs from dirname(dirname(job.audioPath)), so staging the
+    // audio two levels down keeps every chunk and output inside the throwaway profile.
+    const itemDir = join(app.getPath('userData'), 'tp-live-item')
+    const audioDir = join(itemDir, 'audio')
+    mkdirSync(audioDir, { recursive: true })
+    const audioPath = join(audioDir, 'source.mp3')
+    copyFileSync(sourceAudio, audioPath)
+
+    const repos = getRepos()
+    const { createTpJob } = await import('./services/talkingphotos/jobs')
+    const { startTpJob, isTpJobRunning } = await import('./services/talkingphotos/pipeline')
+    const { logout } = await import('./services/talkingphotos/client')
+    const { fetchQuota } = await import('./services/talkingphotos/api')
+
+    const characterId = 'tp-live-character'
+    repos.upsertTpCharacter({
+      id: characterId,
+      label: 'Live smoke presenter',
+      kind: 'generated',
+      resultUuid: characterUuid,
+      mediaId: 0,
+      previewUrl: '',
+      previewPath: '',
+      gender: 'female',
+      ethnicity: '',
+      age: 'adult',
+      beard: 'shaven',
+      characterStyle: 'realistic',
+      aspectRatio: '9:16',
+      createdAt: new Date().toISOString()
+    })
+
+    const quotaBefore = await fetchQuota().catch(() => null)
+    const startedAt = Date.now()
+    const detail = await createTpJob({
+      sourceId: '',
+      sourceVideoId: '',
+      channel: 'tp-live',
+      videoTitle: 'TalkingPhotos live smoke',
+      audioPath,
+      featureId: process.env['ME_TP_FEATURE'] || 'human-high-quality',
+      aspectRatio: '9:16',
+      partSeconds,
+      characterId,
+      motionId: 0,
+      parentMotionId: 0
+    })
+    const jobId = detail.job.id
+    console.log(`${label}_PLAN job=${jobId} parts=${detail.parts.length} outputs=${detail.outputs.length} source=${detail.job.sourceDurationSec.toFixed(2)}s chunk=${detail.job.partSeconds}s`)
+    if (detail.parts.length < 2) throw new Error(`plan produced ${detail.parts.length} chunk(s); a merge needs at least 2, so give it longer audio or a smaller ME_TP_PART_SECONDS`)
+
+    startTpJob(jobId)
+
+    // Renders took ~28 min for two 45s chunks on this account, so the ceiling is generous. Phase is
+    // logged on change only: a per-poll line would bury the transitions that matter.
+    const deadline = Date.now() + 90 * 60 * 1000
+    let lastSeen = ''
+    let job = detail.job
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 15_000))
+      const now = repos.tpJobDetail(jobId)
+      if (!now) throw new Error('job row vanished mid-run')
+      job = now.job
+      const seen = `${job.phase}/${job.status}/${now.parts.map((p) => p.status).join(',')}`
+      if (seen !== lastSeen) {
+        lastSeen = seen
+        console.log(`${label}_STEP ${job.phase} ${job.status} parts=${now.parts.map((p) => p.status).join(',')}`)
+      }
+      if (job.status === 'done' || job.status === 'error' || job.status === 'canceled') break
+      if (job.status === 'paused' && !isTpJobRunning(jobId)) break
+      if (Date.now() > deadline) throw new Error(`timed out after 90 min in phase ${job.phase}`)
+    }
+
+    const final = repos.tpJobDetail(jobId)!
+    const output = final.outputs[0]
+    const outPath = output?.localPath ?? ''
+    const probe = outPath && existsSync(outPath) ? ffprobe(outPath) : null
+    // The merge must equal the sum of the chunks; a truncated stitch is the failure this catches.
+    const expected = final.parts.reduce((sum, p) => sum + (p.audioDurationSec || 0), 0)
+    const durationOk = !!probe && expected > 0 && Math.abs(probe.duration - expected) < 2
+    const streamOk = !!probe && probe.video && probe.audio && probe.vcodec === 'h264'
+    const merged = final.parts.length > 1
+    const ok = job.status === 'done' && !!probe && durationOk && !!streamOk && merged
+
+    const quotaAfter = await fetchQuota().catch(() => null)
+    await logout().catch(() => undefined)
+
+    console.log(
+      `${label} ok=${ok} status=${job.status} phase=${job.phase} elapsedMin=${((Date.now() - startedAt) / 60000).toFixed(1)}` +
+        ` parts=${final.parts.length} projects=${final.parts.map((p) => p.projectId).join(',')} mergeProject=${output?.mergeProjectId ?? 0}` +
+        ` expected=${expected.toFixed(2)}s actual=${probe?.duration?.toFixed(2) ?? 'n/a'}s durationOk=${durationOk} stream=${streamOk}` +
+        ` quota=${quotaBefore?.videosUsed ?? '?'}->${quotaAfter?.videosUsed ?? '?'} err=${job.error || 'none'} out=${outPath || 'none'}`
+    )
+    app.exit(ok ? 0 : 1)
+  } catch (e) {
+    console.log(`${label}_FAIL ${(e as Error).message}`)
+    try {
+      const { logout } = await import('./services/talkingphotos/client')
+      await logout()
+    } catch { /* the login slot frees itself after ~15 min */ }
+    app.exit(1)
+  }
+}
+
 function studioPreviewMimeType(filePath: string): string | undefined {
   const table: Record<string, string> = {
     '.html': 'text/html; charset=utf-8',
@@ -2027,6 +2162,10 @@ app.whenReady().then(async () => {
   }
   if (process.env['ME_SMOKE'] === 'gpu-cancel') {
     void runSmokeGpuCancel()
+    return
+  }
+  if (process.env['ME_SMOKE'] === 'tp-live') {
+    void runSmokeTpLive()
     return
   }
   // Demo-dependent smokes (M2–M7) assert against deterministic seeded rows. Production
