@@ -24,6 +24,7 @@ import type {
   AutomationJob,
   VisualTemplate
 } from '../shared/types'
+import type { TpCharacterProgress, TpJobDetail } from '../shared/talkingphotos'
 import type {
   AddVideoScenePatch,
   ApplyVideoTransitionInput,
@@ -248,6 +249,33 @@ const api: NativeApi = {
     retryJob: (id: string) => ipcRenderer.invoke('automation:retryJob', id)
   },
 
+  talkingphotos: {
+    connectionTest: () => ipcRenderer.invoke('talkingphotos:connectionTest'),
+    connectionStatus: () => ipcRenderer.invoke('talkingphotos:connectionStatus'),
+    signOut: () => ipcRenderer.invoke('talkingphotos:signOut'),
+    credentialSource: () => ipcRenderer.invoke('talkingphotos:credentialSource'),
+    catalog: () => ipcRenderer.invoke('talkingphotos:catalog'),
+    quota: () => ipcRenderer.invoke('talkingphotos:quota'),
+    probeAudio: (filePath: string) => ipcRenderer.invoke('talkingphotos:probeAudio', filePath),
+    planPreview: (input) => ipcRenderer.invoke('talkingphotos:planPreview', input),
+    planLocal: (sourceDurationSec, partSeconds) => ipcRenderer.invoke('talkingphotos:planLocal', sourceDurationSec, partSeconds),
+    motions: (featureId, gender, aspectRatio) => ipcRenderer.invoke('talkingphotos:motions', featureId, gender, aspectRatio),
+    characters: () => ipcRenderer.invoke('talkingphotos:characters'),
+    characterGenerate: (input) => ipcRenderer.invoke('talkingphotos:characterGenerate', input),
+    characterUpload: (input) => ipcRenderer.invoke('talkingphotos:characterUpload', input),
+    characterDelete: (id: string) => ipcRenderer.invoke('talkingphotos:characterDelete', id),
+    jobs: () => ipcRenderer.invoke('talkingphotos:jobs'),
+    job: (id: string) => ipcRenderer.invoke('talkingphotos:job', id),
+    jobCreate: (input) => ipcRenderer.invoke('talkingphotos:jobCreate', input),
+    jobStart: (id: string) => ipcRenderer.invoke('talkingphotos:jobStart', id),
+    jobPause: (id: string) => ipcRenderer.invoke('talkingphotos:jobPause', id),
+    jobCancel: (id: string) => ipcRenderer.invoke('talkingphotos:jobCancel', id),
+    jobDelete: (id: string) => ipcRenderer.invoke('talkingphotos:jobDelete', id),
+    partRetry: (jobId: string, partId: string) => ipcRenderer.invoke('talkingphotos:partRetry', jobId, partId),
+    retryFailed: (jobId: string) => ipcRenderer.invoke('talkingphotos:retryFailed', jobId),
+    forgetSession: () => ipcRenderer.invoke('talkingphotos:forgetSession')
+  } satisfies NativeApi['talkingphotos'],
+
   chooseFolder: () => ipcRenderer.invoke('fs:chooseFolder'),
 
   library: {
@@ -385,6 +413,8 @@ const api: NativeApi = {
   onVideoEngineJob: (cb: (job: VideoRenderJob) => void) => subscribe('videoEngine:job', cb),
   onAutoBrollProgress: (cb: (p: AutoBrollProgress) => void) => subscribe('videoEngine:autoBroll', cb),
   onNichePoolProgress: (cb: (p: NichePoolProgress) => void) => subscribe('niche:poolProgress', cb),
+  onTalkingPhotosJob: (cb: (detail: TpJobDetail) => void) => subscribe('talkingphotos:job', cb),
+  onTalkingPhotosCharacter: (cb: (p: TpCharacterProgress) => void) => subscribe('talkingphotos:characterProgress', cb),
   revealPath: (path: string) => ipcRenderer.invoke('shell:revealPath', path),
   openPath: (path: string) => ipcRenderer.invoke('shell:openPath', path),
   onFastPreviewProgress: (cb) => subscribe('videoEngine:fastPreviewProgress', cb)

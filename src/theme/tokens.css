@@ -98,6 +98,8 @@
   --surface-hover: #20252d;
   --info: #6aa3ff;
   --info-2: #9cc4ff;
+  /* low-emphasis error field, for a row or band that must read as failed without shouting */
+  --surface-error-soft: rgba(255, 90, 110, 0.07);
 }
 
 :root[data-accent='Amber'] {

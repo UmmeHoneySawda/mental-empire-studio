@@ -41,6 +41,7 @@ import { destroyGpuWorker } from './services/engine/gpu/host'
 import { runProfile, newVideos } from './ipc/automation'
 import { cancelAutomationJob, createAutomationJob, getAutomationJob, pauseAutomationJob, preflightAutomation, resumeAutomationJob, startAutomationSupervisor, stopAutomationSupervisor } from './services/automation-supervisor'
 import { postWebhook } from './services/webhook'
+import { reconcileTpJobsOnStartup, stopAllTpJobs } from './services/talkingphotos/pipeline'
 import { assertDisposableSmokeProfile, prepareSmokeUserDataDir } from './services/smokeSafety'
 import { createServer } from 'node:http'
 
@@ -282,6 +283,9 @@ function initPersistence(): void {
   try {
     initDatabase(dbPath)
     recoverInterruptedRenderJobs()
+    // A TalkingPhotos job that was mid-flight when Studio closed is parked, not resumed: an
+    // unattended resume could start spending render quota before the window is even visible.
+    reconcileTpJobsOnStartup()
   } catch (e) {
     L.error(`DB init FAILED at ${dbPath}: ${(e as Error).message}`)
     throw e
@@ -2243,6 +2247,7 @@ app.on('before-quit', () => {
   isQuitting = true
   scheduler.stop()
   stopAutomationSupervisor()
+  stopAllTpJobs()
   // Tear down the hidden GPU render-worker window if it was created.
   destroyGpuWorker()
   // Stop the template-engine render queue and drop staged HyperFrames preview

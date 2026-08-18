@@ -158,6 +158,7 @@ Near-black graphite surfaces keep attention on media and workflow state; a selec
 - **Inset Charcoal** (`inset-charcoal`): Fields, wells, and nested work areas.
 - **Raised Graphite** (`raised-graphite`): Hovered or elevated surface and the contrast test background.
 - **Quiet Divider** (`quiet-divider`): One-pixel structure between adjacent regions.
+- **Soft Error Field** (`surface-error-soft`): A 7%-alpha crimson wash for a row or band that must read as failed without shouting. Paired with `err-2` text, never used as a border.
 - **Primary, Strong, Soft, Muted, and Label Text**: A descending semantic text ladder; every role remains readable on raised surfaces.
 
 **The Signal Light Rule.** One screen gets one active accent voice. Do not combine multiple accent themes or use accent as decoration.
@@ -165,6 +166,8 @@ Near-black graphite surfaces keep attention on media and workflow state; a selec
 **The Readable Secondary Rule.** Secondary text remains at least 4.5:1 on the raised surface; create hierarchy with size, weight, and spacing rather than illegibility.
 
 **The Fixed Status Rule.** Emerald means healthy or complete, crimson means failure or danger, amber means attention or queued, and blue means neutral information regardless of the selected accent theme.
+
+**The Shape-First State Rule.** Status may never be encoded by hue alone. `ok` (#36c98e), `err` (#ff5a6e), and `warn` (#f5b323) are byte-identical to the Emerald, Crimson, and Amber accent themes respectively, so a hue-only status mark becomes ambiguous the moment a user selects the matching accent — and is unreadable to a colour-deficient user in every theme. Encode state in form first (filled versus hollow, present versus struck, position of a partial fill) and let hue reinforce it.
 
 ## Typography
 
@@ -265,6 +268,31 @@ Every destination begins with one semantic title, a short outcome-oriented subti
 ### Production Path
 
 The shared five-stage path is the signature workflow component. It preserves source → edit → thumbnail → render → upload context, distinguishes completed/current/blocked states, and gives changing progress a semantic label and value.
+
+TalkingPhotos is a deliberately **unnumbered** sibling in the same nav group: it runs a parallel route from a source download straight to a finished video, so it must not read as a sixth stage.
+
+### Printed-Mark States
+
+For a long list of items whose state must be read at a glance, state is a printed mark rather than a coloured dot: a 9px square with a one-pixel rule and no radius, per the Shape-First State Rule. The vocabulary (`.tp-mark` and its `is-*` modifiers):
+
+- **rest** — hollow, label-grey rule.
+- **queued** — hollow with a 3px centred core; ready, not moving.
+- **submitted** — hollow with the bottom half filled; handed over, not started.
+- **active** — solid, with a slow opacity pulse that `prefers-reduced-motion` removes.
+- **done** — solid and **struck** by a one-pixel rule in the surface colour.
+- **void** — hollow and struck diagonally in crimson.
+
+Every pair is distinguishable with hue removed. A failed item is **voided in place**, never removed from the list, so a retry has somewhere to land and the count stays honest.
+
+### Ledger
+
+Two content columns sharing a fixed centre rail of keys, for surfaces where the point is the comparison between them (`.tp-ledger`). The rail is the one moving part: it carries the item key and its printed mark, and a boundary rule is cut into it where the sequence changes footing.
+
+- The header cells and the scrolling body are siblings of the ledger grid; **the body must span `grid-column: 1 / -1`** or it collapses into the first track.
+- Rows use `grid-template-columns: subgrid` so the two columns cannot drift out of alignment.
+- Give the prose column the slack (`0.68fr / rail / 1fr`); the measured column is fixed-width by nature.
+- Keys number across the whole artefact, not per group, so "item 7" is addressable and any total shown elsewhere agrees with the rail.
+- Nested inside a `Card`, a ledger drops its own background, border, radius, and shadow (`.is-nested`) — nested cards are always wrong.
 
 ## Do's and Don'ts
 

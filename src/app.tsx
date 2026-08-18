@@ -8,6 +8,7 @@ import { Home } from './screens/Home'
 import { MyChannels } from './screens/MyChannels'
 import { Download } from './screens/Download'
 import { Compose } from './screens/Compose'
+import { TalkingPhotos } from './screens/TalkingPhotos'
 import { RenderQueue } from './screens/RenderQueue'
 import { Publish } from './screens/Publish'
 import { Profiles } from './screens/Profiles'
@@ -29,6 +30,7 @@ const SCREENS: Record<ScreenKey, ComponentType> = {
   sources: Download,
   download: Download,
   compose: Compose,
+  talkingphotos: TalkingPhotos,
   thumb: Thumbnails,
   render: RenderQueue,
   publish: Publish,

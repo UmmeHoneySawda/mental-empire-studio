@@ -22,6 +22,7 @@ import { probeGpuEngine } from '../services/engine/gpu/host'
 import { runUploadDetection } from '../services/uploads-detect'
 import { setSentryEnabled, telemetryForcedOff } from '../services/sentry'
 import { registerStorageIpc } from './storage'
+import { registerTalkingPhotosIpc } from './talkingphotos'
 import { registerVideoEngineIpc } from './video-engine'
 import { resetVideoEngine } from '../services/video-engine/studio'
 import {
@@ -179,6 +180,9 @@ export function registerIpc(): void {
 
   // ---- storage env roots (settings badge + D-aware fallback) ----
   registerStorageIpc()
+
+  // ---- TalkingPhotos long-form: chunk a source audio, render each piece, stitch, download ----
+  registerTalkingPhotosIpc()
 
   // ---- template video engine: Remotion + HyperFrames Compose studio ----
   registerVideoEngineIpc()

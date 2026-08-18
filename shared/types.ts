@@ -4,6 +4,25 @@
 
 import type { GpuRenderSpec } from './renderSpec'
 import type { GpuEngineStatus } from './gpuStatus'
+import type {
+  TpAspectRatio,
+  TpBlockedFeature,
+  TpCharacter,
+  TpCharacterGender,
+  TpCharacterProgress,
+  TpConnection,
+  TpCreateJobInput,
+  TpCredentialSource,
+  TpFeature,
+  TpGenerateCharacterInput,
+  TpJob,
+  TpJobDetail,
+  TpMotion,
+  TpPlan,
+  TpPlanPreview,
+  TpQuota,
+  TpUploadCharacterInput
+} from './talkingphotos'
 export type { CaptionStyleId }
 import type {
   AddVideoScenePatch,
@@ -64,6 +83,7 @@ export type ScreenKey =
   | 'niches'
   | 'profiles'
   | 'settings'
+  | 'talkingphotos'
 
 export type UploadStatus = 'Uploaded' | 'Scheduled' | 'Draft'
 
@@ -1104,6 +1124,10 @@ export interface AppSettings {
   autoScrape: { enabled: boolean; frequency: string; delaySec: number; retries: number; proxy: string; cookiesPath: string }
   background: { tray: boolean; startOnSignIn: boolean; notifications: boolean; webhook: string }
   transcription: { apiKey: string; model: string }
+  /** TalkingPhotos.ai account. `session` is the persisted cookie jar, encrypted at rest.
+   *  `email`/`password` are only consulted when the TALKINGPHOTOS_EMAIL and
+   *  TALKINGPHOTOS_PASSWORD environment variables are not both set. */
+  talkingphotos: { email: string; password: string; session: string }
   /** experimental features + stock-footage API keys (gated; default off).
    *  `geminiKey` is the Auto B-roll fallback model: a free Groq key's daily token budget
    *  does not cover a long video twice, and Gemini's does. Optional — Groq alone still
@@ -1169,6 +1193,7 @@ export const DEFAULT_SETTINGS: AppSettings = {
   autoScrape: { enabled: true, frequency: 'Every 6 hours', delaySec: 1.5, retries: 3, proxy: '', cookiesPath: '' },
   background: { tray: true, startOnSignIn: false, notifications: true, webhook: '' },
   transcription: { apiKey: '', model: 'whisper-large-v3-turbo' },
+  talkingphotos: { email: '', password: '', session: '' },
   beta: { enabled: false, pexelsKey: '', pixabayKey: '', coverrKey: '', geminiKey: '', metaKey: '' },
   features: { workflowP1: true, videoEditorV2: true, thumbEditorV2: true },
   detection: { auto: true, confirmBand: [0.6, 0.82] },
@@ -1521,6 +1546,40 @@ export interface NativeApi {
     deleteJob(id: string): Promise<void>
     retryJob(id: string): Promise<void>
   }
+  /** TalkingPhotos.ai long-form: chunk a source audio, render each piece, stitch, download. */
+  talkingphotos: {
+    /** Signs in and reads back role, remaining daily renders, and busy render slots. */
+    connectionTest(): Promise<TpConnection>
+    /** Cheap, no network: is there a stored session and where do credentials come from. */
+    connectionStatus(): Promise<TpConnection>
+    /** Ends the vendor session, freeing one of the account's three allowed sign-ins. */
+    signOut(): Promise<TpConnection>
+    credentialSource(): Promise<{ source: TpCredentialSource; envEmail: string; settingsEmail: string }>
+    catalog(): Promise<{ features: TpFeature[]; blocked: TpBlockedFeature[]; mergeCapSec: number }>
+    quota(): Promise<TpQuota>
+    /** Measure a local audio file in seconds; 0 when it cannot be read. */
+    probeAudio(filePath: string): Promise<number>
+    /** Prices a plan against the live chunk ceiling, daily allowance, and concurrency. */
+    planPreview(input: { featureId: string; partSeconds: number; sourceDurationSec: number }): Promise<TpPlanPreview>
+    /** Plan maths only, no network — for a control that must stay responsive while dragged. */
+    planLocal(sourceDurationSec: number, partSeconds: number): Promise<TpPlan>
+    motions(featureId: string, gender: TpCharacterGender, aspectRatio: TpAspectRatio): Promise<TpMotion[]>
+    characters(): Promise<TpCharacter[]>
+    characterGenerate(input: TpGenerateCharacterInput): Promise<TpCharacter>
+    /** Opens the OS file picker in the main process; resolves null when cancelled. */
+    characterUpload(input: TpUploadCharacterInput): Promise<TpCharacter | null>
+    characterDelete(id: string): Promise<TpCharacter[]>
+    jobs(): Promise<TpJob[]>
+    job(id: string): Promise<TpJobDetail | null>
+    jobCreate(input: TpCreateJobInput): Promise<TpJobDetail>
+    jobStart(id: string): Promise<TpJobDetail | null>
+    jobPause(id: string): Promise<TpJobDetail | null>
+    jobCancel(id: string): Promise<TpJobDetail | null>
+    jobDelete(id: string): Promise<TpJob[]>
+    partRetry(jobId: string, partId: string): Promise<TpJobDetail | null>
+    retryFailed(jobId: string): Promise<TpJobDetail | null>
+    forgetSession(): Promise<void>
+  }
   /** pick an output folder via the OS dialog; returns the chosen path or '' */
   chooseFolder(): Promise<string>
   /** master library: reorganize existing files into the per-video layout */
@@ -1681,6 +1740,10 @@ export interface NativeApi {
   onAutoBrollProgress(cb: (p: AutoBrollProgress) => void): () => void
   /** subscribe to niche b-roll pool warm progress */
   onNichePoolProgress(cb: (p: NichePoolProgress) => void): () => void
+  /** subscribe to TalkingPhotos job/output/chunk state; SQLite remains source of truth */
+  onTalkingPhotosJob(cb: (detail: TpJobDetail) => void): () => void
+  /** subscribe to character generation progress (a single in-flight request at a time) */
+  onTalkingPhotosCharacter(cb: (p: TpCharacterProgress) => void): () => void
   /** reveal a file or folder in OS file explorer */
   revealPath(path: string): Promise<void>
   /** open a file or folder directly with default application */

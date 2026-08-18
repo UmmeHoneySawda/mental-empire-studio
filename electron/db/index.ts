@@ -33,6 +33,7 @@ import type {
 } from '../../shared/types'
 import { asBetaOpts, DEFAULT_BETA_OPTS } from '../../shared/types'
 import { normalizeAutomationConfig } from '../../shared/automationConfig'
+import type { TpCharacter, TpJob, TpJobDetail, TpOutput, TpPart } from '../../shared/talkingphotos'
 import { seedIfEmpty, seedDemoData, seedDefaultThumbnailTemplates } from './seed'
 import { planProfileSourceMigration, type SourceMigrationCandidate } from './profile-source-migration'
 
@@ -195,6 +196,82 @@ CREATE INDEX IF NOT EXISTS idx_automation_jobs_status ON automation_jobs(status,
 CREATE INDEX IF NOT EXISTS idx_automation_steps_job ON automation_job_steps(jobId, ord);
 CREATE INDEX IF NOT EXISTS idx_automation_items_job ON automation_job_items(jobId, updatedAt);
 CREATE INDEX IF NOT EXISTS idx_automation_logs_job ON automation_job_logs(jobId, id);
+CREATE TABLE IF NOT EXISTS tp_characters (
+  id TEXT PRIMARY KEY,
+  label TEXT NOT NULL,
+  kind TEXT NOT NULL,
+  resultUuid TEXT,
+  mediaId INTEGER NOT NULL DEFAULT 0,
+  previewUrl TEXT,
+  previewPath TEXT,
+  gender TEXT NOT NULL DEFAULT 'female',
+  ethnicity TEXT NOT NULL DEFAULT '',
+  age TEXT NOT NULL DEFAULT 'adult',
+  beard TEXT NOT NULL DEFAULT 'shaven',
+  characterStyle TEXT NOT NULL DEFAULT 'realistic',
+  aspectRatio TEXT NOT NULL DEFAULT '9:16',
+  createdAt TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS tp_jobs (
+  id TEXT PRIMARY KEY,
+  sourceId TEXT,
+  sourceVideoId TEXT,
+  channel TEXT,
+  videoTitle TEXT,
+  audioPath TEXT,
+  sourceDurationSec REAL NOT NULL DEFAULT 0,
+  featureId TEXT NOT NULL,
+  aspectRatio TEXT NOT NULL DEFAULT '9:16',
+  partSeconds INTEGER NOT NULL DEFAULT 300,
+  mergeCapSec INTEGER NOT NULL DEFAULT 1800,
+  characterId TEXT,
+  characterResultUuid TEXT,
+  characterMediaId INTEGER NOT NULL DEFAULT 0,
+  characterStyle TEXT NOT NULL DEFAULT 'realistic',
+  characterGender TEXT NOT NULL DEFAULT 'female',
+  characterAge TEXT NOT NULL DEFAULT 'adult',
+  characterEthnicity TEXT NOT NULL DEFAULT '',
+  characterBeard TEXT NOT NULL DEFAULT 'shaven',
+  motionId INTEGER NOT NULL DEFAULT 0,
+  parentMotionId INTEGER NOT NULL DEFAULT 0,
+  libraryCategoryId INTEGER NOT NULL DEFAULT 0,
+  phase TEXT NOT NULL DEFAULT 'audio',
+  status TEXT NOT NULL DEFAULT 'draft',
+  error TEXT,
+  createdAt TEXT NOT NULL,
+  updatedAt TEXT NOT NULL
+);
+CREATE TABLE IF NOT EXISTS tp_job_outputs (
+  id TEXT PRIMARY KEY,
+  jobId TEXT NOT NULL,
+  ord INTEGER NOT NULL,
+  startSec REAL NOT NULL DEFAULT 0,
+  endSec REAL NOT NULL DEFAULT 0,
+  mergeProjectId INTEGER NOT NULL DEFAULT 0,
+  status TEXT NOT NULL DEFAULT 'planned',
+  localPath TEXT,
+  error TEXT
+);
+CREATE TABLE IF NOT EXISTS tp_job_parts (
+  id TEXT PRIMARY KEY,
+  jobId TEXT NOT NULL,
+  outputId TEXT NOT NULL,
+  ord INTEGER NOT NULL,
+  startSec REAL NOT NULL DEFAULT 0,
+  endSec REAL NOT NULL DEFAULT 0,
+  audioPath TEXT,
+  audioDurationSec REAL NOT NULL DEFAULT 0,
+  mediaId INTEGER NOT NULL DEFAULT 0,
+  projectId INTEGER NOT NULL DEFAULT 0,
+  remoteTitle TEXT,
+  status TEXT NOT NULL DEFAULT 'planned',
+  attempts INTEGER NOT NULL DEFAULT 0,
+  error TEXT
+);
+CREATE INDEX IF NOT EXISTS idx_tp_jobs_status ON tp_jobs(status, createdAt);
+CREATE INDEX IF NOT EXISTS idx_tp_outputs_job ON tp_job_outputs(jobId, ord);
+CREATE INDEX IF NOT EXISTS idx_tp_parts_job ON tp_job_parts(jobId, ord);
+CREATE INDEX IF NOT EXISTS idx_tp_parts_output ON tp_job_parts(outputId, ord);
 `
 
 // Every table that holds user/domain data — wiped by resetAll(). app_meta is
@@ -203,7 +280,8 @@ const DATA_TABLES = [
   'my_channels', 'source_channels', 'source_videos', 'downloaded_videos', 'uploads',
   'profiles', 'thumbnail_templates', 'render_jobs', 'activity_log',
   'projects', 'project_images', 'transcript_words', 'work_item_state', 'niches',
-  'automation_jobs', 'automation_job_steps', 'automation_job_items', 'automation_job_logs'
+  'automation_jobs', 'automation_job_steps', 'automation_job_items', 'automation_job_logs',
+  'tp_jobs', 'tp_job_outputs', 'tp_job_parts', 'tp_characters'
 ]
 
 /** Add a column only if it isn't already present — idempotent forward migration. */
@@ -645,6 +723,22 @@ export interface Repositories {
   upsertAutomationItem(item: AutomationJobItem): void
   addAutomationLog(jobId: string, level: AutomationJobLog['level'], message: string, itemId?: string): void
   deleteAutomationJob(id: string): void
+  // ---- TalkingPhotos long-form (job -> outputs -> parts) ----
+  tpCharacters(): TpCharacter[]
+  tpCharacter(id: string): TpCharacter | undefined
+  upsertTpCharacter(row: TpCharacter): void
+  deleteTpCharacter(id: string): void
+  tpJobs(): TpJob[]
+  tpJob(id: string): TpJob | undefined
+  tpJobDetail(id: string): TpJobDetail | undefined
+  /** Insert a job with its whole planned tree in one transaction, so a crash cannot half-create it. */
+  createTpJob(job: TpJob, outputs: TpOutput[], parts: TpPart[]): void
+  updateTpJob(id: string, patch: Partial<TpJob>): void
+  updateTpOutput(id: string, patch: Partial<TpOutput>): void
+  updateTpPart(id: string, patch: Partial<TpPart>): void
+  deleteTpJob(id: string): void
+  /** Jobs that were mid-flight when the app closed — the resume set. */
+  tpResumableJobs(): TpJob[]
   /** Remove a single download row from history. */
   deleteDownload(id: string): void
   /** Remove a single render job from the queue. */
@@ -850,6 +944,98 @@ function rowToAutomationItem(r: Record<string, unknown>): AutomationJobItem {
     ...state,
     progress: coerceNum(r.progress, 0),
     attempts: coerceNum(r.attempts, 0)
+  }
+}
+
+// ---- TalkingPhotos long-form rows ----
+// Columns a patch is allowed to touch. An allowlist rather than Object.keys(patch) so a stray field
+// on a caller's object can never rewrite an id or a foreign key.
+const TP_JOB_COLS = new Set([
+  'sourceId', 'sourceVideoId', 'channel', 'videoTitle', 'audioPath', 'sourceDurationSec', 'featureId',
+  'aspectRatio', 'partSeconds', 'mergeCapSec', 'characterId', 'characterResultUuid', 'characterMediaId',
+  'characterStyle', 'characterGender', 'characterAge', 'characterEthnicity', 'characterBeard',
+  'motionId', 'parentMotionId', 'libraryCategoryId', 'phase', 'status', 'error'
+])
+const TP_OUTPUT_COLS = new Set(['startSec', 'endSec', 'mergeProjectId', 'status', 'localPath', 'error'])
+const TP_PART_COLS = new Set([
+  'startSec', 'endSec', 'audioPath', 'audioDurationSec', 'mediaId', 'projectId', 'remoteTitle', 'status', 'attempts', 'error'
+])
+
+function patchRow(
+  d: Database.Database,
+  table: string,
+  id: string,
+  patch: Record<string, unknown>,
+  allow: Set<string>,
+  touchUpdatedAt: boolean
+): void {
+  const sets: string[] = []
+  const params: Record<string, unknown> = { id }
+  for (const [key, value] of Object.entries(patch)) {
+    if (value === undefined || !allow.has(key)) continue
+    sets.push(`${key}=@${key}`)
+    params[key] = value
+  }
+  if (!sets.length) return
+  if (touchUpdatedAt && !Object.prototype.hasOwnProperty.call(patch, 'updatedAt')) {
+    sets.push('updatedAt=@updatedAt')
+    params.updatedAt = new Date().toISOString()
+  }
+  d.prepare(`UPDATE ${table} SET ${sets.join(', ')} WHERE id=@id`).run(params)
+}
+
+function rowToTpCharacter(r: Record<string, unknown>): TpCharacter {
+  return {
+    ...(r as unknown as TpCharacter),
+    mediaId: coerceNum(r.mediaId, 0),
+    resultUuid: (r.resultUuid as string) ?? '',
+    previewUrl: (r.previewUrl as string) ?? '',
+    previewPath: (r.previewPath as string) ?? ''
+  }
+}
+
+function rowToTpJob(r: Record<string, unknown>): TpJob {
+  return {
+    ...(r as unknown as TpJob),
+    sourceDurationSec: coerceNum(r.sourceDurationSec, 0),
+    partSeconds: coerceNum(r.partSeconds, 300),
+    mergeCapSec: coerceNum(r.mergeCapSec, 1800),
+    characterMediaId: coerceNum(r.characterMediaId, 0),
+    motionId: coerceNum(r.motionId, 0),
+    parentMotionId: coerceNum(r.parentMotionId, 0),
+    libraryCategoryId: coerceNum(r.libraryCategoryId, 0),
+    characterId: (r.characterId as string) ?? '',
+    characterResultUuid: (r.characterResultUuid as string) ?? '',
+    audioPath: (r.audioPath as string) ?? '',
+    error: (r.error as string) ?? ''
+  }
+}
+
+function rowToTpOutput(r: Record<string, unknown>): TpOutput {
+  return {
+    ...(r as unknown as TpOutput),
+    ord: coerceNum(r.ord, 0),
+    startSec: coerceNum(r.startSec, 0),
+    endSec: coerceNum(r.endSec, 0),
+    mergeProjectId: coerceNum(r.mergeProjectId, 0),
+    localPath: (r.localPath as string) ?? '',
+    error: (r.error as string) ?? ''
+  }
+}
+
+function rowToTpPart(r: Record<string, unknown>): TpPart {
+  return {
+    ...(r as unknown as TpPart),
+    ord: coerceNum(r.ord, 0),
+    startSec: coerceNum(r.startSec, 0),
+    endSec: coerceNum(r.endSec, 0),
+    audioDurationSec: coerceNum(r.audioDurationSec, 0),
+    mediaId: coerceNum(r.mediaId, 0),
+    projectId: coerceNum(r.projectId, 0),
+    attempts: coerceNum(r.attempts, 0),
+    audioPath: (r.audioPath as string) ?? '',
+    remoteTitle: (r.remoteTitle as string) ?? '',
+    error: (r.error as string) ?? ''
   }
 }
 
@@ -1490,6 +1676,82 @@ function buildRepositories(d: Database.Database): Repositories {
       tx()
     },
 
+    // ---- TalkingPhotos long-form ----
+    tpCharacters: () =>
+      (d.prepare('SELECT * FROM tp_characters ORDER BY createdAt DESC').all() as Array<Record<string, unknown>>).map(rowToTpCharacter),
+    tpCharacter: (id) => {
+      const r = d.prepare('SELECT * FROM tp_characters WHERE id=?').get(id) as Record<string, unknown> | undefined
+      return r ? rowToTpCharacter(r) : undefined
+    },
+    upsertTpCharacter: (row) => {
+      d.prepare(
+        `INSERT INTO tp_characters (id,label,kind,resultUuid,mediaId,previewUrl,previewPath,gender,ethnicity,age,beard,characterStyle,aspectRatio,createdAt)
+         VALUES (@id,@label,@kind,@resultUuid,@mediaId,@previewUrl,@previewPath,@gender,@ethnicity,@age,@beard,@characterStyle,@aspectRatio,@createdAt)
+         ON CONFLICT(id) DO UPDATE SET label=@label, previewUrl=@previewUrl, previewPath=@previewPath`
+      ).run(row)
+    },
+    deleteTpCharacter: (id) => {
+      d.prepare('DELETE FROM tp_characters WHERE id=?').run(id)
+    },
+    tpJobs: () =>
+      (d.prepare('SELECT * FROM tp_jobs ORDER BY createdAt DESC').all() as Array<Record<string, unknown>>).map(rowToTpJob),
+    tpJob: (id) => {
+      const r = d.prepare('SELECT * FROM tp_jobs WHERE id=?').get(id) as Record<string, unknown> | undefined
+      return r ? rowToTpJob(r) : undefined
+    },
+    tpJobDetail: (id) => {
+      const r = d.prepare('SELECT * FROM tp_jobs WHERE id=?').get(id) as Record<string, unknown> | undefined
+      if (!r) return undefined
+      return {
+        job: rowToTpJob(r),
+        outputs: (d.prepare('SELECT * FROM tp_job_outputs WHERE jobId=? ORDER BY ord').all(id) as Array<Record<string, unknown>>).map(rowToTpOutput),
+        parts: (d.prepare('SELECT * FROM tp_job_parts WHERE jobId=? ORDER BY ord').all(id) as Array<Record<string, unknown>>).map(rowToTpPart)
+      }
+    },
+    createTpJob: (job, outputs, parts) => {
+      const insertJob = d.prepare(
+        `INSERT INTO tp_jobs (id,sourceId,sourceVideoId,channel,videoTitle,audioPath,sourceDurationSec,featureId,aspectRatio,
+           partSeconds,mergeCapSec,characterId,characterResultUuid,characterMediaId,characterStyle,characterGender,characterAge,
+           characterEthnicity,characterBeard,motionId,parentMotionId,libraryCategoryId,phase,status,error,createdAt,updatedAt)
+         VALUES (@id,@sourceId,@sourceVideoId,@channel,@videoTitle,@audioPath,@sourceDurationSec,@featureId,@aspectRatio,
+           @partSeconds,@mergeCapSec,@characterId,@characterResultUuid,@characterMediaId,@characterStyle,@characterGender,@characterAge,
+           @characterEthnicity,@characterBeard,@motionId,@parentMotionId,@libraryCategoryId,@phase,@status,@error,@createdAt,@updatedAt)`
+      )
+      const insertOutput = d.prepare(
+        `INSERT INTO tp_job_outputs (id,jobId,ord,startSec,endSec,mergeProjectId,status,localPath,error)
+         VALUES (@id,@jobId,@ord,@startSec,@endSec,@mergeProjectId,@status,@localPath,@error)`
+      )
+      const insertPart = d.prepare(
+        `INSERT INTO tp_job_parts (id,jobId,outputId,ord,startSec,endSec,audioPath,audioDurationSec,mediaId,projectId,remoteTitle,status,attempts,error)
+         VALUES (@id,@jobId,@outputId,@ord,@startSec,@endSec,@audioPath,@audioDurationSec,@mediaId,@projectId,@remoteTitle,@status,@attempts,@error)`
+      )
+      const tx = d.transaction(() => {
+        insertJob.run(job)
+        for (const o of outputs) insertOutput.run(o)
+        for (const p of parts) insertPart.run(p)
+      })
+      tx()
+    },
+    updateTpJob: (id, patch) => {
+      patchRow(d, 'tp_jobs', id, patch, TP_JOB_COLS, true)
+    },
+    updateTpOutput: (id, patch) => {
+      patchRow(d, 'tp_job_outputs', id, patch, TP_OUTPUT_COLS, false)
+    },
+    updateTpPart: (id, patch) => {
+      patchRow(d, 'tp_job_parts', id, patch, TP_PART_COLS, false)
+    },
+    deleteTpJob: (id) => {
+      const tx = d.transaction(() => {
+        d.prepare('DELETE FROM tp_job_parts WHERE jobId=?').run(id)
+        d.prepare('DELETE FROM tp_job_outputs WHERE jobId=?').run(id)
+        d.prepare('DELETE FROM tp_jobs WHERE id=?').run(id)
+      })
+      tx()
+    },
+    tpResumableJobs: () =>
+      (d.prepare("SELECT * FROM tp_jobs WHERE status IN ('running','paused') ORDER BY createdAt").all() as Array<Record<string, unknown>>).map(rowToTpJob),
+
     resetAll: () => {
       const tx = d.transaction(() => {
         for (const t of DATA_TABLES) d.prepare(`DELETE FROM ${t}`).run()
@@ -1672,12 +1934,15 @@ function buildRepositories(d: Database.Database): Repositories {
     },
 
     softReset: () => {
-      // Wipe domain data but leave thumbnail_templates (user art) intact.
+      // Wipe domain data but leave thumbnail_templates and tp_characters (user art) intact —
+      // a saved TalkingPhotos character is a face the creator chose and paid an image credit for,
+      // not disposable job data.
       const softTables = [
         'my_channels', 'source_channels', 'source_videos', 'downloaded_videos', 'uploads',
         'profiles', 'render_jobs', 'activity_log',
         'projects', 'project_images', 'transcript_words',
-        'automation_jobs', 'automation_job_steps', 'automation_job_items', 'automation_job_logs'
+        'automation_jobs', 'automation_job_steps', 'automation_job_items', 'automation_job_logs',
+        'tp_jobs', 'tp_job_outputs', 'tp_job_parts'
       ]
       const tx = d.transaction(() => {
         for (const t of softTables) d.prepare(`DELETE FROM ${t}`).run()

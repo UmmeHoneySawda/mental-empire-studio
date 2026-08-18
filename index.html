@@ -5,11 +5,30 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <!-- mestudio: is the app's own scheme for video-engine project media and staged
          HyperFrames compositions (registered in electron/main.ts, confined to the
-         engine data root). frame-src lets <hyperframes-player> load one. -->
-    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob: mestudio: https://i.ytimg.com https://*.ytimg.com https://yt3.ggpht.com https://*.ggpht.com https://yt3.googleusercontent.com https://*.googleusercontent.com; media-src 'self' blob: data: file: mestudio:; style-src 'self' 'unsafe-inline'; font-src 'self' data: mestudio:; connect-src 'self' mestudio: data: blob:; frame-src 'self' mestudio:; worker-src 'self' blob:" />
+         engine data root). frame-src lets <hyperframes-player> load one.
+         The talkingphotos.ai and renderplatform.com hosts serve presenter previews and
+         motion thumbnails on the TalkingPhotos screen; both are image-only. -->
+    <meta http-equiv="Content-Security-Policy" content="default-src 'self'; img-src 'self' data: blob: mestudio: https://i.ytimg.com https://*.ytimg.com https://yt3.ggpht.com https://*.ggpht.com https://yt3.googleusercontent.com https://*.googleusercontent.com https://cdn.talkingphotos.ai https://app.talkingphotos.ai https://s3.renderplatform.com https://user-assets.renderplatform.com; media-src 'self' blob: data: file: mestudio:; style-src 'self' 'unsafe-inline'; font-src 'self' data: mestudio:; connect-src 'self' mestudio: data: blob:; frame-src 'self' mestudio:; worker-src 'self' blob:" />
     <title>Mental Empire Studio</title>
   </head>
   <body>
+    <!--
+      IMPECCABLE DIRECTION CONTRACT · surface: src/screens/TalkingPhotos.tsx · seed 3f5f589c
+      THESIS: A long-form job is a contract, so show the contract and reality side by side. Refuses
+        the category default of a stepped wizard stacked above an opaque job table.
+      OWN-WORLD: Creator Control Room, unchanged — graphite planes, one signal accent, Space Grotesk
+        / Hanken Grotesk / JetBrains Mono. Its own grammar is the centre rail: 1px rules, no radius
+        on a state mark, states printed as marks (hairline / filled / struck / void), never vanishing.
+      STORY: The creator sees what a plan costs before committing, then reads plan-versus-reality at
+        a glance for the next hour.
+      FIRST VIEWPORT: page title, then the connection strip, then the PLAN | rail | LIVE ledger with
+        the cost line directly beneath the chunk control. Start sits at the end of the plan column.
+      FORM: twinned columns around a fixed centre rail — candidate 4 of the grounded list, seed
+        3f5f589c, fused with rw-centre-rail-reference-setting (grammar) and
+        vernacular-ephemera-jet-age-ticket-wallet (state vocabulary).
+      FINISH: unreviewed and undocumented is unfinished; this build ends with the finish review, the
+        verdict, and DESIGN.md.
+    -->
     <div id="root"></div>
     <script type="module" src="/src/main.tsx"></script>
   </body>

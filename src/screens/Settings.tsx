@@ -1,9 +1,11 @@
 import { useEffect, useState, useCallback } from 'react'
 import { ScreenPad } from '../components/primitives'
-import { PageHeader, Btn, ToggleRow, Seg, StatusPill } from '../components/ui/kit'
+import { PageHeader, Btn, ToggleRow, Seg, StatusPill, Banner } from '../components/ui/kit'
 import { useData } from '../store/useData'
 import { useStore } from '../store/useStore'
-import type { AccentName, AppSettings, RenderCapabilities, StorageEnvRoots } from '@shared/types'
+import { useTalkingPhotos } from '../store/useTalkingPhotos'
+import type { AccentName, AppSettings, DeepPartial, RenderCapabilities, StorageEnvRoots } from '@shared/types'
+import type { TpCredentialSource } from '@shared/talkingphotos'
 
 const ACCENTS: AccentName[] = ['Amber', 'Violet', 'Emerald', 'Crimson']
 const ACCENT_SWATCH: Record<AccentName, string> = { Amber: '#f5b323', Violet: '#8b7cff', Emerald: '#36c98e', Crimson: '#ff5a6e' }
@@ -34,6 +36,129 @@ function Card({ label, children }: { label?: string; children: React.ReactNode }
       {label && <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '.6px', color: 'var(--text-faint)', marginBottom: 13 }}>{label}</div>}
       {children}
     </div>
+  )
+}
+
+/**
+ * TalkingPhotos account. Two things this card must be honest about rather than imply:
+ * where the credentials actually come from (an environment variable silently overriding a typed
+ * password would be baffling), and the account's hard limit of three simultaneous sign-ins — which
+ * is otherwise discovered only by being locked out.
+ */
+function TalkingPhotosCard({
+  settings,
+  saved
+}: {
+  settings: AppSettings
+  saved: (patch: DeepPartial<AppSettings>) => void
+}): JSX.Element {
+  const connection = useTalkingPhotos((s) => s.connection)
+  const busy = useTalkingPhotos((s) => s.busy)
+  const testConnection = useTalkingPhotos((s) => s.testConnection)
+  const signOut = useTalkingPhotos((s) => s.signOut)
+  const [source, setSource] = useState<{ source: TpCredentialSource; envEmail: string } | null>(null)
+
+  useEffect(() => {
+    void window.api?.talkingphotos?.credentialSource?.().then((r) => setSource({ source: r.source, envEmail: r.envEmail }))
+  }, [connection])
+
+  const fromEnv = source?.source === 'env'
+  const tp = settings.talkingphotos ?? { email: '', password: '', session: '' }
+
+  return (
+    <Card label="TALKINGPHOTOS.AI">
+      <div style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-dim)', marginBottom: 11 }}>
+        Renders half-hour talking-head videos from a downloaded source audio. Sign-in is read from{' '}
+        <span style={{ fontFamily: 'var(--font-mono)' }}>TALKINGPHOTOS_EMAIL</span> and{' '}
+        <span style={{ fontFamily: 'var(--font-mono)' }}>TALKINGPHOTOS_PASSWORD</span> first, then from these fields.
+      </div>
+
+      {fromEnv ? (
+        <div
+          style={{
+            display: 'flex',
+            alignItems: 'center',
+            gap: 10,
+            border: '1px solid var(--border-2)',
+            borderRadius: 'var(--radius-md)',
+            padding: '9px 12px',
+            background: 'var(--bg-inset)',
+            marginBottom: 10
+          }}
+        >
+          <StatusPill tone="accent">Environment</StatusPill>
+          <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-soft)', fontFamily: 'var(--font-mono)', minWidth: 0, overflow: 'hidden', textOverflow: 'ellipsis' }}>
+            {source?.envEmail}
+          </span>
+          <span style={{ flex: 1 }} />
+          <span style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-faint)' }}>Windows variables win; these fields are unused.</span>
+        </div>
+      ) : null}
+
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8, marginBottom: 10 }}>
+        <input
+          value={tp.email}
+          disabled={fromEnv}
+          onChange={(e) => saved({ talkingphotos: { email: e.target.value } })}
+          placeholder="you@example.com"
+          aria-label="TalkingPhotos email"
+          className="ed-input"
+          style={{ ...inputStyle, opacity: fromEnv ? 0.55 : 1 }}
+        />
+        <input
+          type="password"
+          value={tp.password}
+          disabled={fromEnv}
+          onChange={(e) => saved({ talkingphotos: { password: e.target.value } })}
+          placeholder="Password"
+          aria-label="TalkingPhotos password"
+          className="ed-input"
+          style={{ ...inputStyle, opacity: fromEnv ? 0.55 : 1 }}
+        />
+      </div>
+
+      <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+        <Btn variant="soft" disabled={busy === 'connection'} onClick={() => void testConnection()}>
+          {busy === 'connection' ? 'Checking…' : 'Check connection'}
+        </Btn>
+        {connection?.connected && (
+          <Btn onClick={() => void signOut()} title="Frees one of the three sign-in slots this account allows">
+            Sign out
+          </Btn>
+        )}
+      </div>
+
+      {connection?.connected && (
+        <div style={{ marginTop: 10, display: 'flex', gap: 16, flexWrap: 'wrap', fontSize: 'var(--fs-caption)', color: 'var(--text-dim)' }}>
+          <span>
+            Signed in as <b style={{ color: 'var(--text-muted)', fontWeight: 500 }}>{connection.emailMasked}</b>
+            {connection.role ? ` · ${connection.role}` : ''}
+          </span>
+          {connection.quota && (
+            <span>
+              Renders today{' '}
+              <b style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontWeight: 500 }}>
+                {connection.quota.videosUsed}/{connection.quota.videosLimit}
+              </b>
+            </span>
+          )}
+          {connection.concurrentLimit > 0 && (
+            <span>
+              Slots busy{' '}
+              <b style={{ color: 'var(--text-muted)', fontFamily: 'var(--font-mono)', fontWeight: 500 }}>
+                {connection.concurrentCount}/{connection.concurrentLimit}
+              </b>
+            </span>
+          )}
+        </div>
+      )}
+
+      {connection && !connection.connected && connection.error && (
+        <Banner kind="error" style={{ marginTop: 10 }}>
+          {connection.error}
+        </Banner>
+      )}
+    </Card>
   )
 }
 
@@ -245,6 +370,7 @@ export function Settings(): JSX.Element {
     ),
     integrations: (
       <div>
+        <TalkingPhotosCard settings={settings} saved={saved} />
         <Card label="TRANSCRIPTION · GROQ WHISPER">
           <div style={{ fontSize: 12, color: 'var(--text-muted)', marginBottom: 8 }}>Groq API key (free) — powers word-level captions</div>
           <input type="password" value={settings.transcription.apiKey} onChange={(e) => saved({ transcription: { apiKey: e.target.value } })} placeholder="gsk_…" aria-label="Groq API key" className="ed-input" style={{ ...inputStyle, fontFamily: 'var(--font-mono)', marginBottom: 8 }} />

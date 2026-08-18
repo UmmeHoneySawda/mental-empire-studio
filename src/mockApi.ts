@@ -43,6 +43,108 @@ import { buildAutomationWorkflow } from '@shared/automation'
 import type { ImageMotionSpec } from '@shared/renderSpec'
 import { resolveCaptionStyle } from '@shared/captionStyle'
 import { LOOKS, lookById } from '@shared/looks'
+import {
+  planSplit,
+  TP_BLOCKED_FEATURES,
+  TP_FEATURES,
+  TP_MERGE_CAP_SECONDS,
+  type TpCharacter,
+  type TpConnection,
+  type TpJobDetail,
+  type TpMotion,
+  type TpOutput,
+  type TpPart
+} from '@shared/talkingphotos'
+
+const tpDisconnected: TpConnection = {
+  connected: false,
+  role: '',
+  credentialSource: 'none',
+  emailMasked: '',
+  quota: null,
+  concurrentCount: 0,
+  concurrentLimit: 0,
+  error: 'Signed out. Check the connection to sign in again.',
+  errorCode: null,
+  checkedAt: new Date(0).toISOString()
+}
+
+const tpConnected: TpConnection = {
+  connected: true,
+  role: 'Deluxe Bonus',
+  credentialSource: 'env',
+  emailMasked: 'de••••@example.com',
+  quota: { imagesUsed: 13, imagesLimit: 600, videosUsed: 23, videosLimit: 100 },
+  concurrentCount: 2,
+  concurrentLimit: 5,
+  error: '',
+  errorCode: null,
+  checkedAt: new Date().toISOString()
+}
+
+const tpCharacters: TpCharacter[] = [
+  {
+    id: 'tpc-1', label: 'Narrator A', kind: 'generated', resultUuid: 'demo-uuid-1', mediaId: 0,
+    previewUrl: '', previewPath: '', gender: 'female', ethnicity: '', age: 'adult', beard: 'shaven',
+    characterStyle: 'realistic', aspectRatio: '9:16', createdAt: new Date().toISOString()
+  },
+  {
+    id: 'tpc-2', label: 'Narrator B', kind: 'uploaded', resultUuid: '', mediaId: 4419001,
+    previewUrl: '', previewPath: '', gender: 'male', ethnicity: '', age: 'adult', beard: 'beard',
+    characterStyle: 'realistic', aspectRatio: '9:16', createdAt: new Date().toISOString()
+  }
+]
+
+const tpMotions: TpMotion[] = Array.from({ length: 6 }, (_, i) => ({
+  id: 370 + i, parentId: 12, title: `Motion ${370 + i}`, thumbUrl: '', durationSeconds: 0, isPremium: false, isBonus: false
+}))
+
+/** A 47:12 source at 5-minute chunks: two videos, ten renders, mid-flight with one failure. */
+const tpJobDetail: TpJobDetail = (() => {
+  const plan = planSplit({ sourceDurationSec: 2832, partSeconds: 300 })
+  const jobId = 'demo1234'
+  const outputs: TpOutput[] = []
+  const parts: TpPart[] = []
+  const partStates: Array<TpPart['status']> = ['completed', 'completed', 'completed', 'processing', 'submitted', 'error', 'uploaded', 'uploaded', 'planned', 'planned']
+  let n = 0
+  for (const o of plan.outputs) {
+    const outputId = `${jobId}-o${o.ord}`
+    outputs.push({
+      id: outputId, jobId, ord: o.ord, startSec: o.startSec, endSec: o.endSec,
+      mergeProjectId: 0, status: o.ord === 1 ? 'waiting' : 'planned', localPath: '', error: ''
+    })
+    for (const p of o.parts) {
+      const status = partStates[n] ?? 'planned'
+      parts.push({
+        id: `${outputId}-p${p.ord}`, jobId, outputId, ord: p.ord, startSec: p.startSec, endSec: p.endSec,
+        audioPath: `demo/o${o.ord}-p${p.ord}.mp3`,
+        audioDurationSec: status === 'planned' ? 0 : Math.round((p.endSec - p.startSec) * 100 + 4) / 100,
+        mediaId: status === 'planned' ? 0 : 4419100 + n,
+        projectId: status === 'completed' || status === 'processing' || status === 'submitted' ? 1113900 + n : 0,
+        remoteTitle: `ME-${jobId}-o${o.ord}-p${p.ord}`,
+        status,
+        attempts: status === 'error' ? 1 : status === 'planned' ? 0 : 1,
+        error: status === 'error' ? 'TalkingPhotos reported this chunk as error.' : ''
+      })
+      n += 1
+    }
+  }
+  return {
+    job: {
+      id: jobId, sourceId: 's1', sourceVideoId: 'longpod', channel: '@powerwithinofficial-q7d',
+      videoTitle: 'The Discipline Interview — full episode',
+      audioPath: 'D:/MentalEmpireStudio/demo/audio/long.mp3', sourceDurationSec: 2832,
+      featureId: 'human-normal', aspectRatio: '9:16', partSeconds: 300, mergeCapSec: TP_MERGE_CAP_SECONDS,
+      characterId: 'tpc-1', characterResultUuid: 'demo-uuid-1', characterMediaId: 0,
+      characterStyle: 'realistic', characterGender: 'female', characterAge: 'adult',
+      characterEthnicity: '', characterBeard: 'shaven', motionId: 374, parentMotionId: 12,
+      libraryCategoryId: 164062, phase: 'await', status: 'running', error: '',
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+    },
+    outputs,
+    parts
+  }
+})()
 
 function grad(a: string, b: string): string {
   return `linear-gradient(135deg,${a},${b})`
@@ -427,6 +529,44 @@ function installMock(): void {
       assignChannel: async () => [],
       warm: async () => ({ nicheId: '', clips: 0, keywords: [] })
     }),
+    // TalkingPhotos in browser-QA mode. The plan maths is real (it is pure, shared code), and the
+    // job below is a fixture spanning every chunk state — rendered, rendering, queued, and failed —
+    // so the plan-versus-live ledger can actually be exercised here. Only the vendor calls that
+    // would spend money or need local ffmpeg are inert.
+    talkingphotos: ns({
+      connectionTest: async () => tpConnected,
+      connectionStatus: async () => tpConnected,
+      signOut: async () => tpDisconnected,
+      credentialSource: async () => ({ source: 'env' as const, envEmail: 'demo@example.com', settingsEmail: '' }),
+      catalog: async () => ({ features: TP_FEATURES, blocked: TP_BLOCKED_FEATURES, mergeCapSec: TP_MERGE_CAP_SECONDS }),
+      quota: async () => tpConnected.quota,
+      probeAudio: async () => 2832,
+      planPreview: async (input: { partSeconds: number; sourceDurationSec: number }) => ({
+        plan: planSplit({ sourceDurationSec: input.sourceDurationSec, partSeconds: input.partSeconds }),
+        maxPartSeconds: 300,
+        remainingDailyRenders: 77,
+        concurrentLimit: 5,
+        blockers: []
+      }),
+      planLocal: async (sourceDurationSec: number, partSeconds: number) => planSplit({ sourceDurationSec, partSeconds }),
+      motions: async () => tpMotions,
+      characters: async () => tpCharacters,
+      characterGenerate: async () => tpCharacters[0],
+      characterUpload: async () => tpCharacters[0],
+      characterDelete: async () => tpCharacters,
+      jobs: async () => [tpJobDetail.job],
+      job: async () => tpJobDetail,
+      jobCreate: async () => tpJobDetail,
+      jobStart: async () => tpJobDetail,
+      jobPause: async () => tpJobDetail,
+      jobCancel: async () => tpJobDetail,
+      jobDelete: async () => [],
+      partRetry: async () => tpJobDetail,
+      retryFailed: async () => tpJobDetail,
+      forgetSession: async () => undefined
+    }),
+    onTalkingPhotosJob: () => noop,
+    onTalkingPhotosCharacter: () => noop,
     onVideoEngineJob: () => noop,
     // The template engines render with local ffmpeg and a headless browser, so they
     // cannot exist in browser-QA mode. Report that plainly instead of throwing —

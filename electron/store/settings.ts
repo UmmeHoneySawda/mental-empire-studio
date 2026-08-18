@@ -17,7 +17,9 @@ type Schema = { settings: AppSettings }
 let store: Store<Schema> | null = null
 
 // Field names (anywhere in the settings tree) whose string values are secrets.
-const SECRET_FIELDS = new Set(['apiKey', 'pexelsKey', 'pixabayKey', 'coverrKey', 'geminiKey', 'metaKey'])
+// `password` and `session` are the TalkingPhotos account password and its cookie jar; both are
+// bearer-equivalent, so both are encrypted at rest exactly like an API key.
+const SECRET_FIELDS = new Set(['apiKey', 'pexelsKey', 'pixabayKey', 'coverrKey', 'geminiKey', 'metaKey', 'password', 'session'])
 const ENC_PREFIX = 'enc:v1:'
 
 function canEncrypt(): boolean {

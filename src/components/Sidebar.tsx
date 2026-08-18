@@ -25,7 +25,10 @@ const PRODUCTION: NavDef[] = [
   { key: 'compose', label: 'Video Studio', step: 2, icon: icon(<><path d="M12 3l8 4-8 4-8-4z" /><path d="M4 12l8 4 8-4" /><path d="M4 17l8 4 8-4" /></>) },
   { key: 'thumb', label: 'Thumbnails', step: 3, icon: icon(<><rect x="3" y="5" width="18" height="14" rx="2.5" /><path d="M8 11h8" /><path d="M8 15h5" /></>) },
   { key: 'render', label: 'Render Queue', step: 4, icon: icon(<path d="M5 5l13 7-13 7z" />) },
-  { key: 'publish', label: 'Ready to Upload', step: 5, icon: icon(<><path d="M12 16V4" /><path d="M7 9l5-5 5 5" /><path d="M4 16v3a2 2 0 002 2h12a2 2 0 002-2v-3" /></>) }
+  { key: 'publish', label: 'Ready to Upload', step: 5, icon: icon(<><path d="M12 16V4" /><path d="M7 9l5-5 5 5" /><path d="M4 16v3a2 2 0 002 2h12a2 2 0 002-2v-3" /></>) },
+  // Deliberately unnumbered: this is a parallel route from a source download straight to a
+  // finished video, not a sixth stage of the five-stage path.
+  { key: 'talkingphotos', label: 'TalkingPhotos', icon: icon(<><circle cx="12" cy="8.5" r="3.5" /><path d="M5.5 20c0-3.6 2.9-6.5 6.5-6.5s6.5 2.9 6.5 6.5" /><path d="M3 5h3M18 5h3" /></>) }
 ]
 
 const LIBRARIES: NavDef[] = [
