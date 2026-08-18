@@ -33,7 +33,6 @@ import type {
 } from '../../shared/types'
 import { asBetaOpts, DEFAULT_BETA_OPTS } from '../../shared/types'
 import { normalizeAutomationConfig } from '../../shared/automationConfig'
-import type { ProviderAsset, ProviderConnection, ProviderJob, TranscriptDocument } from '../../shared/talkingphotos'
 import { seedIfEmpty, seedDemoData, seedDefaultThumbnailTemplates } from './seed'
 import { planProfileSourceMigration, type SourceMigrationCandidate } from './profile-source-migration'
 
@@ -196,84 +195,6 @@ CREATE INDEX IF NOT EXISTS idx_automation_jobs_status ON automation_jobs(status,
 CREATE INDEX IF NOT EXISTS idx_automation_steps_job ON automation_job_steps(jobId, ord);
 CREATE INDEX IF NOT EXISTS idx_automation_items_job ON automation_job_items(jobId, updatedAt);
 CREATE INDEX IF NOT EXISTS idx_automation_logs_job ON automation_job_logs(jobId, id);
-CREATE TABLE IF NOT EXISTS provider_connections (
-  id TEXT PRIMARY KEY,
-  provider TEXT NOT NULL,
-  partition TEXT NOT NULL,
-  status TEXT NOT NULL,
-  accountLabel TEXT,
-  connectedAt TEXT,
-  lastVerifiedAt TEXT,
-  lastError TEXT,
-  createdAt TEXT NOT NULL,
-  updatedAt TEXT NOT NULL
-);
-CREATE TABLE IF NOT EXISTS provider_jobs (
-  id TEXT PRIMARY KEY,
-  provider TEXT NOT NULL,
-  connectionId TEXT NOT NULL,
-  operation TEXT NOT NULL,
-  remoteProjectId TEXT,
-  remoteTaskUuid TEXT,
-  remotePreviousTaskUuid TEXT,
-  parentProviderJobId TEXT,
-  automationJobId TEXT,
-  automationItemId TEXT,
-  projectId TEXT,
-  requestFingerprint TEXT,
-  requestJson TEXT,
-  /** '' (not NULL) when the caller supplied none, so the unique index below degenerates
-   *  cleanly to fingerprint-only dedup for every existing/automation caller that never
-   *  sets this — only an explicit, distinct value creates a deliberate duplicate. */
-  creationIntentId TEXT NOT NULL DEFAULT '',
-  status TEXT NOT NULL,
-  remoteStep INTEGER,
-  remoteStepsTotal INTEGER,
-  progress INTEGER NOT NULL DEFAULT 0,
-  remoteMediaId TEXT,
-  remoteMediaUrl TEXT,
-  localOutputPath TEXT,
-  /** A local-caption derivative render, kept separate from the verified provider
-   *  output (localOutputPath) so the original is never overwritten. */
-  localCaptionedOutputPath TEXT,
-  errorCode TEXT,
-  errorMessage TEXT,
-  segmentOrdinal INTEGER,
-  internalSegment INTEGER NOT NULL DEFAULT 0,
-  downloadAttempts INTEGER NOT NULL DEFAULT 0,
-  createdAt TEXT NOT NULL,
-  updatedAt TEXT NOT NULL,
-  lastPolledAt TEXT,
-  downloadedAt TEXT
-);
-CREATE TABLE IF NOT EXISTS provider_assets (
-  id TEXT PRIMARY KEY,
-  provider TEXT NOT NULL,
-  connectionId TEXT NOT NULL,
-  localSha256 TEXT NOT NULL,
-  localPath TEXT NOT NULL,
-  mimeType TEXT,
-  sizeBytes INTEGER,
-  durationSec REAL,
-  remoteCategoryId TEXT,
-  remoteMediaId TEXT,
-  remoteResultUuid TEXT,
-  uploadedAt TEXT,
-  lastVerifiedAt TEXT
-);
-CREATE TABLE IF NOT EXISTS transcript_documents (
-  projectId TEXT PRIMARY KEY,
-  text TEXT NOT NULL,
-  segmentsJson TEXT,
-  source TEXT NOT NULL,
-  createdAt TEXT NOT NULL,
-  updatedAt TEXT NOT NULL
-);
-CREATE INDEX IF NOT EXISTS idx_provider_jobs_connection ON provider_jobs(connectionId, status);
-CREATE INDEX IF NOT EXISTS idx_provider_jobs_remote ON provider_jobs(remoteProjectId);
-CREATE INDEX IF NOT EXISTS idx_provider_jobs_fingerprint ON provider_jobs(requestFingerprint);
-CREATE INDEX IF NOT EXISTS idx_provider_jobs_parent ON provider_jobs(parentProviderJobId);
-CREATE INDEX IF NOT EXISTS idx_provider_assets_hash ON provider_assets(provider, connectionId, localSha256);
 `
 
 // Every table that holds user/domain data — wiped by resetAll(). app_meta is
@@ -282,8 +203,7 @@ const DATA_TABLES = [
   'my_channels', 'source_channels', 'source_videos', 'downloaded_videos', 'uploads',
   'profiles', 'thumbnail_templates', 'render_jobs', 'activity_log',
   'projects', 'project_images', 'transcript_words', 'work_item_state', 'niches',
-  'automation_jobs', 'automation_job_steps', 'automation_job_items', 'automation_job_logs',
-  'provider_connections', 'provider_jobs', 'provider_assets', 'transcript_documents'
+  'automation_jobs', 'automation_job_steps', 'automation_job_items', 'automation_job_logs'
 ]
 
 /** Add a column only if it isn't already present — idempotent forward migration. */
@@ -423,13 +343,6 @@ function migrate(d: Database.Database): void {
   ensureColumn(d, 'assets', 'usageCount', 'INTEGER')
   ensureColumn(d, 'assets', 'missing', 'INTEGER')
   ensureColumn(d, 'assets', 'projectId', 'TEXT')
-  ensureColumn(d, 'provider_jobs', 'requestJson', 'TEXT')
-  ensureColumn(d, 'provider_jobs', 'creationIntentId', "TEXT NOT NULL DEFAULT ''")
-  ensureColumn(d, 'provider_jobs', 'localCaptionedOutputPath', 'TEXT')
-  ensureColumn(d, 'provider_jobs', 'thumbnailUrl', 'TEXT')
-  ensureColumn(d, 'provider_jobs', 'etaSeconds', 'INTEGER')
-  ensureColumn(d, 'provider_jobs', 'hostName', 'TEXT')
-  ensureColumn(d, 'provider_jobs', 'downloadAttempts', 'INTEGER')
   d.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_assets_content_id ON assets(id) WHERE id IS NOT NULL')
   // The owned<->source edge is now looked up by channel on several paths (the back-fill below,
   // sourcesForMyChannel, the cache sync, setChannelSource, deleteMyChannel). Unindexed it was
@@ -441,46 +354,6 @@ function migrate(d: Database.Database): void {
   migrateProfilesToSources(d)
   installDefaultThumbnailTemplates(d)
   installDefaultVisualTemplates(d)
-  enforceProviderJobFingerprintUniqueness(d)
-}
-
-/**
- * Phase 11 idempotency hardening. The dedup check before this migration was a plain
- * SELECT (application-level, not DB-enforced) — this closes that gap with a real
- * UNIQUE index on (provider, connectionId, operation, requestFingerprint,
- * creationIntentId), so concurrent/racing creation attempts can no longer both insert.
- *
- * Historical rows may already violate that uniqueness (they were never constrained).
- * Deleting them is not an option ("never delete valid historical jobs silently"), so
- * every row after the first in each duplicate group gets a disambiguating suffix
- * appended to its OWN creationIntentId — its identity and history are preserved, it
- * simply stops being treated as the canonical dedup target for that fingerprint.
- * Idempotent: rows already suffixed, or already unique, are left untouched, and
- * CREATE UNIQUE INDEX IF NOT EXISTS is a no-op after the first successful run.
- */
-function enforceProviderJobFingerprintUniqueness(d: Database.Database): void {
-  const tx = d.transaction(() => {
-    const dupGroups = d.prepare(
-      `SELECT provider, connectionId, operation, requestFingerprint, creationIntentId, COUNT(*) c
-       FROM provider_jobs
-       WHERE requestFingerprint IS NOT NULL AND requestFingerprint != ''
-       GROUP BY provider, connectionId, operation, requestFingerprint, creationIntentId
-       HAVING c > 1`
-    ).all() as Array<{ provider: string; connectionId: string; operation: string; requestFingerprint: string; creationIntentId: string }>
-    const relabel = d.prepare('UPDATE provider_jobs SET creationIntentId=@intentId WHERE id=@id')
-    for (const group of dupGroups) {
-      const rows = d.prepare(
-        'SELECT id, creationIntentId FROM provider_jobs WHERE provider=? AND connectionId=? AND operation=? AND requestFingerprint=? AND creationIntentId=? ORDER BY createdAt ASC, id ASC'
-      ).all(group.provider, group.connectionId, group.operation, group.requestFingerprint, group.creationIntentId) as Array<{ id: string; creationIntentId: string }>
-      // Keep the oldest row's key as-is (it remains the canonical dedup target);
-      // every later duplicate gets its own id appended to its creationIntentId.
-      for (const row of rows.slice(1)) {
-        relabel.run({ id: row.id, intentId: `${row.creationIntentId}#dup-${row.id}` })
-      }
-    }
-    d.exec('CREATE UNIQUE INDEX IF NOT EXISTS idx_provider_jobs_fingerprint_intent ON provider_jobs(provider, connectionId, operation, requestFingerprint, creationIntentId)')
-  })
-  tx()
 }
 
 /**
@@ -772,27 +645,6 @@ export interface Repositories {
   upsertAutomationItem(item: AutomationJobItem): void
   addAutomationLog(jobId: string, level: AutomationJobLog['level'], message: string, itemId?: string): void
   deleteAutomationJob(id: string): void
-  // ---- TalkingPhotos provider (cloud provider, separate from local render_jobs) ----
-  providerConnection(id: string): ProviderConnection | undefined
-  providerConnections(): ProviderConnection[]
-  upsertProviderConnection(row: ProviderConnection): void
-  providerJob(id: string): ProviderJob | undefined
-  providerJobByRemoteId(connectionId: string, remoteProjectId: string): ProviderJob | undefined
-  providerJobByFingerprint(connectionId: string, requestFingerprint: string): ProviderJob | undefined
-  /** Atomic lookup-or-insert enforced by the DB unique index on (provider,
-   *  connectionId, operation, requestFingerprint, creationIntentId) — not just an
-   *  application-level SELECT-then-INSERT. Returns the existing row (created: false)
-   *  on any collision, including one lost to a concurrent/racing caller. */
-  findOrCreateProviderJob(job: ProviderJob): { job: ProviderJob; created: boolean }
-  providerJobs(connectionId?: string): ProviderJob[]
-  /** Every provider job not yet in a terminal state — the startup-reconciliation set. */
-  nonTerminalProviderJobs(): ProviderJob[]
-  upsertProviderJob(job: ProviderJob): void
-  updateProviderJob(id: string, patch: Partial<ProviderJob>): void
-  providerAssetByHash(provider: string, connectionId: string, localSha256: string): ProviderAsset | undefined
-  upsertProviderAsset(asset: ProviderAsset): void
-  getTranscriptDocument(projectId: string): TranscriptDocument | undefined
-  upsertTranscriptDocument(doc: TranscriptDocument): void
   /** Remove a single download row from history. */
   deleteDownload(id: string): void
   /** Remove a single render job from the queue. */
@@ -999,70 +851,6 @@ function rowToAutomationItem(r: Record<string, unknown>): AutomationJobItem {
     progress: coerceNum(r.progress, 0),
     attempts: coerceNum(r.attempts, 0)
   }
-}
-
-// ---- TalkingPhotos provider rows ----
-function rowToProviderConnection(r: Record<string, unknown>): ProviderConnection {
-  return { ...(r as unknown as ProviderConnection) }
-}
-
-function rowToProviderJob(r: Record<string, unknown>): ProviderJob {
-  return {
-    ...(r as unknown as ProviderJob),
-    progress: coerceNum(r.progress, 0),
-    remoteStep: r.remoteStep == null ? undefined : coerceNum(r.remoteStep, 0),
-    remoteStepsTotal: r.remoteStepsTotal == null ? undefined : coerceNum(r.remoteStepsTotal, 0),
-    segmentOrdinal: r.segmentOrdinal == null ? undefined : coerceNum(r.segmentOrdinal, 0),
-    etaSeconds: r.etaSeconds == null ? undefined : coerceNum(r.etaSeconds, 0),
-    thumbnailUrl: r.thumbnailUrl == null || r.thumbnailUrl === '' ? undefined : String(r.thumbnailUrl),
-    hostName: r.hostName == null || r.hostName === '' ? undefined : String(r.hostName),
-    internalSegment: !!r.internalSegment,
-    downloadAttempts: r.downloadAttempts == null ? 0 : coerceNum(r.downloadAttempts, 0)
-  }
-}
-
-function providerJobToRow(job: ProviderJob): Record<string, unknown> {
-  return {
-    ...job,
-    remoteStep: job.remoteStep ?? null,
-    remoteStepsTotal: job.remoteStepsTotal ?? null,
-    segmentOrdinal: job.segmentOrdinal ?? null,
-    internalSegment: job.internalSegment ? 1 : 0,
-    downloadAttempts: job.downloadAttempts ?? 0,
-    remoteProjectId: job.remoteProjectId ?? null,
-    remoteTaskUuid: job.remoteTaskUuid ?? null,
-    remotePreviousTaskUuid: job.remotePreviousTaskUuid ?? null,
-    parentProviderJobId: job.parentProviderJobId ?? null,
-    automationJobId: job.automationJobId ?? null,
-    automationItemId: job.automationItemId ?? null,
-    projectId: job.projectId ?? null,
-    requestFingerprint: job.requestFingerprint ?? null,
-    creationIntentId: job.creationIntentId ?? '',
-    requestJson: job.requestJson ?? null,
-    remoteMediaId: job.remoteMediaId ?? null,
-    remoteMediaUrl: job.remoteMediaUrl ?? null,
-    localOutputPath: job.localOutputPath ?? null,
-    localCaptionedOutputPath: job.localCaptionedOutputPath ?? null,
-    thumbnailUrl: job.thumbnailUrl ?? null,
-    etaSeconds: job.etaSeconds ?? null,
-    hostName: job.hostName ?? null,
-    errorCode: job.errorCode ?? null,
-    errorMessage: job.errorMessage ?? null,
-    lastPolledAt: job.lastPolledAt ?? null,
-    downloadedAt: job.downloadedAt ?? null
-  }
-}
-
-function rowToProviderAsset(r: Record<string, unknown>): ProviderAsset {
-  return {
-    ...(r as unknown as ProviderAsset),
-    sizeBytes: r.sizeBytes == null ? undefined : coerceNum(r.sizeBytes, 0),
-    durationSec: r.durationSec == null ? undefined : coerceNum(r.durationSec, 0)
-  }
-}
-
-function rowToTranscriptDocument(r: Record<string, unknown>): TranscriptDocument {
-  return { ...(r as unknown as TranscriptDocument) }
 }
 
 function buildRepositories(d: Database.Database): Repositories {
@@ -1702,121 +1490,6 @@ function buildRepositories(d: Database.Database): Repositories {
       tx()
     },
 
-    // ---- TalkingPhotos provider ----
-    providerConnection: (id) => {
-      const r = d.prepare('SELECT * FROM provider_connections WHERE id=?').get(id) as Record<string, unknown> | undefined
-      return r ? rowToProviderConnection(r) : undefined
-    },
-    providerConnections: () =>
-      (d.prepare('SELECT * FROM provider_connections').all() as Array<Record<string, unknown>>).map(rowToProviderConnection),
-    upsertProviderConnection: (row) => {
-      d.prepare(
-        `INSERT INTO provider_connections (id,provider,partition,status,accountLabel,connectedAt,lastVerifiedAt,lastError,createdAt,updatedAt)
-         VALUES (@id,@provider,@partition,@status,@accountLabel,@connectedAt,@lastVerifiedAt,@lastError,@createdAt,@updatedAt)
-         ON CONFLICT(id) DO UPDATE SET provider=@provider, partition=@partition, status=@status, accountLabel=@accountLabel,
-           connectedAt=@connectedAt, lastVerifiedAt=@lastVerifiedAt, lastError=@lastError, updatedAt=@updatedAt`
-      ).run({ accountLabel: null, connectedAt: null, lastVerifiedAt: null, lastError: null, ...row })
-    },
-    providerJob: (id) => {
-      const r = d.prepare('SELECT * FROM provider_jobs WHERE id=?').get(id) as Record<string, unknown> | undefined
-      return r ? rowToProviderJob(r) : undefined
-    },
-    providerJobByRemoteId: (connectionId, remoteProjectId) => {
-      const r = d.prepare('SELECT * FROM provider_jobs WHERE connectionId=? AND remoteProjectId=?').get(connectionId, remoteProjectId) as Record<string, unknown> | undefined
-      return r ? rowToProviderJob(r) : undefined
-    },
-    providerJobByFingerprint: (connectionId, requestFingerprint) => {
-      const r = d.prepare('SELECT * FROM provider_jobs WHERE connectionId=? AND requestFingerprint=? ORDER BY createdAt DESC LIMIT 1').get(connectionId, requestFingerprint) as Record<string, unknown> | undefined
-      return r ? rowToProviderJob(r) : undefined
-    },
-    findOrCreateProviderJob: (job) => {
-      const key = { provider: job.provider, connectionId: job.connectionId, operation: job.operation, requestFingerprint: job.requestFingerprint ?? '', creationIntentId: job.creationIntentId ?? '' }
-      const findExisting = (): Record<string, unknown> | undefined =>
-        d.prepare(
-          'SELECT * FROM provider_jobs WHERE provider=@provider AND connectionId=@connectionId AND operation=@operation AND requestFingerprint=@requestFingerprint AND creationIntentId=@creationIntentId'
-        ).get(key) as Record<string, unknown> | undefined
-      try {
-        const tx = d.transaction(() => {
-          if (job.requestFingerprint) {
-            const existing = findExisting()
-            if (existing) return { job: rowToProviderJob(existing), created: false }
-          }
-          const row = providerJobToRow(job)
-          const cols = Object.keys(row)
-          d.prepare(`INSERT INTO provider_jobs (${cols.join(',')}) VALUES (${cols.map((c) => `@${c}`).join(',')})`).run(row)
-          return { job, created: true }
-        })
-        return tx()
-      } catch (e) {
-        // Lost a race on the unique index — another call already inserted first.
-        if (job.requestFingerprint && /UNIQUE constraint failed/i.test((e as Error).message)) {
-          const existing = findExisting()
-          if (existing) return { job: rowToProviderJob(existing), created: false }
-        }
-        throw e
-      }
-    },
-    providerJobs: (connectionId) => {
-      const rows = connectionId
-        ? (d.prepare('SELECT * FROM provider_jobs WHERE connectionId=? ORDER BY createdAt DESC').all(connectionId) as Array<Record<string, unknown>>)
-        : (d.prepare('SELECT * FROM provider_jobs ORDER BY createdAt DESC').all() as Array<Record<string, unknown>>)
-      return rows.map(rowToProviderJob)
-    },
-    nonTerminalProviderJobs: () =>
-      (d.prepare("SELECT * FROM provider_jobs WHERE status NOT IN ('completed','failed','cancelled') ORDER BY createdAt").all() as Array<Record<string, unknown>>).map(rowToProviderJob),
-    upsertProviderJob: (job) => {
-      const row = providerJobToRow(job)
-      const cols = Object.keys(row)
-      d.prepare(
-        `INSERT INTO provider_jobs (${cols.join(',')}) VALUES (${cols.map((c) => `@${c}`).join(',')})
-         ON CONFLICT(id) DO UPDATE SET ${cols.filter((c) => c !== 'id').map((c) => `${c}=@${c}`).join(', ')}`
-      ).run(row)
-    },
-    updateProviderJob: (id, patch) => {
-      const allow = new Set([
-        'operation', 'remoteProjectId', 'remoteTaskUuid', 'remotePreviousTaskUuid', 'parentProviderJobId',
-        'automationJobId', 'automationItemId', 'projectId', 'requestFingerprint', 'requestJson', 'status', 'remoteStep',
-        'remoteStepsTotal', 'progress', 'remoteMediaId', 'remoteMediaUrl', 'localOutputPath', 'localCaptionedOutputPath', 'errorCode',
-        'errorMessage', 'segmentOrdinal', 'internalSegment', 'downloadAttempts', 'lastPolledAt', 'downloadedAt'
-      ])
-      const sets: string[] = []
-      const params: Record<string, unknown> = { id }
-      for (const [key, value] of Object.entries(patch)) {
-        if (value === undefined || !allow.has(key)) continue
-        sets.push(`${key}=@${key}`)
-        params[key] = key === 'internalSegment' ? (value ? 1 : 0) : value
-      }
-      if (!sets.length) return
-      if (!sets.some((s) => s.startsWith('updatedAt='))) { sets.push('updatedAt=@updatedAt'); params.updatedAt = new Date().toISOString() }
-      d.prepare(`UPDATE provider_jobs SET ${sets.join(', ')} WHERE id=@id`).run(params)
-    },
-    providerAssetByHash: (provider, connectionId, localSha256) => {
-      const r = d.prepare('SELECT * FROM provider_assets WHERE provider=? AND connectionId=? AND localSha256=?').get(provider, connectionId, localSha256) as Record<string, unknown> | undefined
-      return r ? rowToProviderAsset(r) : undefined
-    },
-    upsertProviderAsset: (asset) => {
-      d.prepare(
-        `INSERT INTO provider_assets (id,provider,connectionId,localSha256,localPath,mimeType,sizeBytes,durationSec,remoteCategoryId,remoteMediaId,remoteResultUuid,uploadedAt,lastVerifiedAt)
-         VALUES (@id,@provider,@connectionId,@localSha256,@localPath,@mimeType,@sizeBytes,@durationSec,@remoteCategoryId,@remoteMediaId,@remoteResultUuid,@uploadedAt,@lastVerifiedAt)
-         ON CONFLICT(id) DO UPDATE SET localPath=@localPath, mimeType=@mimeType, sizeBytes=@sizeBytes, durationSec=@durationSec,
-           remoteCategoryId=@remoteCategoryId, remoteMediaId=@remoteMediaId, remoteResultUuid=@remoteResultUuid, uploadedAt=@uploadedAt, lastVerifiedAt=@lastVerifiedAt`
-      ).run({
-        mimeType: null, sizeBytes: null, durationSec: null, remoteCategoryId: null, remoteMediaId: null, remoteResultUuid: null, uploadedAt: null, lastVerifiedAt: null,
-        ...asset
-      })
-    },
-    getTranscriptDocument: (projectId) => {
-      const r = d.prepare('SELECT * FROM transcript_documents WHERE projectId=?').get(projectId) as Record<string, unknown> | undefined
-      return r ? rowToTranscriptDocument(r) : undefined
-    },
-    upsertTranscriptDocument: (doc) => {
-      d.prepare(
-        `INSERT INTO transcript_documents (projectId,text,segmentsJson,source,createdAt,updatedAt)
-         VALUES (@projectId,@text,@segmentsJson,@source,@createdAt,@updatedAt)
-         ON CONFLICT(projectId) DO UPDATE SET text=@text, segmentsJson=@segmentsJson, source=@source, updatedAt=@updatedAt`
-      ).run({ segmentsJson: null, ...doc })
-    },
-
     resetAll: () => {
       const tx = d.transaction(() => {
         for (const t of DATA_TABLES) d.prepare(`DELETE FROM ${t}`).run()
@@ -1999,15 +1672,12 @@ function buildRepositories(d: Database.Database): Repositories {
     },
 
     softReset: () => {
-      // Wipe domain data but leave thumbnail_templates (user art) intact. provider_connections
-      // is also kept — like API keys, a TalkingPhotos login is a credential, not disposable
-      // project data, and the actual session cookies live in the Chromium partition regardless.
+      // Wipe domain data but leave thumbnail_templates (user art) intact.
       const softTables = [
         'my_channels', 'source_channels', 'source_videos', 'downloaded_videos', 'uploads',
         'profiles', 'render_jobs', 'activity_log',
         'projects', 'project_images', 'transcript_words',
-        'automation_jobs', 'automation_job_steps', 'automation_job_items', 'automation_job_logs',
-        'provider_jobs', 'provider_assets', 'transcript_documents'
+        'automation_jobs', 'automation_job_steps', 'automation_job_items', 'automation_job_logs'
       ]
       const tx = d.transaction(() => {
         for (const t of softTables) d.prepare(`DELETE FROM ${t}`).run()

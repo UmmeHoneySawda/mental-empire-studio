@@ -100,18 +100,6 @@ describe('TC-003: Video Style, Caption Preset & Aspect Ratio Variant Matrix', ()
   })
 })
 
-describe('TC-004: E2E TalkingPhotos Video Goal', () => {
-  it('builds specialized TALKINGPHOTOS workflow steps', () => {
-    const draftState = createDefaultDraft(mockSettings() as never)
-    const state = automationDraftReducer(draftState, { type: 'goal', goal: 'talkingphotos-video' })
-
-    const steps = buildAutomationWorkflow('job-tp', state.draft.config, 'talkingphotos-video')
-    expect(steps.map((s) => s.key)).toEqual(['preflight', 'discover', 'download', 'talkingphotos', 'complete'])
-    expect(steps.find((s) => s.key === 'talkingphotos')?.runsOn).toBe('cloud')
-    expect(isAutomationGoalAvailable('talkingphotos-video')).toBe(true)
-  })
-})
-
 describe('TC-005: Job Execution Lifecycle Controls', () => {
   it('validates workflow step structure for pause, resume, cancel, and retry state tracking', () => {
     const config: AutomationJobConfig = {

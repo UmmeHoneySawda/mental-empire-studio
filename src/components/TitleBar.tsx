@@ -10,7 +10,6 @@ const LABELS: Record<ScreenKey, string> = {
   sources: 'Sources',
   download: 'Download',
   compose: 'Video Studio',
-  'talking-video': 'Talking Videos',
   thumb: 'Thumbnails',
   render: 'Render Queue',
   publish: 'Ready to Upload',

@@ -59,22 +59,6 @@ export const DEFAULT_AUTOMATION_RULES: AutomationRules = {
   retryMaxDelaySec: 90
 }
 
-export const DEFAULT_TALKINGPHOTOS_AUTOMATION: NonNullable<AutomationJobConfig['talkingPhotos']> = {
-  characterPrompt: '',
-  characterNegativePrompt: '',
-  style: 'high_quality',
-  aspectRatio: '16:9',
-  motionId: 0,
-  mode: 'uploaded-audio',
-  script: '',
-  language: 'en-US',
-  voice: 'en-US-AndrewMultilingualNeural',
-  voiceStyle: 'general',
-  speed: 1,
-  pitch: 0,
-  subtitleMode: 'none'
-}
-
 export function finiteNumber(value: unknown, fallback: number, min: number, max: number): number {
   const parsed = typeof value === 'number' ? value : typeof value === 'string' && value.trim() !== '' ? Number(value) : Number.NaN
   const safe = Number.isFinite(parsed) ? parsed : fallback
@@ -175,7 +159,6 @@ export function normalizeAutomationRules(value: unknown): AutomationRules {
 
 export function normalizeAutomationConfig(config: Partial<AutomationJobConfig>): AutomationJobConfig {
   const styleConfig = normalizeAutomationStyle(config.styleConfig, config)
-  const talkingPhotos = record(config.talkingPhotos)
   const ratios = Array.isArray(config.aspectRatios) ? config.aspectRatios.filter((v): v is '16:9' | '1:1' | '9:16' => v === '16:9' || v === '1:1' || v === '9:16') : []
   return {
     sourceKind: config.sourceKind === 'youtube-url' || config.sourceKind === 'local-files' ? config.sourceKind : 'saved-source',
@@ -192,21 +175,6 @@ export function normalizeAutomationConfig(config: Partial<AutomationJobConfig>):
     aspectRatios: ratios.length ? ratios : [styleConfig.aspectRatio],
     styleConfig,
     rules: normalizeAutomationRules(config.rules),
-    talkingPhotos: {
-      characterPrompt: typeof talkingPhotos.characterPrompt === 'string' ? talkingPhotos.characterPrompt.trim().slice(0, 2_000) : '',
-      characterNegativePrompt: typeof talkingPhotos.characterNegativePrompt === 'string' ? talkingPhotos.characterNegativePrompt.trim().slice(0, 2_000) : '',
-      style: oneOf(talkingPhotos.style, ['normal', 'high_quality'], DEFAULT_TALKINGPHOTOS_AUTOMATION.style),
-      aspectRatio: oneOf(talkingPhotos.aspectRatio, ['16:9', '1:1', '9:16'], styleConfig.aspectRatio),
-      motionId: Math.round(finiteNumber(talkingPhotos.motionId, DEFAULT_TALKINGPHOTOS_AUTOMATION.motionId, 0, 1_000_000)),
-      mode: oneOf(talkingPhotos.mode, ['uploaded-audio', 'custom-script', 'transcript-tts'], DEFAULT_TALKINGPHOTOS_AUTOMATION.mode),
-      script: typeof talkingPhotos.script === 'string' ? talkingPhotos.script.trim().slice(0, 20_000) : '',
-      language: typeof talkingPhotos.language === 'string' && talkingPhotos.language.trim() ? talkingPhotos.language.trim().slice(0, 20) : DEFAULT_TALKINGPHOTOS_AUTOMATION.language,
-      voice: typeof talkingPhotos.voice === 'string' && talkingPhotos.voice.trim() ? talkingPhotos.voice.trim().slice(0, 80) : DEFAULT_TALKINGPHOTOS_AUTOMATION.voice,
-      voiceStyle: typeof talkingPhotos.voiceStyle === 'string' && talkingPhotos.voiceStyle.trim() ? talkingPhotos.voiceStyle.trim().slice(0, 40) : DEFAULT_TALKINGPHOTOS_AUTOMATION.voiceStyle,
-      speed: finiteNumber(talkingPhotos.speed, DEFAULT_TALKINGPHOTOS_AUTOMATION.speed, 0.5, 2),
-      pitch: finiteNumber(talkingPhotos.pitch, DEFAULT_TALKINGPHOTOS_AUTOMATION.pitch, -20, 20),
-      subtitleMode: oneOf(talkingPhotos.subtitleMode, ['none', 'provider', 'local'], DEFAULT_TALKINGPHOTOS_AUTOMATION.subtitleMode)
-    },
     notify: {
       desktop: bool(config.notify?.desktop, false),
       webhook: bool(config.notify?.webhook, false),

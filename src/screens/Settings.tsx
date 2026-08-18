@@ -3,8 +3,6 @@ import { ScreenPad } from '../components/primitives'
 import { PageHeader, Btn, ToggleRow, Seg, StatusPill } from '../components/ui/kit'
 import { useData } from '../store/useData'
 import { useStore } from '../store/useStore'
-import { useTalkingPhotos } from '../store/useTalkingPhotos'
-import { describeTalkingPhotosCapabilities } from '@shared/talkingphotos'
 import type { AccentName, AppSettings, RenderCapabilities, StorageEnvRoots } from '@shared/types'
 
 const ACCENTS: AccentName[] = ['Amber', 'Violet', 'Emerald', 'Crimson']
@@ -36,63 +34,6 @@ function Card({ label, children }: { label?: string; children: React.ReactNode }
       {label && <div style={{ fontFamily: 'var(--font-mono)', fontSize: 9.5, letterSpacing: '.6px', color: 'var(--text-faint)', marginBottom: 13 }}>{label}</div>}
       {children}
     </div>
-  )
-}
-
-const CONNECTION_STATUS_LABEL: Record<string, string> = {
-  connected: 'Connected',
-  connecting: 'Connecting…',
-  waiting_for_login: 'Waiting for login…',
-  verifying: 'Verifying session…',
-  reauth_required: 'Reconnect required',
-  attention: 'Needs attention',
-  disconnected: 'Not connected'
-}
-const CONNECTION_TONE: Record<string, 'ok' | 'warn' | 'error' | 'neutral'> = {
-  connected: 'ok', connecting: 'warn', waiting_for_login: 'warn', verifying: 'warn',
-  reauth_required: 'error', attention: 'error', disconnected: 'neutral'
-}
-
-function TalkingPhotosCard({ enabled, onToggle }: { enabled: boolean; onToggle: () => void }): JSX.Element {
-  const { connection, connecting, capabilities, connect, reconnect, disconnect, init } = useTalkingPhotos()
-  useEffect(() => { if (enabled) void init() }, [enabled, init])
-  const status = connection?.status ?? 'disconnected'
-  const canRetryHeadlessly = status === 'reauth_required'
-  const capabilitySummary = describeTalkingPhotosCapabilities(status, capabilities ?? null)
-
-  return (
-    <Card label="TALKINGPHOTOS.AI">
-      <ToggleRow on={enabled} label="Enable TalkingPhotos integration" hint="Cloud Human-video provider with uploaded-audio creation, durable progress sync, and output download." onToggle={onToggle} />
-      {enabled && (
-        <div style={{ marginTop: 8 }}>
-          <div style={{ display: 'flex', alignItems: 'center', gap: 10, border: '1px solid var(--border)', borderRadius: 'var(--radius-md)', padding: '9px 13px', background: 'var(--bg-inset)', marginBottom: 8 }}>
-            <StatusPill tone={CONNECTION_TONE[status] ?? 'neutral'}>{CONNECTION_STATUS_LABEL[status] ?? 'Not connected'}</StatusPill>
-            <span style={{ fontSize: 11, color: 'var(--text-dim)', flex: 1 }}>
-              {connection?.lastVerifiedAt && status === 'connected' ? `verified ${new Date(connection.lastVerifiedAt).toLocaleTimeString()}` : ''}
-            </span>
-            {status === 'connected' ? (
-              <Btn variant="ghost" onClick={() => void disconnect()}>Disconnect</Btn>
-            ) : (
-              <Btn variant="soft" disabled={connecting} onClick={() => void (canRetryHeadlessly ? reconnect() : connect())}>
-                {connecting ? (CONNECTION_STATUS_LABEL[status] ?? 'Connecting…') : status === 'reauth_required' ? 'Reconnect' : status === 'attention' ? 'Retry' : 'Connect'}
-              </Btn>
-            )}
-          </div>
-          {connection?.lastError && status !== 'connected' && (
-            <div style={{ fontSize: 'var(--fs-caption)', color: 'var(--err-2)', marginBottom: 8 }}>{connection.lastError}</div>
-          )}
-          {status === 'connected' && capabilities && (
-            <div style={{ display: 'flex', gap: 18, flexWrap: 'wrap', fontSize: 'var(--fs-caption)', color: 'var(--text-dim)' }}>
-              <span>Max duration <b style={{ color: 'var(--text-muted)' }}>{capabilities.limits.maxDurationSeconds}s</b></span>
-              <span>Max TTS chars <b style={{ color: 'var(--text-muted)' }}>{capabilities.limits.maxCharactersTts}</b></span>
-              <span>Concurrent <b style={{ color: 'var(--text-muted)' }}>{capabilities.usage.concurrentCount}/{capabilities.usage.concurrentLimit}</b></span>
-              <span>Daily <b style={{ color: 'var(--text-muted)' }}>{capabilities.usage.dailyUsage}/{capabilities.usage.dailyLimit}</b></span>
-            </div>
-          )}
-          <div style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-faint)', marginTop: 8 }}>{capabilitySummary.statusText}</div>
-        </div>
-      )}
-    </Card>
   )
 }
 
@@ -328,7 +269,6 @@ export function Settings(): JSX.Element {
             </div>
           ))}
         </Card>
-        <TalkingPhotosCard enabled={settings.integrations.talkingPhotos.enabled} onToggle={() => saved({ integrations: { talkingPhotos: { enabled: !settings.integrations.talkingPhotos.enabled } } })} />
         <Card label="TELEMETRY · SENTRY">
           <ToggleRow
             on={settings.telemetryEnabled}

@@ -22,9 +22,7 @@ import { probeGpuEngine } from '../services/engine/gpu/host'
 import { runUploadDetection } from '../services/uploads-detect'
 import { setSentryEnabled, telemetryForcedOff } from '../services/sentry'
 import { registerStorageIpc } from './storage'
-import { registerTalkingPhotosIpc } from './talkingphotos'
 import { registerVideoEngineIpc } from './video-engine'
-import { clearProviderSessionStorage } from '../providers/talkingphotos/partition'
 import { resetVideoEngine } from '../services/video-engine/studio'
 import {
   FAST_PREVIEW_EXPORT_COMMAND,
@@ -101,12 +99,9 @@ export function registerIpc(): void {
     return shell.openPath(p)
   })
   // Factory reset: settings back to defaults + wipe all projects/profiles/channels/jobs.
-  // Also logs out of TalkingPhotos (its connection row is wiped along with everything
-  // else, so the Chromium partition should not silently stay authenticated underneath it).
   ipcMain.handle('app:reset', async () => {
     const next = resetSettings()
     getRepos().resetAll()
-    await clearProviderSessionStorage().catch(() => {})
     applyLoginItem(next)
     schedulerStart()
     return next
@@ -184,9 +179,6 @@ export function registerIpc(): void {
 
   // ---- storage env roots (settings badge + D-aware fallback) ----
   registerStorageIpc()
-
-  // ---- TalkingPhotos cloud provider: session, sync, and uploaded-audio Human creation ----
-  registerTalkingPhotosIpc()
 
   // ---- template video engine: Remotion + HyperFrames Compose studio ----
   registerVideoEngineIpc()

@@ -4,20 +4,6 @@
 
 import type { GpuRenderSpec } from './renderSpec'
 import type { GpuEngineStatus } from './gpuStatus'
-import type {
-  ProviderCapabilities,
-  ProviderConnection,
-  ProviderJob,
-  ProviderLanguage,
-  ProviderMotion,
-  ProviderMotionQuery,
-  ProviderProjectSummary,
-  ProviderVoice,
-  TalkingPhotosAspectRatio,
-  TalkingPhotosCreateInput,
-  TalkingPhotosRemoteMedia,
-  TalkingPhotosScriptCreateInput
-} from './talkingphotos'
 export type { CaptionStyleId }
 import type {
   AddVideoScenePatch,
@@ -78,7 +64,6 @@ export type ScreenKey =
   | 'niches'
   | 'profiles'
   | 'settings'
-  | 'talking-video'
 
 export type UploadStatus = 'Uploaded' | 'Scheduled' | 'Draft'
 
@@ -378,7 +363,6 @@ export interface AutomationEvent {
 // ---- Durable goal-based automation (persistent local worker) ----
 export type AutomationGoal =
   | 'source-to-export'
-  | 'talkingphotos-video'
   | 'download-edit'
   | 'long-to-shorts'
   | 'images-to-video'
@@ -521,27 +505,6 @@ export interface AutomationJobConfig {
   /** Canonical style contract. Legacy mirrors above remain readable. */
   styleConfig: AutomationStyleConfig
   rules: AutomationRules
-  /** TalkingPhotos-specific settings. The first assetPath is the character
-   * reference image; source downloads/local files provide the uploaded audio. */
-  talkingPhotos?: {
-    characterPrompt: string
-    characterNegativePrompt: string
-    style: 'normal' | 'high_quality'
-    aspectRatio: '16:9' | '1:1' | '9:16'
-    motionId: number
-    /** 'uploaded-audio' (default) preserves the original behavior exactly — real
-     *  downloaded/local audio submitted as-is. 'custom-script' feeds `script` through
-     *  TTS. 'transcript-tts' reconstructs a script from the item's own transcript and
-     *  feeds that through TTS instead of the original audio. */
-    mode: 'uploaded-audio' | 'custom-script' | 'transcript-tts'
-    script: string
-    language: string
-    voice: string
-    voiceStyle: string
-    speed: number
-    pitch: number
-    subtitleMode: 'none' | 'provider' | 'local'
-  }
   notify: { desktop: boolean; webhook: boolean; sound: boolean; email: boolean }
   execution: 'local'
   scheduledFor?: string
@@ -1155,8 +1118,6 @@ export interface AppSettings {
   detection: { auto: boolean; confirmBand: [number, number] }
   /** duplicate-download behavior for source videos already uploaded to owned channels */
   dedup: { allowReupload: boolean }
-  /** third-party cloud provider connections, gated off by default until each is ready */
-  integrations: { talkingPhotos: { enabled: boolean } }
   /** global Sentry kill switch — crash reports, perf traces, and resource sampling.
    *  Flipping this off fully disables telemetry app-wide, live, no restart needed. */
   telemetryEnabled: boolean
@@ -1212,7 +1173,6 @@ export const DEFAULT_SETTINGS: AppSettings = {
   features: { workflowP1: true, videoEditorV2: true, thumbEditorV2: true },
   detection: { auto: true, confirmBand: [0.6, 0.82] },
   dedup: { allowReupload: false },
-  integrations: { talkingPhotos: { enabled: false } },
   telemetryEnabled: true
 }
 
@@ -1561,46 +1521,6 @@ export interface NativeApi {
     deleteJob(id: string): Promise<void>
     retryJob(id: string): Promise<void>
   }
-  /** TalkingPhotos.ai cloud provider — session, catalogs, sync, and confirmed
-   *  uploaded-library-audio Human video creation. */
-  talkingPhotos: {
-    connectionStatus(): Promise<ProviderConnection>
-    connect(): Promise<ProviderConnection>
-    reconnect(): Promise<ProviderConnection>
-    disconnect(): Promise<ProviderConnection>
-    capabilities(): Promise<ProviderCapabilities>
-    languages(): Promise<ProviderLanguage[]>
-    voices(languageCode: string): Promise<ProviderVoice[]>
-    motions(query: ProviderMotionQuery): Promise<ProviderMotion[]>
-    /** locally-known provider jobs joined with a fresh remote project listing */
-    projects(): Promise<ProviderProjectSummary[]>
-    project(remoteProjectId: string): Promise<ProviderProjectSummary | null>
-    /** reconcile every non-terminal provider job against its remote project now */
-    sync(): Promise<ProviderJob[]>
-    jobs(): Promise<ProviderJob[]>
-    /** Create a Human video from local uploaded audio; long audio is segmented and merged. */
-    createUploadedAudio(input: TalkingPhotosCreateInput): Promise<ProviderJob>
-    /** Create a Human video from a custom script (or automation transcript
-     *  reconstruction) via TTS, gated behind the confirmed WebSocket resolution. */
-    createScript(input: TalkingPhotosScriptCreateInput): Promise<ProviderJob>
-    /** (re)download a completed job's output; safe to call repeatedly */
-    downloadOutput(providerJobId: string): Promise<ProviderJob>
-    subtitleLanguages(): Promise<ProviderLanguage[]>
-    /** Submit provider subtitles for an already-completed source video. */
-    createProviderSubtitles(sourceJobId: string, language?: string): Promise<ProviderJob>
-    /** Burn local captions onto an already-downloaded, verified output — mutually
-     *  exclusive with provider subtitles on the same video. */
-    applyLocalCaptions(providerJobId: string, aspect?: TalkingPhotosAspectRatio): Promise<ProviderJob>
-    /** Display-only TTS library listing for explicit, user-confirmed recovery —
-     *  never used to automatically infer a result. */
-    ttsRecoveryLibrary(): Promise<TalkingPhotosRemoteMedia[]>
-    /** Persist a user-confirmed manual recovery choice for an unresolved TTS job. */
-    confirmRecoveredTts(jobId: string, mediaId: string, durationSec: number): Promise<ProviderJob>
-    /** Delete a remote TalkingPhotos project (`DELETE /project/{id}`). */
-    deleteProject(remoteProjectId: string): Promise<void>
-    /** Merge selected remote projects (`POST /project/merge_videos`). */
-    mergeProjects(input: { itemIds: string[]; title: string; audioMediaId?: number }): Promise<ProviderProjectSummary>
-  }
   /** pick an output folder via the OS dialog; returns the chosen path or '' */
   chooseFolder(): Promise<string>
   /** master library: reorganize existing files into the per-video layout */
@@ -1755,16 +1675,12 @@ export interface NativeApi {
   onAutomation(cb: (e: AutomationEvent) => void): () => void
   /** subscribe to durable automation job changes; SQLite remains source of truth */
   onAutomationJob(cb: (job: AutomationJob) => void): () => void
-  /** subscribe to TalkingPhotos provider-job changes; provider_jobs remains source of truth */
-  onProviderJob(cb: (job: ProviderJob) => void): () => void
   /** subscribe to template-engine render-job changes (Remotion / HyperFrames queue) */
   onVideoEngineJob(cb: (job: VideoRenderJob) => void): () => void
   /** subscribe to Auto B-roll progress */
   onAutoBrollProgress(cb: (p: AutoBrollProgress) => void): () => void
   /** subscribe to niche b-roll pool warm progress */
   onNichePoolProgress(cb: (p: NichePoolProgress) => void): () => void
-  /** subscribe to TalkingPhotos connection-status changes */
-  onConnectionStatusChanged(cb: (connection: ProviderConnection) => void): () => void
   /** reveal a file or folder in OS file explorer */
   revealPath(path: string): Promise<void>
   /** open a file or folder directly with default application */

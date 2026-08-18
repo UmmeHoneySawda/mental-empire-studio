@@ -30,7 +30,6 @@ const PRODUCTION: NavDef[] = [
 
 const LIBRARIES: NavDef[] = [
   { key: 'channels', label: 'Publishing Channels', icon: icon(<><path d="M4 11a9 9 0 019-9" /><path d="M4 4a16 16 0 0116 16" /><circle cx="5" cy="19" r="1.6" /></>) },
-  { key: 'talking-video', label: 'Talking Videos', icon: icon(<><circle cx="12" cy="9" r="4" /><path d="M5 20c0-3.9 3.1-7 7-7s7 3.1 7 7" /></>) },
   { key: 'niches', label: 'B-roll Library', icon: icon(<><rect x="3" y="4" width="14" height="10" rx="2" /><path d="M17 8l4-2v8l-4-2" /></>) }
 ]
 

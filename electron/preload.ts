@@ -24,7 +24,6 @@ import type {
   AutomationJob,
   VisualTemplate
 } from '../shared/types'
-import type { ProviderConnection, ProviderJob, ProviderMotionQuery, TalkingPhotosAspectRatio, TalkingPhotosCreateInput, TalkingPhotosScriptCreateInput } from '../shared/talkingphotos'
 import type {
   AddVideoScenePatch,
   ApplyVideoTransitionInput,
@@ -249,31 +248,6 @@ const api: NativeApi = {
     retryJob: (id: string) => ipcRenderer.invoke('automation:retryJob', id)
   },
 
-  talkingPhotos: {
-    connectionStatus: () => ipcRenderer.invoke('talkingphotos:connectionStatus'),
-    connect: () => ipcRenderer.invoke('talkingphotos:connect'),
-    reconnect: () => ipcRenderer.invoke('talkingphotos:reconnect'),
-    disconnect: () => ipcRenderer.invoke('talkingphotos:disconnect'),
-    capabilities: () => ipcRenderer.invoke('talkingphotos:capabilities'),
-    languages: () => ipcRenderer.invoke('talkingphotos:languages'),
-    voices: (languageCode: string) => ipcRenderer.invoke('talkingphotos:voices', languageCode),
-    motions: (query: ProviderMotionQuery) => ipcRenderer.invoke('talkingphotos:motions', query),
-    projects: () => ipcRenderer.invoke('talkingphotos:projects'),
-    project: (remoteProjectId: string) => ipcRenderer.invoke('talkingphotos:project', remoteProjectId),
-    sync: () => ipcRenderer.invoke('talkingphotos:sync'),
-    jobs: () => ipcRenderer.invoke('talkingphotos:jobs'),
-    createUploadedAudio: (input: TalkingPhotosCreateInput) => ipcRenderer.invoke('talkingphotos:createUploadedAudio', input),
-    createScript: (input: TalkingPhotosScriptCreateInput) => ipcRenderer.invoke('talkingphotos:createScript', input),
-    downloadOutput: (providerJobId: string) => ipcRenderer.invoke('talkingphotos:downloadOutput', providerJobId),
-    subtitleLanguages: () => ipcRenderer.invoke('talkingphotos:subtitleLanguages'),
-    createProviderSubtitles: (sourceJobId: string, language?: string) => ipcRenderer.invoke('talkingphotos:createProviderSubtitles', sourceJobId, language),
-    applyLocalCaptions: (providerJobId: string, aspect?: TalkingPhotosAspectRatio) => ipcRenderer.invoke('talkingphotos:applyLocalCaptions', providerJobId, aspect),
-    ttsRecoveryLibrary: () => ipcRenderer.invoke('talkingphotos:ttsRecoveryLibrary'),
-    confirmRecoveredTts: (jobId: string, mediaId: string, durationSec: number) => ipcRenderer.invoke('talkingphotos:confirmRecoveredTts', jobId, mediaId, durationSec),
-    deleteProject: (remoteProjectId: string) => ipcRenderer.invoke('talkingphotos:deleteProject', remoteProjectId),
-    mergeProjects: (input: { itemIds: string[]; title: string; audioMediaId?: number }) => ipcRenderer.invoke('talkingphotos:mergeProjects', input)
-  },
-
   chooseFolder: () => ipcRenderer.invoke('fs:chooseFolder'),
 
   library: {
@@ -408,11 +382,9 @@ const api: NativeApi = {
   onRenderProgress: (cb: (p: RenderProgress) => void) => subscribe('render:progress', cb),
   onAutomation: (cb: (e: AutomationEvent) => void) => subscribe('automation:event', cb),
   onAutomationJob: (cb: (job: AutomationJob) => void) => subscribe('automation:job', cb),
-  onProviderJob: (cb: (job: ProviderJob) => void) => subscribe('talkingphotos:job', cb),
   onVideoEngineJob: (cb: (job: VideoRenderJob) => void) => subscribe('videoEngine:job', cb),
   onAutoBrollProgress: (cb: (p: AutoBrollProgress) => void) => subscribe('videoEngine:autoBroll', cb),
   onNichePoolProgress: (cb: (p: NichePoolProgress) => void) => subscribe('niche:poolProgress', cb),
-  onConnectionStatusChanged: (cb: (connection: ProviderConnection) => void) => subscribe('talkingphotos:connectionStatus', cb),
   revealPath: (path: string) => ipcRenderer.invoke('shell:revealPath', path),
   openPath: (path: string) => ipcRenderer.invoke('shell:openPath', path),
   onFastPreviewProgress: (cb) => subscribe('videoEngine:fastPreviewProgress', cb)
