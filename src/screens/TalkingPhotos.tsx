@@ -31,6 +31,11 @@ import {
   tpFeature,
   type TpAspectRatio,
   type TpCharacter,
+  type TpCharacterAge,
+  type TpCharacterBeard,
+  type TpCharacterEthnicity,
+  type TpCharacterGender,
+  type TpCharacterStyle,
   type TpJob,
   type TpJobDetail,
   type TpOutput,
@@ -451,6 +456,11 @@ export function TalkingPhotos(): JSX.Element {
 
   const [prompt, setPrompt] = useState('')
   const [charLabel, setCharLabel] = useState('')
+  const [charGender, setCharGender] = useState<TpCharacterGender>('female')
+  const [charEthnicity, setCharEthnicity] = useState<TpCharacterEthnicity>('')
+  const [charAge, setCharAge] = useState<TpCharacterAge>('adult')
+  const [charBeard, setCharBeard] = useState<TpCharacterBeard>('shaven')
+  const [charStyle, setCharStyle] = useState<TpCharacterStyle>('realistic')
   const [q, setQ] = useState('')
   const [kindChip, setKindChip] = useState<'all'|'generated'|'uploaded'>('all')
   const [aspectChip, setAspectChip] = useState<'all'|'9:16'|'16:9'>('all')
@@ -559,6 +569,10 @@ export function TalkingPhotos(): JSX.Element {
     if (!feature.aspectRatios.includes(aspectRatio)) setAspectRatio(feature.aspectRatios[0])
     setPartSeconds((s) => Math.min(s, feature.maxPartSeconds))
   }, [feature, aspectRatio])
+
+  useEffect(() => {
+    if (feature) setCharStyle(feature.characterStyles[0])
+  }, [feature?.id])
 
   const localPlan = useMemo(
     () => (audioDurationSec > 0 && partSeconds > 0 ? planSplit({ sourceDurationSec: audioDurationSec, partSeconds }) : null),
@@ -1013,6 +1027,44 @@ export function TalkingPhotos(): JSX.Element {
                   onChange={(e) => setPrompt(e.currentTarget.value)}
                   style={{ ...inputStyle, resize: 'vertical', minHeight: 62 }}
                 />
+                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-2)' }}>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 'var(--fs-sm)', color: 'var(--text-dim)' }}>
+                    Gender
+                    <select aria-label="Gender" value={charGender} onChange={e=>setCharGender(e.target.value as TpCharacterGender)} style={inputStyle}>
+                      <option value="female">Female</option>
+                      <option value="male">Male</option>
+                    </select>
+                  </label>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 'var(--fs-sm)', color: 'var(--text-dim)' }}>
+                    Age
+                    <select aria-label="Age" value={charAge} onChange={e=>setCharAge(e.target.value as TpCharacterAge)} style={inputStyle}>
+                      <option value="adult">Adult</option>
+                      <option value="child">Child</option>
+                    </select>
+                  </label>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 'var(--fs-sm)', color: 'var(--text-dim)' }}>
+                    Ethnicity
+                    <select aria-label="Ethnicity" value={charEthnicity} onChange={e=>setCharEthnicity(e.target.value as TpCharacterEthnicity)} style={inputStyle}>
+                      <option value="">Any</option>
+                      <option value="white">White</option>
+                      <option value="black">Black</option>
+                      <option value="asian">Asian</option>
+                    </select>
+                  </label>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 'var(--fs-sm)', color: 'var(--text-dim)' }}>
+                    Beard (male)
+                    <select aria-label="Beard" value={charBeard} onChange={e=>setCharBeard(e.target.value as TpCharacterBeard)} style={inputStyle}>
+                      <option value="shaven">Shaven</option>
+                      <option value="beard">Beard</option>
+                    </select>
+                  </label>
+                  <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 'var(--fs-sm)', color: 'var(--text-dim)', gridColumn: '1 / -1' }}>
+                    Style
+                    <select aria-label="Style" value={charStyle} onChange={e=>setCharStyle(e.target.value as TpCharacterStyle)} style={inputStyle}>
+                      {(feature?.characterStyles ?? ['realistic']).map(s=> <option key={s} value={s}>{s}</option>)}
+                    </select>
+                  </label>
+                </div>
                 {characterProgress && characterProgress.phase !== 'done' && characterProgress.phase !== 'error' && (
                   <span style={{ fontSize: 'var(--fs-caption)', color: 'var(--accent)' }}>{characterProgress.message}</span>
                 )}
@@ -1028,11 +1080,11 @@ export function TalkingPhotos(): JSX.Element {
                         negativePrompt: '',
                         aspectRatio,
                         featureId: feature.id,
-                        characterStyle: feature.characterStyles[0],
-                        gender: 'female',
-                        ethnicity: '',
-                        age: 'adult',
-                        beard: 'shaven'
+                        characterStyle: charStyle,
+                        gender: charGender,
+                        ethnicity: charEthnicity,
+                        age: charAge,
+                        beard: charBeard
                       })
                     }}
                   >
@@ -1046,11 +1098,11 @@ export function TalkingPhotos(): JSX.Element {
                         label: charLabel,
                         aspectRatio,
                         featureId: feature.id,
-                        characterStyle: feature.characterStyles[0],
-                        gender: 'female',
-                        ethnicity: '',
-                        age: 'adult',
-                        beard: 'shaven'
+                        characterStyle: charStyle,
+                        gender: charGender,
+                        ethnicity: charEthnicity,
+                        age: charAge,
+                        beard: charBeard
                       })
                     }}
                   >
