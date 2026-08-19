@@ -425,6 +425,8 @@ export function TalkingPhotos(): JSX.Element {
     pauseJob: useTalkingPhotos((s) => s.pauseJob),
     cancelJob: useTalkingPhotos((s) => s.cancelJob),
     deleteJob: useTalkingPhotos((s) => s.deleteJob),
+    deleteCharacter: useTalkingPhotos((s) => s.deleteCharacter),
+    deleteCharacters: useTalkingPhotos((s) => s.deleteCharacters),
     retryPart: useTalkingPhotos((s) => s.retryPart),
     retryFailed: useTalkingPhotos((s) => s.retryFailed)
   }
@@ -452,6 +454,13 @@ export function TalkingPhotos(): JSX.Element {
   const [aspectChip, setAspectChip] = useState<'all'|'9:16'|'16:9'>('all')
   const [sort, setSort] = useState<'recent'|'az'>('recent')
   const [density, setDensity] = useState<'comfortable'|'compact'>('comfortable')
+  const [selectOn, setSelectOn] = useState(false)
+  const [selected, setSelected] = useState<Set<string>>(new Set())
+  const [hovered, setHovered] = useState<string | null>(null)
+  const [lightbox, setLightbox] = useState<TpCharacter | null>(null)
+  const [confirmDeleteOne, setConfirmDeleteOne] = useState<TpCharacter | null>(null)
+  const [confirmBulk, setConfirmBulk] = useState(false)
+  const toggleSel = (id:string)=> setSelected(s=>{ const n=new Set(s); n.has(id)?n.delete(id):n.add(id); return n })
 
   const filtered = useMemo(() => {
     let list = characters
@@ -461,6 +470,15 @@ export function TalkingPhotos(): JSX.Element {
     list = [...list].sort((a,b) => sort==='az' ? a.label.localeCompare(b.label) : (b.createdAt||'').localeCompare(a.createdAt||''))
     return list
   }, [characters, q, kindChip, aspectChip, sort])
+
+  useEffect(() => {
+    if (!lightbox) return
+    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setLightbox(null) }
+    window.addEventListener('keydown', onKey)
+    const prev = document.body.style.overflow
+    document.body.style.overflow = 'hidden'
+    return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = prev }
+  }, [lightbox])
 
   useEffect(() => {
     void loadSources()
@@ -856,23 +874,54 @@ export function TalkingPhotos(): JSX.Element {
                   <Btn size="sm" variant={sort==='az'?'soft':undefined} onClick={()=>setSort('az')}>A-Z</Btn>
                 </span>
               </div>
-              {filtered.length === 0 ? (
-                <EmptyState
-                  icon={IconFace}
-                  title="No presenters saved yet"
-                  body="Generate one from a description, or upload your own photo. The same face is used for every chunk so the finished video is consistent."
-                />
+              {filtered.length===0 ? (
+                <EmptyState icon={IconFace} title={q?`No faces match “${q}”`:'No faces match'} body={q?'Try a different term or clear filters.':'Change a filter to see faces.'} />
               ) : (
-                <div className={`tp-chars ${density==='compact'?'is-compact':'is-comfortable'}`}>
-                  {filtered.map((c) => (
+                <div className={`tp-chars ${density==='compact'?'is-compact':'is-comfortable'}`} role="grid" aria-label="Presenters">
+                  {filtered.map(c => (
                     <CharacterTile
                       key={c.id}
                       character={c}
-                      selected={characterId === c.id}
-                      onSelect={() => setCharacterId(c.id)}
+                      selected={characterId===c.id}
+                      checked={selected.has(c.id)}
+                      selectOn={selectOn}
+                      hovered={hovered===c.id}
+                      onHover={()=>!selectOn && setHovered(c.id)}
+                      onLeave={()=>setHovered(null)}
+                      onSelect={()=> setCharacterId(c.id)}
+                      onCheck={()=> { setSelectOn(true); toggleSel(c.id) }}
+                      onDeleteOne={()=> { setConfirmDeleteOne(c); }}
+                      onInspect={()=> setLightbox(c)}
                     />
                   ))}
                 </div>
+              )}
+              {filtered.length>0 && (
+                <>
+                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
+                    <Btn size="sm" variant={selectOn?'soft':undefined} onClick={()=>setSelectOn(s=>!s)}>{selectOn?'Done':'Select'}</Btn>
+                    {selectOn && <><Btn size="sm" onClick={()=>setSelected(new Set(filtered.map(c=>c.id)))}>Select filtered ({filtered.length})</Btn>
+                    <Btn size="sm" onClick={()=>setSelected(new Set(characters.map(c=>c.id)))}>Select all ({characters.length})</Btn>
+                    <Btn size="sm" onClick={()=>setSelected(new Set())}>Clear</Btn></>}
+                  </div>
+                  {selected.size>0 && (
+                    <div className="tp-bulk" role="status" aria-live="polite">
+                      <b>{selected.size} selected</b>
+                      <span style={{flex:1}}/>
+                      <Btn size="sm" onClick={()=>setSelected(new Set())}>Clear</Btn>
+                      <Btn size="sm" variant="danger" onClick={()=> setConfirmBulk(true)}>
+                        Delete {selected.size}
+                      </Btn>
+                    </div>
+                  )}
+                  {(() => {
+                    const runIds = [...selected].filter(id=> jobs.some(j=>j.characterId===id && j.status==='running'));
+                    const pausedIds = [...selected].filter(id=> jobs.some(j=>j.characterId===id && j.status==='paused'));
+                    if (runIds.length>0) return <Banner kind="error">Blocked: {runIds.length} presenter{runIds.length>1?'s':''} still in running jobs — they stay until those jobs finish.</Banner>
+                    if (pausedIds.length>0) return <Banner kind="info">Pausing cascade: deleting these will also remove {pausedIds.length} paused job{pausedIds.length>1?'s':''}.</Banner>
+                    return null
+                  })()}
+                </>
               )}
 
               <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
@@ -1073,6 +1122,27 @@ export function TalkingPhotos(): JSX.Element {
           setConfirmDelete(null)
         }}
       />
+      {lightbox && (
+        <div className="tp-lightbox" role="dialog" aria-modal="true" aria-labelledby="tplb-title" onClick={()=>setLightbox(null)}>
+          <div className="tp-lightbox-card" onClick={e=>e.stopPropagation()}>
+            <div className="tp-lightbox-media">
+              {(() => { const s = lightbox.previewPath ? mediaSrc(lightbox.previewPath) : lightbox.previewUrl; return s ? <img src={s} alt="" /> : <div className="tp-char-empty" style={{minHeight:220,display:'grid',placeItems:'center'}}>{!lightbox.previewPath && !lightbox.previewUrl?'No image saved for this face (legacy).':'Source expired (vendor retains 60 days).'}</div>; })()}
+            </div>
+            <div className="tp-lightbox-body">
+              <h3 id="tplb-title">{lightbox.label}</h3>
+              <dl className="tp-lightbox-kv"><dt>Kind</dt><dd>{lightbox.kind} · {lightbox.characterStyle}</dd><dt>Gender</dt><dd>{lightbox.gender} — {lightbox.age}</dd><dt>Aspect</dt><dd>{lightbox.aspectRatio} · {tpFeature(featureId)?.label ?? ''}</dd><dt>Created</dt><dd>{sinceLabel(lightbox.createdAt)} · used in {jobs.filter(j=>j.characterId===lightbox.id).length} jobs</dd></dl>
+              <div style={{display:'flex',gap:8}}><Btn size="sm" variant="soft" onClick={()=>{setCharacterId(lightbox.id); setLightbox(null)}}>Use this face</Btn><Btn size="sm" variant="danger" onClick={()=>{setConfirmDeleteOne(lightbox); setLightbox(null)}}>Delete</Btn></div>
+            </div>
+            <button aria-label="Close" className="tp-lightbox-x" onClick={()=>setLightbox(null)}>×</button>
+          </div>
+        </div>
+      )}
+      {confirmDeleteOne && (
+        <ConfirmDialog open={!!confirmDeleteOne} title={`Delete “${confirmDeleteOne.label}”?`} body={(() => { const paused = jobs.filter(j=>j.characterId===confirmDeleteOne.id && j.status==='paused'); return paused.length?`“${confirmDeleteOne.label}” will be removed. This also removes ${paused.length} paused job${paused.length>1?'s':''}: ${paused.map(j=>j.videoTitle||'Untitled').join(', ')}. Rendered chunks stay in your TalkingPhotos account.`:`“${confirmDeleteOne.label}” will be removed from your library.` })()} confirmLabel="Delete" confirmVariant="danger" onCancel={()=>setConfirmDeleteOne(null)} onConfirm={()=>{ const id=confirmDeleteOne.id; setConfirmDeleteOne(null); void tp.deleteCharacter(id) }} />
+      )}
+      {confirmBulk && (
+        <ConfirmDialog open={confirmBulk} title={`Delete ${selected.size} faces?`} body={(() => { const paused = [...selected].flatMap(id=> jobs.filter(j=>j.characterId===id && j.status==='paused')); return paused.length?`This deletes ${selected.size} faces and also removes ${paused.length} paused job${paused.length>1?'s':''}.`:`This deletes ${selected.size} faces from your library.` })()} confirmLabel={`Delete ${selected.size}`} confirmVariant="danger" onCancel={()=>setConfirmBulk(false)} onConfirm={()=>{ const ids=[...selected]; setConfirmBulk(false); setSelected(new Set()); void tp.deleteCharacters(ids) }} />
+      )}
     </ScreenPad>
   )
 }
@@ -1088,18 +1158,50 @@ const inputStyle: React.CSSProperties = {
   fontSize: 'var(--fs-body)'
 }
 
-function CharacterTile({ character, selected, onSelect }: { character: TpCharacter; selected: boolean; onSelect: () => void }): JSX.Element {
+function CharacterTile({ character, selected, checked, selectOn, hovered, onHover, onLeave, onSelect, onCheck, onDeleteOne, onInspect }: { character: TpCharacter; selected: boolean; checked?: boolean; selectOn?: boolean; hovered?: boolean; onHover?: () => void; onLeave?: () => void; onSelect: () => void; onCheck?: () => void; onDeleteOne?: () => void; onInspect?: () => void }): JSX.Element {
   const [broken, setBroken] = useState(false)
   const src = character.previewPath ? mediaSrc(character.previewPath) : character.previewUrl
   return (
-    <button type="button" className="tp-char" aria-pressed={selected} title={character.label} onClick={onSelect}>
-      {src && !broken ? (
-        <img src={src} alt="" loading="lazy" onError={() => setBroken(true)} />
-      ) : (
-        <span className="tp-char-empty">preview unavailable</span>
+    <div
+      role="gridcell"
+      className={`tp-char ${selected ? 'is-selected' : ''} ${checked ? 'is-checked' : ''}`}
+      aria-selected={selected}
+      title={character.label}
+      onMouseEnter={onHover}
+      onMouseLeave={onLeave}
+      onClick={() => {
+        if (selectOn) onCheck?.()
+        else { onSelect(); onInspect?.() }
+      }}
+      style={{ position: 'relative' }}
+    >
+      {selectOn && (
+        <button
+          role="checkbox"
+          aria-checked={!!checked}
+          aria-label={`Select ${character.label}`}
+          className="tp-char-chk"
+          onClick={e => { e.stopPropagation(); onCheck?.() }}
+        >
+          {checked ? '☑' : '☐'}
+        </button>
       )}
-      <span className="tp-char-label">{character.label}</span>
-    </button>
+      {selectOn && (
+        <button aria-label={`Delete ${character.label}`} className="tp-char-del" onClick={e => { e.stopPropagation(); onDeleteOne?.() }}>×</button>
+      )}
+      <div style={{ width: '100%', height: '100%' }} onClick={e => { if (!selectOn) { e.stopPropagation(); onSelect(); onInspect?.() } }}>
+        {src && !broken ? (
+          <img src={src} alt="" loading="lazy" onError={() => setBroken(true)} />
+        ) : (
+          <span className="tp-char-empty">preview unavailable</span>
+        )}
+        <span className="tp-char-label">{character.label}</span>
+      </div>
+      {hovered && !selectOn && <div className="tp-charpop" role="img" aria-label={character.label}>
+        {src ? <img src={src} alt="" /> : <div style={{height:88, display:'grid', placeItems:'center', background:'var(--bg-inset)'}}>no image</div>}<div className="tp-charpop-body"><b>{character.label}</b><span>{character.kind} · {character.characterStyle} · {character.gender} · {character.aspectRatio}</span></div>
+      </div>}
+      <span hidden aria-pressed={selected} />
+    </div>
   )
 }
 

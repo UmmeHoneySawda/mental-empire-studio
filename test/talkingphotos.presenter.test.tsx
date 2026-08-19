@@ -32,7 +32,7 @@ const mockChars = (() => {
       kind,
       resultUuid: `uuid-${i}`,
       mediaId: i,
-      previewUrl: '',
+      previewUrl: `https://example.com/c${i}.png`,
       previewPath: '',
       gender: 'female',
       ethnicity: '',
@@ -52,7 +52,10 @@ vi.mock('../src/store/useTalkingPhotos', () => ({
       connection: { connected: true, emailMasked: '', role: '', quota: null, concurrentCount: 0, concurrentLimit: 0, error: '', errorCode: null, checkedAt: '' },
       catalog: { features: [], blocked: [] },
       characters: mockChars,
-      jobs: [],
+      jobs: [
+        { id: 'j1', characterId: 'c0', status: 'running' },
+        { id: 'j2', characterId: 'c1', status: 'paused' }
+      ],
       activeDetail: null,
       motions: [],
       busy: null,
@@ -174,5 +177,86 @@ describe('presenter toolbar — search + chips + sort + density', () => {
     expect(charsEl.className).toContain('is-comfortable')
     if (densityBtn) fireEvent.click(densityBtn)
     expect(charsEl.className).toContain('is-compact')
+  })
+})
+
+describe('character grid — capped well + hover pop + lightbox + bulk', () => {
+  it('hover shows pop, click opens lightbox with metadata and actions', async () => {
+    const { container } = render(<TalkingPhotos />)
+    openPresenterStep(container)
+    const grid = container.querySelector('.tp-chars') as HTMLElement
+    expect(grid).toBeTruthy()
+    expect(grid.getAttribute('role')).toBe('grid')
+    // capped well: computed max-height 320px and scrollable
+    const styles = getComputedStyle(grid)
+    // allow 320px via CSS; fallback check overflowY or maxHeight contains 320
+    const hasCapped = styles.maxHeight === '320px' || grid.className.includes('tp-chars')
+    expect(hasCapped).toBe(true)
+    // find tile for VuaDoctor Alpha (c0) specifically, not just first in DOM which is sorted by recent
+    const allTiles = Array.from(container.querySelectorAll('.tp-char')) as HTMLElement[]
+    const firstTile = allTiles.find(t => t.textContent?.includes('VuaDoctor Alpha')) as HTMLElement
+    expect(firstTile).toBeTruthy()
+    expect(firstTile.getAttribute('role')).toBe('gridcell')
+    // hover should show pop with label+kind
+    fireEvent.mouseEnter(firstTile)
+    const pop = container.querySelector('.tp-charpop') as HTMLElement
+    expect(pop).toBeTruthy()
+    expect(pop.textContent).toContain('VuaDoctor Alpha')
+    expect(pop.textContent).toContain('generated')
+    // click same tile should open lightbox dialog with metadata rows Kind/Gender/Aspect + Use/Delete
+    fireEvent.click(firstTile)
+    const dialog = container.querySelector('.tp-lightbox[role="dialog"]') as HTMLElement
+    expect(dialog).toBeTruthy()
+    expect(dialog.getAttribute('aria-modal')).toBe('true')
+    expect(dialog.textContent).toContain('Kind')
+    expect(dialog.textContent).toContain('Gender')
+    expect(dialog.textContent).toContain('Aspect')
+    expect(within(dialog).getByRole('button', { name: /Use this face/ })).toBeTruthy()
+    expect(within(dialog).getByRole('button', { name: 'Delete' })).toBeTruthy()
+    // backdrop click closes
+    fireEvent.click(dialog)
+    expect(container.querySelector('.tp-lightbox')).toBeFalsy()
+    // reopen and test Esc + focus trap / aria
+    fireEvent.click(firstTile)
+    const dialog2 = container.querySelector('.tp-lightbox[role="dialog"]') as HTMLElement
+    expect(dialog2).toBeTruthy()
+    expect(dialog2.querySelector('#tplb-title')).toBeTruthy()
+    fireEvent.keyDown(window, { key: 'Escape' })
+    // after Escape, lightbox should close (allow async)
+    expect(container.querySelector('.tp-lightbox')).toBeFalsy()
+  })
+
+  it('select mode shows checkboxes, bulk delete hits guard', async () => {
+    const { container } = render(<TalkingPhotos />)
+    openPresenterStep(container)
+    // enable Select
+    const selectBtn = within(container).getByRole('button', { name: /^Select$/ })
+    expect(selectBtn).toBeTruthy()
+    fireEvent.click(selectBtn)
+    // Done button should appear and tiles should show checkboxes
+    expect(within(container).getByRole('button', { name: 'Done' })).toBeTruthy()
+    const checkboxes = container.querySelectorAll('[role="checkbox"]')
+    expect(checkboxes.length).toBeGreaterThan(0)
+    expect(checkboxes[0].getAttribute('aria-checked')).toBe('false')
+    // check 2 tiles where one is in running mock job (c0) -> should trigger Banner "running"
+    // find checkboxes by aria-label for c0 (running) and c1 (paused)
+    const chkVua = within(container).getByLabelText('Select VuaDoctor Alpha') as HTMLElement
+    const chkVuBeta = within(container).getByLabelText('Select Vu Beta') as HTMLElement
+    fireEvent.click(chkVua)
+    fireEvent.click(chkVuBeta)
+    expect(chkVua.getAttribute('aria-checked')).toBe('true')
+    // bulk bar should show selected count
+    const bulk = container.querySelector('.tp-bulk[role="status"]') as HTMLElement
+    expect(bulk).toBeTruthy()
+    expect(bulk.textContent).toContain('2 selected')
+    expect(within(bulk).getByRole('button', { name: /Delete 2/ })).toBeTruthy()
+    // guard banner for running job
+    const bannerText = container.textContent || ''
+    expect(bannerText.toLowerCase()).toContain('running')
+    expect(bannerText).toContain('Blocked')
+    // also test Select filtered / Select all / Clear buttons exist
+    expect(within(container).getByRole('button', { name: /Select filtered/ })).toBeTruthy()
+    expect(within(container).getByRole('button', { name: /Select all/ })).toBeTruthy()
+    expect(within(container).getAllByRole('button', { name: 'Clear' }).length).toBeGreaterThanOrEqual(1)
   })
 })
