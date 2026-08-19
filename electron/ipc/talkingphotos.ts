@@ -209,27 +209,32 @@ export function registerTalkingPhotosIpc(): void {
   // ---- characters ----
   ipcMain.handle('talkingphotos:characters', (): TpCharacter[] => listCharacters())
 
+function validateCharacterFields(input: Record<string, unknown>): void {
+    const gender = input['gender']
+    if (gender !== undefined && gender !== 'male' && gender !== 'female') throw new Error('Invalid gender')
+    const age = input['age']
+    if (age !== undefined && age !== 'adult' && age !== 'child') throw new Error('Invalid age')
+    const ethnicity = input['ethnicity']
+    if (ethnicity !== undefined && ethnicity !== '' && ethnicity !== 'white' && ethnicity !== 'black' && ethnicity !== 'asian') throw new Error('Invalid ethnicity')
+    const beard = input['beard']
+    if (beard !== undefined && beard !== 'shaven' && beard !== 'beard') throw new Error('Invalid beard')
+    const characterStyle = input['characterStyle']
+    if (characterStyle !== undefined && !['realistic', '3d', '2d', 'animal', 'fantasy'].includes(characterStyle as string)) throw new Error('Invalid characterStyle')
+    const aspectRatio = input['aspectRatio']
+    if (aspectRatio !== undefined && aspectRatio !== '9:16' && aspectRatio !== '16:9') throw new Error('Invalid aspectRatio')
+  }
+
   ipcMain.handle('talkingphotos:characterGenerate', (_e, input: GenerateCharacterInput): Promise<TpCharacter> => {
     reqId(input?.featureId, 'featureId')
     reqId(input?.prompt, 'prompt')
-    if (input.gender !== undefined && input.gender !== 'male' && input.gender !== 'female') throw new Error('Invalid gender')
-    if (input.age !== undefined && input.age !== 'adult' && input.age !== 'child') throw new Error('Invalid age')
-    if (input.ethnicity !== undefined && input.ethnicity !== '' && input.ethnicity !== 'white' && input.ethnicity !== 'black' && input.ethnicity !== 'asian') throw new Error('Invalid ethnicity')
-    if (input.beard !== undefined && input.beard !== 'shaven' && input.beard !== 'beard') throw new Error('Invalid beard')
-    if (input.characterStyle !== undefined && !['realistic','3d','2d','animal','fantasy'].includes(input.characterStyle)) throw new Error('Invalid characterStyle')
-    if ((input as unknown as { aspectRatio?: unknown }).aspectRatio !== undefined && (input as unknown as { aspectRatio: string }).aspectRatio !== '9:16' && (input as unknown as { aspectRatio: string }).aspectRatio !== '16:9') throw new Error('Invalid aspectRatio')
+    validateCharacterFields(input as unknown as Record<string, unknown>)
     return generateCharacter(input)
   })
 
   /** Opens the OS picker in the main process so the renderer never needs a raw filesystem path. */
   ipcMain.handle('talkingphotos:characterUpload', async (_e, input: Omit<UploadCharacterInput, 'filePath'>): Promise<TpCharacter | null> => {
     reqId(input?.featureId, 'featureId')
-    if ((input as unknown as { gender?: unknown }).gender !== undefined && (input as unknown as { gender: string }).gender !== 'male' && (input as unknown as { gender: string }).gender !== 'female') throw new Error('Invalid gender')
-    if ((input as unknown as { age?: unknown }).age !== undefined && (input as unknown as { age: string }).age !== 'adult' && (input as unknown as { age: string }).age !== 'child') throw new Error('Invalid age')
-    if ((input as unknown as { ethnicity?: unknown }).ethnicity !== undefined && !['', 'white','black','asian'].includes((input as unknown as { ethnicity: string }).ethnicity)) throw new Error('Invalid ethnicity')
-    if ((input as unknown as { beard?: unknown }).beard !== undefined && (input as unknown as { beard: string }).beard !== 'shaven' && (input as unknown as { beard: string }).beard !== 'beard') throw new Error('Invalid beard')
-    if ((input as unknown as { characterStyle?: unknown }).characterStyle !== undefined && !['realistic','3d','2d','animal','fantasy'].includes((input as unknown as { characterStyle: string }).characterStyle)) throw new Error('Invalid characterStyle')
-    if ((input as unknown as { aspectRatio?: unknown }).aspectRatio !== undefined && (input as unknown as { aspectRatio: string }).aspectRatio !== '9:16' && (input as unknown as { aspectRatio: string }).aspectRatio !== '16:9') throw new Error('Invalid aspectRatio')
+    validateCharacterFields(input as unknown as Record<string, unknown>)
     const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
     const picked = await dialog.showOpenDialog(win, {
       title: 'Choose a character photo',

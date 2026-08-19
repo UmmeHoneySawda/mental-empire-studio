@@ -1,8 +1,13 @@
 /** @vitest-environment jsdom */
+import '@testing-library/jest-dom/vitest'
 import { describe, it, expect, vi, afterEach } from 'vitest'
-import { render, fireEvent, within, cleanup } from '@testing-library/react'
+import { render, fireEvent, within, cleanup, screen } from '@testing-library/react'
 
-afterEach(() => cleanup())
+afterEach(() => {
+  cleanup()
+  mockGenerateCharacter.mockClear()
+  mockUploadCharacter.mockClear()
+})
 
 vi.mock('../electron/db', () => ({
   getRepos: () => ({
@@ -15,6 +20,9 @@ vi.mock('../electron/db', () => ({
     deleteTpJob: vi.fn()
   })
 }))
+
+const mockGenerateCharacter = vi.fn(async () => {})
+const mockUploadCharacter = vi.fn(async () => {})
 
 // --- presenter toolbar mocks ---
 const mockChars = (() => {
@@ -50,7 +58,23 @@ vi.mock('../src/store/useTalkingPhotos', () => ({
   useTalkingPhotos: (selector: any) =>
     selector({
       connection: { connected: true, emailMasked: '', role: '', quota: null, concurrentCount: 0, concurrentLimit: 0, error: '', errorCode: null, checkedAt: '' },
-      catalog: { features: [], blocked: [] },
+      catalog: {
+        features: [
+          {
+            id: 'human-normal',
+            label: 'Human — Normal (v3)',
+            type: 'human',
+            style: 'normal',
+            maxPartSeconds: 300,
+            requiresMotion: true,
+            aspectRatios: ['9:16', '16:9'],
+            characterStyles: ['realistic'],
+            createPath: 'project',
+            note: '1080×1920 · needs a motion'
+          }
+        ],
+        blocked: []
+      },
       characters: mockChars,
       jobs: [
         { id: 'j1', characterId: 'c0', status: 'running' },
@@ -69,8 +93,8 @@ vi.mock('../src/store/useTalkingPhotos', () => ({
       probe: vi.fn(async () => 0),
       quote: vi.fn(async () => {}),
       clearQuote: vi.fn(),
-      generateCharacter: vi.fn(async () => {}),
-      uploadCharacter: vi.fn(async () => {}),
+      generateCharacter: mockGenerateCharacter,
+      uploadCharacter: mockUploadCharacter,
       createJob: vi.fn(async () => null),
       openJob: vi.fn(async () => {}),
       closeJob: vi.fn(),
@@ -319,5 +343,47 @@ describe('character grid — capped well + hover pop + lightbox + bulk', () => {
     expect(within(container).getByRole('button', { name: /Select filtered/ })).toBeTruthy()
     expect(within(container).getByRole('button', { name: /Select all/ })).toBeTruthy()
     expect(within(container).getAllByRole('button', { name: 'Clear' }).length).toBeGreaterThanOrEqual(1)
+  })
+})
+
+describe('Task 1 — presenter creation controls', () => {
+  function openRenderStyleStep(container: HTMLElement) {
+    const header = Array.from(container.querySelectorAll('.tp-step-head')).find((el) =>
+      el.textContent?.includes('Render style')
+    ) as HTMLElement | undefined
+    if (header) fireEvent.click(header)
+  }
+
+  it('presenter creation exposes gender + age + style controls', async () => {
+    const { container } = render(<TalkingPhotos />)
+    openPresenterStep(container)
+    expect(screen.getByText(/Generate a presenter/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/Gender/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/Age/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/Ethnicity/i)).toBeInTheDocument()
+    expect(screen.getByLabelText(/Style/i)).toBeInTheDocument()
+    // Beard is part of the six-field set as well
+    expect(screen.getByLabelText(/Beard/i)).toBeInTheDocument()
+  })
+
+  it('Generate forwards selected gender', async () => {
+    const { container } = render(<TalkingPhotos />)
+    // Select a feature so Generate is enabled (needs feature + prompt)
+    openRenderStyleStep(container)
+    const featureBtn = within(container).getByRole('button', { name: /Human — Normal/ })
+    fireEvent.click(featureBtn)
+    openPresenterStep(container)
+    const genderSelect = screen.getByLabelText(/Gender/i) as HTMLSelectElement
+    fireEvent.change(genderSelect, { target: { value: 'male' } })
+    expect(genderSelect.value).toBe('male')
+    const promptInput = screen.getByLabelText(/Presenter description/i) as HTMLTextAreaElement
+    fireEvent.change(promptInput, { target: { value: 'a calm man in his thirties' } })
+    const generateBtn = within(container).getByRole('button', { name: /^Generate$/ })
+    expect(generateBtn.getAttribute('disabled')).toBeNull()
+    fireEvent.click(generateBtn)
+    expect(mockGenerateCharacter).toHaveBeenCalledTimes(1)
+    const args = mockGenerateCharacter.mock.calls[0][0]
+    expect(args.gender).toBe('male')
+    expect(args.characterStyle).toBeDefined()
   })
 })
