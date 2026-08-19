@@ -54,6 +54,7 @@ describe('talkingphotos 100-character fixture', () => {
     }
     for (const r of rows.filter((x) => x.kind === 'uploaded')) {
       expect(r.mediaId, `uploaded ${r.id}`).toBeGreaterThan(0)
+      expect(r.resultUuid, `uploaded ${r.id} resultUuid`).toBe('')
     }
   })
 })
@@ -100,10 +101,16 @@ describe('presenter capped well stays capped at 100 items', () => {
     expect(style.maxHeight).toBe('320px')
     expect(style.overflowY).toBe('auto')
     expect(style.overflowX).toBe('hidden')
-    // 100 tiles must actually be in the DOM and the grid must not force horizontal scroll
+    // jsdom has no layout (scrollWidth/clientWidth are always 0), so prove via computed style:
+    // the grid is actually display:grid with the expected 88px rail columns and capped well.
+    expect(style.display).toBe('grid')
+    expect(style.gridTemplateColumns).toContain('88px')
+    // Also prove via CSS text that the capped well is overflow-hidden internally (no page widening)
+    const cssText = readFileSync(path.resolve('src/screens/talkingphotos/talkingphotos.css'), 'utf8')
+    expect(cssText).toMatch(/\.tp-chars\s*\{[^}]*max-height:\s*320px/m)
+    expect(cssText).toMatch(/\.tp-chars\s*\{[^}]*overflow-x:\s*hidden/m)
+    // 100 tiles must actually be in the DOM; chips would read All 100 — proof the split is honest
     expect(grid.children.length).toBe(100)
-    expect(grid.scrollWidth).toBeLessThanOrEqual(grid.clientWidth + 1) // +1 for subpixel rounding
-    // Chips would read All 100 — proof the split is honest for the toolbar count
     expect(rows.length).toBe(100)
 
     document.body.removeChild(container)
@@ -115,5 +122,6 @@ describe('presenter capped well stays capped at 100 items', () => {
     expect(css).toMatch(/\.tp-railhead[^}]*position:\s*sticky/m)
     expect(css).toMatch(/--tp-rail:\s*88px/)
     expect(css).toMatch(/--tp-rail:\s*72px/)
+    expect(css).toMatch(/--tp-rail:\s*56px/)
   })
 })
