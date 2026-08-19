@@ -51,6 +51,12 @@ async function cachePreview(url: string, id: string): Promise<string> {
     const bytes = await tpDownload(url, 60_000)
     const path = join(charactersCacheDir(), `${id}.jpg`)
     writeFileSync(path, bytes)
+    sentryLog.info('TalkingPhotos character preview cached', {
+      operation: 'tp_character_preview_cache',
+      character_id: id,
+      bytes: bytes.length,
+      cached: true
+    })
     return path
   } catch {
     return ''

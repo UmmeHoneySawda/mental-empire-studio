@@ -16,7 +16,7 @@
     verdict, and DESIGN.md.
 */
 
-import { useCallback, useEffect, useMemo, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
 import { ScreenPad } from '../components/primitives'
 import { useData } from '../store/useData'
 import { useTalkingPhotos } from '../store/useTalkingPhotos'
@@ -416,6 +416,7 @@ export function TalkingPhotos(): JSX.Element {
     probe: useTalkingPhotos((s) => s.probe),
     quote: useTalkingPhotos((s) => s.quote),
     clearQuote: useTalkingPhotos((s) => s.clearQuote),
+    clearError: useTalkingPhotos((s) => s.clearError),
     generateCharacter: useTalkingPhotos((s) => s.generateCharacter),
     uploadCharacter: useTalkingPhotos((s) => s.uploadCharacter),
     createJob: useTalkingPhotos((s) => s.createJob),
@@ -461,6 +462,8 @@ export function TalkingPhotos(): JSX.Element {
   const [confirmDeleteOne, setConfirmDeleteOne] = useState<TpCharacter | null>(null)
   const [confirmBulk, setConfirmBulk] = useState(false)
   const toggleSel = (id:string)=> setSelected(s=>{ const n=new Set(s); n.has(id)?n.delete(id):n.add(id); return n })
+  const lightboxOpenerRef = useRef<HTMLElement | null>(null)
+  const lightboxCardRef = useRef<HTMLDivElement | null>(null)
 
   const filtered = useMemo(() => {
     let list = characters
@@ -473,11 +476,59 @@ export function TalkingPhotos(): JSX.Element {
 
   useEffect(() => {
     if (!lightbox) return
-    const onKey = (e: KeyboardEvent) => { if (e.key === 'Escape') setLightbox(null) }
-    window.addEventListener('keydown', onKey)
-    const prev = document.body.style.overflow
+    const prevOverflow = document.body.style.overflow
     document.body.style.overflow = 'hidden'
-    return () => { window.removeEventListener('keydown', onKey); document.body.style.overflow = prev }
+    const card = lightboxCardRef.current
+    const opener = lightboxOpenerRef.current
+    const selector = 'button:not([disabled]), [href], input:not([disabled]), select:not([disabled]), textarea:not([disabled]), [tabindex]:not([tabindex="-1"])'
+    const getFocusable = (): HTMLElement[] => Array.from(card?.querySelectorAll<HTMLElement>(selector) ?? [])
+    // focus first focusable (Use button) synchronously — card is already in DOM after this effect fires
+    const first = getFocusable()[0]
+    first?.focus()
+    // Sentry trace: presenter lightbox opened (renderer — primitive snake_case)
+    try {
+      // dynamic to avoid bundling issues in tests; no-op when telemetry off
+      const Sentry: any = (window as unknown as { Sentry?: unknown })['Sentry'] ?? null
+      if (Sentry?.logger?.info) {
+        Sentry.logger.info('TalkingPhotos presenter lightbox opened', {
+          operation: 'tp_presenter_lightbox',
+          character_id: lightbox.id,
+          has_preview: !!(lightbox.previewPath || lightbox.previewUrl)
+        })
+      }
+    } catch { /* ignore - telemetry off or jsdom */ }
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === 'Escape') {
+        e.preventDefault()
+        setLightbox(null)
+        return
+      }
+      if (e.key === 'Tab') {
+        const focusable = getFocusable()
+        if (focusable.length === 0) { e.preventDefault(); return }
+        const first = focusable[0]
+        const last = focusable[focusable.length - 1]
+        const active = document.activeElement as HTMLElement | null
+        if (e.shiftKey) {
+          if (active === first) {
+            e.preventDefault()
+            last.focus()
+          }
+        } else {
+          if (active === last) {
+            e.preventDefault()
+            first.focus()
+          }
+        }
+      }
+    }
+    window.addEventListener('keydown', onKey)
+    return () => {
+      window.removeEventListener('keydown', onKey)
+      document.body.style.overflow = prevOverflow
+      // restore focus to opener tile synchronously so Esc test can assert immediately
+      opener?.focus()
+    }
   }, [lightbox])
 
   useEffect(() => {
@@ -485,6 +536,23 @@ export function TalkingPhotos(): JSX.Element {
     void loadDownloads()
     void tp.init()
   }, [loadSources, loadDownloads, tp.init])
+
+  // Sentry trace for connection strip — primitive snake_case per docs/SENTRY_LOGGING.md
+  useEffect(() => {
+    if (!connection) return
+    try {
+      const maybeSentry: unknown = (window as unknown as Record<string, unknown>)['Sentry']
+      const logger = (maybeSentry as { logger?: { info?: (msg: string, attrs: Record<string, string | number | boolean>) => void } } | null)?.logger
+      if (logger?.info) {
+        logger.info('TalkingPhotos connection strip rendered', {
+          operation: 'tp_connection_strip',
+          connected: connection.connected,
+          has_quota: !!connection.quota,
+          concurrent_limit: connection.concurrentLimit
+        })
+      }
+    } catch { /* telemetry off or jsdom */ }
+  }, [connection])
 
   const feature = featureId ? tpFeature(featureId) : undefined
 
@@ -654,8 +722,9 @@ export function TalkingPhotos(): JSX.Element {
           </Banner>
         )}
         {error && (
-          <Banner kind="error" style={{ marginBottom: 'var(--space-5)' }}>
-            {error}
+          <Banner kind="error" style={{ marginBottom: 'var(--space-5)', display: 'flex', alignItems: 'center', gap: 8 }}>
+            <span style={{ flex: 1 }}>{error}</span>
+            <button aria-label="Dismiss error" onClick={() => tp.clearError()} style={{ border: '1px solid var(--border-2)', background: 'transparent', color: 'var(--text-soft)', borderRadius: 6, padding: '2px 8px', cursor: 'pointer' }}>×</button>
           </Banner>
         )}
 
@@ -874,8 +943,15 @@ export function TalkingPhotos(): JSX.Element {
                   <Btn size="sm" variant={sort==='az'?'soft':undefined} onClick={()=>setSort('az')}>A-Z</Btn>
                 </span>
               </div>
-              {filtered.length===0 ? (
-                <EmptyState icon={IconFace} title={q?`No faces match “${q}”`:'No faces match'} body={q?'Try a different term or clear filters.':'Change a filter to see faces.'} />
+              {characters.length===0 ? (
+                <EmptyState icon={IconFace} title="No presenters saved yet" body="Generate or upload a face to get started." />
+              ) : filtered.length===0 ? (
+                <EmptyState
+                  icon={IconFace}
+                  title={q ? `No faces match “${q}”` : 'No faces match'}
+                  body={q ? 'Try a different term or clear filters.' : 'Change a filter to see faces.'}
+                  action={<Btn size="sm" onClick={()=>{setQ('');setKindChip('all');setAspectChip('all')}}>Clear</Btn>}
+                />
               ) : (
                 <div className={`tp-chars ${density==='compact'?'is-compact':'is-comfortable'}`} role="grid" aria-label="Presenters">
                   {filtered.map(c => (
@@ -891,7 +967,7 @@ export function TalkingPhotos(): JSX.Element {
                       onSelect={()=> setCharacterId(c.id)}
                       onCheck={()=> { setSelectOn(true); toggleSel(c.id) }}
                       onDeleteOne={()=> { setConfirmDeleteOne(c); }}
-                      onInspect={()=> setLightbox(c)}
+                      onInspect={(el)=> { lightboxOpenerRef.current = el; setLightbox(c) }}
                     />
                   ))}
                 </div>
@@ -1124,7 +1200,7 @@ export function TalkingPhotos(): JSX.Element {
       />
       {lightbox && (
         <div className="tp-lightbox" role="dialog" aria-modal="true" aria-labelledby="tplb-title" onClick={()=>setLightbox(null)}>
-          <div className="tp-lightbox-card" onClick={e=>e.stopPropagation()}>
+          <div ref={lightboxCardRef} className="tp-lightbox-card" onClick={e=>e.stopPropagation()}>
             <div className="tp-lightbox-media">
               {(() => { const s = lightbox.previewPath ? mediaSrc(lightbox.previewPath) : lightbox.previewUrl; return s ? <img src={s} alt="" /> : <div className="tp-char-empty" style={{minHeight:220,display:'grid',placeItems:'center'}}>{!lightbox.previewPath && !lightbox.previewUrl?'No image saved for this face (legacy).':'Source expired (vendor retains 60 days).'}</div>; })()}
             </div>
@@ -1158,20 +1234,28 @@ const inputStyle: React.CSSProperties = {
   fontSize: 'var(--fs-body)'
 }
 
-function CharacterTile({ character, selected, checked, selectOn, hovered, onHover, onLeave, onSelect, onCheck, onDeleteOne, onInspect }: { character: TpCharacter; selected: boolean; checked?: boolean; selectOn?: boolean; hovered?: boolean; onHover?: () => void; onLeave?: () => void; onSelect: () => void; onCheck?: () => void; onDeleteOne?: () => void; onInspect?: () => void }): JSX.Element {
+function CharacterTile({ character, selected, checked, selectOn, hovered, onHover, onLeave, onSelect, onCheck, onDeleteOne, onInspect }: { character: TpCharacter; selected: boolean; checked?: boolean; selectOn?: boolean; hovered?: boolean; onHover?: () => void; onLeave?: () => void; onSelect: () => void; onCheck?: () => void; onDeleteOne?: () => void; onInspect?: (el: HTMLElement) => void }): JSX.Element {
   const [broken, setBroken] = useState(false)
   const src = character.previewPath ? mediaSrc(character.previewPath) : character.previewUrl
   return (
     <div
       role="gridcell"
+      tabIndex={0}
       className={`tp-char ${selected ? 'is-selected' : ''} ${checked ? 'is-checked' : ''}`}
       aria-selected={selected}
       title={character.label}
       onMouseEnter={onHover}
       onMouseLeave={onLeave}
-      onClick={() => {
+      onKeyDown={(e) => {
+        if (e.key === 'Enter' || e.key === ' ') {
+          e.preventDefault()
+          if (selectOn) onCheck?.()
+          else { onSelect(); onInspect?.(e.currentTarget as HTMLElement) }
+        }
+      }}
+      onClick={(e) => {
         if (selectOn) onCheck?.()
-        else { onSelect(); onInspect?.() }
+        else { onSelect(); onInspect?.(e.currentTarget as HTMLElement) }
       }}
       style={{ position: 'relative' }}
     >
@@ -1189,7 +1273,7 @@ function CharacterTile({ character, selected, checked, selectOn, hovered, onHove
       {selectOn && (
         <button aria-label={`Delete ${character.label}`} className="tp-char-del" onClick={e => { e.stopPropagation(); onDeleteOne?.() }}>×</button>
       )}
-      <div style={{ width: '100%', height: '100%' }} onClick={e => { if (!selectOn) { e.stopPropagation(); onSelect(); onInspect?.() } }}>
+      <div style={{ width: '100%', height: '100%' }} onClick={e => { if (!selectOn) { e.stopPropagation(); onSelect(); onInspect?.((e.currentTarget.parentElement as HTMLElement) ?? (e.currentTarget as HTMLElement)) } }}>
         {src && !broken ? (
           <img src={src} alt="" loading="lazy" onError={() => setBroken(true)} />
         ) : (

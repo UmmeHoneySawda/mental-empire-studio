@@ -180,6 +180,67 @@ describe('presenter toolbar — search + chips + sort + density', () => {
   })
 })
 
+describe('Task 6 polish — a11y empty Sentry', () => {
+  it('lightbox traps focus and Esc closes it', async () => {
+    const { container } = render(<TalkingPhotos />)
+    openPresenterStep(container)
+    const allTiles = Array.from(container.querySelectorAll('.tp-char')) as HTMLElement[]
+    const opener = allTiles.find(t => t.textContent?.includes('VuaDoctor Alpha')) as HTMLElement
+    expect(opener).toBeTruthy()
+    // make opener focusable via tabindex and set as activeElement so we can test focus return
+    opener.tabIndex = 0
+    opener.focus()
+    // jsdom may not focus div without tabindex but we made it focusable above
+    expect(document.activeElement === opener || document.activeElement === document.body).toBeTruthy()
+    // ensure opener is active before opening
+    if (document.activeElement !== opener) opener.focus()
+    fireEvent.click(opener)
+    const dialog = container.querySelector('.tp-lightbox[role="dialog"]') as HTMLElement
+    expect(dialog).toBeTruthy()
+    expect(dialog.getAttribute('aria-modal')).toBe('true')
+    expect(dialog.getAttribute('aria-labelledby')).toBe('tplb-title')
+    // first focusable should be auto-focused (Use button)
+    const useBtn = within(dialog).getByRole('button', { name: /Use this face/ }) as HTMLElement
+    expect(document.activeElement).toBe(useBtn)
+    // Tab must stay inside dialog — find close button as last focusable
+    const closeBtn = within(dialog).getByRole('button', { name: 'Close' }) as HTMLElement
+    expect(closeBtn).toBeTruthy()
+    // focus last then Tab should cycle to first
+    closeBtn.focus()
+    expect(document.activeElement).toBe(closeBtn)
+    fireEvent.keyDown(window, { key: 'Tab' })
+    expect(document.activeElement).toBe(useBtn)
+    // Shift+Tab from first should cycle to last
+    useBtn.focus()
+    fireEvent.keyDown(window, { key: 'Tab', shiftKey: true })
+    expect(document.activeElement).toBe(closeBtn)
+    // Esc closes and focus returns to opener tile
+    fireEvent.keyDown(window, { key: 'Escape' })
+    expect(container.querySelector('.tp-lightbox')).toBeFalsy()
+    expect(document.activeElement).toBe(opener)
+    // overflow must be restored
+    expect(document.body.style.overflow).not.toBe('hidden')
+  })
+
+  it('filter empty shows "No faces match" with Clear', async () => {
+    const { container } = render(<TalkingPhotos />)
+    openPresenterStep(container)
+    const input = within(container).getByLabelText('Search presenters') as HTMLInputElement
+    fireEvent.change(input, { target: { value: 'zzzz' } })
+    // EmptyState title must include the query
+    const titleText = container.textContent || ''
+    expect(titleText).toContain('No faces match')
+    expect(titleText).toContain('zzzz')
+    // must show a Clear action that restores grid
+    const clearBtn = Array.from(container.querySelectorAll('button')).find(b => b.textContent?.trim() === 'Clear') as HTMLElement | undefined
+    expect(clearBtn).toBeTruthy()
+    if (clearBtn) fireEvent.click(clearBtn)
+    // after clear, grid returns and search is empty
+    expect(input.value).toBe('')
+    expect(container.querySelectorAll('.tp-char').length).toBeGreaterThan(0)
+  })
+})
+
 describe('character grid — capped well + hover pop + lightbox + bulk', () => {
   it('hover shows pop, click opens lightbox with metadata and actions', async () => {
     const { container } = render(<TalkingPhotos />)
