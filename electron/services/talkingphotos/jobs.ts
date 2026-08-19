@@ -115,7 +115,9 @@ export async function createTpJob(input: CreateTpJobInput): Promise<TpJobDetail>
     sourceDurationSec,
     featureId: input.featureId,
     aspectRatio: input.aspectRatio,
-    partSeconds: Math.min(Math.floor(input.partSeconds), preview.maxPartSeconds),
+    // The length actually cut, not the length requested: planSplit trims it when an output would
+    // fill the merge cap, and a record that disagrees with the chunks on disk is a debugging trap.
+    partSeconds: preview.plan.partSecondsEffective,
     mergeCapSec: TP_MERGE_CAP_SECONDS,
     characterId: character.id,
     characterResultUuid: character.resultUuid,

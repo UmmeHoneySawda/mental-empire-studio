@@ -19,30 +19,109 @@ const animalFast = tpFeature('animal-fast') as TpFeature
 const singing = tpFeature('singing-normal-hq') as TpFeature
 
 describe('planSplit', () => {
-  it('fills exactly one 30-minute video from a 30-minute source at 5-minute chunks', () => {
+  it('fits a 30-minute source into one video, trimming what the merge cap cannot hold', () => {
+    // 1800 / 300 is exactly 6 chunks, but the cap is enforced on measured duration, so one video
+    // cannot actually hold a full 30 minutes of source. The shortfall is trimmed and reported up
+    // front instead of failing the merge after all six renders have been spent.
     const plan = planSplit({ sourceDurationSec: 1800, partSeconds: 300 })
     expect(plan.totalOutputs).toBe(1)
     expect(plan.totalParts).toBe(6)
-    expect(plan.outputs[0].parts.map((p) => p.startSec)).toEqual([0, 300, 600, 900, 1200, 1500])
-    expect(plan.outputs[0].endSec).toBe(1800)
-    expect(plan.droppedTailSec).toBe(0)
+    expect(plan.partSecondsEffective).toBeCloseTo(299.53, 2)
+    expect(plan.outputs[0].endSec).toBeCloseTo(1797.18, 2)
+    expect(plan.droppedTailSec).toBeCloseTo(2.82, 2)
+    // The point of all of it: this plan still merges once the chunks come back measuring long.
+    expect(mergeFits(plan.outputs[0].parts.map((p) => p.endSec - p.startSec + 0.3)).ok).toBe(true)
   })
 
-  it('splits a 47:12 source into a full 30:00 video and a 17:12 remainder', () => {
+  it('splits a 47:12 source into a full first video and the remainder', () => {
     // The worked example from the design spec. 2832s total.
     const plan = planSplit({ sourceDurationSec: 2832, partSeconds: 300 })
     expect(plan.totalOutputs).toBe(2)
     expect(plan.totalParts).toBe(10)
 
     expect(plan.outputs[0].startSec).toBe(0)
-    expect(plan.outputs[0].endSec).toBe(1800)
+    expect(plan.outputs[0].endSec).toBeCloseTo(1797.18, 2)
     expect(plan.outputs[0].parts).toHaveLength(6)
 
-    expect(plan.outputs[1].startSec).toBe(1800)
+    expect(plan.outputs[1].startSec).toBeCloseTo(1797.18, 2)
     expect(plan.outputs[1].endSec).toBe(2832)
     expect(plan.outputs[1].parts).toHaveLength(4)
-    // 3 full chunks then a 132s tail.
-    expect(plan.outputs[1].parts.map((p) => p.endSec - p.startSec)).toEqual([300, 300, 300, 132])
+    // The remainder is real content, so nothing is dropped here.
+    expect(plan.droppedTailSec).toBe(0)
+  })
+
+  it('leaves headroom so a cap-filling video still merges after measurement drift', () => {
+    // The regression this exists to stop: 1800 / 45 = exactly 40 chunks, so the planner used to
+    // plan an output of exactly 1800.00s. But mergeFits runs on MEASURED durations, and the vendor
+    // measures a 45.00s cut at ~45.04s — so 40 chunks came to ~1801.6s and the merge was refused
+    // after all 40 renders had already been paid for. The plan must absorb that drift up front.
+    const plan = planSplit({ sourceDurationSec: 1800, partSeconds: 45 })
+    const measured = plan.outputs[0].parts.map((p) => p.endSec - p.startSec + 0.05)
+    expect(mergeFits(measured).ok).toBe(true)
+  })
+
+  it('reports the shortened chunk length it actually used', () => {
+    // Shrinking the chunk rather than dropping one keeps the chunk count — and therefore the render
+    // cost the user approved in the plan preview — identical.
+    const plan = planSplit({ sourceDurationSec: 1800, partSeconds: 45 })
+    expect(plan.outputs[0].parts).toHaveLength(40)
+    expect(plan.partSecondsEffective).toBeLessThan(45)
+    expect(plan.partSecondsEffective).toBeGreaterThan(44.5)
+  })
+
+  it('does not shorten chunks for a source that never approaches the cap', () => {
+    // The live smoke's source. Nothing here is near 1800s, so the requested chunk length stands.
+    const plan = planSplit({ sourceDurationSec: 96.16, partSeconds: 45 })
+    expect(plan.partSecondsEffective).toBe(45)
+    expect(plan.outputs[0].parts.map((p) => p.endSec)).toEqual([45, 90, 96.16])
+  })
+
+  it('absorbs drift for short chunks too, where per-chunk overhead dominates', () => {
+    // 1800 / 10 = 180 chunks. If the overhead is a fixed ~0.05s per chunk it totals 9s here, far
+    // more than a percentage-of-length model would predict, so the budget must cover whichever
+    // model is worse rather than assuming drift scales with chunk length.
+    const plan = planSplit({ sourceDurationSec: 1800, partSeconds: 10 })
+    const measured = plan.outputs[0].parts.map((p) => p.endSec - p.startSec + 0.05)
+    expect(mergeFits(measured).ok).toBe(true)
+  })
+
+  it('drops a trailing video that exists only because of the drift trim', () => {
+    // A 30-minute source cannot fit in one video at all: the cap is checked against measured
+    // duration, so a single video holds at most ~1797s of source. The leftover is therefore an
+    // artefact of the trim, not content — emitting it as its own video would spend a render slot on
+    // a 3-second clip. Drop it, and say so.
+    const plan = planSplit({ sourceDurationSec: 1800, partSeconds: 45 })
+    expect(plan.totalOutputs).toBe(1)
+    expect(plan.totalParts).toBe(40)
+    expect(plan.droppedTailSec).toBeGreaterThan(0)
+    expect(plan.droppedTailSec).toBeLessThan(4)
+    expect(plan.warnings.join(' ')).toMatch(/dropping/i)
+  })
+
+  it('keeps a trailing video when the leftover is real content rather than the trim', () => {
+    // 1800 + 30s. Only ~3s of that is trim, so the other 30s is genuine audio and earns its video.
+    const plan = planSplit({ sourceDurationSec: 1830, partSeconds: 45 })
+    expect(plan.totalOutputs).toBe(2)
+    expect(plan.outputs[1].endSec).toBe(1830)
+    expect(plan.droppedTailSec).toBe(0)
+  })
+
+  it('drops a trailing video created by trim accumulated across several videos', () => {
+    // 3600s at 60s chunks fills two videos of ~1797s each, and the ~3s trimmed from each leaves a 6s
+    // leftover at the end. That is still trim rather than content, so it goes the same way.
+    const plan = planSplit({ sourceDurationSec: 3600, partSeconds: 60 })
+    expect(plan.totalOutputs).toBe(2)
+    expect(plan.totalParts).toBe(60)
+    expect(plan.droppedTailSec).toBeCloseTo(6, 1)
+  })
+
+  it('never discards a trailing video long enough to be worth watching', () => {
+    // Ten videos' worth of trim accumulates to ~28s, but a 28s tail is real content and a usable
+    // short on its own, so the accumulated-trim rule must not reach it.
+    const plan = planSplit({ sourceDurationSec: 10 * 1797.18 + 28, partSeconds: 300 })
+    expect(plan.droppedTailSec).toBe(0)
+    const last = plan.outputs[plan.outputs.length - 1]
+    expect(last.endSec - last.startSec).toBeCloseTo(28, 1)
   })
 
   it('never lets one video exceed the 1800s merge cap', () => {
