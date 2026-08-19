@@ -42,9 +42,9 @@
 /* ---- the ledger: plan | rail | live ---- */
 
 .tp-ledger {
+  --tp-rail: 88px;
   display: grid;
-  /* Plan is fixed-width measurements; Live carries sentences, so it gets the slack. */
-  grid-template-columns: minmax(0, 0.68fr) 88px minmax(0, 1fr);
+  grid-template-columns: 260px var(--tp-rail) minmax(200px, 1fr);
   align-items: stretch;
   border: 1px solid var(--border);
   border-radius: var(--radius-lg);
@@ -56,6 +56,9 @@
 
 .tp-colhead,
 .tp-railhead {
+  position: sticky;
+  top: 0;
+  z-index: 2;
   height: 38px;
   display: flex;
   align-items: center;
@@ -81,10 +84,11 @@
 .tp-body {
   grid-column: 1 / -1;
   display: grid;
-  grid-template-columns: minmax(0, 0.68fr) 88px minmax(0, 1fr);
+  grid-template-columns: 260px var(--tp-rail) minmax(200px, 1fr);
   max-height: 460px;
   overflow-y: auto;
   overflow-x: hidden;
+  scrollbar-gutter: stable;
 }
 
 .tp-body > * {
@@ -117,6 +121,12 @@
 .tp-cell-live {
   color: var(--text-muted);
 }
+
+.tp-cell.plan { display: grid; grid-template-columns: 1fr auto; gap: var(--space-3); }
+.tp-cell.live { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center; }
+.tp-cell-live { display: grid; grid-template-columns: minmax(0, 1fr) auto auto; gap: 10px; align-items: center; }
+.tp-cell.live .state,
+.tp-cell-live .state { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; min-width: 0; }
 
 /* Rail detent. State is a printed mark, never a vanishing row: hairline at rest, filled while
    active, struck when spent, and voided in place on failure so a retry has somewhere to land. */
@@ -236,9 +246,10 @@
 
 .tp-outputband {
   grid-column: 1 / -1;
-  display: flex;
+  display: grid;
+  grid-template-columns: auto auto auto 1fr auto auto;
+  gap: 6px var(--space-3);
   align-items: center;
-  gap: var(--space-3);
   padding: 7px var(--space-4);
   background: var(--bg-inset);
   border-bottom: 1px solid var(--border);
@@ -780,7 +791,10 @@
 @container tp (max-width: 940px) {
   .tp-ledger,
   .tp-body {
-    grid-template-columns: minmax(0, 0.62fr) 72px minmax(0, 1fr);
+    grid-template-columns: minmax(220px, 0.62fr) 72px minmax(160px, 1fr);
+  }
+  .tp-ledger {
+    --tp-rail: 72px;
   }
 }
 
@@ -791,6 +805,7 @@
 
   .tp-body {
     grid-template-columns: 56px minmax(0, 1fr);
+    --tp-rail: 56px;
   }
 
   .tp-colhead.is-live {
@@ -819,6 +834,7 @@
 
   .tp-outputband {
     grid-column: 1 / -1;
+    grid-template-columns: auto 1fr auto;
   }
 }
 
