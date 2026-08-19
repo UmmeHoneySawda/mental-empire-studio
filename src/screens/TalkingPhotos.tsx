@@ -447,6 +447,20 @@ export function TalkingPhotos(): JSX.Element {
 
   const [prompt, setPrompt] = useState('')
   const [charLabel, setCharLabel] = useState('')
+  const [q, setQ] = useState('')
+  const [kindChip, setKindChip] = useState<'all'|'generated'|'uploaded'>('all')
+  const [aspectChip, setAspectChip] = useState<'all'|'9:16'|'16:9'>('all')
+  const [sort, setSort] = useState<'recent'|'az'>('recent')
+  const [density, setDensity] = useState<'comfortable'|'compact'>('comfortable')
+
+  const filtered = useMemo(() => {
+    let list = characters
+    if (q.trim()) list = list.filter(c => c.label.toLowerCase().includes(q.trim().toLowerCase()))
+    if (kindChip!=='all') list = list.filter(c => c.kind===kindChip)
+    if (aspectChip!=='all') list = list.filter(c => c.aspectRatio===aspectChip)
+    list = [...list].sort((a,b) => sort==='az' ? a.label.localeCompare(b.label) : (b.createdAt||'').localeCompare(a.createdAt||''))
+    return list
+  }, [characters, q, kindChip, aspectChip, sort])
 
   useEffect(() => {
     void loadSources()
@@ -817,15 +831,40 @@ export function TalkingPhotos(): JSX.Element {
               current={step === 4}
               onToggle={() => setStep(step === 4 ? 0 : 4)}
             >
-              {characters.length === 0 ? (
+              <div className="tp-pres-toolbar" role="toolbar" aria-label="Presenter filters">
+                <label className="tp-pres-search">
+                  <span aria-hidden>⌕</span>
+                  <input aria-label="Search presenters" placeholder="Search by name…" value={q} onChange={e=>setQ(e.currentTarget.value)} />
+                  {q && <button aria-label="Clear search" onClick={()=>setQ('')}>×</button>}
+                </label>
+                <Btn size="sm" variant={density==='compact'?'soft':undefined} onClick={()=>setDensity(d=>d==='compact'?'comfortable':'compact')}>
+                  {density==='compact'?'▦ Comfortable':'▦ Compact'}
+                </Btn>
+              </div>
+              <div className="tp-pres-chips" role="group" aria-label="Filter presenters">
+                <Btn size="sm" variant={kindChip==='all'?'soft':undefined} onClick={()=>setKindChip('all')}>All {characters.length}</Btn>
+                <Btn size="sm" variant={kindChip==='generated'?'soft':undefined} onClick={()=>setKindChip('generated')}>Generated</Btn>
+                <Btn size="sm" variant={kindChip==='uploaded'?'soft':undefined} onClick={()=>setKindChip('uploaded')}>Uploaded</Btn>
+                <Btn size="sm" variant={aspectChip==='9:16'?'soft':undefined} onClick={()=>setAspectChip(a=>a==='9:16'?'all':'9:16')}>9:16</Btn>
+                <Btn size="sm" variant={aspectChip==='16:9'?'soft':undefined} onClick={()=>setAspectChip(a=>a==='16:9'?'all':'16:9')}>16:9</Btn>
+              </div>
+              <div className="tp-pres-subbar">
+                <span>Showing <b>{filtered.length}</b> of {characters.length} {q||kindChip!=='all'||aspectChip!=='all' ? 'filtered' : ''}</span>
+                {(q||kindChip!=='all'||aspectChip!=='all') && <button onClick={()=>{setQ('');setKindChip('all');setAspectChip('all')}}>Clear filters</button>}
+                <span style={{display:'flex',gap:6}}>
+                  <Btn size="sm" variant={sort==='recent'?'soft':undefined} onClick={()=>setSort('recent')}>Recent</Btn>
+                  <Btn size="sm" variant={sort==='az'?'soft':undefined} onClick={()=>setSort('az')}>A-Z</Btn>
+                </span>
+              </div>
+              {filtered.length === 0 ? (
                 <EmptyState
                   icon={IconFace}
                   title="No presenters saved yet"
                   body="Generate one from a description, or upload your own photo. The same face is used for every chunk so the finished video is consistent."
                 />
               ) : (
-                <div className="tp-chars">
-                  {characters.map((c) => (
+                <div className={`tp-chars ${density==='compact'?'is-compact':'is-comfortable'}`}>
+                  {filtered.map((c) => (
                     <CharacterTile
                       key={c.id}
                       character={c}
