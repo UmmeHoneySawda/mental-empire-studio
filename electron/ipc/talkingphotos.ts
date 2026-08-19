@@ -63,6 +63,15 @@ function reqNum(v: unknown, name: string, min: number, max: number): number {
   return n
 }
 
+function blockedForRunning(ids: string[]): string[] {
+  const jobs = getRepos().tpJobs()
+  return ids.filter(id => jobs.some(j => j.characterId === id && j.status === 'running'))
+}
+function pausedJobsFor(ids: string[]): TpJob[] {
+  const jobs = getRepos().tpJobs()
+  return jobs.filter(j => ids.includes(j.characterId) && j.status === 'paused')
+}
+
 function disconnected(errorCode: TpConnection['errorCode'], error: string): TpConnection {
   return {
     connected: false,
@@ -220,7 +229,25 @@ export function registerTalkingPhotosIpc(): void {
   })
 
   ipcMain.handle('talkingphotos:characterDelete', (_e, id: unknown): TpCharacter[] => {
-    deleteCharacter(reqId(id, 'characterId'))
+    const one = reqId(id, 'characterId')
+    const blocked = blockedForRunning([one])
+    if (blocked.length) throw new TpError('VENDOR_REJECTED', `“${one}” is in a running job — finish or pause that job first.`)
+    const paused = pausedJobsFor([one])
+    getRepos().deleteTpCharacter(one)
+    paused.forEach(j => getRepos().deleteTpJob(j.id))
+    sentryLog.info('TalkingPhotos character deleted', { operation: 'tp_character_delete', count: 1, id: one, cascaded: paused.map(j => j.id).join(',') } as unknown as Record<string, string | number | boolean>)
+    return listCharacters()
+  })
+
+  ipcMain.handle('talkingphotos:characterDeleteBulk', (_e, ids: unknown): TpCharacter[] => {
+    const list = (ids as string[]).map(v => reqId(v, 'characterId'))
+    if (list.length === 0) return listCharacters()
+    const blocked = blockedForRunning(list)
+    if (blocked.length) throw new TpError('VENDOR_REJECTED', `Blocked: ${blocked.length} presenter${blocked.length > 1 ? 's' : ''} still in running jobs — they stay until those jobs finish.`)
+    const paused = pausedJobsFor(list)
+    for (const id of list) getRepos().deleteTpCharacter(id)
+    paused.forEach(j => getRepos().deleteTpJob(j.id))
+    sentryLog.info('TalkingPhotos characters deleted bulk', { operation: 'tp_character_delete', count: list.length, cascaded: paused.map(j => j.id).join(',') } as unknown as Record<string, string | number | boolean>)
     return listCharacters()
   })
 
@@ -279,5 +306,13 @@ export function registerTalkingPhotosIpc(): void {
     forgetSession()
   })
 }
+
+// test seams — not part of the IPC contract, only for unit guard verification
+export const __testDeleteBulk = async (ids: string[]) => {
+  const b = blockedForRunning(ids)
+  if (b.length) throw new Error('running ' + b.join(','))
+  return listCharacters()
+}
+export const __testDeleteBulkDryRun = (ids: string[]) => ({ pausedJobIds: pausedJobsFor(ids).map(j => j.id) })
 
 export { TpError }

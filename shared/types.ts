@@ -1569,6 +1569,7 @@ export interface NativeApi {
     /** Opens the OS file picker in the main process; resolves null when cancelled. */
     characterUpload(input: TpUploadCharacterInput): Promise<TpCharacter | null>
     characterDelete(id: string): Promise<TpCharacter[]>
+    characterDeleteBulk(ids: string[]): Promise<TpCharacter[]>
     jobs(): Promise<TpJob[]>
     job(id: string): Promise<TpJobDetail | null>
     jobCreate(input: TpCreateJobInput): Promise<TpJobDetail>

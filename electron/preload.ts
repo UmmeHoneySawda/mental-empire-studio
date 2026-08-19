@@ -264,6 +264,7 @@ const api: NativeApi = {
     characterGenerate: (input) => ipcRenderer.invoke('talkingphotos:characterGenerate', input),
     characterUpload: (input) => ipcRenderer.invoke('talkingphotos:characterUpload', input),
     characterDelete: (id: string) => ipcRenderer.invoke('talkingphotos:characterDelete', id),
+    characterDeleteBulk: (ids: string[]) => ipcRenderer.invoke('talkingphotos:characterDeleteBulk', ids),
     jobs: () => ipcRenderer.invoke('talkingphotos:jobs'),
     job: (id: string) => ipcRenderer.invoke('talkingphotos:job', id),
     jobCreate: (input) => ipcRenderer.invoke('talkingphotos:jobCreate', input),

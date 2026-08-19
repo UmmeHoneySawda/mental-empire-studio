@@ -65,6 +65,8 @@ export interface TalkingPhotosState {
   pauseJob: (id: string) => Promise<void>
   cancelJob: (id: string) => Promise<void>
   deleteJob: (id: string) => Promise<void>
+  deleteCharacter: (id: string) => Promise<void>
+  deleteCharacters: (ids: string[]) => Promise<void>
   retryPart: (jobId: string, partId: string) => Promise<void>
   retryFailed: (jobId: string) => Promise<void>
   clearError: () => void
@@ -310,6 +312,28 @@ export const useTalkingPhotos = create<TalkingPhotosState>((set, get) => ({
     try {
       const jobs = await a.jobDelete(id)
       set((s) => ({ jobs, activeDetail: s.activeDetail?.job.id === id ? null : s.activeDetail }))
+    } catch (e) {
+      set({ error: errorMessage(e) })
+    }
+  },
+
+  deleteCharacter: async (id) => {
+    const a = api()
+    if (!a) return
+    try {
+      set({ characters: await a.characterDeleteBulk([id]) })
+      set({ jobs: await a.jobs() })
+    } catch (e) {
+      set({ error: errorMessage(e) })
+    }
+  },
+
+  deleteCharacters: async (ids) => {
+    const a = api()
+    if (!a) return
+    try {
+      set({ characters: await a.characterDeleteBulk(ids) })
+      set({ jobs: await a.jobs() })
     } catch (e) {
       set({ error: errorMessage(e) })
     }
