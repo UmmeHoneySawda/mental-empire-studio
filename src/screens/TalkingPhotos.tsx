@@ -17,6 +17,7 @@
 */
 
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import * as Sentry from '@sentry/electron/renderer'
 import { ScreenPad } from '../components/primitives'
 import { useData } from '../store/useData'
 import { useTalkingPhotos } from '../store/useTalkingPhotos'
@@ -486,16 +487,14 @@ export function TalkingPhotos(): JSX.Element {
     const first = getFocusable()[0]
     first?.focus()
     // Sentry trace: presenter lightbox opened (renderer — primitive snake_case)
+    // Guarded so it no-ops when telemetry off or under jsdom, but emits via
+    // Sentry.logger.info when @sentry/electron/renderer is initialized.
     try {
-      // dynamic to avoid bundling issues in tests; no-op when telemetry off
-      const Sentry: any = (window as unknown as { Sentry?: unknown })['Sentry'] ?? null
-      if (Sentry?.logger?.info) {
-        Sentry.logger.info('TalkingPhotos presenter lightbox opened', {
-          operation: 'tp_presenter_lightbox',
-          character_id: lightbox.id,
-          has_preview: !!(lightbox.previewPath || lightbox.previewUrl)
-        })
-      }
+      Sentry.logger.info('TalkingPhotos presenter lightbox opened', {
+        operation: 'tp_presenter_lightbox',
+        character_id: lightbox.id,
+        has_preview: !!(lightbox.previewPath || lightbox.previewUrl)
+      })
     } catch { /* ignore - telemetry off or jsdom */ }
     const onKey = (e: KeyboardEvent) => {
       if (e.key === 'Escape') {
@@ -538,21 +537,18 @@ export function TalkingPhotos(): JSX.Element {
   }, [loadSources, loadDownloads, tp.init])
 
   // Sentry trace for connection strip — primitive snake_case per docs/SENTRY_LOGGING.md
+  // Deps are primitives so a new `connection` object identity with the same values does not re-emit.
   useEffect(() => {
     if (!connection) return
     try {
-      const maybeSentry: unknown = (window as unknown as Record<string, unknown>)['Sentry']
-      const logger = (maybeSentry as { logger?: { info?: (msg: string, attrs: Record<string, string | number | boolean>) => void } } | null)?.logger
-      if (logger?.info) {
-        logger.info('TalkingPhotos connection strip rendered', {
-          operation: 'tp_connection_strip',
-          connected: connection.connected,
-          has_quota: !!connection.quota,
-          concurrent_limit: connection.concurrentLimit
-        })
-      }
+      Sentry.logger.info('TalkingPhotos connection strip rendered', {
+        operation: 'tp_connection_strip',
+        connected: connection.connected,
+        has_quota: !!connection.quota,
+        concurrent_limit: connection.concurrentLimit
+      })
     } catch { /* telemetry off or jsdom */ }
-  }, [connection])
+  }, [connection?.connected, connection?.quota?.videosUsed, connection?.quota?.videosLimit, connection?.concurrentLimit])
 
   const feature = featureId ? tpFeature(featureId) : undefined
 

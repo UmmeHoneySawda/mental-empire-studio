@@ -10,6 +10,7 @@ export default defineConfig({
       '@shared': resolve(__dirname, 'shared'),
       '@': resolve(__dirname, 'src'),
       '@sentry/electron/main': resolve(__dirname, 'test/stubs/sentry-electron.ts'),
+      '@sentry/electron/renderer': resolve(__dirname, 'test/stubs/sentry-electron.ts'),
       // Stub electron + electron-log so modules that transitively import them
       // (logger, ytdlp, render) can be unit-tested in plain Node.
       electron: resolve(__dirname, 'test/stubs/electron.ts'),
