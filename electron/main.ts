@@ -2173,6 +2173,23 @@ app.whenReady().then(async () => {
   if (['1', 'm3', 'm4', 'm5', 'm6', 'm7'].includes(process.env['ME_SMOKE'] ?? '')) {
     assertDisposableSmokeProfile(app.getPath('userData'))
     seedDemoForSmoke()
+    // Task 7: optional 100-character fixture for capped-well verification (no live vendor).
+    // ME_TP_CHAR_FIXTURE points at presenters-100.json; rows are written with the same
+    // repository the app uses so schema stays honest across migrations. Thrown away with
+    // the profile because ME_SMOKE_USERDATA_DIR is required to be an isolated temp dir.
+    const tpFixture = process.env['ME_TP_CHAR_FIXTURE']
+    if (tpFixture) {
+      try {
+        const p = resolve(tpFixture)
+        const raw = readFileSync(p, 'utf8')
+        const rows = JSON.parse(raw) as Array<Record<string, unknown>>
+        const repos = getRepos()
+        for (const r of rows) repos.upsertTpCharacter(r as never)
+        console.log(`TP_FIXTURE_OK loaded=${rows.length} from ${p}`)
+      } catch (e) {
+        console.log(`TP_FIXTURE_FAIL ${(e as Error).message}`)
+      }
+    }
   }
   if (process.env['ME_SMOKE'] === 'm7') {
     void runSmokeM7()
