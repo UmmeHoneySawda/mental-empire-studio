@@ -240,13 +240,10 @@ function OutputGroup({
 
       {parts.map((part, i) => (
         <div key={part.id} className={`tp-row${i === 0 ? ' is-output-start' : ''}`}>
-          <div className="tp-cell">
+          <div className="tp-cell plan">
             <Meas title="This chunk's slice of the source audio">
               {tpDuration(part.startSec)}–{tpDuration(part.endSec)}
             </Meas>
-            <span style={{ flex: 1 }} />
-            {/* The planned length sits opposite the measured length on the right, so the two
-                columns can be read against each other rather than only in sequence. */}
             <Meas title="Planned chunk length">{tpDuration(part.endSec - part.startSec)}</Meas>
           </div>
 
@@ -255,24 +252,16 @@ function OutputGroup({
             <Mark state={markFor(part)} />
           </div>
 
-          <div className="tp-cell tp-cell-live">
-            <span
-              style={{
-                overflow: 'hidden',
-                textOverflow: 'ellipsis',
-                whiteSpace: 'nowrap',
-                color: part.status === 'error' ? 'var(--err-2)' : undefined
-              }}
-              title={liveText(part)}
-            >
-              {liveText(part)}
+          <div className="tp-cell tp-cell-live live">
+            <span className="state"
+                  style={{ color: part.status === 'error' ? 'var(--err-2)' : undefined }}
+                  title={liveText(part)}>
+              {liveText(part)}{part.status==='error' && part.error ? ` — ${part.error}` : ''}
             </span>
-            <span style={{ flex: 1 }} />
             {part.audioDurationSec > 0 && <Meas title="Measured chunk length">{tpDuration(part.audioDurationSec)}</Meas>}
             {part.status === 'error' && (
               <Btn size="sm" variant="soft" onClick={() => onRetryPart(part.id)}>
-                {IconRetry}
-                <span style={{ marginLeft: 5 }}>Retry</span>
+                {IconRetry}<span style={{ marginLeft:5 }}>Retry</span>
               </Btn>
             )}
           </div>
@@ -1206,18 +1195,19 @@ function PlanPreviewTable({ plan }: { plan: ReturnType<typeof planSplit> }): JSX
               key += 1
               return (
                 <div key={p.ord} className={`tp-row${i === 0 ? ' is-output-start' : ''}`}>
-                  <div className="tp-cell">
+                  <div className="tp-cell plan">
                     <Meas title="This chunk's slice of the source audio">
                       {tpDuration(p.startSec)}–{tpDuration(p.endSec)}
                     </Meas>
-                    <span style={{ flex: 1 }} />
                     <Meas title="Planned chunk length">{tpDuration(p.endSec - p.startSec)}</Meas>
                   </div>
                   <div className="tp-detent">
                     <span className="tp-detent-key">{String(key).padStart(2, '0')}</span>
                     <Mark state="rest" />
                   </div>
-                  <div className="tp-cell tp-cell-live" />
+                  <div className="tp-cell tp-cell-live live">
+                    <span className="state">Not started</span>
+                  </div>
                 </div>
               )
             })}

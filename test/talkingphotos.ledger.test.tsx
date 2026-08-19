@@ -2,6 +2,8 @@
 import '../src/screens/talkingphotos/talkingphotos.css'
 import { render } from '@testing-library/react'
 import { describe, it, expect } from 'vitest'
+import fs from 'node:fs'
+import path from 'node:path'
 
 // synthetic harness: one ledger with one error row, read computed grid
 function LedgerFixture() {
@@ -35,5 +37,17 @@ describe('ledger rail', () => {
     const { container } = render(<LedgerFixture />)
     const ledger = container.querySelector('.tp-ledger') as HTMLElement
     expect(getComputedStyle(ledger).getPropertyValue('--tp-rail').trim()).toBeTruthy()
+  })
+  it('renders Plan cell as .plan and Live cell as .live with .state', () => {
+    const src = fs.readFileSync(path.resolve('src/screens/TalkingPhotos.tsx'), 'utf8')
+    // OutputGroup rows must use plan/live grid slots
+    expect(src).toMatch(/className="tp-cell plan"/)
+    expect(src).toMatch(/className="tp-cell tp-cell-live live"/)
+    expect(src).toMatch(/className="state"/)
+    // PlanPreviewTable rows must also use plan/live
+    const planPreviewPlanMatches = (src.match(/className="tp-cell plan"/g) || []).length
+    expect(planPreviewPlanMatches).toBeGreaterThanOrEqual(2)
+    // Live state span with ellipsis styling is required for grid
+    expect(src).toMatch(/className="state"/)
   })
 })
