@@ -65,6 +65,27 @@ const HARD_MS = 30 * 60_000
 // audio stream directly instead.
 const AUDIO_ONLY_FORMAT = 'bestaudio[ext=m4a]/bestaudio/best'
 
+// yt-dlp hands back a googlevideo (GVS) stream URL that the CDN can then reject with 403.
+// With no PO Token provider installed, `android_vr` is the only default YouTube client whose
+// stream URLs need none — `web_safari` formats arrive without a URL at all (SABR-forced) and
+// `tv` formats come back DRM-protected — so a 403 on android_vr leaves the default client set
+// with nothing usable and kills the item. yt-dlp cannot recover on its own either: its http
+// downloader re-raises any sub-500 HTTPError instead of counting it against `--retries`.
+// Re-extracting under a different client yields independently-signed URLs, and these two were
+// measured to still expose the audio-only itag 140 (~129 kbps) without a PO Token, so the
+// fallback keeps audio quality instead of dropping to muxed progressive format 18.
+const GVS_CLIENT_FALLBACKS = ['tv_embedded', 'web_embedded']
+
+/** True for a stream-URL rejection, which re-extraction under another client can fix.
+ *  Auth/private/region failures are not retried — another client cannot help and the extra
+ *  requests only push an already-throttled IP further. */
+function isRecoverableStreamFailure(e: unknown): boolean {
+  if (!(e instanceof DownloadFailure)) return false
+  const { httpStatus, stderrCategory } = e.details
+  if (stderrCategory === 'authentication' || stderrCategory === 'private' || stderrCategory === 'restriction') return false
+  return httpStatus === 403 || httpStatus === 410
+}
+
 export function cancelDownload(downloadId: string): boolean {
   const child = runningDownloads.get(downloadId)
   if (!child) return false
@@ -144,14 +165,36 @@ export async function downloadAudio(params: DownloadParams): Promise<DownloadRes
       const delayMs = Math.round((params.delaySec as number) * 1000 + Math.random() * 750)
       await new Promise((resolveDelay) => setTimeout(resolveDelay, delayMs))
     }
-    await runYtdlpDownload(video, dest, bitrate, settings, onProgress, downloadId, !!params.supervised, AUDIO_ONLY_FORMAT)
+    // Each attempt walks the client ladder: the default client set first (it serves the vast
+    // majority of downloads), then a re-extraction per fallback client on a recoverable 403.
+    const attempt = async (formatSelector?: string): Promise<void> => {
+      const clients: (string | undefined)[] = [undefined, ...GVS_CLIENT_FALLBACKS]
+      for (let i = 0; i < clients.length; i++) {
+        try {
+          await runYtdlpDownload(video, dest, bitrate, settings, onProgress, downloadId, !!params.supervised, formatSelector, clients[i])
+          return
+        } catch (e) {
+          if (i === clients.length - 1 || !isRecoverableStreamFailure(e)) throw e
+          // runYtdlpDownload already quarantined the rejected attempt's partial, so the next
+          // client's format cannot be resumed onto mismatched bytes by `--continue`.
+          sentryLog.warn('Audio download retrying with alternate YouTube player client', {
+            ...baseAttrs,
+            stderr_category: 'gvs-forbidden-retry',
+            http_status: (e as DownloadFailure).details.httpStatus ?? 0,
+            player_client: clients[i + 1] as string
+          })
+        }
+      }
+    }
+
+    await attempt(AUDIO_ONLY_FORMAT)
     if (!await isVerifiedAudio(dest)) {
       // The audio-only selector skips the video download and the merge, but a few sources
       // only expose a muxed progressive format. Fall back once to yt-dlp's own default
       // selection (video + audio + merge) before calling the download failed.
       quarantineIncomplete(dest)
       sentryLog.warn('Audio download retrying without format selector', { ...baseAttrs, stderr_category: 'audio-format-retry' })
-      await runYtdlpDownload(video, dest, bitrate, settings, onProgress, downloadId, !!params.supervised)
+      await attempt()
       if (!await isVerifiedAudio(dest)) {
         quarantineIncomplete(dest)
         throw new DownloadFailure('Download completed without a valid, non-empty audio stream.', { stderrCategory: 'invalid-media' })
@@ -190,7 +233,8 @@ function runYtdlpDownload(
   onProgress?: (pct: number) => void,
   downloadId?: string,
   supervised = false,
-  formatSelector?: string
+  formatSelector?: string,
+  playerClient?: string
 ): Promise<void> {
   return new Promise((resolve, reject) => {
     const a = settings.autoScrape
@@ -211,6 +255,7 @@ function runYtdlpDownload(
     const ffmpegDir = vendoredFfmpegDir()
     if (ffmpegDir) args.push('--ffmpeg-location', ffmpegDir)
     else L.warn('downloader: no vendored ffmpeg found — mp3 extraction may fail')
+    if (playerClient) args.push('--extractor-args', `youtube:player_client=${playerClient}`)
     if (a.proxy) args.push('--proxy', a.proxy)
     if (a.cookiesPath) args.push('--cookies', a.cookiesPath)
     args.push(watchUrl(video.id))
