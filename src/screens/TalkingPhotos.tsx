@@ -131,7 +131,7 @@ function liveText(part: TpPart): string {
 
 // ---- the ledger -------------------------------------------------------------------------------
 
-function Ledger({
+export function Ledger({
   detail,
   onRetryPart
 }: {
@@ -194,7 +194,7 @@ function Ledger({
   )
 }
 
-function OutputGroup({
+export function OutputGroup({
   output,
   parts,
   done,
@@ -1170,7 +1170,7 @@ function OutputFiles({ detail }: { detail: TpJobDetail }): JSX.Element | null {
 }
 
 /** The committed plan, before a job exists. Same rail grammar so the two read as one artefact. */
-function PlanPreviewTable({ plan }: { plan: ReturnType<typeof planSplit> }): JSX.Element {
+export function PlanPreviewTable({ plan }: { plan: ReturnType<typeof planSplit> }): JSX.Element {
   let key = 0
   return (
     <div className="tp-ledger is-nested">

@@ -4,6 +4,9 @@ import { render } from '@testing-library/react'
 import { describe, it, expect } from 'vitest'
 import fs from 'node:fs'
 import path from 'node:path'
+import { Ledger } from '../src/screens/TalkingPhotos'
+import type { TpJobDetail } from '@shared/talkingphotos'
+import { TP_MERGE_CAP_SECONDS } from '@shared/talkingphotos'
 
 // synthetic harness: one ledger with one error row, read computed grid
 function LedgerFixture() {
@@ -23,6 +26,34 @@ function LedgerFixture() {
     </div>
   )
 }
+
+function makeErrorDetail(): TpJobDetail {
+  const jobId = 'test-job-1'
+  const outputId = `${jobId}-o1`
+  return {
+    job: {
+      id: jobId, sourceId: 's1', sourceVideoId: 'vid1', channel: '@test', videoTitle: 'Test Video',
+      audioPath: '/tmp/test.mp3', sourceDurationSec: 600,
+      featureId: 'human-normal', aspectRatio: '9:16', partSeconds: 300, mergeCapSec: TP_MERGE_CAP_SECONDS,
+      characterId: 'c1', characterResultUuid: 'uuid-1', characterMediaId: 0,
+      characterStyle: 'realistic', characterGender: 'female', characterAge: 'adult',
+      characterEthnicity: '', characterBeard: 'shaven', motionId: 0, parentMotionId: 0,
+      libraryCategoryId: 0, phase: 'await', status: 'running', error: '',
+      createdAt: new Date().toISOString(), updatedAt: new Date().toISOString()
+    },
+    outputs: [{
+      id: outputId, jobId, ord: 1, startSec: 0, endSec: 300,
+      mergeProjectId: 0, status: 'waiting', localPath: '', error: ''
+    }],
+    parts: [{
+      id: `${outputId}-p1`, jobId, outputId, ord: 1, startSec: 0, endSec: 300,
+      audioPath: '/tmp/part.mp3', audioDurationSec: 300,
+      mediaId: 1, projectId: 1, remoteTitle: `ME-${jobId}-o1-p1`,
+      status: 'error', attempts: 1, error: 'Vendor rejected the audio chunk'
+    }]
+  }
+}
+
 describe('ledger rail', () => {
   it('pins Plan at ~260 and keeps Live measurement visible', () => {
     const { container } = render(<LedgerFixture />)
@@ -39,15 +70,28 @@ describe('ledger rail', () => {
     expect(getComputedStyle(ledger).getPropertyValue('--tp-rail').trim()).toBeTruthy()
   })
   it('renders Plan cell as .plan and Live cell as .live with .state', () => {
+    const detail = makeErrorDetail()
+    const { container } = render(<Ledger detail={detail} onRetryPart={() => {}} />)
+    const row = container.querySelector('.tp-row') as HTMLElement
+    expect(row).toBeTruthy()
+    const planCell = row.querySelector('.tp-cell.plan') as HTMLElement
+    expect(planCell).toBeTruthy()
+    const liveCell = row.querySelector('.tp-cell.live') as HTMLElement
+    expect(liveCell).toBeTruthy()
+    // live cell must also carry .tp-cell-live for backward compat
+    expect(liveCell.classList.contains('tp-cell-live')).toBe(true)
+    const state = liveCell.querySelector('.state') as HTMLElement
+    expect(state).toBeTruthy()
+    expect(state.textContent).toContain('Vendor rejected the audio chunk')
+    expect(state.style.color).toBe('var(--err-2)')
+    expect(state.title).toBeTruthy()
+  })
+  it('wires plan/live grid slots in source (supplemental file-content check)', () => {
     const src = fs.readFileSync(path.resolve('src/screens/TalkingPhotos.tsx'), 'utf8')
-    // OutputGroup rows must use plan/live grid slots
     expect(src).toMatch(/className="tp-cell plan"/)
     expect(src).toMatch(/className="tp-cell tp-cell-live live"/)
     expect(src).toMatch(/className="state"/)
-    // PlanPreviewTable rows must also use plan/live
-    const planPreviewPlanMatches = (src.match(/className="tp-cell plan"/g) || []).length
-    expect(planPreviewPlanMatches).toBeGreaterThanOrEqual(2)
-    // Live state span with ellipsis styling is required for grid
-    expect(src).toMatch(/className="state"/)
+    const planMatches = (src.match(/className="tp-cell plan"/g) || []).length
+    expect(planMatches).toBeGreaterThanOrEqual(2)
   })
 })
