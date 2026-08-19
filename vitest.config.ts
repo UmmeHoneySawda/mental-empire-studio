@@ -18,7 +18,8 @@ export default defineConfig({
     }
   },
   test: {
-    environment: 'node',
-    include: ['test/unit/**/*.test.ts']
+    environment: 'jsdom',
+    css: true,
+    include: ['test/unit/**/*.test.ts', 'test/talkingphotos.ledger.test.tsx']
   }
 })
