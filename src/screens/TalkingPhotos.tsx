@@ -919,227 +919,21 @@ export function TalkingPhotos(): JSX.Element {
               )}
             </Step>
 
-            <Step
-              index={4}
-              title="Presenter"
-              value={selectedCharacter ? selectedCharacter.label : 'One face for the whole job'}
-              open={step === 4}
-              current={step === 4}
-              onToggle={() => setStep(step === 4 ? 0 : 4)}
-            >
-              <div className="tp-pres-toolbar" role="toolbar" aria-label="Presenter filters">
-                <label className="tp-pres-search">
-                  <span aria-hidden>⌕</span>
-                  <input aria-label="Search presenters" placeholder="Search by name…" value={q} onChange={e=>setQ(e.currentTarget.value)} />
-                  {q && <button aria-label="Clear search" onClick={()=>setQ('')}>×</button>}
-                </label>
-                <Btn size="sm" variant={density==='compact'?'soft':undefined} onClick={()=>setDensity(d=>d==='compact'?'comfortable':'compact')}>
-                  {density==='compact'?'▦ Comfortable':'▦ Compact'}
-                </Btn>
-              </div>
-              <div className="tp-pres-chips" role="group" aria-label="Filter presenters">
-                <Btn size="sm" variant={kindChip==='all'?'soft':undefined} onClick={()=>setKindChip('all')}>All {characters.length}</Btn>
-                <Btn size="sm" variant={kindChip==='generated'?'soft':undefined} onClick={()=>setKindChip('generated')}>Generated</Btn>
-                <Btn size="sm" variant={kindChip==='uploaded'?'soft':undefined} onClick={()=>setKindChip('uploaded')}>Uploaded</Btn>
-                <Btn size="sm" variant={aspectChip==='9:16'?'soft':undefined} onClick={()=>setAspectChip(a=>a==='9:16'?'all':'9:16')}>9:16</Btn>
-                <Btn size="sm" variant={aspectChip==='16:9'?'soft':undefined} onClick={()=>setAspectChip(a=>a==='16:9'?'all':'16:9')}>16:9</Btn>
-              </div>
-              <div className="tp-pres-subbar">
-                <span>Showing <b>{filtered.length}</b> of {characters.length} {q||kindChip!=='all'||aspectChip!=='all' ? 'filtered' : ''}</span>
-                {(q||kindChip!=='all'||aspectChip!=='all') && <button onClick={()=>{setQ('');setKindChip('all');setAspectChip('all')}}>Clear filters</button>}
-                <span style={{display:'flex',gap:6}}>
-                  <Btn size="sm" variant={sort==='recent'?'soft':undefined} onClick={()=>setSort('recent')}>Recent</Btn>
-                  <Btn size="sm" variant={sort==='az'?'soft':undefined} onClick={()=>setSort('az')}>A-Z</Btn>
-                </span>
-              </div>
-              {characters.length===0 ? (
-                <EmptyState icon={IconFace} title="No presenters saved yet" body="Generate or upload a face to get started." />
-              ) : filtered.length===0 ? (
-                <EmptyState
-                  icon={IconFace}
-                  title={q ? `No faces match “${q}”` : 'No faces match'}
-                  body={q ? 'Try a different term or clear filters.' : 'Change a filter to see faces.'}
-                  action={<Btn size="sm" onClick={()=>{setQ('');setKindChip('all');setAspectChip('all')}}>Clear</Btn>}
-                />
-              ) : (
-                <div className={`tp-chars ${density==='compact'?'is-compact':'is-comfortable'}`} role="grid" aria-label="Presenters">
-                  {filtered.map(c => (
-                    <CharacterTile
-                      key={c.id}
-                      character={c}
-                      selected={characterId===c.id}
-                      checked={selected.has(c.id)}
-                      selectOn={selectOn}
-                      hovered={hovered===c.id}
-                      onHover={()=>!selectOn && setHovered(c.id)}
-                      onLeave={()=>setHovered(null)}
-                      onSelect={()=> setCharacterId(c.id)}
-                      onCheck={()=> { setSelectOn(true); toggleSel(c.id) }}
-                      onDeleteOne={()=> { setConfirmDeleteOne(c); }}
-                      onInspect={(el)=> { lightboxOpenerRef.current = el; setLightbox(c) }}
-                    />
-                  ))}
-                </div>
-              )}
-              {filtered.length>0 && (
-                <>
-                  <div style={{ display:'flex', alignItems:'center', gap:8 }}>
-                    <Btn size="sm" variant={selectOn?'soft':undefined} onClick={()=>setSelectOn(s=>!s)}>{selectOn?'Done':'Select'}</Btn>
-                    {selectOn && <><Btn size="sm" onClick={()=>setSelected(new Set(filtered.map(c=>c.id)))}>Select filtered ({filtered.length})</Btn>
-                    <Btn size="sm" onClick={()=>setSelected(new Set(characters.map(c=>c.id)))}>Select all ({characters.length})</Btn>
-                    <Btn size="sm" onClick={()=>setSelected(new Set())}>Clear</Btn></>}
-                  </div>
-                  {selected.size>0 && (
-                    <div className="tp-bulk" role="status" aria-live="polite">
-                      <b>{selected.size} selected</b>
-                      <span style={{flex:1}}/>
-                      <Btn size="sm" onClick={()=>setSelected(new Set())}>Clear</Btn>
-                      <Btn size="sm" variant="danger" onClick={()=> setConfirmBulk(true)}>
-                        Delete {selected.size}
-                      </Btn>
-                    </div>
-                  )}
-                  {(() => {
-                    const runIds = [...selected].filter(id=> jobs.some(j=>j.characterId===id && j.status==='running'));
-                    const pausedIds = [...selected].filter(id=> jobs.some(j=>j.characterId===id && j.status==='paused'));
-                    if (runIds.length>0) return <Banner kind="error">Blocked: {runIds.length} presenter{runIds.length>1?'s':''} still in running jobs — they stay until those jobs finish.</Banner>
-                    if (pausedIds.length>0) return <Banner kind="info">Pausing cascade: deleting these will also remove {pausedIds.length} paused job{pausedIds.length>1?'s':''}.</Banner>
-                    return null
-                  })()}
-                </>
-              )}
-
-              <div style={{ display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
-                <FieldLabel>Generate a presenter</FieldLabel>
-                <input
-                  value={charLabel}
-                  placeholder="Name, e.g. Narrator A"
-                  aria-label="Presenter name"
-                  onChange={(e) => setCharLabel(e.currentTarget.value)}
-                  style={inputStyle}
-                />
-                <textarea
-                  value={prompt}
-                  placeholder="Describe the presenter: a calm woman in her thirties, dark jumper, plain studio background"
-                  aria-label="Presenter description"
-                  rows={3}
-                  onChange={(e) => setPrompt(e.currentTarget.value)}
-                  style={{ ...inputStyle, resize: 'vertical', minHeight: 62 }}
-                />
-                <textarea
-                  value={negativePrompt}
-                  placeholder="Negative prompt (optional): blurry, cartoon, low quality"
-                  aria-label="Negative prompt"
-                  rows={2}
-                  onChange={(e) => setNegativePrompt(e.currentTarget.value)}
-                  style={{ ...inputStyle, resize: 'vertical', minHeight: 44 }}
-                />
-                <div className="tp-char-form-grid">
-                  <label>Gender
-                    <select value={charGender} aria-label="Gender" onChange={(e) => setCharGender(e.currentTarget.value as TpCharacterGender)}>
-                      <option value="female">Female</option>
-                      <option value="male">Male</option>
-                    </select>
-                  </label>
-                  <label>Age
-                    <select value={charAge} aria-label="Age" onChange={(e) => setCharAge(e.currentTarget.value as TpCharacterAge)}>
-                      <option value="adult">Adult</option>
-                      <option value="child">Child</option>
-                    </select>
-                  </label>
-                  <label>Ethnicity
-                    <select value={charEthnicity} aria-label="Ethnicity" onChange={(e) => setCharEthnicity(e.currentTarget.value as TpCharacterEthnicity)}>
-                      <option value="">Default</option>
-                      <option value="white">White</option>
-                      <option value="black">Black</option>
-                      <option value="asian">Asian</option>
-                    </select>
-                  </label>
-                  <label>Beard
-                    <select value={charBeard} aria-label="Beard" onChange={(e) => setCharBeard(e.currentTarget.value as TpCharacterBeard)}>
-                      <option value="shaven">Shaven</option>
-                      <option value="beard">Beard</option>
-                    </select>
-                  </label>
-                  <label>Style
-                    <select value={charStyle} aria-label="Character style" onChange={(e) => setCharStyle(e.currentTarget.value as TpCharacterStyle)}>
-                      {(feature?.characterStyles ?? ['realistic', '3d', '2d', 'animal', 'fantasy']).map((s) => (
-                        <option key={s} value={s}>{s}</option>
-                      ))}
-                    </select>
-                  </label>
-                  <label>Aspect
-                    <span style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-dim)', padding: '7px 0' }}>{aspectRatio} (from step 02)</span>
-                  </label>
-                </div>
-                {selectedCharacter?.kind === 'uploaded' && (
-                  <div className="tp-attached" role="status" aria-live="polite">
-                    <img className="tp-attached-thumb" src={selectedCharacter.previewPath ? mediaSrc(selectedCharacter.previewPath) : selectedCharacter.previewUrl} alt="" />
-                    <div style={{ minWidth: 0 }}>
-                      <div style={{ fontWeight: 600, fontSize: 'var(--fs-sm)', color: 'var(--text-bright)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Attached — {selectedCharacter.label}</div>
-                      <div style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-dim)' }}>Uploaded · {selectedCharacter.gender} · {selectedCharacter.aspectRatio} · {selectedCharacter.characterStyle} · mediaId {selectedCharacter.mediaId || '—'}</div>
-                    </div>
-                    <span className="tp-attached-check" aria-hidden>✓</span>
-                  </div>
-                )}
-                {characterProgress && characterProgress.phase !== 'done' && characterProgress.phase !== 'error' && (
-                  <span style={{ fontSize: 'var(--fs-caption)', color: 'var(--accent)' }}>{characterProgress.message}</span>
-                )}
-                <div style={{ display: 'flex', gap: 'var(--space-2)' }}>
-                  <Btn
-                    variant="soft"
-                    disabled={!feature || !prompt.trim() || busy === 'character'}
-                    onClick={() => {
-                      if (!feature) return
-                      void tp.generateCharacter({
-                        label: charLabel,
-                        prompt,
-                        negativePrompt,
-                        aspectRatio,
-                        featureId: feature.id,
-                        characterStyle: charStyle,
-                        gender: charGender,
-                        ethnicity: charEthnicity,
-                        age: charAge,
-                        beard: charBeard
-                      })
-                    }}
-                  >
-                    {busy === 'character' ? 'Generating…' : 'Generate'}
-                  </Btn>
-                  <Btn
-                    disabled={!feature || busy === 'character'}
-                    onClick={() => {
-                      if (!feature) return
-                      void tp.uploadCharacter({
-                        label: charLabel,
-                        aspectRatio,
-                        featureId: feature.id,
-                        characterStyle: charStyle,
-                        gender: charGender,
-                        ethnicity: charEthnicity,
-                        age: charAge,
-                        beard: charBeard
-                      })
-                    }}
-                  >
-                    Upload a photo
-                  </Btn>
-                </div>
-              </div>
-            </Step>
-
+            {/* Presenter moved to full-width Casting belt — see .tp-casting below.
+                Users called this "put the presenter block somewhere else, vertical mode aint working":
+                a 340px step cannot hold a filterable library. The belt below shows 6 tiles per row
+                instead of 3, keeps the ledger beside steps 01–03, and frees the cost line. */}
             {needsMotion && (
               <Step
-                index={5}
+                index={4}
                 title="Body motion"
-                value={motionId ? (motionId === TP_AUTO_MOTION_ID ? 'Automatic Talking Video Mode' : (motions.find((m) => m.id === motionId)?.title ?? `Motion ${motionId}`)) : 'Required for this style'}
-                open={step === 5}
-                current={step === 5}
-                onToggle={() => setStep(step === 5 ? 0 : 5)}
+                value={motionId ? (motionId === TP_AUTO_MOTION_ID ? 'Automatic Talking Video Mode' : (motions.find((m) => m.id === motionId)?.title ?? `Motion ${motionId}`)) : selectedCharacter ? 'Choose a motion for this presenter' : 'Pick a presenter first'}
+                open={step === 4}
+                current={step === 4}
+                onToggle={() => setStep(step === 4 ? 0 : 4)}
               >
                 {!selectedCharacter ? (
-                  <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-dim)' }}>Choose a presenter first — the motion list depends on presenter gender and aspect.</span>
+                  <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-dim)' }}>Pick a presenter in Casting below — motions depend on presenter gender and aspect ({aspectRatio}).</span>
                 ) : motions.length === 0 ? (
                   <div className="tp-motions">
                     {Array.from({ length: 8 }).map((_, i) => (
@@ -1246,6 +1040,312 @@ export function TalkingPhotos(): JSX.Element {
             )}
           </div>
         </div>
+
+        {/* ── Casting belt — presenter relocated from vertical Step 04 ──
+            Why here: users think of "picking a face" as browsing a library, not as
+            filling a tiny accordion step. Full-width below the plan/ledger gives:
+            - 5-6 tiles per row instead of 3 (no clipping as in screenshots)
+            - ledger stays beside steps 01-03, always visible at 1100×720
+            - cost line + Start remain above the fold
+            Table fix: ledger body no longer has internal max-height; page scroll wins. */}
+        {!activeDetail && (
+          <section className="tp-casting" aria-labelledby="casting-title">
+            <div className="tp-casting-head">
+              <h2 id="casting-title" className="tp-casting-title">Casting — Presenter</h2>
+              <span className="tp-casting-meta">
+                {selectedCharacter ? (
+                  <>Selected: <b style={{ color: 'var(--text-strong)', fontWeight: 600 }}>{selectedCharacter.label}</b> · {selectedCharacter.kind} · {selectedCharacter.aspectRatio}</>
+                ) : (
+                  <>One face for the whole job — {characters.length} available</>
+                )}
+              </span>
+              <span style={{ flex: 1 }} />
+              <span className="tp-casting-placeholder" title="Sample data — future: favorites + usage count (no backend yet)">★ Favorites · usage count — placeholder</span>
+              <Btn size="sm" variant={density === 'compact' ? 'soft' : undefined} onClick={() => setDensity((d) => (d === 'compact' ? 'comfortable' : 'compact'))}>
+                {density === 'compact' ? '▦ Comfortable' : '▦ Compact'}
+              </Btn>
+            </div>
+
+            {selectedCharacter && (
+              <div className="tp-casting-summary" role="status" aria-live="polite">
+                <AttachedThumb character={selectedCharacter} className="tp-attached-thumb" style={{ width: 32, height: 32 }} />
+                <span style={{ fontWeight: 600, color: 'var(--text-bright)' }}>{selectedCharacter.label}</span>
+                <Meas title="Sample: how many jobs used this face (placeholder)">
+                  Used in {jobs.filter((j) => j.characterId === selectedCharacter.id).length} jobs
+                </Meas>
+                <span style={{ color: 'var(--text-faint)', fontSize: 'var(--fs-caption)' }}>· {selectedCharacter.gender} · {selectedCharacter.aspectRatio} · {selectedCharacter.characterStyle}</span>
+                <span style={{ flex: 1 }} />
+                <span className="tp-casting-placeholder" style={{ borderStyle: 'solid' }}>✓ Attached for this plan</span>
+              </div>
+            )}
+
+            <div className="tp-casting-body">
+              <div className="tp-pres-toolbar tp-casting-toolbar" role="toolbar" aria-label="Presenter filters">
+                <label className="tp-pres-search" style={{ flex: '1 1 220px' }}>
+                  <span aria-hidden>⌕</span>
+                  <input aria-label="Search presenters" placeholder="Search by name…" value={q} onChange={(e) => setQ(e.currentTarget.value)} />
+                  {q && <button aria-label="Clear search" onClick={() => setQ('')}>×</button>}
+                </label>
+                <Btn size="sm" variant={density === 'compact' ? 'soft' : undefined} onClick={() => setDensity((d) => (d === 'compact' ? 'comfortable' : 'compact'))} style={{ marginLeft: 4 }}>
+                  {density === 'compact' ? '▦ Comfortable' : '▦ Compact'}
+                </Btn>
+                <div className="tp-pres-chips tp-casting-filters" role="group" aria-label="Filter presenters" style={{ display: 'contents' }}>
+                  <Btn size="sm" variant={kindChip === 'all' ? 'soft' : undefined} onClick={() => setKindChip('all')}>All {characters.length}</Btn>
+                  <Btn size="sm" variant={kindChip === 'generated' ? 'soft' : undefined} onClick={() => setKindChip('generated')}>Generated</Btn>
+                  <Btn size="sm" variant={kindChip === 'uploaded' ? 'soft' : undefined} onClick={() => setKindChip('uploaded')}>Uploaded</Btn>
+                  <Btn size="sm" variant={aspectChip === '9:16' ? 'soft' : undefined} onClick={() => setAspectChip((a) => (a === '9:16' ? 'all' : '9:16'))}>9:16</Btn>
+                  <Btn size="sm" variant={aspectChip === '16:9' ? 'soft' : undefined} onClick={() => setAspectChip((a) => (a === '16:9' ? 'all' : '16:9'))}>16:9</Btn>
+                </div>
+              </div>
+
+              <div className="tp-pres-subbar tp-casting-subbar">
+                <span>
+                  Showing <b>{filtered.length}</b> of {characters.length} {q || kindChip !== 'all' || aspectChip !== 'all' ? 'filtered' : ''}
+                  <span style={{ color: 'var(--text-faint)', marginLeft: 6 }} title="Sample data placeholder — future: recently used / favorites sort">· recent first — sample</span>
+                </span>
+                {(q || kindChip !== 'all' || aspectChip !== 'all') && <button onClick={() => { setQ(''); setKindChip('all'); setAspectChip('all') }}>Clear filters</button>}
+                <span style={{ display: 'flex', gap: 6 }}>
+                  <Btn size="sm" variant={sort === 'recent' ? 'soft' : undefined} onClick={() => setSort('recent')}>Recent</Btn>
+                  <Btn size="sm" variant={sort === 'az' ? 'soft' : undefined} onClick={() => setSort('az')}>A-Z</Btn>
+                </span>
+              </div>
+
+              {characters.length === 0 ? (
+                <EmptyState icon={IconFace} title="No presenters saved yet" body="Generate or upload a face to get started." />
+              ) : filtered.length === 0 ? (
+                <EmptyState
+                  icon={IconFace}
+                  title={q ? `No faces match “${q}”` : 'No faces match'}
+                  body={q ? 'Try a different term or clear filters.' : 'Change a filter to see faces.'}
+                  action={<Btn size="sm" onClick={() => { setQ(''); setKindChip('all'); setAspectChip('all') }}>Clear</Btn>}
+                />
+              ) : (
+                <div className={`tp-chars is-casting ${density === 'compact' ? 'is-compact' : 'is-comfortable'}`} role="grid" aria-label="Presenters">
+                  {filtered.map((c) => (
+                    <CharacterTile
+                      key={c.id}
+                      character={c}
+                      selected={characterId === c.id}
+                      checked={selected.has(c.id)}
+                      selectOn={selectOn}
+                      hovered={hovered === c.id}
+                      onHover={() => !selectOn && setHovered(c.id)}
+                      onLeave={() => setHovered(null)}
+                      onSelect={() => setCharacterId(c.id)}
+                      onCheck={() => { setSelectOn(true); toggleSel(c.id) }}
+                      onDeleteOne={() => { setConfirmDeleteOne(c) }}
+                      onInspect={(el) => { lightboxOpenerRef.current = el; setLightbox(c) }}
+                    />
+                  ))}
+                </div>
+              )}
+
+              {filtered.length > 0 && (
+                <>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: 8, flexWrap: 'wrap' }}>
+                    <Btn size="sm" variant={selectOn ? 'soft' : undefined} onClick={() => setSelectOn((s) => !s)}>{selectOn ? 'Done' : 'Select'}</Btn>
+                    {selectOn && (
+                      <>
+                        <Btn size="sm" onClick={() => setSelected(new Set(filtered.map((c) => c.id)))}>Select filtered ({filtered.length})</Btn>
+                        <Btn size="sm" onClick={() => setSelected(new Set(characters.map((c) => c.id)))}>Select all ({characters.length})</Btn>
+                        <Btn size="sm" onClick={() => setSelected(new Set())}>Clear</Btn>
+                      </>
+                    )}
+                    {!selectOn && blockers.includes('Choose or create a presenter.') && (
+                      <span style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-faint)', marginLeft: 4 }}>Pick a face to unlock Start — this choice applies to the whole job.</span>
+                    )}
+                  </div>
+                  {selected.size > 0 && (
+                    <div className="tp-bulk" role="status" aria-live="polite">
+                      <b>{selected.size} selected</b>
+                      <span style={{ flex: 1 }} />
+                      <Btn size="sm" onClick={() => setSelected(new Set())}>Clear</Btn>
+                      <Btn size="sm" variant="danger" onClick={() => setConfirmBulk(true)}>Delete {selected.size}</Btn>
+                    </div>
+                  )}
+                  {(() => {
+                    const runIds = [...selected].filter((id) => jobs.some((j) => j.characterId === id && j.status === 'running'))
+                    const pausedIds = [...selected].filter((id) => jobs.some((j) => j.characterId === id && j.status === 'paused'))
+                    if (runIds.length > 0) return <Banner kind="error">Blocked: {runIds.length} presenter{runIds.length > 1 ? 's' : ''} still in running jobs — they stay until those jobs finish.</Banner>
+                    if (pausedIds.length > 0) return <Banner kind="info">Pausing cascade: deleting these will also remove {pausedIds.length} paused job{pausedIds.length > 1 ? 's' : ''}.</Banner>
+                    return null
+                  })()}
+                </>
+              )}
+              {selectedCharacter?.kind === 'uploaded' && (
+                <div className="tp-attached" role="status" aria-live="polite">
+                  <AttachedThumb character={selectedCharacter} className="tp-attached-thumb" />
+                  <div style={{ minWidth: 0 }}>
+                    <div style={{ fontWeight: 600, fontSize: 'var(--fs-sm)', color: 'var(--text-bright)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Attached — {selectedCharacter.label}</div>
+                    <div style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-dim)' }}>Uploaded · {selectedCharacter.gender} · {selectedCharacter.aspectRatio} · {selectedCharacter.characterStyle} · mediaId {selectedCharacter.mediaId || '—'}</div>
+                  </div>
+                  <span className="tp-attached-check" aria-hidden>✓</span>
+                </div>
+              )}
+              {/* Motion co-located with casting — users pick face then motion in one place.
+                  Left-column Step 04 remains for compatibility, but this inline strip is what
+                  users actually see without scrolling up. */}
+              {needsMotion && (
+                <div style={{ border: '1px solid var(--border-soft)', borderRadius: 'var(--radius-md)', padding: 'var(--space-3)', background: 'var(--bg-inset)', display: 'flex', flexDirection: 'column', gap: 'var(--space-2)' }}>
+                  <div style={{ display: 'flex', alignItems: 'baseline', gap: 8, flexWrap: 'wrap' }}>
+                    <FieldLabel style={{ margin: 0 }}>Body motion</FieldLabel>
+                    <span style={{ fontSize: 'var(--fs-caption)', color: motionId ? 'var(--text-strong)' : 'var(--text-dim)' }}>
+                      {motionId ? (motionId === TP_AUTO_MOTION_ID ? 'Automatic Talking Video Mode' : (motions.find((m) => m.id === motionId)?.title ?? `Motion ${motionId}`)) : 'Required for this style'}
+                    </span>
+                    <span style={{ flex: 1 }} />
+                    <span className="tp-casting-placeholder" style={{ fontSize: 10 }}>Preview loop — placeholder</span>
+                  </div>
+                  {!selectedCharacter ? (
+                    <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-dim)' }}>Pick a presenter above — motions depend on gender and aspect ({aspectRatio}).</span>
+                  ) : motions.length === 0 ? (
+                    <div className="tp-motions">
+                      {Array.from({ length: 8 }).map((_, i) => (
+                        <div key={i} className="tp-skel" style={{ aspectRatio: '3 / 4' }} />
+                      ))}
+                    </div>
+                  ) : (
+                    <div className="tp-motions" style={{ maxHeight: 180 }}>
+                      {(feature?.autoMotionId === TP_AUTO_MOTION_ID || feature?.type === 'human' || feature?.type === 'cartoon') && (
+                        <button key="auto-500" type="button" className="tp-motion is-auto" aria-pressed={motionId === TP_AUTO_MOTION_ID} title="Automatic Talking Video Mode — vendor picks a fitting motion" onClick={() => setMotionId(TP_AUTO_MOTION_ID)}>
+                          <span className="tp-motion-thumb is-auto">Auto</span>
+                          <span className="tp-motion-label">Automatic Talking Video Mode</span>
+                        </button>
+                      )}
+                      {motions.map((m) => (
+                        <button key={m.id} type="button" className="tp-motion" aria-pressed={motionId === m.id} title={`${m.title} · ${selectedCharacter.gender} · ${aspectRatio} · ${feature?.style}`} onClick={() => setMotionId(m.id)}>
+                          {m.thumbUrl ? <img src={m.thumbUrl} alt="" loading="lazy" onError={(e) => ((e.currentTarget as HTMLImageElement).style.display = 'none')} /> : <span className="tp-motion-thumb is-fallback">{m.title.slice(0, 2)}</span>}
+                          <span className="tp-motion-label">{m.title}</span>
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+            </div>
+
+            <details className="tp-casting-generate">
+              <summary>
+                <span style={{ display: 'inline-flex', transform: 'rotate(0deg)' }}>{IconFace}</span>
+                Generate or upload a presenter
+                <span style={{ flex: 1 }} />
+                <span style={{ fontWeight: 400, color: 'var(--text-faint)', fontSize: 'var(--fs-caption)' }}>{feature ? `${feature.label} · ${aspectRatio}` : 'Pick a render style first'}</span>
+                <span style={{ color: 'var(--text-faint)' }}>▾</span>
+              </summary>
+              <div className="tp-casting-generate-body">
+                <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+                  <input value={charLabel} placeholder="Name, e.g. Narrator A" aria-label="Presenter name" onChange={(e) => setCharLabel(e.currentTarget.value)} style={inputStyle} />
+                </div>
+                <textarea
+                  value={prompt}
+                  placeholder="Describe the presenter: a calm woman in her thirties, dark jumper, plain studio background"
+                  aria-label="Presenter description"
+                  rows={3}
+                  onChange={(e) => setPrompt(e.currentTarget.value)}
+                  style={{ ...inputStyle, resize: 'vertical', minHeight: 62 }}
+                />
+                <textarea
+                  value={negativePrompt}
+                  placeholder="Negative prompt (optional): blurry, cartoon, low quality"
+                  aria-label="Negative prompt"
+                  rows={2}
+                  onChange={(e) => setNegativePrompt(e.currentTarget.value)}
+                  style={{ ...inputStyle, resize: 'vertical', minHeight: 44 }}
+                />
+                <div className="tp-char-form-grid">
+                  <label>
+                    Gender
+                    <select value={charGender} aria-label="Gender" onChange={(e) => setCharGender(e.currentTarget.value as TpCharacterGender)}>
+                      <option value="female">Female</option>
+                      <option value="male">Male</option>
+                    </select>
+                  </label>
+                  <label>
+                    Age
+                    <select value={charAge} aria-label="Age" onChange={(e) => setCharAge(e.currentTarget.value as TpCharacterAge)}>
+                      <option value="adult">Adult</option>
+                      <option value="child">Child</option>
+                    </select>
+                  </label>
+                  <label>
+                    Ethnicity
+                    <select value={charEthnicity} aria-label="Ethnicity" onChange={(e) => setCharEthnicity(e.currentTarget.value as TpCharacterEthnicity)}>
+                      <option value="">Default</option>
+                      <option value="white">White</option>
+                      <option value="black">Black</option>
+                      <option value="asian">Asian</option>
+                    </select>
+                  </label>
+                  <label>
+                    Beard
+                    <select value={charBeard} aria-label="Beard" onChange={(e) => setCharBeard(e.currentTarget.value as TpCharacterBeard)}>
+                      <option value="shaven">Shaven</option>
+                      <option value="beard">Beard</option>
+                    </select>
+                  </label>
+                  <label>
+                    Style
+                    <select value={charStyle} aria-label="Character style" onChange={(e) => setCharStyle(e.currentTarget.value as TpCharacterStyle)}>
+                      {(feature?.characterStyles ?? ['realistic', '3d', '2d', 'animal', 'fantasy']).map((s) => (
+                        <option key={s} value={s}>
+                          {s}
+                        </option>
+                      ))}
+                    </select>
+                  </label>
+                  <label>
+                    Aspect
+                    <span style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-dim)', padding: '7px 0' }}>{aspectRatio} (from step 02)</span>
+                  </label>
+                </div>
+                {characterProgress && characterProgress.phase !== 'done' && characterProgress.phase !== 'error' && (
+                  <span style={{ fontSize: 'var(--fs-caption)', color: 'var(--accent)' }}>{characterProgress.message}</span>
+                )}
+                <div style={{ display: 'flex', gap: 'var(--space-2)', flexWrap: 'wrap' }}>
+                  <Btn
+                    variant="soft"
+                    disabled={!feature || !prompt.trim() || busy === 'character'}
+                    onClick={() => {
+                      if (!feature) return
+                      void tp.generateCharacter({
+                        label: charLabel,
+                        prompt,
+                        negativePrompt,
+                        aspectRatio,
+                        featureId: feature.id,
+                        characterStyle: charStyle,
+                        gender: charGender,
+                        ethnicity: charEthnicity,
+                        age: charAge,
+                        beard: charBeard,
+                      })
+                    }}
+                  >
+                    {busy === 'character' ? 'Generating…' : 'Generate'}
+                  </Btn>
+                  <Btn
+                    disabled={!feature || busy === 'character'}
+                    onClick={() => {
+                      if (!feature) return
+                      void tp.uploadCharacter({
+                        label: charLabel,
+                        aspectRatio,
+                        featureId: feature.id,
+                        characterStyle: charStyle,
+                        gender: charGender,
+                        ethnicity: charEthnicity,
+                        age: charAge,
+                        beard: charBeard,
+                      })
+                    }}
+                  >
+                    Upload a photo
+                  </Btn>
+                  <span className="tp-casting-placeholder" style={{ marginLeft: 'auto' }} title="No backend yet — sample placeholder">Voice preview · tags — placeholder</span>
+                </div>
+              </div>
+            </details>
+          </section>
+        )}
       </div>
 
       <ConfirmDialog
@@ -1311,6 +1411,29 @@ const inputStyle: React.CSSProperties = {
   color: 'var(--text)',
   fontFamily: 'var(--font-body)',
   fontSize: 'var(--fs-body)'
+}
+
+function AttachedThumb({ character, className, style }: { character: TpCharacter; className?: string; style?: React.CSSProperties }): JSX.Element {
+  const [brokenPath, setBrokenPath] = useState(false)
+  const [brokenUrl, setBrokenUrl] = useState(false)
+  // Reset fallback state when the character changes, so a previous failure does not stick to the next selection.
+  useEffect(() => { setBrokenPath(false); setBrokenUrl(false) }, [character.id, character.previewPath, character.previewUrl])
+  const pathSrc = character.previewPath ? mediaSrc(character.previewPath) : ''
+  const urlSrc = character.previewUrl || ''
+  const src = !brokenPath && pathSrc ? pathSrc : !brokenUrl && urlSrc ? urlSrc : ''
+  if (!src) return <span className="tp-char-empty" style={style as React.CSSProperties}>preview unavailable</span>
+  return (
+    <img
+      className={className}
+      src={src}
+      alt=""
+      style={style}
+      onError={() => {
+        if (src === pathSrc) setBrokenPath(true)
+        else setBrokenUrl(true)
+      }}
+    />
+  )
 }
 
 function CharacterTile({ character, selected, checked, selectOn, hovered, onHover, onLeave, onSelect, onCheck, onDeleteOne, onInspect }: { character: TpCharacter; selected: boolean; checked?: boolean; selectOn?: boolean; hovered?: boolean; onHover?: () => void; onLeave?: () => void; onSelect: () => void; onCheck?: () => void; onDeleteOne?: () => void; onInspect?: (el: HTMLElement) => void }): JSX.Element {

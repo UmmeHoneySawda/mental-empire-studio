@@ -27,6 +27,9 @@ product behavior and `PLAN.md` for completed milestone history.
   services, provider jobs, or automation steps. Use `sentryLog` / `captureException` from
   `electron/services/sentry.ts`. When diagnosing production failures, **check Sentry Issues + Logs
   first** (org `buft`, region `de`), not only local log files.
+- When working with TalkingPhotos AI you should always analyze "D:\talkingphotos-session" directory. 
+  It has all the endpoints and feature list. So you should never guess how it works. Be 100% sure by 
+  checking that directory.
 
 ## Key locations
 

@@ -5,7 +5,7 @@ export function isCssImageValue(value?: string): boolean {
 export function mediaSrc(path?: string): string {
   if (!path || isCssImageValue(path)) return ''
   if (/^(https?:|data:|file:|blob:)/i.test(path)) return path
-  return `file:///${path.replace(/\\/g, '/')}`
+  return `file:///${encodeURI(path.replace(/\\/g, '/'))}`
 }
 
 export function videoSrc(path?: string): string {
@@ -14,5 +14,5 @@ export function videoSrc(path?: string): string {
   // Browser mock paths are intentionally fake file-system paths. Rendering an
   // invalid file:// URL creates console noise that hides real UI errors.
   if (path.startsWith('/Browser/')) return ''
-  return `file:///${path.replace(/\\/g, '/')}`
+  return `file:///${encodeURI(path.replace(/\\/g, '/'))}`
 }

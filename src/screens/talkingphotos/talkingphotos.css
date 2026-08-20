@@ -26,7 +26,10 @@
   grid-template-columns: minmax(0, 1fr);
 }
 
-@container tp (max-width: 1000px) {
+/* Best-UX: keep two columns until the real pane squeeze point (820px = icon-rail).
+   The old 1000px breakpoint stacked too early and buried the ledger beneath a tall
+   presenter card — the #1 complaint in the screenshots. */
+@container tp (max-width: 820px) {
   .tp-page {
     grid-template-columns: minmax(0, 1fr);
   }
@@ -85,9 +88,14 @@
   grid-column: 1 / -1;
   display: grid;
   grid-template-columns: 260px var(--tp-rail) minmax(200px, 1fr);
-  max-height: 460px;
-  overflow-y: auto;
   overflow-x: hidden;
+  /* No internal max-height: the ledger grows with the page so the plan is readable
+     without nested scrolling. Internal scroll only via .is-scrollable when >18 chunks. */
+}
+
+.tp-body.is-scrollable {
+  max-height: 520px;
+  overflow-y: auto;
   scrollbar-gutter: stable;
 }
 
@@ -829,28 +837,43 @@
   .tp-ledger {
     --tp-rail: 72px;
   }
+  .tp-body.is-scrollable {
+    max-height: 480px;
+  }
 }
 
-@container tp (max-width: 720px) {
+/* True narrow collapse — only below 620px. Keeps header/body in sync via subgrid.
+   Previous 720px collapse hid the Live header and broke alignment. */
+@container tp (max-width: 620px) {
   .tp-ledger {
-    grid-template-columns: 1fr;
-  }
-
-  .tp-body {
     grid-template-columns: 56px minmax(0, 1fr);
     --tp-rail: 56px;
   }
 
-  .tp-colhead.is-live {
-    display: none;
-  }
-
-  .tp-row {
+  .tp-body {
     grid-template-columns: 56px minmax(0, 1fr);
   }
 
+  .tp-colhead,
+  .tp-railhead {
+    height: 32px;
+    font-size: 10px;
+  }
+
+  .tp-railhead {
+    border-left: 0;
+  }
+
+  .tp-colhead.is-live {
+    justify-content: flex-start;
+  }
+
+  .tp-row {
+    grid-template-columns: subgrid;
+    grid-column: 1 / -1;
+  }
+
   .tp-detent {
-    grid-row: span 2;
     border-left: 0;
     flex-direction: column;
     justify-content: center;
@@ -861,13 +884,24 @@
     padding: 7px var(--space-3);
   }
 
-  .tp-cell-live {
+  .tp-cell.plan {
+    grid-template-columns: 1fr;
+    gap: 2px;
+  }
+
+  .tp-cell-live,
+  .tp-cell.live {
     border-top: 1px dashed var(--border-soft);
+    grid-template-columns: minmax(0, 1fr) auto;
   }
 
   .tp-outputband {
     grid-column: 1 / -1;
-    grid-template-columns: auto 1fr auto;
+    grid-template-columns: 1fr auto;
+    gap: 4px var(--space-2);
+  }
+  .tp-outputband .tp-meas {
+    font-size: 10px;
   }
 }
 
@@ -912,3 +946,179 @@
 .tp-char-chk[aria-checked="true"] { background:var(--accent); border-color:var(--accent); color:white; }
 .tp-char-del { position:absolute; top:6px; right:6px; width:22px; height:22px; display:grid; place-items:center; border-radius:999px; border:1px solid var(--border-2); background:var(--bg-inset); color:var(--text-soft); font-size:14px; line-height:1; z-index:2; cursor:pointer; }
 .tp-char.is-selected { border-color:var(--accent); box-shadow:inset 0 0 0 1px var(--accent); }
+
+/* ---- Casting belt — presenter relocated out of the vertical step stack ----
+   User insight: "put the presenter block somewhere else, vertical mode aint working".
+   Best-UX: a full-width Card below the two-column grid. It breathes, shows 5-6 tiles
+   per row on desktop instead of 3, and never competes with the cost line.
+   When a job is running, this belt collapses to a one-line summary. */
+.tp-casting {
+  border: 1px solid var(--border);
+  border-radius: var(--radius-lg);
+  background: var(--bg-card);
+  box-shadow: var(--shadow-card);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  margin-top: var(--space-5);
+}
+
+.tp-casting-head {
+  display: flex;
+  align-items: center;
+  gap: var(--space-3);
+  padding: 12px var(--space-4);
+  border-bottom: 1px solid var(--border);
+  background: var(--bg-card-2);
+  flex-wrap: wrap;
+}
+
+.tp-casting-title {
+  margin: 0;
+  font-family: var(--font-display);
+  font-size: var(--fs-md);
+  font-weight: 600;
+  color: var(--text-bright);
+  letter-spacing: -0.01em;
+}
+
+.tp-casting-meta {
+  font-family: var(--font-body);
+  font-size: var(--fs-caption);
+  color: var(--text-faint);
+  font-weight: 500;
+}
+
+.tp-casting-summary {
+  display: flex;
+  align-items: center;
+  gap: var(--space-2);
+  padding: 10px var(--space-4);
+  border-top: 1px solid var(--border-soft);
+  background: var(--bg-inset);
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+  flex-wrap: wrap;
+}
+
+.tp-casting-body {
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+}
+
+.tp-casting-toolbar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  flex-wrap: wrap;
+}
+
+.tp-casting-filters {
+  display: flex;
+  align-items: center;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.tp-casting-subbar {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+  font-size: var(--fs-sm);
+  color: var(--text-dim);
+  flex-wrap: wrap;
+}
+.tp-casting-subbar b { color: var(--text-strong); }
+.tp-casting-subbar button { border:0; background:transparent; color:var(--accent); cursor:pointer; font-size:var(--fs-sm); }
+
+.tp-casting-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+  gap: var(--space-2);
+  /* No max-height: wraps naturally, max 2 rows then "Show all" */
+}
+
+.tp-casting-grid.is-compact { gap:6px; grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); }
+
+.tp-chars.is-casting {
+  max-height: none;
+  overflow: visible;
+  scrollbar-gutter: auto;
+  grid-template-columns: repeat(auto-fill, minmax(112px, 1fr));
+}
+.tp-chars.is-casting.is-compact { grid-template-columns: repeat(auto-fill, minmax(84px, 1fr)); }
+
+/* Tile meta: placeholder sample — "Used in 3 jobs" etc. Muted so user knows it's sample data */
+.tp-char-meta {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  font-family: var(--font-mono);
+  font-size: 9px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--text-faint);
+  background: rgba(7,8,9,0.72);
+  border: 1px solid rgba(255,255,255,0.08);
+  border-radius: 999px;
+  padding: 2px 6px;
+  line-height: 1;
+  pointer-events: none;
+}
+.tp-char-meta.is-placeholder { opacity: 0.9; }
+
+/* When inside the casting belt, tiles get a touch more breathing room */
+.tp-casting .tp-char { border-radius: var(--radius-md); }
+
+.tp-casting-generate {
+  border-top: 1px solid var(--border-soft);
+  margin: 0;
+}
+.tp-casting-generate > summary {
+  list-style: none;
+  cursor: pointer;
+  padding: 12px var(--space-4);
+  font-family: var(--font-body);
+  font-size: var(--fs-sm);
+  font-weight: 600;
+  color: var(--text-soft);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  user-select: none;
+}
+.tp-casting-generate > summary::-webkit-details-marker { display:none; }
+.tp-casting-generate[open] > summary { border-bottom: 1px solid var(--border-soft); background: var(--bg-inset); }
+.tp-casting-generate-body {
+  padding: var(--space-4);
+  display: flex;
+  flex-direction: column;
+  gap: var(--space-3);
+  background: var(--bg-card);
+}
+
+.tp-casting-placeholder {
+  font-family: var(--font-mono);
+  font-size: 10px;
+  color: var(--text-faint);
+  border: 1px dashed var(--border-2);
+  border-radius: 6px;
+  padding: 6px 8px;
+  background: var(--bg-inset);
+}
+
+/* Narrow belt */
+@container tp (max-width: 820px) {
+  .tp-casting-grid,
+  .tp-chars.is-casting { grid-template-columns: repeat(auto-fill, minmax(96px, 1fr)); }
+}
+@container tp (max-width: 620px) {
+  .tp-casting-head { padding: 10px var(--space-3); }
+  .tp-casting-body { padding: var(--space-3); }
+  .tp-casting-grid,
+  .tp-chars.is-casting { grid-template-columns: repeat(auto-fill, minmax(88px, 1fr)); }
+}
