@@ -1297,6 +1297,18 @@ export interface VisualTemplate {
    *  `queue.ts` falls back to the first eight transcribed words. */
   hookLine: string
   zoomAtStart: boolean
+  /** TalkingPhoto casting slab — persisted as JSON in visual_templates.data (no column migration).
+   *  Reuses the existing TalkingPhotos catalog/character catalogue verbatim; total video length
+   *  remains dynamic because only `partSeconds` (chunk size) is stored, the source audio decides
+   *  the stitch count at run time. */
+  talkingPhoto?: {
+    enabled: boolean
+    featureId: string
+    characterId: string
+    aspectRatio: '9:16' | '16:9'
+    partSeconds: number
+    motionId?: number
+  }
   createdAt?: string
   updatedAt?: string
 }

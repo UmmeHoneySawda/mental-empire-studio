@@ -1,6 +1,7 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import { useStore } from '../store/useStore'
 import { useData } from '../store/useData'
+import { useTalkingPhotos } from '../store/useTalkingPhotos'
 import { ScreenPad } from '../components/primitives'
 import { Banner, Btn, ConfirmDialog, EmptyState, SectionLabel } from '../components/ui/kit'
 import { resolveTransitionPreset, TRANSITION_PRESETS } from '@shared/video-engine/transition-presets'
@@ -9,6 +10,8 @@ import { errorMessage } from '../lib/errors'
 import type { CaptionStyleId } from '@shared/video-engine/caption-style'
 import type { VideoTemplate } from '@shared/video-engine/ipc'
 import type { AutomationJob, AutomationJobDetail, LibraryAsset, VisualTemplate } from '@shared/types'
+import { tpFeature, planSplit, TP_MERGE_CAP_SECONDS, TP_AUTO_MOTION_ID } from '@shared/talkingphotos'
+import type { TpAspectRatio } from '@shared/talkingphotos'
 import { AssetLibraryModal } from '../features/automation/AssetLibraryModal'
 
 /* The Automations screen: Channels & Batch, the Visual System (template) gallery, and Jobs
@@ -122,6 +125,14 @@ export function Profiles(): JSX.Element {
   const retryJob = useData((state) => state.retryAutomationJob)
   const openProjectById = useData((state) => state.openProjectById)
   const setActive = useStore((state) => state.setActive)
+
+  // TalkingPhoto reuse — no new IPC, read the existing store that the TalkingPhotos screen populates
+  const tpCatalog = useTalkingPhotos((s) => s.catalog)
+  const tpCharacters = useTalkingPhotos((s) => s.characters)
+  const tpMotions = useTalkingPhotos((s) => s.motions)
+  const tpInit = useTalkingPhotos((s) => s.init)
+  const tpLoadMotions = useTalkingPhotos((s) => s.loadMotions)
+  useEffect(() => { void tpInit() }, [tpInit])
 
   // Top level tab navigation
   const [mainTab, setMainTab] = useState<'channels' | 'templates' | 'jobs'>('channels')
@@ -406,6 +417,21 @@ export function Profiles(): JSX.Element {
      lights up is the preset the value resolves to — the same one the batch will apply. */
   const activeTransitionId = editingTemplate ? resolveTransitionPreset(editingTemplate.transition).id : ''
 
+  // TalkingPhoto derived state — reuse existing catalog/character data, no new fetch until needed
+  const selectedTpFeature = editingTemplate?.talkingPhoto ? tpFeature(editingTemplate.talkingPhoto.featureId) : undefined
+  const selectedCharacter = editingTemplate?.talkingPhoto ? tpCharacters.find((c) => c.id === editingTemplate.talkingPhoto!.characterId) : undefined
+  const tpMax = selectedTpFeature?.maxPartSeconds ?? 300
+  const tpSamplePlan = useMemo(() => {
+    if (!editingTemplate?.talkingPhoto?.enabled || !editingTemplate.talkingPhoto.featureId || !editingTemplate.talkingPhoto.partSeconds) return null
+    return planSplit({ sourceDurationSec: 600, partSeconds: editingTemplate.talkingPhoto.partSeconds })
+  }, [editingTemplate?.talkingPhoto?.enabled, editingTemplate?.talkingPhoto?.featureId, editingTemplate?.talkingPhoto?.partSeconds])
+
+  useEffect(() => {
+    if (selectedTpFeature?.requiresMotion && selectedCharacter) {
+      void tpLoadMotions(selectedTpFeature.id, selectedCharacter.gender, editingTemplate!.talkingPhoto!.aspectRatio as TpAspectRatio)
+    }
+  }, [selectedTpFeature?.id, selectedTpFeature?.requiresMotion, selectedCharacter?.id, editingTemplate?.talkingPhoto?.aspectRatio, tpLoadMotions])
+
   const openNewTemplateEditor = () => {
     const newTpl: VisualTemplate = {
       id: `tpl-${Date.now()}`,
@@ -421,7 +447,8 @@ export function Profiles(): JSX.Element {
       captionStyle: 'motivation-bold',
       aspectRatio: '9:16',
       hookLine: '',
-      zoomAtStart: true
+      zoomAtStart: true,
+      talkingPhoto: { enabled: false, featureId: '', characterId: '', aspectRatio: '9:16', partSeconds: 60 }
     }
     setTemplateError('')
     setEditingTemplate(newTpl)
@@ -439,6 +466,22 @@ export function Profiles(): JSX.Element {
       setWizardStep(0)
       setTemplateError('Add at least 1 image for Image Slideshow mode, or select Auto B-roll.')
       return
+    }
+    if (saved.talkingPhoto?.enabled) {
+      const f = tpFeature(saved.talkingPhoto.featureId)
+      if (!f) { setWizardStep(0); setTemplateError('Choose a Talking Photo style for this preset.'); return }
+      if (!saved.talkingPhoto.characterId || !tpCharacters.some((c) => c.id === saved.talkingPhoto!.characterId)) {
+        setWizardStep(0); setTemplateError('Choose a presenter from the TalkingPhotos screen — no presenter selected.'); return
+      }
+      if (!f.aspectRatios.includes(saved.talkingPhoto.aspectRatio as TpAspectRatio)) {
+        setWizardStep(0); setTemplateError(`${f.label} does not support ${saved.talkingPhoto.aspectRatio}.`); return
+      }
+      if (f.requiresMotion && !(saved.talkingPhoto.motionId && saved.talkingPhoto.motionId > 0)) {
+        setWizardStep(0); setTemplateError(`${f.label} requires a body motion.`); return
+      }
+      if (saved.talkingPhoto.partSeconds < 1 || saved.talkingPhoto.partSeconds > f.maxPartSeconds) {
+        setWizardStep(0); setTemplateError(`Chunk length must be 1–${f.maxPartSeconds}s for ${f.label}.`); return
+      }
     }
     setTemplateSaving(true)
     setTemplateError('')
@@ -766,6 +809,19 @@ export function Profiles(): JSX.Element {
 
                     <span className="at-summary-label">Captions</span>
                     <span className="at-summary-val">{selectedTemplate?.captionStyle}</span>
+
+                    {selectedTemplate?.talkingPhoto?.enabled && (
+                      <>
+                        <span className="at-summary-label">TalkingPhoto</span>
+                        <span className="at-summary-val" title={`${selectedTemplate.talkingPhoto.featureId} · ${selectedTemplate.talkingPhoto.characterId} · ${selectedTemplate.talkingPhoto.aspectRatio} · ${selectedTemplate.talkingPhoto.partSeconds}s${selectedTemplate.talkingPhoto.motionId ? ` · motion ${selectedTemplate.talkingPhoto.motionId}` : ''}`}>
+                          <span style={{ display: 'inline-flex', alignItems: 'center', gap: 6, flexWrap: 'wrap' }}>
+                            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '.4px', color: 'var(--accent)', background: 'var(--accent-soft)', border: '1px solid var(--accent)', borderRadius: 999, padding: '2px 6px' }}>◈ PRESENTER</span>
+                            {tpFeature(selectedTemplate.talkingPhoto.featureId)?.label ?? selectedTemplate.talkingPhoto.featureId} · {tpCharacters.find((c) => c.id === selectedTemplate.talkingPhoto!.characterId)?.label ?? selectedTemplate.talkingPhoto.characterId} · {selectedTemplate.talkingPhoto.aspectRatio} · {selectedTemplate.talkingPhoto.partSeconds}s
+                            {selectedTemplate.talkingPhoto.motionId ? ` · motion ${selectedTemplate.talkingPhoto.motionId === TP_AUTO_MOTION_ID ? 'Auto' : selectedTemplate.talkingPhoto.motionId}` : ''}
+                          </span>
+                        </span>
+                      </>
+                    )}
                   </div>
 
                   <button
@@ -804,6 +860,7 @@ export function Profiles(): JSX.Element {
               <div key={tpl.id} className="at-template-card">
                 <div className={`at-card-art at-grade-${tpl.grade.toLowerCase()}`}>
                   <span className="at-card-badge">{tpl.aspectRatio} · {tpl.grade}</span>
+                  {tpl.talkingPhoto?.enabled && <span style={{ position: 'absolute', top: 10, right: 10, fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 800, letterSpacing: '.5px', color: '#111', background: 'var(--accent)', borderRadius: 999, padding: '4px 8px', lineHeight: 1 }}>◈ TALKING PHOTO</span>}
                     <button type="button" aria-label={`Edit ${tpl.name}`} className="at-card-play" onClick={() => { setEditingTemplate(tpl); setWizardStep(0) }}>
                     ▶
                   </button>
@@ -824,6 +881,12 @@ export function Profiles(): JSX.Element {
                         <>
                           <span>•</span>
                           <span style={{ color: 'var(--accent)', fontWeight: 600 }}>{(tpl.imageDurationSec ?? 5) % 1 === 0 ? `${tpl.imageDurationSec ?? 5}s` : `${(tpl.imageDurationSec ?? 5).toFixed(1)}s`}/img</span>
+                        </>
+                      )}
+                      {tpl.talkingPhoto?.enabled && (
+                        <>
+                          <span>•</span>
+                          <span style={{ color: 'var(--accent)', fontWeight: 700, fontFamily: 'var(--font-mono)', fontSize: 10.5 }}>{tpFeature(tpl.talkingPhoto.featureId)?.label ?? tpl.talkingPhoto.featureId} · {tpl.talkingPhoto.aspectRatio} · {tpl.talkingPhoto.partSeconds}s</span>
                         </>
                       )}
                     </div>
@@ -1168,6 +1231,108 @@ export function Profiles(): JSX.Element {
                         </div>
                       </div>
                     </div>
+                  </div>
+
+                  {/* ── TalkingPhoto Casting (wiring-only, impeccable operate) ──
+                      Reuses the existing TalkingPhotos catalog + characters verbatim — no new IPC,
+                      no new math. The length stays dynamic: only the chunk size lives in the
+                      preset, the source audio decides the stitch count at run time via planSplit. */}
+                  <div className="at-editor-section" style={{ border: '1px solid var(--border)', borderRadius: 14, background: editingTemplate.talkingPhoto?.enabled ? 'linear-gradient(180deg, rgba(245,179,35,.07), transparent 68%), var(--bg-inset)' : 'var(--bg-inset)', overflow: 'hidden' }}>
+                    <button type="button" className={`at-toggle-row ${editingTemplate.talkingPhoto?.enabled ? 'on' : ''}`} aria-pressed={!!editingTemplate.talkingPhoto?.enabled} onClick={() => setEditingTemplate({ ...editingTemplate, talkingPhoto: editingTemplate.talkingPhoto?.enabled ? { ...editingTemplate.talkingPhoto, enabled: false } : { enabled: true, featureId: editingTemplate.talkingPhoto?.featureId || tpCatalog?.features[0]?.id || '', characterId: editingTemplate.talkingPhoto?.characterId || '', aspectRatio: (editingTemplate.talkingPhoto?.aspectRatio as TpAspectRatio) || '9:16', partSeconds: editingTemplate.talkingPhoto?.partSeconds ?? 60 } })}
+                      style={{ margin: 0, border: 'none', borderRadius: 0, background: 'transparent', padding: '14px 16px', width: '100%' }}>
+                      <div style={{ textAlign: 'left' }}>
+                        <b style={{ display: 'flex', alignItems: 'center', gap: 8, fontSize: 13, color: 'var(--text-bright)' }}>
+                          <span style={{ width: 22, height: 22, borderRadius: 6, display: 'grid', placeItems: 'center', background: editingTemplate.talkingPhoto?.enabled ? 'var(--accent)' : 'var(--bg-card)', border: `1px solid ${editingTemplate.talkingPhoto?.enabled ? 'var(--accent)' : 'var(--border-3)'}`, color: editingTemplate.talkingPhoto?.enabled ? 'var(--accent-ink)' : 'var(--text-faint)', fontSize: 11 }}>◆</span>
+                          TalkingPhoto Presenter
+                          {editingTemplate.talkingPhoto?.enabled && selectedTpFeature && <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, fontWeight: 700, letterSpacing: '.3px', color: 'var(--accent)', background: 'var(--accent-soft)', border: '1px solid var(--accent)', borderRadius: 999, padding: '2px 7px' }}>{selectedTpFeature.label}</span>}
+                        </b>
+                        <small style={{ color: 'var(--text-dim)', fontSize: 11, lineHeight: 1.4, display: 'block', marginTop: 3 }}>
+                          {editingTemplate.talkingPhoto?.enabled ? 'This preset will render with a talking presenter. Total length stays dynamic — source audio decides.' : 'Add a presenter to this preset — character, style, aspect and chunk length from the existing TalkingPhotos library.'}
+                        </small>
+                      </div>
+                      <div className="at-switch" />
+                    </button>
+
+                    {editingTemplate.talkingPhoto?.enabled && (
+                      <div style={{ padding: '0 16px 16px', display: 'flex', flexDirection: 'column', gap: 16, borderTop: '1px solid var(--border-2)', marginTop: 0 }}>
+                        {/* Row 1: Feature + Character */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12, marginTop: 14 }}>
+                          <div>
+                            <label htmlFor="tp-feature" style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-soft)', marginBottom: 6, letterSpacing: '.02em' }}>Render style</label>
+                            <select id="tp-feature" value={editingTemplate.talkingPhoto.featureId} onChange={(e) => {
+                              const fid = e.currentTarget.value
+                              const f = tpFeature(fid)
+                              setEditingTemplate({ ...editingTemplate, talkingPhoto: { enabled: true, featureId: fid, characterId: editingTemplate.talkingPhoto!.characterId, aspectRatio: (f?.aspectRatios[0] as TpAspectRatio) || '9:16', partSeconds: Math.min(editingTemplate.talkingPhoto!.partSeconds, f?.maxPartSeconds ?? 300), motionId: editingTemplate.talkingPhoto!.motionId } })
+                            }} style={{ width: '100%', background: 'var(--bg-card)', border: '1px solid var(--border-3)', borderRadius: 9, color: 'var(--text-bright)', padding: '9px 10px', fontSize: 12.5 }}>
+                              <option value="">Choose a style</option>
+                              {tpCatalog?.features.map((f) => <option key={f.id} value={f.id}>{f.label} — {f.maxPartSeconds}s · {f.aspectRatios.join('/')}</option>)}
+                            </select>
+                            {selectedTpFeature?.note && <span style={{ display: 'block', fontSize: 10.5, color: 'var(--text-faint)', marginTop: 6, lineHeight: 1.4 }}>{selectedTpFeature.note}</span>}
+                          </div>
+                          <div>
+                            <label htmlFor="tp-character" style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-soft)', marginBottom: 6, letterSpacing: '.02em' }}>Presenter</label>
+                            <select id="tp-character" value={editingTemplate.talkingPhoto.characterId} onChange={(e) => setEditingTemplate({ ...editingTemplate, talkingPhoto: { ...editingTemplate.talkingPhoto!, characterId: e.currentTarget.value } })} style={{ width: '100%', background: 'var(--bg-card)', border: '1px solid var(--border-3)', borderRadius: 9, color: 'var(--text-bright)', padding: '9px 10px', fontSize: 12.5 }}>
+                              <option value="">Choose a presenter</option>
+                              {tpCharacters.map((c) => <option key={c.id} value={c.id}>{c.label} · {c.kind} · {c.aspectRatio}</option>)}
+                            </select>
+                            {tpCharacters.length === 0 ? <span style={{ display: 'block', fontSize: 10.5, color: 'var(--warn)', marginTop: 6 }}>No presenters — create one on the TalkingPhotos screen first.</span>
+                              : selectedCharacter ? <span style={{ display: 'block', fontSize: 10.5, color: 'var(--text-faint)', marginTop: 6 }}>{selectedCharacter.gender} · {selectedCharacter.characterStyle} · {selectedCharacter.aspectRatio}</span> : null}
+                          </div>
+                        </div>
+
+                        {/* Row 2: Aspect + Length */}
+                        <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 12 }}>
+                          <div>
+                            <span style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-soft)', marginBottom: 6, letterSpacing: '.02em' }}>Aspect</span>
+                            <div className="at-chip-row">
+                              {(selectedTpFeature?.aspectRatios ?? (['9:16', '16:9'] as const)).map((a) => (
+                                <button key={a} type="button" className={`at-chip ${editingTemplate.talkingPhoto!.aspectRatio === a ? 'active' : ''}`} aria-pressed={editingTemplate.talkingPhoto!.aspectRatio === a} onClick={() => setEditingTemplate({ ...editingTemplate, talkingPhoto: { ...editingTemplate.talkingPhoto!, aspectRatio: a as TpAspectRatio } })}>{a}</button>
+                              ))}
+                            </div>
+                            <span style={{ display: 'block', fontSize: 10, color: 'var(--text-faint)', marginTop: 7 }}>Preset's frame — source audio decides duration.</span>
+                          </div>
+                          <div>
+                            <span style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-soft)', marginBottom: 6, letterSpacing: '.02em' }}>Chunk length</span>
+                            <div style={{ display: 'flex', alignItems: 'center', gap: 8 }}>
+                              <input type="range" min={15} max={tpMax} step={5} value={Math.min(editingTemplate.talkingPhoto.partSeconds, tpMax)} aria-label="Chunk length in seconds" onChange={(e) => setEditingTemplate({ ...editingTemplate, talkingPhoto: { ...editingTemplate.talkingPhoto!, partSeconds: Number(e.currentTarget.value) } })} style={{ flex: 1, accentColor: 'var(--accent)' }} />
+                              <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-bright)', background: 'var(--bg-card)', border: '1px solid var(--border-2)', borderRadius: 8, padding: '5px 8px', minWidth: 52, textAlign: 'center' }}>{Math.min(editingTemplate.talkingPhoto.partSeconds, tpMax)}s</span>
+                            </div>
+                            <span style={{ display: 'block', fontSize: 10, color: 'var(--text-faint)', marginTop: 7 }}>Max {tpMax}s for this style. Total length is dynamic — ~{tpSamplePlan ? `${tpSamplePlan.totalParts} renders for 10 min audio` : 'stitches to fit the source'}.</span>
+                          </div>
+                        </div>
+
+                        {/* Character preview — impeccable operate: show, don't describe */}
+                        {selectedCharacter && (
+                          <div style={{ display: 'flex', alignItems: 'center', gap: 10, padding: '10px 12px', borderRadius: 10, background: 'var(--bg-card)', border: '1px solid var(--border-2)' }}>
+                            <img src={selectedCharacter.previewPath ? mediaSrc(selectedCharacter.previewPath) : selectedCharacter.previewUrl} alt="" style={{ width: 36, height: 36, borderRadius: 8, objectFit: 'cover', background: 'var(--bg-inset)', flex: 'none' }} onError={(e) => ((e.currentTarget.style.display = 'none'))} />
+                            <div style={{ minWidth: 0, flex: 1 }}>
+                              <div style={{ fontSize: 12.5, fontWeight: 600, color: 'var(--text-bright)', whiteSpace: 'nowrap', overflow: 'hidden', textOverflow: 'ellipsis' }}>{selectedCharacter.label}</div>
+                              <div style={{ fontSize: 10.5, color: 'var(--text-dim)' }}>{selectedCharacter.kind} · {selectedCharacter.gender} · {selectedCharacter.characterStyle} · {selectedCharacter.aspectRatio}</div>
+                            </div>
+                            <span style={{ fontFamily: 'var(--font-mono)', fontSize: 9, fontWeight: 700, letterSpacing: '.4px', color: 'var(--accent)', background: 'var(--accent-soft)', border: '1px solid var(--accent)', borderRadius: 999, padding: '4px 8px', whiteSpace: 'nowrap' }}>ATTACHED</span>
+                          </div>
+                        )}
+
+                        {/* Motion — only when the style demands it */}
+                        {selectedTpFeature?.requiresMotion && selectedCharacter && (
+                          <div>
+                            <label htmlFor="tp-motion" style={{ display: 'block', fontSize: 11, fontWeight: 600, color: 'var(--text-soft)', marginBottom: 6, letterSpacing: '.02em' }}>Body motion — required for {selectedTpFeature.label}</label>
+                            <select id="tp-motion" value={String(editingTemplate.talkingPhoto.motionId ?? 0)} onChange={(e) => setEditingTemplate({ ...editingTemplate, talkingPhoto: { ...editingTemplate.talkingPhoto!, motionId: Number(e.currentTarget.value) } })} style={{ width: '100%', background: 'var(--bg-card)', border: '1px solid var(--border-3)', borderRadius: 9, color: 'var(--text-bright)', padding: '9px 10px', fontSize: 12.5 }}>
+                              <option value="0">Choose a motion</option>
+                              <option value={String(TP_AUTO_MOTION_ID)}>Automatic Talking Video Mode</option>
+                              {tpMotions.map((m) => <option key={m.id} value={String(m.id)}>{m.title}</option>)}
+                            </select>
+                            {tpMotions.length === 0 && <span style={{ display: 'block', fontSize: 10.5, color: 'var(--text-faint)', marginTop: 6 }}>Loading motions for {selectedCharacter.gender} · {editingTemplate.talkingPhoto.aspectRatio}…</span>}
+                          </div>
+                        )}
+
+                        {/* Cost shape hint — pure planSplit, no network */}
+                        <div style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '8px 10px', borderRadius: 9, background: 'rgba(245,179,35,.06)', border: '1px solid rgba(245,179,35,.18)', fontSize: 10.5, color: 'var(--text-dim)', lineHeight: 1.5 }}>
+                          <span style={{ width: 6, height: 6, borderRadius: '50%', background: 'var(--accent)', flex: 'none' }} />
+                          <span>Cost shape (10 min sample): {tpSamplePlan ? `${tpSamplePlan.totalParts} renders → ${tpSamplePlan.totalOutputs} ${tpSamplePlan.totalOutputs === 1 ? 'video' : 'videos'}` : 'pick a style to estimate'} · Stitch limit {Math.round(TP_MERGE_CAP_SECONDS / 60)} min — longer sources become multiple videos automatically.</span>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Color Grade Swatches */}
