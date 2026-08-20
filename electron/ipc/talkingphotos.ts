@@ -209,32 +209,15 @@ export function registerTalkingPhotosIpc(): void {
   // ---- characters ----
   ipcMain.handle('talkingphotos:characters', (): TpCharacter[] => listCharacters())
 
-function validateCharacterFields(input: Record<string, unknown>): void {
-    const gender = input['gender']
-    if (gender !== undefined && gender !== 'male' && gender !== 'female') throw new Error('Invalid gender')
-    const age = input['age']
-    if (age !== undefined && age !== 'adult' && age !== 'child') throw new Error('Invalid age')
-    const ethnicity = input['ethnicity']
-    if (ethnicity !== undefined && ethnicity !== '' && ethnicity !== 'white' && ethnicity !== 'black' && ethnicity !== 'asian') throw new Error('Invalid ethnicity')
-    const beard = input['beard']
-    if (beard !== undefined && beard !== 'shaven' && beard !== 'beard') throw new Error('Invalid beard')
-    const characterStyle = input['characterStyle']
-    if (characterStyle !== undefined && !['realistic', '3d', '2d', 'animal', 'fantasy'].includes(characterStyle as string)) throw new Error('Invalid characterStyle')
-    const aspectRatio = input['aspectRatio']
-    if (aspectRatio !== undefined && aspectRatio !== '9:16' && aspectRatio !== '16:9') throw new Error('Invalid aspectRatio')
-  }
-
   ipcMain.handle('talkingphotos:characterGenerate', (_e, input: GenerateCharacterInput): Promise<TpCharacter> => {
     reqId(input?.featureId, 'featureId')
     reqId(input?.prompt, 'prompt')
-    validateCharacterFields(input as unknown as Record<string, unknown>)
     return generateCharacter(input)
   })
 
   /** Opens the OS picker in the main process so the renderer never needs a raw filesystem path. */
   ipcMain.handle('talkingphotos:characterUpload', async (_e, input: Omit<UploadCharacterInput, 'filePath'>): Promise<TpCharacter | null> => {
     reqId(input?.featureId, 'featureId')
-    validateCharacterFields(input as unknown as Record<string, unknown>)
     const win = BrowserWindow.getFocusedWindow() ?? BrowserWindow.getAllWindows()[0]
     const picked = await dialog.showOpenDialog(win, {
       title: 'Choose a character photo',

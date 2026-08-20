@@ -147,13 +147,19 @@ export interface TpCharacterRequest {
 
 /** Kicks off an async character render. Returns the uuid to poll. */
 export async function createCharacter(req: TpCharacterRequest): Promise<string> {
-  const body = assertSuccess(
-    await tpRequest<{ success?: boolean; uuid?: string; message?: string }>('/ai_api/create_image_from_prompt', {
-      method: 'POST',
-      json: { ...req, imageDrivingMediaId: 0 }
-    }),
-    'generate that character'
-  )
+  const raw = await tpRequest<{ success?: boolean; uuid?: string; message?: string }>('/ai_api/create_image_from_prompt', {
+    method: 'POST',
+    json: { ...req, imageDrivingMediaId: 0 }
+  })
+  // Session-3 §5: vendor returns HTTP 200 with {success:false,uuid:""} for dancing 16:9 — assertSuccess alone uses a generic message,
+  // so intercept here for an actionable hint.
+  if (raw?.success === false) {
+    if (req.type === 'dancing' && req.aspectRatio === '16:9') {
+      throw new TpError('VENDOR_REJECTED', 'Dancing characters can only be generated at 9:16 at the vendor. For a 16:9 dancing job, generate the character as Human instead (vendor limitation, session-3 §5).')
+    }
+    throw new TpError('VENDOR_REJECTED', raw.message?.trim() || 'TalkingPhotos could not generate that character, and gave no reason.')
+  }
+  const body = assertSuccess(raw, 'generate that character')
   if (!body?.uuid) throw new TpError('VENDOR_REJECTED', 'TalkingPhotos started no character job.')
   return body.uuid
 }

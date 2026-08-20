@@ -524,6 +524,9 @@ export function validateRenderInput(input: TpRenderPayloadInput): string[] {
   if (f.type === 'animal' && input.characterStyle === 'fantasy' && f.style !== 'high_quality') {
     errors.push('The fantasy character style is only available on Fantasy / Animal — HQ.')
   }
+  // Session-3 §5: dancing 16:9 is a silent vendor failure (200 with success:false)
+  // The workaround is to generate the character as Human at 16:9 and reuse it for dancing.
+  // We allow submission but warn here so the user understands the failure is vendor-side.
   return errors
 }
 

@@ -96,6 +96,29 @@ function PublishCard({ item }: { item: PublishItem }): JSX.Element {
   const loadPublishItems = useData((s) => s.loadPublishItems)
   const thumbSrc = mediaSrc(item.thumbPath ?? undefined)
   const isUploaded = item.uploadStatus === 'uploaded'
+  const [copied, setCopied] = useState(false)
+  const copyTitle = useCallback(async () => {
+    const text = item.title ?? ''
+    if (!text) return
+    try {
+      if (navigator.clipboard?.writeText) await navigator.clipboard.writeText(text)
+      else {
+        const ta = document.createElement('textarea')
+        ta.value = text
+        ta.setAttribute('readonly', '')
+        ta.style.position = 'fixed'
+        ta.style.opacity = '0'
+        document.body.appendChild(ta)
+        ta.select()
+        document.execCommand('copy')
+        document.body.removeChild(ta)
+      }
+      setCopied(true)
+      setTimeout(() => setCopied(false), 1400)
+    } catch {
+      // clipboard failed — title attr already shows full text, no extra UI
+    }
+  }, [item.title])
   // Dragging a file out writes nothing, and the only automatic path to "Uploaded" is a
   // re-scrape plus a fuzzy title match. Without this the screen can never converge: the card
   // looks identical before and after the hand-off, so the user has no way to say "yes, I did".
@@ -125,11 +148,21 @@ function PublishCard({ item }: { item: PublishItem }): JSX.Element {
         <span style={{ position: 'absolute', right: 6, bottom: 6, fontFamily: 'var(--font-mono)', fontSize: 10, color: '#fff', background: 'rgba(0,0,0,.6)', borderRadius: 5, padding: '1px 5px' }}>{fmtDuration(item.durationSec)}</span>
       </div>
       <div style={{ flex: 1, minWidth: 0, padding: '13px 16px', display: 'flex', flexDirection: 'column', gap: 8 }}>
-        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 10 }}>
+        <div style={{ display: 'flex', alignItems: 'flex-start', gap: 8, minWidth: 0 }}>
           <div style={{ flex: 1, minWidth: 0 }}>
             <div title={item.title} className="me-ellipsis" style={{ fontWeight: 600, fontSize: 13.5, color: 'var(--text-bright)' }}>{item.title}</div>
             <div style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-dim)', fontFamily: 'var(--font-mono)' }}>{item.channel} · rendered {fmtDate(item.renderedAt)}</div>
           </div>
+          <button
+            type="button"
+            onClick={() => void copyTitle()}
+            aria-label={copied ? 'Copied' : `Copy title "${item.title}"`}
+            title={copied ? 'Copied' : 'Copy title exactly as YouTube'}
+            className="me-btn ed-focus"
+            style={{ border: '1px solid var(--border-3)', background: copied ? 'var(--accent-soft)' : 'var(--bg-control)', color: copied ? 'var(--accent)' : 'var(--text-bright)', borderRadius: 'var(--radius-sm)', padding: '5px 10px', fontSize: 'var(--fs-caption)', cursor: 'pointer', flex: 'none' }}
+          >
+            {copied ? 'Copied' : 'Copy title'}
+          </button>
           <StatusPill tone={STATUS_TONE[item.uploadStatus]} title={statusHint(item)}>{STATUS_LABEL[item.uploadStatus]}</StatusPill>
         </div>
         {item.matchedChannels && (

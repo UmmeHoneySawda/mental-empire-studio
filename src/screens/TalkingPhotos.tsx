@@ -26,6 +26,7 @@ import { mediaSrc } from '../lib/media'
 import {
   TP_MERGE_CAP_SECONDS,
   TP_PHASE_LABEL,
+  TP_AUTO_MOTION_ID,
   planSplit,
   tpDuration,
   tpFeature,
@@ -455,6 +456,7 @@ export function TalkingPhotos(): JSX.Element {
   const [confirmStart, setConfirmStart] = useState(false)
 
   const [prompt, setPrompt] = useState('')
+  const [negativePrompt, setNegativePrompt] = useState('')
   const [charLabel, setCharLabel] = useState('')
   const [charGender, setCharGender] = useState<TpCharacterGender>('female')
   const [charEthnicity, setCharEthnicity] = useState<TpCharacterEthnicity>('')
@@ -568,11 +570,8 @@ export function TalkingPhotos(): JSX.Element {
     if (!feature) return
     if (!feature.aspectRatios.includes(aspectRatio)) setAspectRatio(feature.aspectRatios[0])
     setPartSeconds((s) => Math.min(s, feature.maxPartSeconds))
-  }, [feature, aspectRatio])
-
-  useEffect(() => {
-    if (feature) setCharStyle(feature.characterStyles[0])
-  }, [feature?.id])
+    if (!feature.characterStyles.includes(charStyle)) setCharStyle(feature.characterStyles[0])
+  }, [feature, aspectRatio, charStyle])
 
   const localPlan = useMemo(
     () => (audioDurationSec > 0 && partSeconds > 0 ? planSplit({ sourceDurationSec: audioDurationSec, partSeconds }) : null),
@@ -1027,44 +1026,62 @@ export function TalkingPhotos(): JSX.Element {
                   onChange={(e) => setPrompt(e.currentTarget.value)}
                   style={{ ...inputStyle, resize: 'vertical', minHeight: 62 }}
                 />
-                <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr', gap: 'var(--space-2)' }}>
-                  <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 'var(--fs-sm)', color: 'var(--text-dim)' }}>
-                    Gender
-                    <select aria-label="Gender" value={charGender} onChange={e=>setCharGender(e.target.value as TpCharacterGender)} style={inputStyle}>
+                <textarea
+                  value={negativePrompt}
+                  placeholder="Negative prompt (optional): blurry, cartoon, low quality"
+                  aria-label="Negative prompt"
+                  rows={2}
+                  onChange={(e) => setNegativePrompt(e.currentTarget.value)}
+                  style={{ ...inputStyle, resize: 'vertical', minHeight: 44 }}
+                />
+                <div className="tp-char-form-grid">
+                  <label>Gender
+                    <select value={charGender} aria-label="Gender" onChange={(e) => setCharGender(e.currentTarget.value as TpCharacterGender)}>
                       <option value="female">Female</option>
                       <option value="male">Male</option>
                     </select>
                   </label>
-                  <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 'var(--fs-sm)', color: 'var(--text-dim)' }}>
-                    Age
-                    <select aria-label="Age" value={charAge} onChange={e=>setCharAge(e.target.value as TpCharacterAge)} style={inputStyle}>
+                  <label>Age
+                    <select value={charAge} aria-label="Age" onChange={(e) => setCharAge(e.currentTarget.value as TpCharacterAge)}>
                       <option value="adult">Adult</option>
                       <option value="child">Child</option>
                     </select>
                   </label>
-                  <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 'var(--fs-sm)', color: 'var(--text-dim)' }}>
-                    Ethnicity
-                    <select aria-label="Ethnicity" value={charEthnicity} onChange={e=>setCharEthnicity(e.target.value as TpCharacterEthnicity)} style={inputStyle}>
-                      <option value="">Any</option>
+                  <label>Ethnicity
+                    <select value={charEthnicity} aria-label="Ethnicity" onChange={(e) => setCharEthnicity(e.currentTarget.value as TpCharacterEthnicity)}>
+                      <option value="">Default</option>
                       <option value="white">White</option>
                       <option value="black">Black</option>
                       <option value="asian">Asian</option>
                     </select>
                   </label>
-                  <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 'var(--fs-sm)', color: 'var(--text-dim)' }}>
-                    Beard (male)
-                    <select aria-label="Beard" value={charBeard} onChange={e=>setCharBeard(e.target.value as TpCharacterBeard)} style={inputStyle}>
+                  <label>Beard
+                    <select value={charBeard} aria-label="Beard" onChange={(e) => setCharBeard(e.currentTarget.value as TpCharacterBeard)}>
                       <option value="shaven">Shaven</option>
                       <option value="beard">Beard</option>
                     </select>
                   </label>
-                  <label style={{ display: 'flex', flexDirection: 'column', gap: 4, fontSize: 'var(--fs-sm)', color: 'var(--text-dim)', gridColumn: '1 / -1' }}>
-                    Style
-                    <select aria-label="Style" value={charStyle} onChange={e=>setCharStyle(e.target.value as TpCharacterStyle)} style={inputStyle}>
-                      {(feature?.characterStyles ?? ['realistic']).map(s=> <option key={s} value={s}>{s}</option>)}
+                  <label>Style
+                    <select value={charStyle} aria-label="Character style" onChange={(e) => setCharStyle(e.currentTarget.value as TpCharacterStyle)}>
+                      {(feature?.characterStyles ?? ['realistic', '3d', '2d', 'animal', 'fantasy']).map((s) => (
+                        <option key={s} value={s}>{s}</option>
+                      ))}
                     </select>
                   </label>
+                  <label>Aspect
+                    <span style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-dim)', padding: '7px 0' }}>{aspectRatio} (from step 02)</span>
+                  </label>
                 </div>
+                {selectedCharacter?.kind === 'uploaded' && (
+                  <div className="tp-attached" role="status" aria-live="polite">
+                    <img className="tp-attached-thumb" src={selectedCharacter.previewPath ? mediaSrc(selectedCharacter.previewPath) : selectedCharacter.previewUrl} alt="" />
+                    <div style={{ minWidth: 0 }}>
+                      <div style={{ fontWeight: 600, fontSize: 'var(--fs-sm)', color: 'var(--text-bright)', overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>Attached — {selectedCharacter.label}</div>
+                      <div style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-dim)' }}>Uploaded · {selectedCharacter.gender} · {selectedCharacter.aspectRatio} · {selectedCharacter.characterStyle} · mediaId {selectedCharacter.mediaId || '—'}</div>
+                    </div>
+                    <span className="tp-attached-check" aria-hidden>✓</span>
+                  </div>
+                )}
                 {characterProgress && characterProgress.phase !== 'done' && characterProgress.phase !== 'error' && (
                   <span style={{ fontSize: 'var(--fs-caption)', color: 'var(--accent)' }}>{characterProgress.message}</span>
                 )}
@@ -1077,7 +1094,7 @@ export function TalkingPhotos(): JSX.Element {
                       void tp.generateCharacter({
                         label: charLabel,
                         prompt,
-                        negativePrompt: '',
+                        negativePrompt,
                         aspectRatio,
                         featureId: feature.id,
                         characterStyle: charStyle,
@@ -1116,13 +1133,13 @@ export function TalkingPhotos(): JSX.Element {
               <Step
                 index={5}
                 title="Body motion"
-                value={motionId ? (motions.find((m) => m.id === motionId)?.title ?? `Motion ${motionId}`) : 'Required for this style'}
+                value={motionId ? (motionId === TP_AUTO_MOTION_ID ? 'Automatic Talking Video Mode' : (motions.find((m) => m.id === motionId)?.title ?? `Motion ${motionId}`)) : 'Required for this style'}
                 open={step === 5}
                 current={step === 5}
                 onToggle={() => setStep(step === 5 ? 0 : 5)}
               >
                 {!selectedCharacter ? (
-                  <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-dim)' }}>Choose a presenter first — the motion list depends on it.</span>
+                  <span style={{ fontSize: 'var(--fs-sm)', color: 'var(--text-dim)' }}>Choose a presenter first — the motion list depends on presenter gender and aspect.</span>
                 ) : motions.length === 0 ? (
                   <div className="tp-motions">
                     {Array.from({ length: 8 }).map((_, i) => (
@@ -1131,21 +1148,35 @@ export function TalkingPhotos(): JSX.Element {
                   </div>
                 ) : (
                   <div className="tp-motions">
+                    {(feature?.autoMotionId === TP_AUTO_MOTION_ID || feature?.type === 'human' || feature?.type === 'cartoon') && (
+                      <button
+                        key="auto-500"
+                        type="button"
+                        className="tp-motion is-auto"
+                        aria-pressed={motionId === TP_AUTO_MOTION_ID}
+                        title="Automatic Talking Video Mode — vendor picks a fitting motion"
+                        onClick={() => setMotionId(TP_AUTO_MOTION_ID)}
+                      >
+                        <span className="tp-motion-thumb is-auto">Auto</span>
+                        <span className="tp-motion-label">Automatic Talking Video Mode</span>
+                      </button>
+                    )}
                     {motions.map((m) => (
                       <button
                         key={m.id}
                         type="button"
                         className="tp-motion"
                         aria-pressed={motionId === m.id}
-                        title={m.title}
+                        title={`${m.title} · ${selectedCharacter.gender} · ${aspectRatio} · ${feature?.style}`}
                         onClick={() => setMotionId(m.id)}
                       >
-                        {m.thumbUrl ? <img src={m.thumbUrl} alt="" loading="lazy" /> : <span />}
+                        {m.thumbUrl ? <img src={m.thumbUrl} alt="" loading="lazy" onError={(e) => ((e.currentTarget as HTMLImageElement).style.display = 'none')} /> : <span className="tp-motion-thumb is-fallback">{m.title.slice(0, 2)}</span>}
                         <span className="tp-motion-label">{m.title}</span>
                       </button>
                     ))}
                   </div>
                 )}
+                <span style={{ fontSize: 'var(--fs-caption)', color: 'var(--text-faint)' }}>Showing {motions.length} motions for {selectedCharacter?.gender ?? '—'} · {aspectRatio} · {feature?.style}. Catalog filtered by style.</span>
               </Step>
             )}
           </div>
@@ -1283,8 +1314,12 @@ const inputStyle: React.CSSProperties = {
 }
 
 function CharacterTile({ character, selected, checked, selectOn, hovered, onHover, onLeave, onSelect, onCheck, onDeleteOne, onInspect }: { character: TpCharacter; selected: boolean; checked?: boolean; selectOn?: boolean; hovered?: boolean; onHover?: () => void; onLeave?: () => void; onSelect: () => void; onCheck?: () => void; onDeleteOne?: () => void; onInspect?: (el: HTMLElement) => void }): JSX.Element {
-  const [broken, setBroken] = useState(false)
-  const src = character.previewPath ? mediaSrc(character.previewPath) : character.previewUrl
+  const [brokenPath, setBrokenPath] = useState(false)
+  const [brokenUrl, setBrokenUrl] = useState(false)
+  const pathSrc = character.previewPath ? mediaSrc(character.previewPath) : ''
+  const urlSrc = character.previewUrl || ''
+  const src = !brokenPath && pathSrc ? pathSrc : !brokenUrl && urlSrc ? urlSrc : ''
+  const broken = !src
   return (
     <div
       role="gridcell"
@@ -1323,11 +1358,19 @@ function CharacterTile({ character, selected, checked, selectOn, hovered, onHove
       )}
       <div style={{ width: '100%', height: '100%' }} onClick={e => { if (!selectOn) { e.stopPropagation(); onSelect(); onInspect?.((e.currentTarget.parentElement as HTMLElement) ?? (e.currentTarget as HTMLElement)) } }}>
         {src && !broken ? (
-          <img src={src} alt="" loading="lazy" onError={() => setBroken(true)} />
+          <img
+            src={src}
+            alt=""
+            loading="lazy"
+            onError={() => {
+              if (src === pathSrc) setBrokenPath(true)
+              else setBrokenUrl(true)
+            }}
+          />
         ) : (
           <span className="tp-char-empty">preview unavailable</span>
         )}
-        <span className="tp-char-label">{character.label}</span>
+        <span className="tp-char-label" title={character.label}>{character.label}</span>
       </div>
       {hovered && !selectOn && <div className="tp-charpop" role="img" aria-label={character.label}>
         {src ? <img src={src} alt="" /> : <div style={{height:88, display:'grid', placeItems:'center', background:'var(--bg-inset)'}}>no image</div>}<div className="tp-charpop-body"><b>{character.label}</b><span>{character.kind} · {character.characterStyle} · {character.gender} · {character.aspectRatio}</span></div>

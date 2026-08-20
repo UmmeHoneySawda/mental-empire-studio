@@ -168,6 +168,7 @@ export const useTalkingPhotos = create<TalkingPhotosState>((set, get) => ({
   loadMotions: async (featureId, gender, aspectRatio) => {
     const a = api()
     if (!a) return
+    set({ motions: [] })
     try {
       set({ motions: await a.motions(featureId, gender, aspectRatio) })
     } catch (e) {
