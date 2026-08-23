@@ -177,6 +177,8 @@ jobs:
           for m in 1 m3 m4 m5 m6 m7 automation e2e; do
             run "$m"
           done
+      - name: New Templates e2e
+        run: xvfb-run -a node scripts/e2e-new-templates.mjs
       - name: Upload smoke logs
         if: always()
         uses: actions/upload-artifact@v4

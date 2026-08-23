@@ -7,7 +7,9 @@ import { Banner, Btn, ConfirmDialog, EmptyState, SectionLabel } from '../compone
 import { resolveTransitionPreset, TRANSITION_PRESETS } from '@shared/video-engine/transition-presets'
 import { mediaSrc } from '../lib/media'
 import { errorMessage } from '../lib/errors'
+import { CAPTION_STYLE_IDS } from '@shared/video-engine/caption-style'
 import type { CaptionStyleId } from '@shared/video-engine/caption-style'
+import { isNewCaptionTemplateId } from '@shared/video-engine/new-templates'
 import type { VideoTemplate } from '@shared/video-engine/ipc'
 import type { AutomationJob, AutomationJobDetail, LibraryAsset, VisualTemplate } from '@shared/types'
 import { tpFeature, planSplit, TP_MERGE_CAP_SECONDS, TP_AUTO_MOTION_ID } from '@shared/talkingphotos'
@@ -53,9 +55,16 @@ function JobStatus({ status }: { status: AutomationJob['status'] }): JSX.Element
 }
 
 /** `remotion-caption-motivation-bold` → `motivation-bold`, the id a Visual System stores and
- *  the batch pipeline re-prefixes for whichever renderer runs it. */
+ *  the batch pipeline re-prefixes for whichever renderer runs it.
+ *
+ *  Validated rather than cast: the registry also serves caption templates whose stripped id is
+ *  NOT a `CaptionStyleId` (the Cinematic set renders through its own Remotion layer, and the
+ *  batch pipeline draws ASS captions from `CAPTION_STYLE_TO_PRESET`, a total record over this
+ *  union). An unchecked cast persisted a bogus id that silently fell back to the default preset
+ *  at render time, so an unknown id resolves to `highlight` here instead. */
 function captionStyleIdOf(templateId: string): CaptionStyleId {
-  return templateId.replace(/^(?:remotion|hyperframes)-caption-/, '') as CaptionStyleId
+  const stripped = templateId.replace(/^(?:remotion|hyperframes)-caption-/, '')
+  return (CAPTION_STYLE_IDS as readonly string[]).includes(stripped) ? (stripped as CaptionStyleId) : 'highlight'
 }
 
 /** One preset row — name over description — matching the Compose editor's `ve-listitem`. */
@@ -216,8 +225,16 @@ export function Profiles(): JSX.Element {
 
   /* The caption list is the renderer's registered templates, fetched once. The Remotion
    * renderer is the one Compose edits with, so a Visual System can only promise a caption
-   * style that engine actually ships. */
-  const captionTemplates = useMemo(() => engineTemplates.filter((template) => template.kind === 'caption'), [engineTemplates])
+   * style that engine actually ships.
+   *
+   * The Cinematic set is excluded the same way the Compose Inspector excludes it: those ids are
+   * not `CaptionStyleId`s, so a Visual System cannot store one, and the batch pipeline renders
+   * ASS captions from `CAPTION_STYLE_TO_PRESET` rather than the Remotion caption layer these
+   * templates live in. Offering them here promised a look this path cannot produce. */
+  const captionTemplates = useMemo(
+    () => engineTemplates.filter((template) => template.kind === 'caption' && !isNewCaptionTemplateId(template.id)),
+    [engineTemplates]
+  )
   const editingTemplateId = editingTemplate?.id
 
   useEffect(() => () => {

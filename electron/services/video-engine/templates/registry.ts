@@ -6,12 +6,17 @@ import {
   type TemplateManifest
 } from '../../../../shared/video-engine'
 import { BUILTIN_VIDEO_TEMPLATES } from './builtins'
+import { NEW_VIDEO_TEMPLATES } from './new-templates'
 
 export class VideoTemplateRegistry {
   private readonly registry: TemplateRegistry
 
   constructor(additional: readonly TemplateManifest[] = []) {
-    this.registry = new TemplateRegistry([...BUILTIN_VIDEO_TEMPLATES, ...additional])
+    this.registry = new TemplateRegistry([
+      ...BUILTIN_VIDEO_TEMPLATES,
+      ...NEW_VIDEO_TEMPLATES,
+      ...additional
+    ])
   }
 
   list(filter: TemplateFilter = {}): TemplateManifest[] {

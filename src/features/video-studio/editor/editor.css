@@ -855,3 +855,46 @@ textarea.ve-input { resize: vertical; min-height: 52px; }
   width: min(680px, calc(100% - 32px));
   transform: translateX(-50%);
 }
+
+/* --- New Templates accordion (Cinematic Hooks and Captions) --------------------------- */
+.ve-newtpl {
+  display: grid;
+  gap: 8px;
+  padding: 8px;
+  border: 1px solid rgb(var(--ve-border));
+  border-radius: var(--ve-radius);
+  background: rgb(var(--ve-card));
+}
+.ve-newtpl > summary {
+  cursor: pointer;
+  list-style: none;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: rgb(var(--ve-fg-dim));
+}
+.ve-newtpl > summary::-webkit-details-marker { display: none; }
+.ve-newtpl > summary::before {
+  content: '\25B8';
+  display: inline-block;
+  width: 12px;
+  color: rgb(var(--ve-accent));
+}
+.ve-newtpl[open] > summary { color: rgb(var(--ve-fg)); }
+.ve-newtpl[open] > summary::before { content: '\25BE'; }
+.ve-newtpl > summary:focus-visible {
+  outline: 2px solid rgb(var(--ve-accent) / 0.6);
+  outline-offset: 1px;
+  border-radius: 3px;
+}
+.ve-newtpl-body { display: grid; gap: 8px; }
+.ve-newtpl-swatch {
+  width: 100%;
+  height: 26px;
+  padding: 0;
+  border: 1px solid rgb(var(--ve-border));
+  border-radius: 4px;
+  background: transparent;
+  cursor: pointer;
+}

@@ -5,6 +5,7 @@ import {
   buildHookPlanPrompt,
   buildImportantWordsPrompt,
   captionGroupingOptionsForStyle,
+  captionGroupingOptionsForNewTemplate,
   createCaptionDocument,
   groupCaptionCues,
   importImportantWords,
@@ -15,6 +16,7 @@ import {
   type HookBeatPatch,
   resolveTemplateProps,
   resolveCaptionStyle,
+  resolveNewCaptionStyle,
   safeParseVideoProject,
   VideoGradingSchema,
   VideoProjectSchema,
@@ -561,10 +563,19 @@ export class VideoEngineService {
         candidate.kind === 'caption' &&
         candidate.template?.id === project.captions?.templateId,
     )
-    const style = resolveCaptionStyle(
-      scene?.template?.id ?? project.captions.templateId,
-      scene?.template?.props,
-    )
+    const templateId = scene?.template?.id ?? project.captions.templateId
+    /* The Cinematic set pages with its own per-template limits, and resolveCaptionStyle falls back
+     * to `highlight` for any id it does not know — so without this branch the cue list this returns
+     * (the caption editor's word timings) would be grouped differently from the cues the render
+     * actually draws. Mirrors the dispatch in video-engine/remotion/composition.tsx. */
+    const newStyle = resolveNewCaptionStyle(templateId, scene?.template?.props)
+    if (newStyle) {
+      return groupCaptionCues(project.captions, {
+        ...captionGroupingOptionsForNewTemplate(newStyle, project.canvas.fps),
+        ...options,
+      })
+    }
+    const style = resolveCaptionStyle(templateId, scene?.template?.props)
     return groupCaptionCues(project.captions, {
       ...captionGroupingOptionsForStyle(style, project.canvas.fps),
       ...options,

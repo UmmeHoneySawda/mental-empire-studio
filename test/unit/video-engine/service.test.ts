@@ -46,6 +46,7 @@ import type {
 } from '../../../electron/services/video-engine/render/types'
 import { RenderJobStore } from '../../../electron/services/video-engine/storage/job-store'
 import { VideoProjectStore } from '../../../electron/services/video-engine/storage/project-store'
+import { NEW_HOOK_TEMPLATE_IDS } from '../../../shared/video-engine'
 import { VideoTemplateRegistry } from '../../../electron/services/video-engine/templates/registry'
 
 const temporaryRoots: string[] = []
@@ -291,7 +292,10 @@ describe('built-in templates and hook compilation', () => {
         new Set(hyperframes.map((template) => template.id)),
       ),
     ).toBe(true)
-    expect(registry.list({ rendererId: 'remotion', kind: 'hook' })).toHaveLength(7)
+    // 7 built-in remotion hooks + the NEW_VIDEO_TEMPLATES the registry now also installs — additive assertion survives the next addition.
+    expect(registry.list({ rendererId: 'remotion', kind: 'hook' })).toHaveLength(
+      7 + NEW_HOOK_TEMPLATE_IDS.length,
+    )
     expect(registry.list({ rendererId: 'hyperframes', kind: 'caption' })).toHaveLength(10)
     expect(
       registry

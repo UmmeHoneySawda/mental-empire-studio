@@ -3,6 +3,7 @@ import { TransitionSeries } from '@remotion/transitions'
 import { AbsoluteFill, Sequence } from 'remotion'
 import type { VideoAsset, VideoProject, VideoScene } from '../../shared/video-engine'
 import { CaptionLayer } from './captions'
+import { NewCaptionLayer, usesNewCaptionTemplate } from './new-templates/captions'
 import {
   SceneContent,
   sceneLayerStyle,
@@ -74,6 +75,8 @@ export function createRemotionRenderPlan(project: VideoProject): RemotionRenderP
 
 export function RemotionVideo({ project }: RemotionCompositionProps) {
   const plan = useMemo(() => createRemotionRenderPlan(project), [project])
+  // Walks project.scenes, so memoise it rather than re-deciding on every painted frame.
+  const cinematicCaptions = useMemo(() => usesNewCaptionTemplate(project), [project])
 
   return (
     <AbsoluteFill
@@ -150,7 +153,12 @@ export function RemotionVideo({ project }: RemotionCompositionProps) {
         )
       })}
 
-      <CaptionLayer project={project} />
+      {/* Exactly one caption layer draws. The Cinematic set has its own typography, paging and film
+          texture, and resolveCaptionStyle would otherwise fall back to `highlight` and silently
+          render one of the existing styles instead. */}
+      {cinematicCaptions
+        ? <NewCaptionLayer project={project} />
+        : <CaptionLayer project={project} />}
     </AbsoluteFill>
   )
 }

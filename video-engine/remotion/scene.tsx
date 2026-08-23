@@ -6,6 +6,7 @@ import {
   useCurrentFrame,
   useVideoConfig,
 } from 'remotion'
+import { isNewHookTemplateId } from '../../shared/video-engine'
 import type {
   JsonValue,
   VideoAsset,
@@ -14,6 +15,7 @@ import type {
 } from '../../shared/video-engine'
 import { AudioAsset, sceneTransformStyle, VisualAsset } from './asset'
 import { hasValidHookPlan, HookTemplate } from './hook'
+import { NewHookScene } from './new-templates/hooks'
 import {
   resolveTextMotion,
   splitForTextMotion,
@@ -248,6 +250,10 @@ export function SceneContent({
   if (scene.kind === 'text') return <TextScene scene={scene} />
 
   if (scene.kind === 'template') {
+    // The Cinematic set has one component per template rather than one styled renderer, so it
+    // dispatches before the generic hook path. Its footage comes from the timeline underneath the
+    // hook lane, so it needs no asset from the plan.
+    if (isNewHookTemplateId(scene.template?.id)) return <NewHookScene scene={scene} />
     if (hasValidHookPlan(scene)) {
       return <HookTemplate project={project} scene={scene} assetById={assetById} />
     }

@@ -2,6 +2,8 @@ import { useEffect, useMemo, useRef, useState } from 'react'
 import {
   AUTO_BROLL_DENSITY_PER_MINUTE,
   REMOTION_CUSTOM_HOOK_TEMPLATE_ID,
+  isNewCaptionTemplateId,
+  isNewHookTemplateId,
   type AutoBrollDensity,
   type AutoBrollSkipReason,
   type VideoGrading,
@@ -21,6 +23,7 @@ import {
 import { addClip, clipsOnTrack, placementFrame, setGrading } from './operations'
 import { gradePreviewCaveat } from './gradePreview'
 import { defaultHookPlan } from './hookPlan'
+import { NewTemplatesAccordion } from './NewTemplatesAccordion'
 import { getSelectedClipIds, hookPlanFromProject, hookSceneId, selectedClip, useEditor } from './useEditor'
 import { timecode } from './constants'
 
@@ -613,7 +616,14 @@ function HookPanel(): JSX.Element {
   const [transcript, setTranscript] = useState('')
   const [customJson, setCustomJson] = useState(CUSTOM_HOOK_EXAMPLE)
 
-  const hooks = templates.filter((template) => template.kind === 'hook')
+  /* The Cinematic set is registered through VideoTemplateRegistry, so it arrives in `templates`
+   * alongside the built-ins — and this Section is not its home. Left unfiltered it added five cards
+   * here whose "Add this hook" path runs `defaultHookPlan`, whose `seedsFor` matches none of the new
+   * ids and falls through to the 5-beat KINETIC seed; those components read only the first beat, so
+   * the hook would draw the project name over a placeholder body. The accordion above owns them. */
+  const hooks = templates.filter(
+    (template) => template.kind === 'hook' && !isNewHookTemplateId(template.id)
+  )
   const premadeHooks = hooks.filter((template) => template.id !== REMOTION_CUSTOM_HOOK_TEMPLATE_ID)
   const customHookAvailable = hooks.some((template) => template.id === REMOTION_CUSTOM_HOOK_TEMPLATE_ID)
   const plan = hookPlanFromProject(project)
@@ -634,6 +644,7 @@ function HookPanel(): JSX.Element {
 
   return (
     <>
+      <NewTemplatesAccordion kind="hook" />
       <Section
         title="Hook template"
         blurb="A 1–30 second opener over the front of the video. Each preset has its own typography, layout, palette, background, and seek-safe motion."
@@ -872,7 +883,12 @@ function CaptionsPanel(): JSX.Element {
   const [ratio, setRatio] = useState(0.35)
 
   const words = project?.captions?.words ?? []
-  const captionTemplates = templates.filter((template) => template.kind === 'caption')
+  // Same reason as the Hook panel: the Cinematic caption styles are registered in the same registry
+  // this list reads, but they belong to the New Templates accordion, which is the only place that
+  // offers their accent, grain and paging controls. Unfiltered they turned 10 cards into 15.
+  const captionTemplates = templates.filter(
+    (template) => template.kind === 'caption' && !isNewCaptionTemplateId(template.id)
+  )
   const emphasised = words.filter((word) => (word.importance ?? 0) > 0)
 
   return (
@@ -894,6 +910,8 @@ function CaptionsPanel(): JSX.Element {
           Integrations → Transcription.
         </p>
       </Section>
+
+      <NewTemplatesAccordion kind="caption" />
 
       {captionTemplates.length > 0 && (
         <Section title="Caption style" blurb="How the words are drawn over the video.">

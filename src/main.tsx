@@ -13,6 +13,16 @@ import '@fontsource/jetbrains-mono/400.css'
 import '@fontsource/jetbrains-mono/500.css'
 import '@fontsource/jetbrains-mono/600.css'
 import '@fontsource/anton/400.css'
+// Cinzel / Oswald / Courier Prime carry the fixed type roles of the New Templates set —
+// statement, impact, apparatus. The live <Player> renders from the renderer's own CSS, so
+// they have to be here as well as in the Remotion bundle entry.
+import '@fontsource/cinzel/400.css'
+import '@fontsource/cinzel/700.css'
+import '@fontsource/oswald/300.css'
+import '@fontsource/oswald/400.css'
+import '@fontsource/oswald/600.css'
+import '@fontsource/oswald/700.css'
+import '@fontsource/courier-prime/400.css'
 import '@fontsource-variable/archivo'
 import './styles/caption-fonts.css'
 import './theme/tokens.css'
