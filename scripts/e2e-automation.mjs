@@ -132,19 +132,24 @@ try {
     await templatesTab.click()
     await page.waitForTimeout(600)
   }
-  const createBtn = page.getByRole('button', { name: /Create a visual system/i }).first()
+  const createBtn = page.getByRole('button', { name: /Create template/i }).first()
   if ((await createBtn.count()) > 0) {
     await createBtn.click()
     await page.waitForTimeout(700)
     check((await page.getByText(/Fine Grade Adjustments/i).count()) === 0, 'No fine-grade sliders (nothing rendered them)')
-    const nextStep = page.getByRole('button', { name: /Next: Hook & Motion/i }).first()
+    check((await page.getByText(/Caption style/i).count()) > 0, 'Caption style section is reachable')
+    check((await page.getByText(/Classic/i).count()) > 0, 'Classic caption group is shown')
+    check((await page.getByText(/Cinematic/i).count()) > 0, 'Cinematic caption group is shown')
+    const nextStep = page.getByRole('button', { name: /Next: Hook/i }).first()
     if ((await nextStep.count()) > 0) {
       await nextStep.click()
       await page.waitForTimeout(600)
     }
-    check((await page.getByText(/Hook Template/i).count()) === 0, 'No hook-template picker (never reached the renderer)')
+    check((await page.getByText(/Hook template/i).count()) > 0, 'Hook template picker is offered — it does render')
+    check((await page.getByText(/Automatic/i).count()) > 0, 'Automatic hook option is shown')
+    check((await page.getByText(/^Cinematic$/).count()) > 0, 'Cinematic hook group is shown')
     check((await page.getByText(/Hook Position/i).count()) === 0, 'No hook-position chips (never reached the renderer)')
-    check((await page.getByText(/Hook Text Line/i).count()) > 0, 'Hook text line is still offered — it does render')
+    check((await page.getByText(/Hook text line/i).count()) > 0, 'Hook text line is still offered — it does render')
     // The modal has no Escape handler; its backdrop would otherwise swallow later clicks.
     await page.getByRole('button', { name: 'Cancel' }).first().click()
     await page.locator('.at-modal-backdrop').waitFor({ state: 'detached', timeout: 5000 })

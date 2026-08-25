@@ -500,3 +500,29 @@ And two rules specific to this port:
   length and cannot be shortened by the composition-end clamp Remotion applies to
   `useVideoConfig().durationInFrames` inside a `Sequence` (the old doc said the latter was the
   whole composition length — that is false in Remotion 4.0.502; it is overridden from `SequenceContext`).
+
+## 13. Automation follow-up (2026-08-25) — this branch
+
+The set now also reaches the **Automations screen** (`src/screens/Profiles.tsx`). That commit intentionally
+left it out (see §2 row 2 and the `isNew*` filter at `Profiles.tsx:234`). The follow-up:
+
+- The pure builders move from `src/features/video-studio/editor/newTemplates.ts` into
+  `shared/video-engine/new-templates-draft.ts` so the Electron main process can build the same
+  single-beat plan an unattended batch needs (main cannot import from `src/`).
+- `VisualTemplate` gains five optional fields (`hookTemplateId`, `hookProps`, `hookSeconds`,
+  `captionTemplateId`, `captionProps`) persisted as JSON in the existing `visual_templates.data`
+  column — **no DB migration**, same precedent the `talkingPhoto` slab set. `AutomationStyleConfig`
+  mirrors them as **required** fields with `''`/`{}`/`0` sentinels so the `normalizeAutomationStyle`
+  whitelist cannot drop them.
+- `shared/automationRemotion.ts` gains `automationCaptionChoice` (pure) and a Cinematic branch in
+  `automationRemotionHookPlan`; `electron/services/automation-remotion.ts` supplies manifests from
+  the registry and calls `setCaptionTemplate` / `importHookPlan`. Headline precedence for a Cinematic
+  batch hook: stored headline prop → preset `hookText` → that video's transcript first 8 words → project name.
+  An empty headline therefore stays per-video, which is what `hookLine` already promised.
+- The preset editor groups captions into **Classic / Cinematic** and shows Cinematic colours + paging
+  only when a Cinematic caption is selected, and adds a **Hook template** picker
+  (Automatic / Classic / Cinematic) with per-template secondary fields and an honest description card
+  in place of the live canvas preview. The old CSS canvas is kept for Automatic/classic hooks.
+- `scripts/e2e-automation.mjs` selectors repaired (`Create template`, `Next: Hook`) and the
+  "no hook-template picker" assertion inverted. Existing presets render byte-identically (hook defaults
+  to Automatic, caption defaults to `captionTemplateId || remotion-caption-<captionStyle>`).
