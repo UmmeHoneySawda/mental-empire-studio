@@ -9,7 +9,9 @@ import { mediaSrc } from '../lib/media'
 import { errorMessage } from '../lib/errors'
 import { CAPTION_STYLE_IDS } from '@shared/video-engine/caption-style'
 import type { CaptionStyleId } from '@shared/video-engine/caption-style'
-import { isNewCaptionTemplateId } from '@shared/video-engine/new-templates'
+import { NEW_CAPTION_DEFINITIONS, isNewCaptionTemplateId } from '@shared/video-engine/new-templates'
+import type { NewCaptionTemplateId } from '@shared/video-engine/new-templates'
+import { newCaptionDraftFromProps } from '@shared/video-engine/new-templates-draft'
 import type { VideoTemplate } from '@shared/video-engine/ipc'
 import type { AutomationJob, AutomationJobDetail, LibraryAsset, VisualTemplate } from '@shared/types'
 import { tpFeature, planSplit, TP_MERGE_CAP_SECONDS, TP_AUTO_MOTION_ID } from '@shared/talkingphotos'
@@ -24,7 +26,10 @@ import { AssetLibraryModal } from '../features/automation/AssetLibraryModal'
  * The Visual System editor's hook, caption, and transition lists are the SAME lists the
  * Compose editor offers: hooks and captions come from the renderer's own template manifests
  * over `videoEngine.templates`, transitions from the shared `TRANSITION_PRESETS` table. A
- * template that promises a look the editor cannot produce is worse than no template. */
+ * template that promises a look the editor cannot produce is worse than no template. The
+ * Cinematic set is offered here too: the batch pipeline's `edit` and `render` steps go through
+ * Remotion (electron/services/automation-remotion.ts), which mounts the same NewHookScene and
+ * NewCaptionLayer the Compose preview does, so this screen can honour it end to end. */
 
 function jobEta(job?: AutomationJob): string {
   if (!job?.startedAt || job.progress < 2) return 'Estimating…'
@@ -224,17 +229,31 @@ export function Profiles(): JSX.Element {
   const [deleting, setDeleting] = useState(false)
 
   /* The caption list is the renderer's registered templates, fetched once. The Remotion
-   * renderer is the one Compose edits with, so a Visual System can only promise a caption
-   * style that engine actually ships.
+   * renderer is the one the batch pipeline renders with, so a Visual System can only promise a
+   * caption style that engine actually ships.
    *
-   * The Cinematic set is excluded the same way the Compose Inspector excludes it: those ids are
-   * not `CaptionStyleId`s, so a Visual System cannot store one, and the batch pipeline renders
-   * ASS captions from `CAPTION_STYLE_TO_PRESET` rather than the Remotion caption layer these
-   * templates live in. Offering them here promised a look this path cannot produce. */
-  const captionTemplates = useMemo(
+   * Both sets are offered, in two labelled groups. The Cinematic ids are not `CaptionStyleId`s,
+   * so they are stored in `captionTemplateId` and the pipeline applies them through
+   * `setCaptionTemplate`; `captionStyle` stays the classic key that feeds
+   * `CAPTION_STYLE_TO_PRESET`, a total record over that union. */
+  const classicCaptionTemplates = useMemo(
     () => engineTemplates.filter((template) => template.kind === 'caption' && !isNewCaptionTemplateId(template.id)),
     [engineTemplates]
   )
+  const cinematicCaptionTemplates = useMemo(
+    () => engineTemplates.filter((template) => template.kind === 'caption' && isNewCaptionTemplateId(template.id)),
+    [engineTemplates]
+  )
+  /** `captionTemplateId` is authoritative; a preset written before it existed is read through
+   *  `captionStyle`, which is exactly the id `bindDownload` reconstructs at render time. */
+  const activeCaptionTemplateId = editingTemplate
+    ? editingTemplate.captionTemplateId || `remotion-caption-${editingTemplate.captionStyle}`
+    : ''
+  const cinematicCaptionId: NewCaptionTemplateId | null =
+    isNewCaptionTemplateId(activeCaptionTemplateId) ? activeCaptionTemplateId : null
+  const cinematicCaptionDraft = cinematicCaptionId
+    ? newCaptionDraftFromProps(cinematicCaptionId, editingTemplate?.captionProps)
+    : null
   const editingTemplateId = editingTemplate?.id
 
   useEffect(() => () => {
@@ -1370,24 +1389,125 @@ export function Profiles(): JSX.Element {
                     </div>
                   </div>
 
-                  {/* Caption Engine — the renderer's registered caption templates, the same
-                      list (name and description) the Compose editor's Captions tab shows. */}
+                  {/* Caption Engine — the renderer's registered caption templates, the same list
+                      (name and description) the Compose editor's Captions tab shows. */}
                   <div className="at-editor-section">
                     <span className="at-field-label">Caption style</span>
-                    {captionTemplates.length === 0 ? (
+                    {classicCaptionTemplates.length + cinematicCaptionTemplates.length === 0 ? (
                       <p className="at-preset-empty">The renderer reported no caption templates, so there is nothing to choose here.</p>
                     ) : (
-                      <div className="at-preset-list">
-                        {captionTemplates.map((template) => (
-                          <PresetRow
-                            key={template.id}
-                            title={template.name}
-                            sub={template.description || template.id}
-                            on={captionStyleIdOf(template.id) === editingTemplate.captionStyle}
-                            onClick={() => setEditingTemplate({ ...editingTemplate, captionStyle: captionStyleIdOf(template.id) })}
-                          />
-                        ))}
-                      </div>
+                      <>
+                        <span className="at-summary-label" style={{ display: 'block' }}>Classic</span>
+                        <div className="at-preset-list" style={{ marginTop: 6 }}>
+                          {classicCaptionTemplates.map((template) => (
+                            <PresetRow
+                              key={template.id}
+                              title={template.name}
+                              sub={template.description || template.id}
+                              on={activeCaptionTemplateId === template.id}
+                              onClick={() => setEditingTemplate({
+                                ...editingTemplate,
+                                captionTemplateId: template.id,
+                                captionStyle: captionStyleIdOf(template.id),
+                                captionProps: undefined
+                              })}
+                            />
+                          ))}
+                        </div>
+                        {cinematicCaptionTemplates.length > 0 && (
+                          <>
+                            <span className="at-summary-label" style={{ display: 'block', marginTop: 14 }}>Cinematic</span>
+                            <div className="at-preset-list" style={{ marginTop: 6 }}>
+                              {cinematicCaptionTemplates.map((template) => (
+                                <PresetRow
+                                  key={template.id}
+                                  title={template.name}
+                                  sub={template.description || template.id}
+                                  on={activeCaptionTemplateId === template.id}
+                                  onClick={() => setEditingTemplate({
+                                    ...editingTemplate,
+                                    captionTemplateId: template.id,
+                                    captionProps: undefined
+                                  })}
+                                />
+                              ))}
+                            </div>
+                          </>
+                        )}
+                        {cinematicCaptionId && cinematicCaptionDraft && (
+                          <div style={{ marginTop: 14, padding: 12, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--bg-inset)', display: 'flex', flexDirection: 'column', gap: 12 }}>
+                            <span className="at-summary-label" style={{ display: 'block' }}>
+                              {NEW_CAPTION_DEFINITIONS[cinematicCaptionId].name} controls
+                            </span>
+                            <div className="at-split-row">
+                              <div style={{ flex: 1 }}>
+                                <label htmlFor="cine-caption-accent" className="at-summary-label">Accent</label>
+                                <input
+                                  id="cine-caption-accent"
+                                  type="color"
+                                  value={cinematicCaptionDraft.accentColor}
+                                  onChange={(e) => setEditingTemplate({ ...editingTemplate, captionProps: { ...editingTemplate.captionProps, accentColor: e.target.value.toUpperCase() } })}
+                                  style={{ width: '100%', height: 32, background: 'var(--bg-card)', border: '1px solid var(--border-3)', borderRadius: 9, padding: 2 }}
+                                />
+                              </div>
+                              <div style={{ flex: 1 }}>
+                                <label htmlFor="cine-caption-text" className="at-summary-label">Text</label>
+                                <input
+                                  id="cine-caption-text"
+                                  type="color"
+                                  value={cinematicCaptionDraft.textColor}
+                                  onChange={(e) => setEditingTemplate({ ...editingTemplate, captionProps: { ...editingTemplate.captionProps, textColor: e.target.value.toUpperCase() } })}
+                                  style={{ width: '100%', height: 32, background: 'var(--bg-card)', border: '1px solid var(--border-3)', borderRadius: 9, padding: 2 }}
+                                />
+                              </div>
+                              <div style={{ flex: 1 }}>
+                                <label htmlFor="cine-caption-grain" className="at-summary-label">Film grain · {cinematicCaptionDraft.grain.toFixed(2)}</label>
+                                <input
+                                  id="cine-caption-grain"
+                                  type="range"
+                                  min={0}
+                                  max={1}
+                                  step={0.05}
+                                  value={cinematicCaptionDraft.grain}
+                                  onChange={(e) => setEditingTemplate({ ...editingTemplate, captionProps: { ...editingTemplate.captionProps, grain: Number(e.target.value) } })}
+                                  style={{ width: '100%', accentColor: 'var(--accent)' }}
+                                />
+                              </div>
+                            </div>
+                            <div className="at-split-row">
+                              <div style={{ flex: 1 }}>
+                                <label htmlFor="cine-caption-words" className="at-summary-label">Words per cue · {cinematicCaptionDraft.maxWordsPerCue}</label>
+                                <input
+                                  id="cine-caption-words"
+                                  type="range"
+                                  min={1}
+                                  max={12}
+                                  step={1}
+                                  value={cinematicCaptionDraft.maxWordsPerCue}
+                                  onChange={(e) => setEditingTemplate({ ...editingTemplate, captionProps: { ...editingTemplate.captionProps, maxWordsPerCue: Number(e.target.value) } })}
+                                  style={{ width: '100%', accentColor: 'var(--accent)' }}
+                                />
+                              </div>
+                              <div style={{ flex: 1 }}>
+                                <label htmlFor="cine-caption-chars" className="at-summary-label">Characters per line · {cinematicCaptionDraft.maxCharactersPerLine}</label>
+                                <input
+                                  id="cine-caption-chars"
+                                  type="range"
+                                  min={10}
+                                  max={42}
+                                  step={1}
+                                  value={cinematicCaptionDraft.maxCharactersPerLine}
+                                  onChange={(e) => setEditingTemplate({ ...editingTemplate, captionProps: { ...editingTemplate.captionProps, maxCharactersPerLine: Number(e.target.value) } })}
+                                  style={{ width: '100%', accentColor: 'var(--accent)' }}
+                                />
+                              </div>
+                            </div>
+                            <p className="at-preset-empty" style={{ margin: 0 }}>
+                              These styles need word timings, which every batch produces in its Transcribe step.
+                            </p>
+                          </div>
+                        )}
+                      </>
                     )}
                   </div>
                 </>
