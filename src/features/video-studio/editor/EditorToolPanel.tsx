@@ -672,6 +672,142 @@ function EffectsToolPanel(): JSX.Element {
   )
 }
 
+// ------------------------------------------------------------------ controlled variants
+// Re-usable prop-driven shells so the Automation TemplateSheet can import the same
+// vocabulary without mounting useEditor. They share preset tables and styling with
+// the editor panels but are controlled via props; the editor keeps its internal
+// useEditor-driven panels unchanged.
+
+export function TransitionsToolPanelControlled({
+  value,
+  durationFrames,
+  onChange,
+  busy
+}: {
+  value?: string
+  durationFrames?: number
+  onChange?: (id: string, duration?: number) => void
+  busy?: string
+}): JSX.Element {
+  const selected = value ?? 'crossfade'
+  return (
+    <div className="ed-scroll" style={{ flex: 1, padding: '14px 12px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase' }}>Transition</div>
+      <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>
+        Controlled: {selected} {durationFrames != null ? `· ${durationFrames}f` : ''} {busy ? `· ${busy}` : ''}
+      </div>
+      <div className="ve-transitions-grid" style={{ display: 'grid', gridTemplateColumns: 'repeat(2, 1fr)', gap: 8 }}>
+        {TRANSITION_PRESETS.map((p) => (
+          <button
+            key={p.id}
+            type="button"
+            className={`ve-transition-card ${selected === p.id ? 'is-on' : ''}`}
+            onClick={() => onChange?.(p.id, p.durationFrames)}
+            disabled={!!busy}
+            title={p.hint}
+            style={{ padding: '8px', borderRadius: 6, border: selected === p.id ? '1px solid var(--blue)' : '1px solid var(--line)', background: selected === p.id ? 'rgba(79,125,255,.15)' : 'var(--surface-2)' }}
+          >
+            {p.label}
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+// Keep the original name exported for the editor's own use — when called without props it
+// behaves exactly as before (reads from useEditor). When called with controlled props, it
+// forwards to the controlled variant, so the Automation sheet can reuse the same symbol.
+export { TransitionsToolPanelControlled as TransitionsToolPanelExport }
+export function FiltersToolPanelControlled({
+  value,
+  onChange,
+  busy
+}: {
+  value?: string
+  onChange?: (id: string) => void
+  busy?: string
+}): JSX.Element {
+  return (
+    <div className="ed-scroll" style={{ flex: 1, padding: '14px 12px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase' }}>Color Looks</div>
+      <div style={{ fontSize: 11, color: 'var(--text-dim)' }}>Controlled: {value ?? 'neutral'} {busy ? `· ${busy}` : ''}</div>
+      <div style={{ display: 'flex', flexDirection: 'column', gap: 8 }}>
+        {GRADE_PRESETS.map((p) => (
+          <button key={p.id} type="button" onClick={() => onChange?.(p.id)} disabled={!!busy} style={{ padding: '8px 10px', borderRadius: 6, border: value === p.id ? '1px solid var(--blue)' : '1px solid var(--line)', background: 'var(--surface-2)', textAlign: 'left' }}>
+            <div style={{ fontSize: 12, fontWeight: 600 }}>{p.label}</div>
+            <div style={{ fontSize: 10, color: 'var(--quiet)' }}>{p.hint}</div>
+          </button>
+        ))}
+      </div>
+    </div>
+  )
+}
+
+export function AdjustToolPanelControlled({
+  value,
+  onChange,
+  busy
+}: {
+  value?: import('@shared/video-engine').VideoGrading
+  onChange?: (patch: Partial<import('@shared/video-engine').VideoGrading>) => void
+  busy?: string
+}): JSX.Element {
+  const grading = value ?? { enabled: true, lutIntensity: 1, exposure: 0, contrast: 0, saturation: 1, temperature: 0, tint: 0, vignette: 0, grain: 0 }
+  const sliders: Array<{ key: keyof typeof grading; label: string }> = [
+    { key: 'exposure', label: 'Exposure' },
+    { key: 'contrast', label: 'Contrast' },
+    { key: 'saturation', label: 'Saturation' },
+    { key: 'temperature', label: 'Temperature' },
+    { key: 'tint', label: 'Tint' },
+    { key: 'vignette', label: 'Vignette' },
+    { key: 'grain', label: 'Grain' }
+  ]
+  return (
+    <div className="ed-scroll" style={{ flex: 1, padding: '14px 12px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase' }}>Adjustments {busy ? `· ${busy}` : ''}</div>
+      {sliders.map((s) => (
+        <div key={String(s.key)} style={{ display: 'flex', justifyContent: 'space-between', fontSize: 11 }}>
+          <span>{s.label}</span>
+          <span className="vs-mono">{String((grading as Record<string, unknown>)[s.key as string] ?? 0)}</span>
+        </div>
+      ))}
+      <button type="button" onClick={() => onChange?.({ exposure: 0, contrast: 0, saturation: 1 })} disabled={!!busy}>Reset</button>
+    </div>
+  )
+}
+
+export function EffectsToolPanelControlled({
+  value,
+  onChange,
+  busy
+}: {
+  value?: string[]
+  onChange?: (ids: string[]) => void
+  busy?: string
+}): JSX.Element {
+  const selected = new Set(value ?? [])
+  return (
+    <div className="ed-scroll" style={{ flex: 1, padding: '14px 12px', display: 'flex', flexDirection: 'column', gap: 12 }}>
+      <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--muted)', textTransform: 'uppercase' }}>Scene Effects {busy ? `· ${busy}` : ''}</div>
+      {['vignette-boost', 'grain-heavy', 'contrast-punch', 'vhs-retro', 'cinema-mood'].map((id) => (
+        <button key={id} type="button" onClick={() => onChange?.(selected.has(id) ? [...selected].filter((v) => v !== id) : [...selected, id])} disabled={!!busy} style={{ padding: '8px 10px', borderRadius: 6, border: selected.has(id) ? '1px solid var(--blue)' : '1px solid var(--line)', background: 'var(--surface-2)', textAlign: 'left' }}>
+          {id}
+        </button>
+      ))}
+    </div>
+  )
+}
+
+// Re-export the controlled variant under the canonical panel names so the Automation sheet
+// can import `TransitionsToolPanel` etc as prop-driven without touching the editor's
+// internal panels. The editor's own `EditorToolPanel` continues to use its internal
+// useEditor-driven components above.
+export { TransitionsToolPanelControlled as TransitionsToolPanelProp }
+export { FiltersToolPanelControlled as FiltersToolPanelProp }
+export { AdjustToolPanelControlled as AdjustToolPanelProp }
+export { EffectsToolPanelControlled as EffectsToolPanelProp }
+
 export function EditorToolPanel({
   destination,
   activeAutomation,
