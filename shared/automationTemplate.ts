@@ -63,7 +63,11 @@ const CAPTION_STYLE_TO_PRESET: Record<CaptionStyleId, string> = {
 export function visualTemplateToStyleConfig(template?: VisualTemplate): AutomationStyleConfig {
   if (!template) return { ...DEFAULT_AUTOMATION_STYLE }
   const autoBroll = template.mode === 'Auto B-roll'
-  return {
+  const baseTransition = resolveTransitionPreset(template.transition)
+  const crossfadeSec = template.transitionDurationFrames != null && Number.isFinite(template.transitionDurationFrames)
+    ? Math.max(0, Math.min(5, template.transitionDurationFrames / PRESET_FPS))
+    : baseTransition.durationFrames / PRESET_FPS
+  const cfg: AutomationStyleConfig = {
     ...DEFAULT_AUTOMATION_STYLE,
     videoStyle: GRADE_TO_VIDEO_STYLE[template.grade],
     captionStyle: template.captionStyle,
@@ -72,8 +76,8 @@ export function visualTemplateToStyleConfig(template?: VisualTemplate): Automati
     aspectRatio: template.aspectRatio,
     imageMode: autoBroll ? 'pool' : 'sequence',
     imageDurationSec: template.imageDurationSec ?? DEFAULT_AUTOMATION_STYLE.imageDurationSec,
-    imageShuffle: template.order === 'Shuffle',
-    crossfadeSec: resolveTransitionPreset(template.transition).durationFrames / PRESET_FPS,
+    imageShuffle: template.imageShuffleLocked ?? (template.order === 'Shuffle'),
+    crossfadeSec,
     motionPreset: MOTION_TO_PRESET[template.motion],
     hookEnabled: true,
     hookText: template.hookLine,
@@ -87,6 +91,15 @@ export function visualTemplateToStyleConfig(template?: VisualTemplate): Automati
     brollDensity: DENSITY_TO_BROLL[template.density],
     brollShufflePolicy: template.order === 'Shuffle' ? 'per-video' : 'ranked'
   }
+  // Pass-through new fields for future pipeline stages — kept as soft extension on the config.
+  // They are optional and additive, so legacy consumers ignore them.
+  if (template.filterPresetId) (cfg as unknown as Record<string, unknown>).filterPresetId = template.filterPresetId
+  if (template.adjust) (cfg as unknown as Record<string, unknown>).adjust = template.adjust
+  if (template.effectsPresetIds) (cfg as unknown as Record<string, unknown>).effectsPresetIds = template.effectsPresetIds
+  if (template.scrim) (cfg as unknown as Record<string, unknown>).scrim = template.scrim
+  if (template.transitionDurationFrames != null) (cfg as unknown as Record<string, unknown>).transitionDurationFrames = template.transitionDurationFrames
+  if (template.textOverlays) (cfg as unknown as Record<string, unknown>).textOverlays = template.textOverlays
+  return cfg
 }
 
 export interface AutomationLaunchSource {

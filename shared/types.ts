@@ -1350,6 +1350,20 @@ export interface VisualTemplate {
     partSeconds: number
     motionId?: number
   }
+  /** Filter preset id from GRADE_PRESETS — refines grade's LUT choice. */
+  filterPresetId?: string
+  /** Parametric grade overrides (VideoGrading shape from video-engine). */
+  adjust?: import('./video-engine').VideoGrading
+  /** Additive effect preset ids (effects panel). */
+  effectsPresetIds?: string[]
+  /** Scrim overlay for text legibility — mirrors BackgroundLayer.scrim shape. */
+  scrim?: { enabled: boolean; direction: 'bottom' | 'top' | 'left' | 'right'; size: number; opacity: number }
+  /** Transition duration in frames at 30fps — overrides the preset's default. */
+  transitionDurationFrames?: number
+  /** Text overlays to add as template scenes (Compose Text presets). */
+  textOverlays?: Array<{ id: string; text: string; preset: string; animation?: string; at: 'hook' | 'persistent' }>
+  /** Explicit shuffle lock for per-batch determinism; defaults to order==='Shuffle'. */
+  imageShuffleLocked?: boolean
   createdAt?: string
   updatedAt?: string
 }
