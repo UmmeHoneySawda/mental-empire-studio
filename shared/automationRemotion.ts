@@ -2,7 +2,10 @@ import type { AutomationStyleConfig } from './types'
 import type { AutoBrollDensity, HookPlan, JsonObject, TemplateManifest, VideoGradingPreset, VideoProject } from './video-engine'
 import {
   NEW_HOOK_DEFINITIONS,
+  isNewCaptionTemplateId,
   isNewHookTemplateId,
+  newCaptionDraftFromProps,
+  newCaptionProps,
   newHookDraftFromProps,
   newHookPlan
 } from './video-engine'
@@ -93,4 +96,31 @@ export function automationRemotionHookPlan(
       visual: { kind: 'none' }
     }]
   }
+}
+
+export interface AutomationCaptionChoice {
+  templateId: string
+  props: JsonObject
+}
+
+/** The caption template a batch should apply, or `null` to keep whatever `bindDownload` chose.
+ *
+ *  `bindDownload` already derives a caption template from the classic project's `captionPreset`
+ *  (electron/services/video-engine/studio.ts:549-561), which is where a preset's `captionStyle`
+ *  lands. That path cannot carry per-template props and cannot express the Cinematic ids, so an
+ *  explicit `captionTemplateId` overrides it here.
+ *
+ *  Unknown ids resolve to `null` rather than throwing: a preset saved against a renderer build
+ *  that no longer ships a template should render with the pipeline's own default, not fail the
+ *  batch. The id list comes from the registry the render will actually use. */
+export function automationCaptionChoice(
+  style: AutomationStyleConfig,
+  availableTemplateIds: readonly string[]
+): AutomationCaptionChoice | null {
+  const id = style.captionTemplateId.trim()
+  if (!id || !availableTemplateIds.includes(id)) return null
+  if (!isNewCaptionTemplateId(id)) return { templateId: id, props: {} }
+  // The Cinematic styles own their colours, grain and paging; resolve the stored control values
+  // through the same bounded builders the Compose accordion writes with.
+  return { templateId: id, props: newCaptionProps(id, newCaptionDraftFromProps(id, style.captionProps)) }
 }

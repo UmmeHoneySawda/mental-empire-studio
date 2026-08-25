@@ -9,6 +9,7 @@ import {
 import { resolveTransitionPreset } from '../../shared/video-engine/transition-presets'
 import type { AutomationJobConfig, AutomationJobItem } from '../../shared/types'
 import {
+  automationCaptionChoice,
   automationRemotionBrollDensity,
   automationRemotionGrade,
   automationRemotionHookPlan
@@ -125,11 +126,31 @@ export async function prepareAutomationRemotionProject(
   let { project } = await bindDownload(downloadId, 'remotion', { reseed: true })
 
   if (!config.rules.captions && project.captions) project = await removeCaptions(project)
+
+  /* The preset's caption template, applied over whatever `bindDownload` derived from the classic
+   * project's `captionPreset`. Applied unconditionally when a choice resolves rather than diffed:
+   * the id can already match while the stored colours, grain or paging differ, and one extra
+   * project save per item is not worth the branch. Skipped entirely when captions are off, because
+   * `setCaptionTemplate` requires a caption document to exist. */
+  if (project.captions) {
+    const caption = automationCaptionChoice(
+      config.styleConfig,
+      engine.templates.list({ rendererId: 'remotion', kind: 'caption' }).map((template) => template.id)
+    )
+    if (caption) project = await engine.setCaptionTemplate(project.id, caption.templateId, caption.props)
+  }
+
   if (!config.rules.autoBroll) project = await applyImageTimeline(project, config)
   project = await applyTransitions(project, config.styleConfig.transition)
   project = await engine.setGrading(project.id, automationRemotionGrade(config.styleConfig, VIDEO_GRADING_PRESETS))
 
-  const hookPlan = automationRemotionHookPlan(project, config.styleConfig)
+  /* `list().find()` rather than `require()`: a preset holding an id this build no longer ships must
+   * fall back to the automatic grade-derived hook, not throw and fail the whole batch item. */
+  const hookTemplate = config.styleConfig.hookTemplateId
+    ? engine.templates.list({ rendererId: 'remotion', kind: 'hook' })
+        .find((template) => template.id === config.styleConfig.hookTemplateId)
+    : undefined
+  const hookPlan = automationRemotionHookPlan(project, config.styleConfig, hookTemplate)
   if (hookPlan) project = (await engine.importHookPlan(project.id, hookPlan)).project
 
   if (config.rules.autoBroll) {

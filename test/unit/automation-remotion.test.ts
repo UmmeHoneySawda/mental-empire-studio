@@ -1,5 +1,6 @@
 import { describe, expect, it } from 'vitest'
 import {
+  automationCaptionChoice,
   automationRemotionBrollDensity,
   automationRemotionGrade,
   automationRemotionHookPlan
@@ -159,5 +160,70 @@ describe('automation hook template selection', () => {
       ...DEFAULT_AUTOMATION_STYLE, hookEnabled: true, hookTemplateId: 'remotion-hook-cine-title-card', videoStyle: 'Intense'
     })
     expect(plan?.templateId).toBe('remotion-hook-kinetic-30')
+  })
+})
+
+describe('automation caption template selection', () => {
+  const available = (() => {
+    try {
+      const { VideoTemplateRegistry } = require('../../electron/services/video-engine/templates/registry')
+      return new VideoTemplateRegistry().list({ rendererId: 'remotion', kind: 'caption' }).map((template: { id: string }) => template.id) as readonly string[]
+    } catch {
+      return [] as readonly string[]
+    }
+  })()
+
+  it('leaves the pipeline alone when nothing is selected', () => {
+    expect(automationCaptionChoice({ ...DEFAULT_AUTOMATION_STYLE, captionTemplateId: '' }, available)).toBeNull()
+  })
+
+  it('leaves the pipeline alone for an id this renderer does not ship', () => {
+    expect(automationCaptionChoice(
+      { ...DEFAULT_AUTOMATION_STYLE, captionTemplateId: 'remotion-caption-does-not-exist' },
+      available
+    )).toBeNull()
+  })
+
+  it('applies a classic template with no props, because its look has none to carry', () => {
+    if (available.length === 0) return
+    expect(automationCaptionChoice(
+      { ...DEFAULT_AUTOMATION_STYLE, captionTemplateId: 'remotion-caption-motivation-bold' },
+      available
+    )).toEqual({ templateId: 'remotion-caption-motivation-bold', props: {} })
+  })
+
+  it('resolves a Cinematic template to its full, bounded prop set', () => {
+    if (available.length === 0) return
+    expect(automationCaptionChoice(
+      { ...DEFAULT_AUTOMATION_STYLE, captionTemplateId: 'remotion-caption-cine-word-pop' },
+      available
+    )).toEqual({
+      templateId: 'remotion-caption-cine-word-pop',
+      props: {
+        accentColor: '#C9553C',
+        textColor: '#ECE5D8',
+        grain: 0.35,
+        maxWordsPerCue: 3,
+        maxCharactersPerLine: 18
+      }
+    })
+  })
+
+  it('honours stored overrides and clamps the ones out of range', () => {
+    if (available.length === 0) return
+    const choice = automationCaptionChoice(
+      {
+        ...DEFAULT_AUTOMATION_STYLE,
+        captionTemplateId: 'remotion-caption-cine-scrim-roll',
+        captionProps: { accentColor: '#00FF00', grain: 4, maxWordsPerCue: 99, maxCharactersPerLine: 2 }
+      },
+      available
+    )
+    expect(choice?.props).toMatchObject({
+      accentColor: '#00FF00',
+      grain: 1,
+      maxWordsPerCue: 12,
+      maxCharactersPerLine: 10
+    })
   })
 })
