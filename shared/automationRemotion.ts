@@ -1,5 +1,11 @@
 import type { AutomationStyleConfig } from './types'
-import type { AutoBrollDensity, HookPlan, VideoGradingPreset, VideoProject } from './video-engine'
+import type { AutoBrollDensity, HookPlan, JsonObject, TemplateManifest, VideoGradingPreset, VideoProject } from './video-engine'
+import {
+  NEW_HOOK_DEFINITIONS,
+  isNewHookTemplateId,
+  newHookDraftFromProps,
+  newHookPlan
+} from './video-engine'
 
 const GRADE_PRESET_BY_STYLE: Readonly<Record<AutomationStyleConfig['videoStyle'], string>> = {
   None: 'off',
@@ -24,23 +30,60 @@ export function automationRemotionBrollDensity(style: AutomationStyleConfig): Au
   return 'sparse'
 }
 
-export function automationRemotionHookPlan(project: VideoProject, style: AutomationStyleConfig): HookPlan | null {
-  if (!style.hookEnabled) return null
+/** The opening line, in one place. A stored headline prop wins because it is the most specific
+ *  thing the operator typed; then the preset's own hook line; then this video's transcript, which
+ *  is the only part of a batch's hook that varies per video; then the project name as a last
+ *  resort. Mirrors what the pre-Cinematic builder did, with the prop added on top. */
+function automationHookHeadline(project: VideoProject, style: AutomationStyleConfig): string {
   const words = project.captions?.words.slice(0, 8).map((word) => word.text).join(' ').trim() ?? ''
-  const title = (style.hookText.trim() || words || project.name).slice(0, 500)
-  const templateId = style.videoStyle === 'Intense'
-    ? 'remotion-hook-kinetic-30'
-    : 'remotion-hook-cinematic-30'
+  return (style.hookText.trim() || words || project.name).slice(0, 500)
+}
+
+export function automationRemotionHookPlan(
+  project: VideoProject,
+  style: AutomationStyleConfig,
+  template?: TemplateManifest
+): HookPlan | null {
+  if (!style.hookEnabled) return null
+  const title = automationHookHeadline(project, style)
+
+  /* The Cinematic set has one component per template, each of which reads ONLY beats[0]. Its plan
+   * must therefore come from `newHookPlan` — the accordion's single-beat builder — and not from the
+   * grade-derived shape below. Same builder, same clamps, same props as Compose; the only automation
+   * difference is that an empty headline field means "write one from this video's transcript". */
+  if (template && isNewHookTemplateId(template.id)) {
+    const definition = NEW_HOOK_DEFINITIONS[template.id]
+    const headlineField = definition.textFields.find((field) => field.role === 'headline')
+    const stored = headlineField ? style.hookProps[headlineField.key] : undefined
+    const hasStoredHeadline = typeof stored === 'string' && stored.trim().length > 0
+    // A hook longer than the video would place a scene past the canvas end.
+    const canvasSeconds = project.canvas.durationFrames / project.canvas.fps
+    const chosen = style.hookSeconds > 0 ? style.hookSeconds : definition.defaultSeconds
+    const draft = newHookDraftFromProps({
+      definition,
+      props: style.hookProps,
+      ...(hasStoredHeadline ? {} : { headline: title }),
+      seconds: Math.min(chosen, canvasSeconds)
+    })
+    return newHookPlan({ template, definition, draft, fps: project.canvas.fps })
+  }
+
+  /* Everything else: the pre-Cinematic shape, unchanged. `template` is only present here when the
+   * operator explicitly picked one of the classic hooks, in which case its id replaces the
+   * grade-derived guess and nothing else moves. */
+  const templateId = template?.id
+    ?? (style.videoStyle === 'Intense' ? 'remotion-hook-kinetic-30' : 'remotion-hook-cinematic-30')
   const durationFrames = Math.min(project.canvas.durationFrames, Math.max(1, Math.round(project.canvas.fps * 3)))
+  const props: JsonObject = {}
   return {
     schemaVersion: 1,
     rendererId: 'remotion',
     templateId,
-    templateVersion: '1.0.0',
+    templateVersion: template?.version ?? '1.0.0',
     fps: project.canvas.fps,
     title,
     durationFrames,
-    props: {},
+    props,
     beats: [{
       id: 'beat-1',
       startFrame: 0,
