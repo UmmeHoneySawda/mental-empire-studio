@@ -480,6 +480,19 @@ export interface AutomationStyleConfig {
   hookText: string
   hookEnabled: boolean
   zoomAtStart: boolean
+  /** The preset's chosen hook template, or `''` for the grade-derived automatic pick.
+   *  Required with a sentinel rather than optional, for the same reason `hookText` is:
+   *  `normalizeAutomationStyle` is a whitelist, and an optional field it forgets is dropped
+   *  silently on the way to SQLite. */
+  hookTemplateId: string
+  /** Raw props for `hookTemplateId`. `{}` when there is nothing stored. */
+  hookProps: JsonObject
+  /** Hook length in seconds, or `0` for the template's own default. */
+  hookSeconds: number
+  /** The preset's chosen caption template, or `''` to keep deriving it from `captionStyle`. */
+  captionTemplateId: string
+  /** Raw props for `captionTemplateId`. `{}` when there is nothing stored. */
+  captionProps: JsonObject
   brollMode: 'off' | 'full' | 'overlay'
   brollDensity: BrollDensity
   brollPoolSize: number
@@ -1297,6 +1310,29 @@ export interface VisualTemplate {
    *  `queue.ts` falls back to the first eight transcribed words. */
   hookLine: string
   zoomAtStart: boolean
+  /** The hook template this preset opens with — a full registry id such as
+   *  `remotion-hook-cine-title-card`. Absent means automatic: the colour grade picks
+   *  `remotion-hook-kinetic-30` for Intense and `remotion-hook-cinematic-30` otherwise,
+   *  which is what `automationRemotionHookPlan` did before this field existed. */
+  hookTemplateId?: string
+  /** Raw control values for `hookTemplateId`'s manifest parameters. Replaced wholesale when
+   *  the template changes, never merged: `resolveTemplateProps` throws `Unknown template
+   *  property` for any key the new manifest does not declare
+   *  (shared/video-engine/templates.ts:268). Validated and bounded at build time by
+   *  `newHookDraftFromProps` / `newHookPlan`, not here. */
+  hookProps?: Record<string, string | number>
+  /** Hook length in seconds. Absent means the chosen template's own `defaultSeconds`; the
+   *  Cinematic set runs 3.5–6s and its internal beat times scale with the duration, so
+   *  forcing the old hard-coded 3s would compress its choreography. */
+  hookSeconds?: number
+  /** The caption template — a full registry id such as `remotion-caption-cine-word-pop`.
+   *  Separate from `captionStyle` because the Cinematic ids are not `CaptionStyleId`s and
+   *  `CAPTION_STYLE_TO_PRESET` is a total record over that union. Absent means derive from
+   *  `captionStyle`, which is what this screen did before. */
+  captionTemplateId?: string
+  /** Raw control values for `captionTemplateId`'s manifest parameters. Same contract as
+   *  `hookProps`. */
+  captionProps?: Record<string, string | number>
   /** TalkingPhoto casting slab — persisted as JSON in visual_templates.data (no column migration).
    *  Reuses the existing TalkingPhotos catalog/character catalogue verbatim; total video length
    *  remains dynamic because only `partSeconds` (chunk size) is stored, the source audio decides

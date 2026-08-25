@@ -78,6 +78,11 @@ export function visualTemplateToStyleConfig(template?: VisualTemplate): Automati
     hookEnabled: true,
     hookText: template.hookLine,
     zoomAtStart: template.zoomAtStart,
+    hookTemplateId: template.hookTemplateId ?? '',
+    hookProps: { ...(template.hookProps ?? {}) },
+    hookSeconds: template.hookSeconds ?? 0,
+    captionTemplateId: template.captionTemplateId ?? '',
+    captionProps: { ...(template.captionProps ?? {}) },
     brollMode: autoBroll ? 'full' : 'off',
     brollDensity: DENSITY_TO_BROLL[template.density],
     brollShufflePolicy: template.order === 'Shuffle' ? 'per-video' : 'ranked'

@@ -8,6 +8,7 @@ import type {
   MotionPreset,
   VideoStyle
 } from './types'
+import type { JsonObject } from './video-engine/common'
 
 export const DEFAULT_AUTOMATION_STYLE: AutomationStyleConfig = {
   videoStyle: 'Clean',
@@ -32,6 +33,11 @@ export const DEFAULT_AUTOMATION_STYLE: AutomationStyleConfig = {
   hookText: '',
   hookEnabled: false,
   zoomAtStart: true,
+  hookTemplateId: '',
+  hookProps: {},
+  hookSeconds: 0,
+  captionTemplateId: '',
+  captionProps: {},
   brollMode: 'off',
   brollDensity: 'sparse',
   brollPoolSize: 18,
@@ -81,6 +87,30 @@ function color(value: unknown, fallback: string): string {
   return typeof value === 'string' && /^#[0-9a-f]{6}$/i.test(value) ? value.toLowerCase() : fallback
 }
 
+/** A registry template id. Length-capped rather than validated: this module has no access to
+ *  the template registry, which lives in the Electron service. The pipeline resolves the id
+ *  against the manifests it actually has and falls back to automatic for anything unknown —
+ *  that is the only place the check can be honest. */
+function templateId(value: unknown): string {
+  return typeof value === 'string' && value.trim() ? value.trim().slice(0, 120) : ''
+}
+
+/** Per-template manifest props, stored as an opaque record. Sanitised, not validated: only the
+ *  manifest knows which keys are legal, and `resolveTemplateProps` is the thing that enforces
+ *  it. This caps the shape so a corrupt row cannot bloat the persisted config blob, and drops
+ *  anything a template parameter can never be (objects, arrays, booleans, NaN). */
+function templateProps(value: unknown): JsonObject {
+  const raw = record(value)
+  const out: JsonObject = {}
+  for (const key of Object.keys(raw).slice(0, 24)) {
+    if (key.length > 64) continue
+    const entry = raw[key]
+    if (typeof entry === 'string') out[key] = entry.slice(0, 500)
+    else if (typeof entry === 'number' && Number.isFinite(entry)) out[key] = entry
+  }
+  return out
+}
+
 function captionAnimation(value: unknown): string {
   if (value === 'Pop-in' || value === 'Fade' || value === 'None') return value
   if (value === 'Bounce' || value === 'Type') return 'Pop-in'
@@ -123,6 +153,11 @@ export function normalizeAutomationStyle(value: unknown, legacy: Partial<Automat
     hookEnabled: typeof raw.hookEnabled === 'boolean' ? raw.hookEnabled : DEFAULT_AUTOMATION_STYLE.hookEnabled,
     // Legacy rows predate the field; the old behaviour derived the opening zoom from the style.
     zoomAtStart: typeof raw.zoomAtStart === 'boolean' ? raw.zoomAtStart : videoStyle !== 'None',
+    hookTemplateId: templateId(raw.hookTemplateId),
+    hookProps: templateProps(raw.hookProps),
+    hookSeconds: finiteNumber(raw.hookSeconds, DEFAULT_AUTOMATION_STYLE.hookSeconds, 0, 30),
+    captionTemplateId: templateId(raw.captionTemplateId),
+    captionProps: templateProps(raw.captionProps),
     brollMode: oneOf(raw.brollMode, ['off', 'full', 'overlay'], legacy.rules?.autoBroll ? 'full' : DEFAULT_AUTOMATION_STYLE.brollMode),
     brollDensity: oneOf<BrollDensity>(raw.brollDensity, ['full', 'sparse', 'keywords'], DEFAULT_AUTOMATION_STYLE.brollDensity),
     brollPoolSize: Math.round(finiteNumber(raw.brollPoolSize, DEFAULT_AUTOMATION_STYLE.brollPoolSize, 1, 200)),
