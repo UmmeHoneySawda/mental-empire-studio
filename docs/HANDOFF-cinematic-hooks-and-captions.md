@@ -517,12 +517,16 @@ left it out (see §2 row 2 and the `isNew*` filter at `Profiles.tsx:234`). The f
 - `shared/automationRemotion.ts` gains `automationCaptionChoice` (pure) and a Cinematic branch in
   `automationRemotionHookPlan`; `electron/services/automation-remotion.ts` supplies manifests from
   the registry and calls `setCaptionTemplate` / `importHookPlan`. Headline precedence for a Cinematic
-  batch hook: stored headline prop → preset `hookText` → that video's transcript first 8 words → project name.
-  An empty headline therefore stays per-video, which is what `hookLine` already promised.
+  batch hook: preset `hookLine` (`hookText`) → that video's transcript first 8 words → project name.
+  A hand-edited `hookProps` carrying a headline key is ignored so the draft the UI shows and the plan
+  the pipeline builds agree; an empty headline therefore stays per-video, which is what `hookLine`
+  already promised.
 - The preset editor groups captions into **Classic / Cinematic** and shows Cinematic colours + paging
   only when a Cinematic caption is selected, and adds a **Hook template** picker
   (Automatic / Classic / Cinematic) with per-template secondary fields and an honest description card
   in place of the live canvas preview. The old CSS canvas is kept for Automatic/classic hooks.
 - `scripts/e2e-automation.mjs` selectors repaired (`Create template`, `Next: Hook`) and the
-  "no hook-template picker" assertion inverted. Existing presets render byte-identically (hook defaults
-  to Automatic, caption defaults to `captionTemplateId || remotion-caption-<captionStyle>`).
+  "no hook-template picker" assertion inverted. The `/Cinematic/i` caption assertion now matches an
+  actual template name, not the `Cinematic` colour-grade swatch that was also on step 1. Existing
+  presets render byte-identically (hook defaults to Automatic, empty `captionTemplateId` makes
+  `automationCaptionChoice` return `null` and the pipeline leaves `bindDownload`'s derivation alone).

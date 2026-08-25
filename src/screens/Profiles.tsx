@@ -64,10 +64,10 @@ function JobStatus({ status }: { status: AutomationJob['status'] }): JSX.Element
  *  the batch pipeline re-prefixes for whichever renderer runs it.
  *
  *  Validated rather than cast: the registry also serves caption templates whose stripped id is
- *  NOT a `CaptionStyleId` (the Cinematic set renders through its own Remotion layer, and the
- *  batch pipeline draws ASS captions from `CAPTION_STYLE_TO_PRESET`, a total record over this
- *  union). An unchecked cast persisted a bogus id that silently fell back to the default preset
- *  at render time, so an unknown id resolves to `highlight` here instead. */
+ *  NOT a `CaptionStyleId` (the five Cinematic styles render through their own Remotion layer and
+ *  are stored in their own `captionTemplateId` field). `CAPTION_STYLE_TO_PRESET` is a total record
+ *  over classic ids only, so an unchecked cast would persist a bogus id that silently fell back to
+ *  the default at render time. An unknown classic id resolves to `highlight` here instead. */
 function captionStyleIdOf(templateId: string): CaptionStyleId {
   const stripped = templateId.replace(/^(?:remotion|hyperframes)-caption-/, '')
   return (CAPTION_STYLE_IDS as readonly string[]).includes(stripped) ? (stripped as CaptionStyleId) : 'highlight'
@@ -1636,7 +1636,14 @@ export function Profiles(): JSX.Element {
                             step={field.integer ? 1 : 0.1}
                             value={cinematicHookDraft.numbers[field.key]}
                             onChange={(e) => {
-                              const v = field.integer ? Math.round(Number(e.target.value)) : Number(e.target.value)
+                              const raw = e.target.value
+                              if (raw === '') {
+                                const next = { ...editingTemplate.hookProps }
+                                delete next[field.key]
+                                setEditingTemplate({ ...editingTemplate, hookProps: next })
+                                return
+                              }
+                              const v = field.integer ? Math.round(Number(raw)) : Number(raw)
                               setEditingTemplate({ ...editingTemplate, hookProps: { ...editingTemplate.hookProps, [field.key]: Number.isFinite(v) ? v : field.default } })
                             }}
                           />

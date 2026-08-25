@@ -6,6 +6,7 @@ import {
   automationRemotionHookPlan
 } from '../../shared/automationRemotion'
 import { DEFAULT_AUTOMATION_STYLE } from '../../shared/automationConfig'
+import { VideoTemplateRegistry } from '../../electron/services/video-engine/templates/registry'
 import { DEFAULT_VIDEO_GRADING, type VideoGradingPreset, type VideoProject } from '../../shared/video-engine'
 
 const presets: VideoGradingPreset[] = [
@@ -52,15 +53,12 @@ describe('automation Remotion choices', () => {
   })
 })
 
-const registry = (() => {
-  try {
-    // Lazy so the suite still runs when better-sqlite3 is unavailable in some envs
-    const { VideoTemplateRegistry } = require('../../electron/services/video-engine/templates/registry')
-    return new VideoTemplateRegistry()
-  } catch {
-    return null as unknown as import('../../electron/services/video-engine/templates/registry').VideoTemplateRegistry
-  }
-})()
+/* The real registry, statically imported. `registry.ts` pulls in only shared modules and the
+ * manifest tables — no native dependency, nothing from electron — so it loads in plain Node under
+ * Vitest. An earlier version of this file wrapped a `require()` in a try/catch and skipped every
+ * assertion when it threw; `require` cannot resolve an extensionless .ts path in Vitest's ESM
+ * runner, so nine tests silently asserted nothing while the suite reported all green. */
+const registry = new VideoTemplateRegistry()
 
 const transcribed = {
   id: 'remotion-download-2',
@@ -84,7 +82,6 @@ describe('automation hook template selection', () => {
   })
 
   it('honours an explicitly chosen classic hook without changing the old shape', () => {
-    if (!registry) return
     const plan = automationRemotionHookPlan(
       transcribed,
       { ...DEFAULT_AUTOMATION_STYLE, hookEnabled: true, hookText: 'STOP SCROLLING', hookTemplateId: 'remotion-hook-motivational' },
@@ -95,14 +92,14 @@ describe('automation hook template selection', () => {
   })
 
   it('builds a single-beat Cinematic plan carrying every manifest prop', () => {
-    if (!registry) return
     const plan = automationRemotionHookPlan(
       transcribed,
       {
         ...DEFAULT_AUTOMATION_STYLE,
         hookEnabled: true,
+        hookText: 'The ending is a Tuesday.',
         hookTemplateId: 'remotion-hook-cine-margin-note',
-        hookProps: { line: 'The ending is a Tuesday.', reel: 'REEL 09', startTimecodeSeconds: 120 },
+        hookProps: { reel: 'REEL 09', startTimecodeSeconds: 120 },
         hookSeconds: 5.5
       },
       registry.require('remotion-hook-cine-margin-note')
@@ -117,7 +114,6 @@ describe('automation hook template selection', () => {
   })
 
   it('writes the transcript line into the headline when the stored one is empty', () => {
-    if (!registry) return
     const plan = automationRemotionHookPlan(
       transcribed,
       { ...DEFAULT_AUTOMATION_STYLE, hookEnabled: true, hookText: '', hookTemplateId: 'remotion-hook-cine-title-card', hookProps: { kicker: 'ON LEAVING' } },
@@ -127,25 +123,30 @@ describe('automation hook template selection', () => {
     expect(plan?.props['kicker']).toBe('ON LEAVING')
   })
 
-  it('lets the preset hook text beat the transcript, and a stored headline beat both', () => {
-    if (!registry) return
+  it('lets the preset hook text beat the transcript', () => {
     const withHookText = automationRemotionHookPlan(
       transcribed,
       { ...DEFAULT_AUTOMATION_STYLE, hookEnabled: true, hookText: 'FROM THE PRESET', hookTemplateId: 'remotion-hook-cine-title-card' },
       registry.require('remotion-hook-cine-title-card')
     )
     expect(withHookText?.beats[0]?.headline).toBe('FROM THE PRESET')
+  })
 
+  it('ignores a hand-edited headline prop in favour of the explicit hookLine', () => {
+    // The UI never writes the headline key into `hookProps` — the per-template field block filters
+    // `role === 'headline'` — so a `hookProps` carrying one must not silently win over `hookText`.
     const withStoredProp = automationRemotionHookPlan(
       transcribed,
       { ...DEFAULT_AUTOMATION_STYLE, hookEnabled: true, hookText: 'FROM THE PRESET', hookTemplateId: 'remotion-hook-cine-title-card', hookProps: { line: 'FROM THE FIELD' } },
       registry.require('remotion-hook-cine-title-card')
     )
-    expect(withStoredProp?.beats[0]?.headline).toBe('FROM THE FIELD')
+    expect(withStoredProp?.beats[0]?.headline).toBe('FROM THE PRESET')
+    // The stray prop does not leak into the plan's props either — it is the headline field's key
+    // but the headline value comes from `hookText`, not from `hookProps`, so the prop is discarded.
+    expect(withStoredProp?.props['line']).toBe('FROM THE PRESET')
   })
 
   it('never asks for a hook longer than the video', () => {
-    if (!registry) return
     const short = { ...transcribed, canvas: { fps: 30, durationFrames: 45 } } as unknown as VideoProject
     const plan = automationRemotionHookPlan(
       short,
@@ -164,14 +165,15 @@ describe('automation hook template selection', () => {
 })
 
 describe('automation caption template selection', () => {
-  const available = (() => {
-    try {
-      const { VideoTemplateRegistry } = require('../../electron/services/video-engine/templates/registry')
-      return new VideoTemplateRegistry().list({ rendererId: 'remotion', kind: 'caption' }).map((template: { id: string }) => template.id) as readonly string[]
-    } catch {
-      return [] as readonly string[]
-    }
-  })()
+  const available = registry
+    .list({ rendererId: 'remotion', kind: 'caption' })
+    .map((template) => template.id)
+
+  it('offers both sets, so the not-shipped case below is a real discrimination', () => {
+    expect(available).toContain('remotion-caption-motivation-bold')
+    expect(available).toContain('remotion-caption-cine-word-pop')
+    expect(available).not.toContain('remotion-caption-does-not-exist')
+  })
 
   it('leaves the pipeline alone when nothing is selected', () => {
     expect(automationCaptionChoice({ ...DEFAULT_AUTOMATION_STYLE, captionTemplateId: '' }, available)).toBeNull()
@@ -185,7 +187,6 @@ describe('automation caption template selection', () => {
   })
 
   it('applies a classic template with no props, because its look has none to carry', () => {
-    if (available.length === 0) return
     expect(automationCaptionChoice(
       { ...DEFAULT_AUTOMATION_STYLE, captionTemplateId: 'remotion-caption-motivation-bold' },
       available
@@ -193,7 +194,6 @@ describe('automation caption template selection', () => {
   })
 
   it('resolves a Cinematic template to its full, bounded prop set', () => {
-    if (available.length === 0) return
     expect(automationCaptionChoice(
       { ...DEFAULT_AUTOMATION_STYLE, captionTemplateId: 'remotion-caption-cine-word-pop' },
       available
@@ -210,7 +210,6 @@ describe('automation caption template selection', () => {
   })
 
   it('honours stored overrides and clamps the ones out of range', () => {
-    if (available.length === 0) return
     const choice = automationCaptionChoice(
       {
         ...DEFAULT_AUTOMATION_STYLE,

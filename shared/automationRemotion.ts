@@ -56,16 +56,20 @@ export function automationRemotionHookPlan(
    * difference is that an empty headline field means "write one from this video's transcript". */
   if (template && isNewHookTemplateId(template.id)) {
     const definition = NEW_HOOK_DEFINITIONS[template.id]
-    const headlineField = definition.textFields.find((field) => field.role === 'headline')
-    const stored = headlineField ? style.hookProps[headlineField.key] : undefined
-    const hasStoredHeadline = typeof stored === 'string' && stored.trim().length > 0
-    // A hook longer than the video would place a scene past the canvas end.
+    // The headline is the preset's `hookLine` (→ `style.hookText`), which is the single "Hook text
+    // line" input in the preset editor. Nothing in the UI writes the headline key into `hookProps`
+    // — the per-template field block filters `role === 'headline'` — so `hookProps` never carries a
+    // headline to display. Passing `headline: title` unconditionally keeps the draft the UI shows
+    // and the plan the pipeline builds in agreement; a hand-edited `hookProps` carrying a headline
+    // is intentionally ignored in favour of the explicit `hookLine`.
+    // Clamp the hook to the video length so the plan does not lengthen the canvas — the compiler
+    // at `hook-compiler.ts:113` would otherwise extend it rather than reject.
     const canvasSeconds = project.canvas.durationFrames / project.canvas.fps
     const chosen = style.hookSeconds > 0 ? style.hookSeconds : definition.defaultSeconds
     const draft = newHookDraftFromProps({
       definition,
       props: style.hookProps,
-      ...(hasStoredHeadline ? {} : { headline: title }),
+      headline: title,
       seconds: Math.min(chosen, canvasSeconds)
     })
     return newHookPlan({ template, definition, draft, fps: project.canvas.fps })

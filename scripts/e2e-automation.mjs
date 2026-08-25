@@ -138,16 +138,18 @@ try {
     await page.waitForTimeout(700)
     check((await page.getByText(/Fine Grade Adjustments/i).count()) === 0, 'No fine-grade sliders (nothing rendered them)')
     check((await page.getByText(/Caption style/i).count()) > 0, 'Caption style section is reachable')
-    check((await page.getByText(/Classic/i).count()) > 0, 'Classic caption group is shown')
-    check((await page.getByText(/Cinematic/i).count()) > 0, 'Cinematic caption group is shown')
+    /* Assert a template NAME, not the group label. "Cinematic" is also the text of a colour-grade
+       swatch on this same wizard step, so /Cinematic/i would pass even if the group never rendered. */
+    check((await page.getByText(/Cine · Word Pop/).count()) > 0, 'Cinematic caption group has rows')
+    check((await page.getByText(/Motivational Punch/i).count()) > 0, 'Classic caption group has rows')
     const nextStep = page.getByRole('button', { name: /Next: Hook/i }).first()
     if ((await nextStep.count()) > 0) {
       await nextStep.click()
       await page.waitForTimeout(600)
     }
     check((await page.getByText(/Hook template/i).count()) > 0, 'Hook template picker is offered — it does render')
-    check((await page.getByText(/Automatic/i).count()) > 0, 'Automatic hook option is shown')
-    check((await page.getByText(/^Cinematic$/).count()) > 0, 'Cinematic hook group is shown')
+    check((await page.getByText(/Automatic \(matches the colour grade\)/i).count()) > 0, 'Automatic hook option is shown')
+    check((await page.getByText(/Cine · Title Card/).count()) > 0, 'Cinematic hook group has rows')
     check((await page.getByText(/Hook Position/i).count()) === 0, 'No hook-position chips (never reached the renderer)')
     check((await page.getByText(/Hook text line/i).count()) > 0, 'Hook text line is still offered — it does render')
     // The modal has no Escape handler; its backdrop would otherwise swallow later clicks.

@@ -485,7 +485,12 @@ export interface AutomationStyleConfig {
    *  `normalizeAutomationStyle` is a whitelist, and an optional field it forgets is dropped
    *  silently on the way to SQLite. */
   hookTemplateId: string
-  /** Raw props for `hookTemplateId`. `{}` when there is nothing stored. */
+  /** Raw props for `hookTemplateId`. `{}` when there is nothing stored.
+   *  `JsonObject` (not the narrower `Record<string,string|number>` the DB row uses) because the
+   *  normaliser `templateProps` in `automationConfig.ts` already narrows to `string|number`, and
+   *  the plan builders (`newHookDraftFromProps`, `newCaptionDraftFromProps`) accept `JsonObject` —
+   *  the safe direction is narrow→wide. Do not "fix" this to `Record<string,string|number>` in the
+   *  unsafe direction. */
   hookProps: JsonObject
   /** Hook length in seconds, or `0` for the template's own default. */
   hookSeconds: number

@@ -4,7 +4,7 @@
  * automation batch (shared/automationRemotion.ts), and main cannot import from src/. This file
  * stays as the editor's import path so NewTemplatesAccordion.tsx and the unit suite that pins
  * these builders are untouched by the move. Add nothing here — extend the shared module. */
-export type { NewCaptionDraft, NewHookDraft } from '@shared/video-engine'
+export type { NewCaptionDraft, NewHookDraft } from '@shared/video-engine/new-templates-draft'
 export {
   newCaptionDraft,
   newCaptionDraftFromProps,
@@ -12,4 +12,4 @@ export {
   newHookDraft,
   newHookDraftFromProps,
   newHookPlan
-} from '@shared/video-engine'
+} from '@shared/video-engine/new-templates-draft'
