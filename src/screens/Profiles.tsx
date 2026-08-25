@@ -9,9 +9,10 @@ import { mediaSrc } from '../lib/media'
 import { errorMessage } from '../lib/errors'
 import { CAPTION_STYLE_IDS } from '@shared/video-engine/caption-style'
 import type { CaptionStyleId } from '@shared/video-engine/caption-style'
-import { NEW_CAPTION_DEFINITIONS, isNewCaptionTemplateId } from '@shared/video-engine/new-templates'
-import type { NewCaptionTemplateId } from '@shared/video-engine/new-templates'
-import { newCaptionDraftFromProps } from '@shared/video-engine/new-templates-draft'
+import { NEW_CAPTION_DEFINITIONS, NEW_HOOK_DEFINITIONS, isNewCaptionTemplateId, isNewHookTemplateId } from '@shared/video-engine/new-templates'
+import type { NewCaptionTemplateId, NewHookTemplateId } from '@shared/video-engine/new-templates'
+import { newCaptionDraftFromProps, newHookDraftFromProps } from '@shared/video-engine/new-templates-draft'
+import { REMOTION_CUSTOM_HOOK_TEMPLATE_ID } from '@shared/video-engine/hook-style'
 import type { VideoTemplate } from '@shared/video-engine/ipc'
 import type { AutomationJob, AutomationJobDetail, LibraryAsset, VisualTemplate } from '@shared/types'
 import { tpFeature, planSplit, TP_MERGE_CAP_SECONDS, TP_AUTO_MOTION_ID } from '@shared/talkingphotos'
@@ -253,6 +254,33 @@ export function Profiles(): JSX.Element {
     isNewCaptionTemplateId(activeCaptionTemplateId) ? activeCaptionTemplateId : null
   const cinematicCaptionDraft = cinematicCaptionId
     ? newCaptionDraftFromProps(cinematicCaptionId, editingTemplate?.captionProps)
+    : null
+  /* Hook templates: the same manifests Compose offers, minus `remotion-hook-custom`, which exists
+   * for hand-authoring a plan in the editor and means nothing to an unattended batch. An empty
+   * selection keeps the pre-existing behaviour, where the colour grade picks kinetic-30 or
+   * cinematic-30 (shared/automationRemotion.ts). */
+  const classicHookTemplates = useMemo(
+    () => engineTemplates.filter((template) =>
+      template.kind === 'hook'
+      && !isNewHookTemplateId(template.id)
+      && template.id !== REMOTION_CUSTOM_HOOK_TEMPLATE_ID),
+    [engineTemplates]
+  )
+  const cinematicHookTemplates = useMemo(
+    () => engineTemplates.filter((template) => template.kind === 'hook' && isNewHookTemplateId(template.id)),
+    [engineTemplates]
+  )
+  const activeHookTemplateId = editingTemplate?.hookTemplateId ?? ''
+  const cinematicHookId: NewHookTemplateId | null =
+    isNewHookTemplateId(activeHookTemplateId) ? activeHookTemplateId : null
+  const cinematicHookDefinition = cinematicHookId ? NEW_HOOK_DEFINITIONS[cinematicHookId] : null
+  const cinematicHookDraft = cinematicHookDefinition
+    ? newHookDraftFromProps({
+        definition: cinematicHookDefinition,
+        props: editingTemplate?.hookProps,
+        headline: editingTemplate?.hookLine || undefined,
+        seconds: editingTemplate?.hookSeconds || undefined
+      })
     : null
   const editingTemplateId = editingTemplate?.id
 
@@ -1513,7 +1541,54 @@ export function Profiles(): JSX.Element {
                 </>
               ) : (
                 <>
-                  {/* Step 2: Hook Card & Motion */}
+                  {/* Step 2: Hook Template */}
+                  <div className="at-editor-section">
+                    <span className="at-field-label">Hook template</span>
+                    {classicHookTemplates.length + cinematicHookTemplates.length === 0 ? (
+                      <p className="at-preset-empty">The renderer reported no hook templates, so there is nothing to choose here.</p>
+                    ) : (
+                      <>
+                        <div className="at-preset-list">
+                          <PresetRow
+                            title="Automatic (matches the colour grade)"
+                            sub="Intense → Kinetic, otherwise Cinematic — what this preset did before hook templates existed."
+                            on={activeHookTemplateId === ''}
+                            onClick={() => setEditingTemplate({ ...editingTemplate, hookTemplateId: undefined, hookProps: undefined, hookSeconds: undefined })}
+                          />
+                        </div>
+                        <span className="at-summary-label" style={{ display: 'block', marginTop: 10 }}>Classic</span>
+                        <div className="at-preset-list" style={{ marginTop: 6 }}>
+                          {classicHookTemplates.map((template) => (
+                            <PresetRow
+                              key={template.id}
+                              title={template.name}
+                              sub={template.description || template.id}
+                              on={activeHookTemplateId === template.id}
+                              onClick={() => setEditingTemplate({ ...editingTemplate, hookTemplateId: template.id, hookProps: undefined, hookSeconds: undefined })}
+                            />
+                          ))}
+                        </div>
+                        {cinematicHookTemplates.length > 0 && (
+                          <>
+                            <span className="at-summary-label" style={{ display: 'block', marginTop: 10 }}>Cinematic</span>
+                            <div className="at-preset-list" style={{ marginTop: 6 }}>
+                              {cinematicHookTemplates.map((template) => (
+                                <PresetRow
+                                  key={template.id}
+                                  title={template.name}
+                                  sub={template.description || template.id}
+                                  on={activeHookTemplateId === template.id}
+                                  onClick={() => setEditingTemplate({ ...editingTemplate, hookTemplateId: template.id, hookProps: undefined, hookSeconds: undefined })}
+                                />
+                              ))}
+                            </div>
+                          </>
+                        )}
+                      </>
+                    )}
+                  </div>
+
+                  {/* Hook text line — the headline. Empty = auto from this video's transcript. */}
                   <div className="at-editor-section">
                     <label htmlFor="template-hook" className="at-field-label">Hook text line</label>
                     <input
@@ -1522,24 +1597,125 @@ export function Profiles(): JSX.Element {
                       maxLength={200}
                       value={editingTemplate.hookLine}
                       onChange={(e) => setEditingTemplate({ ...editingTemplate, hookLine: e.target.value })}
-                      placeholder="Leave empty to write one from the transcript"
+                      placeholder={cinematicHookDefinition ? (cinematicHookDefinition.textFields.find((f) => f.role === 'headline')?.default ?? 'Leave empty to write one from the transcript') : 'Leave empty to write one from the transcript'}
                     />
                     <p className="at-preset-empty">
-                      Shown as an intro card over the first few seconds. Leave it empty and each
-                      video opens with its own first line instead.
+                      {cinematicHookId
+                        ? 'The headline for this Cinematic hook. Leave it empty and each video opens with its own first line instead. Other slate strings live below.'
+                        : 'Shown as an intro card over the first few seconds. Leave it empty and each video opens with its own first line instead.'}
                     </p>
                   </div>
 
-                  {/* Hook Canvas Live Preview */}
-                  <div className="at-editor-section">
-                    <span className="at-field-label">Hook Live Canvas Preview</span>
-                    <div className="at-hook-preview">
-                      <div className={`at-hook-frame ratio-${editingTemplate.aspectRatio.replace(':', '-')}`}>
-                        <div className="at-hook-text-layer pos-middle">
-                          {editingTemplate.hookLine || 'FIRST LINE OF THE TRANSCRIPT'}
+                  {/* Cinematic hook per-template fields — only when a Cinematic hook is selected */}
+                  {cinematicHookDefinition && cinematicHookDraft && (
+                    <div className="at-editor-section" style={{ border: '1px solid var(--border)', borderRadius: 12, background: 'var(--bg-inset)', padding: 12, display: 'flex', flexDirection: 'column', gap: 12 }}>
+                      <span className="at-summary-label" style={{ display: 'block' }}>{cinematicHookDefinition.name} fields</span>
+                      {cinematicHookDefinition.textFields.filter((field) => field.role !== 'headline').map((field) => (
+                        <div key={field.key}>
+                          <label htmlFor={`cine-hook-${field.key}`} className="at-summary-label">{field.label}</label>
+                          <input
+                            id={`cine-hook-${field.key}`}
+                            className="at-editor-input"
+                            maxLength={field.maxLength}
+                            value={String(cinematicHookDraft.text[field.key] ?? '')}
+                            onChange={(e) => setEditingTemplate({ ...editingTemplate, hookProps: { ...editingTemplate.hookProps, [field.key]: e.target.value } })}
+                            placeholder={field.default}
+                          />
+                          {field.hint && <span style={{ display: 'block', fontSize: 10, color: 'var(--text-faint)', marginTop: 4, lineHeight: 1.4 }}>{field.hint}</span>}
+                        </div>
+                      ))}
+                      {cinematicHookDefinition.numberFields.map((field) => (
+                        <div key={field.key}>
+                          <label htmlFor={`cine-hook-${field.key}`} className="at-summary-label">{field.label} · {cinematicHookDraft.numbers[field.key]}</label>
+                          <input
+                            id={`cine-hook-${field.key}`}
+                            type="number"
+                            className="at-editor-input"
+                            min={field.minimum}
+                            max={field.maximum}
+                            step={field.integer ? 1 : 0.1}
+                            value={cinematicHookDraft.numbers[field.key]}
+                            onChange={(e) => {
+                              const v = field.integer ? Math.round(Number(e.target.value)) : Number(e.target.value)
+                              setEditingTemplate({ ...editingTemplate, hookProps: { ...editingTemplate.hookProps, [field.key]: Number.isFinite(v) ? v : field.default } })
+                            }}
+                          />
+                        </div>
+                      ))}
+                      <div className="at-split-row">
+                        {cinematicHookDefinition.usesAccent && (
+                          <div style={{ flex: 1 }}>
+                            <label htmlFor="cine-hook-accent" className="at-summary-label">Accent</label>
+                            <input
+                              id="cine-hook-accent"
+                              type="color"
+                              value={cinematicHookDraft.accentColor}
+                              onChange={(e) => setEditingTemplate({ ...editingTemplate, hookProps: { ...editingTemplate.hookProps, accentColor: e.target.value.toUpperCase() } })}
+                              style={{ width: '100%', height: 32, background: 'var(--bg-card)', border: '1px solid var(--border-3)', borderRadius: 9, padding: 2 }}
+                            />
+                          </div>
+                        )}
+                        <div style={{ flex: 1 }}>
+                          <label htmlFor="cine-hook-grain" className="at-summary-label">Film grain · {cinematicHookDraft.grain.toFixed(2)}</label>
+                          <input
+                            id="cine-hook-grain"
+                            type="range"
+                            min={0}
+                            max={1}
+                            step={0.05}
+                            value={cinematicHookDraft.grain}
+                            onChange={(e) => setEditingTemplate({ ...editingTemplate, hookProps: { ...editingTemplate.hookProps, grain: Number(e.target.value) } })}
+                            style={{ width: '100%', accentColor: 'var(--accent)' }}
+                          />
+                        </div>
+                        <div style={{ flex: 1 }}>
+                          <label htmlFor="cine-hook-seconds" className="at-summary-label">Length · {cinematicHookDraft.seconds.toFixed(1)}s</label>
+                          <input
+                            id="cine-hook-seconds"
+                            type="range"
+                            min={1}
+                            max={30}
+                            step={0.5}
+                            value={cinematicHookDraft.seconds}
+                            onChange={(e) => setEditingTemplate({ ...editingTemplate, hookSeconds: Number(e.target.value) })}
+                            style={{ width: '100%', accentColor: 'var(--accent)' }}
+                          />
                         </div>
                       </div>
+                      {!cinematicHookDefinition.usesAccent && (
+                        <p className="at-preset-empty" style={{ margin: 0 }}>This hook has no accent colour — its palette is fixed.</p>
+                      )}
                     </div>
+                  )}
+
+                  {/* Hook preview — honest card for Cinematic, live canvas for the rest */}
+                  <div className="at-editor-section">
+                    <span className="at-field-label">Hook preview</span>
+                    {cinematicHookDefinition && cinematicHookDraft ? (
+                      <div style={{ padding: 12, borderRadius: 12, border: '1px solid var(--border)', background: 'var(--bg-inset)', display: 'flex', flexDirection: 'column', gap: 8 }}>
+                        <b style={{ fontSize: 13, color: 'var(--text-bright)' }}>{cinematicHookDefinition.name} — {cinematicHookDefinition.defaultSeconds}s · grain {cinematicHookDefinition.grain}</b>
+                        <span style={{ fontSize: 11, color: 'var(--text-dim)', lineHeight: 1.5 }}>{cinematicHookDefinition.description}</span>
+                        <div style={{ fontSize: 11, color: 'var(--text-soft)', background: 'var(--bg-card)', border: '1px solid var(--border-2)', borderRadius: 8, padding: '8px 10px', lineHeight: 1.5 }}>
+                          <div>Headline: {editingTemplate.hookLine.trim() ? `"${editingTemplate.hookLine.trim()}"` : '— auto from transcript —'}</div>
+                          {cinematicHookDefinition.textFields.filter((f) => f.role !== 'headline').map((f) => (
+                            <div key={f.key}>{f.label}: {String(cinematicHookDraft.text[f.key] ?? '')}</div>
+                          ))}
+                          {cinematicHookDefinition.numberFields.map((f) => (
+                            <div key={f.key}>{f.label}: {cinematicHookDraft.numbers[f.key]}</div>
+                          ))}
+                          <div>Grain: {cinematicHookDraft.grain.toFixed(2)}{cinematicHookDefinition.usesAccent ? ` · Accent: ${cinematicHookDraft.accentColor}` : ''} · Length: {cinematicHookDraft.seconds.toFixed(1)}s</div>
+                        </div>
+                        <span style={{ fontSize: 10, color: 'var(--text-faint)' }}>Preview this in Compose for the full animation — this card only confirms what the preset will carry.</span>
+                      </div>
+                    ) : (
+                      <div className="at-hook-preview">
+                        <div className={`at-hook-frame ratio-${editingTemplate.aspectRatio.replace(':', '-')}`}>
+                          <div className="at-hook-text-layer pos-middle">
+                            {editingTemplate.hookLine || 'FIRST LINE OF THE TRANSCRIPT'}
+                          </div>
+                        </div>
+                      </div>
+                    )}
                   </div>
 
                   {/* Start Zoom Toggle */}
