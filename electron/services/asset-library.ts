@@ -14,8 +14,12 @@ export interface AssetImportContext {
   projectId?: string
 }
 
+export function assetLibraryRoot(): string {
+  return join(app.getPath('userData'), 'asset-library')
+}
+
 function roots(): { files: string; thumbs: string } {
-  const base = join(app.getPath('userData'), 'asset-library')
+  const base = assetLibraryRoot()
   const files = join(base, 'files')
   const thumbs = join(base, 'thumbnails')
   mkdirSync(files, { recursive: true })

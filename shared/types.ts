@@ -504,6 +504,18 @@ export interface AutomationStyleConfig {
   brollPoolKey?: string
   brollFallbackPolicy: AutomationBrollFallbackPolicy
   brollShufflePolicy: AutomationBrollShufflePolicy
+  /** Filter preset id from GRADE_PRESETS — refines the base videoStyle grade. */
+  filterPresetId?: string
+  /** Parametric grade overrides (VideoGrading). */
+  adjust?: import('./video-engine').VideoGrading
+  /** Additive effect preset ids. */
+  effectsPresetIds?: string[]
+  /** Transition duration override in frames (30fps). */
+  transitionDurationFrames?: number
+  /** Scrim overlay for text legibility. */
+  scrim?: { enabled: boolean; direction: 'bottom' | 'top' | 'left' | 'right'; size: number; opacity: number }
+  /** Text overlays (Compose Text presets). */
+  textOverlays?: Array<{ id: string; text: string; preset: string; animation?: string; at: 'hook' | 'persistent' }>
 }
 
 export type AutomationUploadMatchType = 'exact-id' | 'high-title' | 'ambiguous-title' | 'manual' | 'none'

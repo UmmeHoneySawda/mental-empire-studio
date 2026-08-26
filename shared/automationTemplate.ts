@@ -64,9 +64,10 @@ export function visualTemplateToStyleConfig(template?: VisualTemplate): Automati
   if (!template) return { ...DEFAULT_AUTOMATION_STYLE }
   const autoBroll = template.mode === 'Auto B-roll'
   const baseTransition = resolveTransitionPreset(template.transition)
-  const crossfadeSec = template.transitionDurationFrames != null && Number.isFinite(template.transitionDurationFrames)
+  const rawCrossfadeSec = template.transitionDurationFrames != null && Number.isFinite(template.transitionDurationFrames)
     ? Math.max(0, Math.min(5, template.transitionDurationFrames / PRESET_FPS))
     : baseTransition.durationFrames / PRESET_FPS
+  const crossfadeSec = template.transition === 'cut' ? 0 : rawCrossfadeSec
   const cfg: AutomationStyleConfig = {
     ...DEFAULT_AUTOMATION_STYLE,
     videoStyle: GRADE_TO_VIDEO_STYLE[template.grade],
@@ -89,16 +90,14 @@ export function visualTemplateToStyleConfig(template?: VisualTemplate): Automati
     captionProps: { ...(template.captionProps ?? {}) },
     brollMode: autoBroll ? 'full' : 'off',
     brollDensity: DENSITY_TO_BROLL[template.density],
-    brollShufflePolicy: template.order === 'Shuffle' ? 'per-video' : 'ranked'
+    brollShufflePolicy: template.order === 'Shuffle' ? 'per-video' : 'ranked',
+    ...(template.filterPresetId ? { filterPresetId: template.filterPresetId } : {}),
+    ...(template.adjust ? { adjust: template.adjust } : {}),
+    ...(template.effectsPresetIds ? { effectsPresetIds: template.effectsPresetIds } : {}),
+    ...(template.transitionDurationFrames != null ? { transitionDurationFrames: template.transitionDurationFrames } : {}),
+    ...(template.scrim ? { scrim: template.scrim } : {}),
+    ...(template.textOverlays ? { textOverlays: template.textOverlays } : {})
   }
-  // Pass-through new fields for future pipeline stages — kept as soft extension on the config.
-  // They are optional and additive, so legacy consumers ignore them.
-  if (template.filterPresetId) (cfg as unknown as Record<string, unknown>).filterPresetId = template.filterPresetId
-  if (template.adjust) (cfg as unknown as Record<string, unknown>).adjust = template.adjust
-  if (template.effectsPresetIds) (cfg as unknown as Record<string, unknown>).effectsPresetIds = template.effectsPresetIds
-  if (template.scrim) (cfg as unknown as Record<string, unknown>).scrim = template.scrim
-  if (template.transitionDurationFrames != null) (cfg as unknown as Record<string, unknown>).transitionDurationFrames = template.transitionDurationFrames
-  if (template.textOverlays) (cfg as unknown as Record<string, unknown>).textOverlays = template.textOverlays
   return cfg
 }
 

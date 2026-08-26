@@ -28,6 +28,7 @@
     "test:watch": "vitest",
     "e2e:studio": "node scripts/e2e-studio.mjs",
     "e2e:automation": "node scripts/e2e-automation.mjs",
+    "e2e:automation:shots": "node scripts/e2e-automation.mjs --shots",
     "e2e:new-templates": "node scripts/e2e-new-templates.mjs",
     "bench:render": "tsx scripts/bench-render.ts",
     "bench:fixture": "tsx scripts/bench-render-fixture.ts",

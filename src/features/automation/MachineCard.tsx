@@ -1,8 +1,25 @@
 import type { VisualTemplate } from '@shared/types'
 import { resolveTransitionPreset } from '@shared/video-engine/transition-presets'
+import { GRADE_PRESETS } from '../video-studio/editor/presets'
+import { NEW_HOOK_DEFINITIONS } from '@shared/video-engine/new-templates'
 import { GradeThumb } from './AnimatedThumb/GradeThumb'
 import { CaptionThumb } from './AnimatedThumb/CaptionThumb'
 import { TransitionThumb } from './AnimatedThumb/TransitionThumb'
+
+function humanHookLabel(id?: string): string | null {
+  if (!id) return null
+  const cine = (NEW_HOOK_DEFINITIONS as Record<string, { name: string }>)[id]
+  if (cine) return cine.name
+  // Classic hook: remotion-hook-kinetic-30 etc — humanise
+  const cleaned = id.replace('remotion-hook-', '').replace(/-/g, ' ')
+  return cleaned.charAt(0).toUpperCase() + cleaned.slice(1)
+}
+
+function humanFilterLabel(id?: string): string | null {
+  if (!id) return null
+  const found = GRADE_PRESETS.find((p) => p.id === id)
+  return found ? found.label : id
+}
 
 export function MachineCard({
   template,
@@ -21,26 +38,10 @@ export function MachineCard({
   const duration = template.transitionDurationFrames ?? preset.durationFrames
 
   return (
-    <div
-      className={`automation-machine-card ${selected ? 'selected' : ''}`}
-      style={{
-        background: 'var(--bg-card)',
-        border: selected ? '1px solid var(--accent)' : '1px solid var(--border)',
-        borderRadius: 14,
-        padding: 12,
-        boxShadow: selected ? 'var(--shadow-glow)' : 'var(--shadow-card)',
-        display: 'flex',
-        flexDirection: 'column',
-        gap: 10,
-        minWidth: 0
-      }}
-    >
+    <div className={`automation-machine-card ${selected ? 'selected' : ''}`} style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
       <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6, minWidth: 0 }}>
         <GradeThumb grade={template.grade} />
-        <CaptionThumb
-          templateId={template.captionTemplateId || `remotion-caption-${template.captionStyle}`}
-          props={template.captionProps}
-        />
+        <CaptionThumb templateId={template.captionTemplateId || `remotion-caption-${template.captionStyle}`} props={template.captionProps} />
         <TransitionThumb transitionId={preset.id} durationFrames={duration} />
       </div>
 
@@ -62,7 +63,7 @@ export function MachineCard({
           style={{
             marginTop: 4,
             fontFamily: 'var(--font-mono)',
-            fontSize: 9.5,
+            fontSize: 11,
             color: 'var(--text-muted)',
             lineHeight: 1.4,
             whiteSpace: 'nowrap',
@@ -76,7 +77,7 @@ export function MachineCard({
           <span
             style={{
               fontFamily: 'var(--font-mono)',
-              fontSize: 9,
+              fontSize: 11,
               color: 'var(--accent)',
               background: 'var(--accent-soft)',
               border: '1px solid var(--accent)',
@@ -86,11 +87,11 @@ export function MachineCard({
           >
             {template.captionStyle}
           </span>
-          {template.hookTemplateId && (
+          {template.hookTemplateId && humanHookLabel(template.hookTemplateId) && (
             <span
               style={{
                 fontFamily: 'var(--font-mono)',
-                fontSize: 9,
+                fontSize: 11,
                 color: 'var(--text-muted)',
                 background: 'var(--bg-inset)',
                 border: '1px solid var(--border-2)',
@@ -98,14 +99,14 @@ export function MachineCard({
                 padding: '3px 7px'
               }}
             >
-              {template.hookTemplateId.replace('remotion-hook-', '').slice(0, 14)}
+              {humanHookLabel(template.hookTemplateId)}
             </span>
           )}
-          {template.filterPresetId && (
+          {template.filterPresetId && humanFilterLabel(template.filterPresetId) && (
             <span
               style={{
                 fontFamily: 'var(--font-mono)',
-                fontSize: 9,
+                fontSize: 11,
                 color: 'var(--text-dim)',
                 background: 'var(--bg-inset)',
                 border: '1px solid var(--border-2)',
@@ -113,20 +114,20 @@ export function MachineCard({
                 padding: '3px 7px'
               }}
             >
-              {template.filterPresetId}
+              {humanFilterLabel(template.filterPresetId)}
             </span>
           )}
         </div>
       </div>
 
       <div style={{ display: 'flex', gap: 6, marginTop: 2 }}>
-        <button type="button" className="at-card-btn" onClick={onEdit}>
+        <button type="button" className="at-card-btn ed-focus" onClick={onEdit}>
           Edit
         </button>
-        <button type="button" className="at-card-btn" onClick={onDuplicate}>
+        <button type="button" className="at-card-btn ed-focus" onClick={onDuplicate}>
           Duplicate
         </button>
-        <button type="button" className="at-card-btn" onClick={onDelete}>
+        <button type="button" className="at-card-btn danger ed-focus" onClick={onDelete}>
           Delete
         </button>
       </div>

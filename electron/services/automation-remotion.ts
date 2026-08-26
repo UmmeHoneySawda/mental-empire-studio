@@ -7,7 +7,7 @@ import {
   type VideoProject
 } from '../../shared/video-engine'
 import { resolveTransitionPreset } from '../../shared/video-engine/transition-presets'
-import type { AutomationJobConfig, AutomationJobItem } from '../../shared/types'
+import type { AutomationJobConfig, AutomationJobItem, AutomationStyleConfig } from '../../shared/types'
 import {
   automationCaptionChoice,
   automationRemotionBrollDensity,
@@ -71,8 +71,9 @@ async function applyImageTimeline(project: VideoProject, config: AutomationJobCo
   }), { expectedRevision: project.revision })
 }
 
-async function applyTransitions(project: VideoProject, value: string | undefined): Promise<VideoProject> {
+async function applyTransitions(project: VideoProject, style: AutomationStyleConfig): Promise<VideoProject> {
   const engine = await getVideoEngine()
+  const value = (style as AutomationStyleConfig & { transition?: string }).transition
   const preset = resolveTransitionPreset(value)
   if (!preset.templateId) {
     if (project.transitions.length === 0) return project
@@ -80,6 +81,9 @@ async function applyTransitions(project: VideoProject, value: string | undefined
       expectedRevision: project.revision
     })
   }
+  // Cut already returned above (no template); otherwise respect explicit duration override
+  const override = (style as AutomationStyleConfig & { transitionDurationFrames?: number }).transitionDurationFrames
+  const durationFrames = typeof override === 'number' && Number.isFinite(override) ? Math.max(3, Math.min(90, Math.round(override))) : preset.durationFrames
   if (project.transitions.length > 0) {
     project = await engine.saveProject(VideoProjectSchema.parse({ ...project, transitions: [] }), {
       expectedRevision: project.revision
@@ -95,7 +99,7 @@ async function applyTransitions(project: VideoProject, value: string | undefined
       fromSceneId: scenes[index]!.id,
       toSceneId: scenes[index + 1]!.id,
       startFrame: scenes[index + 1]!.startFrame,
-      durationFrames: preset.durationFrames,
+      durationFrames,
       direction: preset.direction,
       easing: 'ease-out'
     })
@@ -141,7 +145,7 @@ export async function prepareAutomationRemotionProject(
   }
 
   if (!config.rules.autoBroll) project = await applyImageTimeline(project, config)
-  project = await applyTransitions(project, config.styleConfig.transition)
+  project = await applyTransitions(project, config.styleConfig)
   project = await engine.setGrading(project.id, automationRemotionGrade(config.styleConfig, VIDEO_GRADING_PRESETS))
 
   /* `list().find()` rather than `require()`: a preset holding an id this build no longer ships must

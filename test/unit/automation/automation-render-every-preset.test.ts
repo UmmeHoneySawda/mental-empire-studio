@@ -31,14 +31,15 @@ import type { VisualTemplate } from '../../../shared/types'
 /**
  * Automation Tab Editor – exhaustive 5s / 10s render coverage.
  *
- * The Automations tab editor (TemplateSheet.tsx) delegates every visual control
- * to a controlled variant of the Remotion editor's panels:
- *   TransitionsToolPanelControlled  -> TRANSITION_PRESETS
- *   FiltersToolPanelControlled      -> GRADE_PRESETS / VIDEO_GRADING_PRESETS
- *   AdjustToolPanelControlled       -> VideoGrading (exposure/contrast/...)
- *   EffectsToolPanelControlled      -> effect preset ids
- *   CaptionThumb / HookThumb        -> caption & hook template registries
- *   MediaBin                        -> image pool (imagePaths)
+ * The Automations tab editor (TemplateSheet.tsx) owns its controls directly
+ * (kit Seg/Chip/SliderRow/ToggleRow) and reads the shared preset tables:
+ *   TRANSITION_PRESETS              -> Look/Transitions grid
+ *   GRADE_PRESETS                   -> Look/Filters grid
+ *   VideoGrading (exposure/...)     -> Look/Adjust sliders
+ *   EFFECTS_PRESETS                 -> Look/Effects chips (human names)
+ *   CAPTION_STYLE_DEFINITIONS etc   -> Captions group
+ *   NEW_HOOK_DEFINITIONS etc        -> Hook group
+ *   TemplateImagePool               -> Media group (imagePaths)
  *
  * A 10-second project (300 frames @ 30fps) and a 5-second project (150 frames)
  * are exercised against every preset the editor offers, individually and then
@@ -87,7 +88,9 @@ function makeProject(durationFrames: number, width = 1080, height = 1920): Retur
 describe('automation tab editor — every transition on a 10s and 5s timeline', () => {
   it('offers exactly the shared TRANSITION_PRESETS table (no editor-only drift)', () => {
     const sheet = readFileSync(resolve('src/features/automation/TemplateSheet.tsx'), 'utf8')
-    expect(sheet).toContain('TransitionsToolPanelControlled')
+    // TemplateSheet now owns its controls directly (kit Seg/Chip/Slider) instead of delegating to editor Controlled panels
+    expect(sheet).not.toContain('TransitionsToolPanelControlled')
+    expect(sheet).toContain('TRANSITION_PRESETS')
     expect(TRANSITION_PRESETS.length).toBe(13)
     expect(TRANSITION_PRESETS.map((p) => p.id)).toEqual([
       'cut',
@@ -322,21 +325,41 @@ describe('automation tab editor — every caption style and template', () => {
 describe('automation tab editor — every effect and overlay', () => {
   const EFFECT_IDS = ['vignette-boost', 'grain-heavy', 'contrast-punch', 'vhs-retro', 'cinema-mood'] as const
 
-  it('Editor and TemplateSheet expose exactly five scene-effect presets (EffectsToolPanelControlled)', () => {
+  it('Editor and TemplateSheet expose exactly five scene-effect presets', () => {
     const editor = readFileSync(resolve('src/features/video-studio/editor/EditorToolPanel.tsx'), 'utf8')
     for (const id of EFFECT_IDS) {
       expect(editor).toContain(id)
     }
-    // TemplateSheet delegates to EffectsToolPanelControlled – prove the delegation, not a copy/paste.
+    // TemplateSheet owns its chips directly (human names) instead of delegating to editor Controlled panels
     const sheet = readFileSync(resolve('src/features/automation/TemplateSheet.tsx'), 'utf8')
-    expect(sheet).toContain('EffectsToolPanelControlled')
+    expect(sheet).not.toContain('EffectsToolPanelControlled')
     expect(sheet).toContain('effectsPresetIds')
+    expect(sheet).toContain('Vignette Shadow')
   })
 
   it.each(EFFECT_IDS)('effect %s round-trips through VisualTemplate -> styleConfig -> VideoGrading', (effectId) => {
     const template = baseTemplate({ effectsPresetIds: [effectId] } as any)
     const style = visualTemplateToStyleConfig(template)
     expect((style as any).effectsPresetIds).toEqual([effectId])
+    // Actually verify the patch layering reaches VideoGrading
+    const grading = automationRemotionGrade(style, VIDEO_GRADING_PRESETS as any)
+    expect(grading.enabled).toBe(true)
+    // Each effect must contribute its documented key
+    const expectedKeys: Record<string, string[]> = {
+      'vignette-boost': ['vignette'],
+      'grain-heavy': ['grain'],
+      'contrast-punch': ['contrast', 'saturation'],
+      'vhs-retro': ['exposure', 'grain'],
+      'cinema-mood': ['vignette']
+    }
+    for (const key of expectedKeys[effectId] ?? []) {
+      expect((grading as Record<string, unknown>)[key]).toBeDefined()
+    }
+    // Deleting the patch layering must change the result — proves the test is not vacuous
+    const withoutEffect = automationRemotionGrade({ ...style, effectsPresetIds: [] } as any, VIDEO_GRADING_PRESETS as any)
+    // At least one of the effect's keys should differ
+    const diff = (expectedKeys[effectId] ?? []).some((k) => (grading as Record<string, unknown>)[k] !== (withoutEffect as Record<string, unknown>)[k])
+    expect(diff).toBe(true)
   })
 
   it('all effects together are still a valid VisualTemplate (no schema clash) on a 10s project', () => {

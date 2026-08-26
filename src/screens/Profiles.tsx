@@ -10,7 +10,6 @@ import { FeedBar } from '../features/automation/FeedBar'
 import { Conveyor } from '../features/automation/Conveyor'
 import { TemplateSheet } from '../features/automation/TemplateSheet'
 import { validateVisualTemplate } from '../features/automation/useAutomationDraft'
-import '../features/automation/tokens.css'
 
 function jobEta(job?: AutomationJob): string {
   if (!job?.startedAt || job.progress < 2) return 'Estimating…'
@@ -78,9 +77,8 @@ export function Profiles(): JSX.Element {
 
   const linkedSources = useMemo(() => {
     if (!selectedChannelId) return []
-    const ch = myChannels.find((c) => c.id === selectedChannelId)
-    return sourceChannels.filter((s) => s.linkedMyChannelId === selectedChannelId || (ch && s.id === ch.linkedSourceId))
-  }, [sourceChannels, selectedChannelId, myChannels])
+    return sourceChannels.filter((s) => s.linkedMyChannelId === selectedChannelId)
+  }, [sourceChannels, selectedChannelId])
 
   useEffect(() => {
     if (linkedSources.length > 0) setActiveSourceIds(linkedSources.map((s) => s.id))
@@ -101,7 +99,6 @@ export function Profiles(): JSX.Element {
   const canChooseBatch = !!selectedChannelId && linkedSources.length > 0 && unpublishedAvailable > 0
   const canLaunch = !sendingBatch && drawCount > 0 && activeSourceIds.length > 0 && !!selectedChannelId && !!selectedTemplate
   const activeJob = automationJobs.find((j) => j.status === 'running' || j.status === 'pausing')
-  const dryRunTitles = useMemo(() => Array.from({ length: drawCount }).map((_, i) => `Next unpublished video from linked sources ${i + 1}`), [drawCount])
 
   const handleSaveTemplate = async (saved: VisualTemplate) => {
     const err = validateVisualTemplate(saved)
@@ -168,7 +165,7 @@ export function Profiles(): JSX.Element {
       </div>
 
       <div className="at-tabs" role="tablist" aria-label="Automation sections">
-        <button id="at-tab-channels" aria-controls="at-panel-channels" className={`at-tab-btn ${mainTab === 'channels' ? 'active' : ''}`} onClick={() => setMainTab('channels')} role="tab" aria-selected={mainTab === 'channels'} tabIndex={mainTab === 'channels' ? 0 : -1}><span>Batches</span><span className="at-tab-badge">{myChannels.length}</span></button>
+        <button id="at-tab-channels" aria-controls="at-panel-channels" className={`at-tab-btn ${mainTab === 'channels' ? 'active' : ''}`} onClick={() => setMainTab('channels')} role="tab" aria-selected={mainTab === 'channels'} tabIndex={mainTab === 'channels' ? 0 : -1}><span>Batches</span></button>
         <button id="at-tab-templates" aria-controls="at-panel-templates" className={`at-tab-btn ${mainTab === 'templates' ? 'active' : ''}`} onClick={() => setMainTab('templates')} role="tab" aria-selected={mainTab === 'templates'} tabIndex={mainTab === 'templates' ? 0 : -1}><span>Templates</span><span className="at-tab-badge">{templates.length}</span></button>
         <button id="at-tab-jobs" aria-controls="at-panel-jobs" className={`at-tab-btn ${mainTab === 'jobs' ? 'active' : ''}`} onClick={() => setMainTab('jobs')} role="tab" aria-selected={mainTab === 'jobs'} tabIndex={mainTab === 'jobs' ? 0 : -1}><span>Run history</span><span className="at-tab-badge">{automationJobs.length}</span></button>
       </div>
@@ -189,19 +186,12 @@ export function Profiles(): JSX.Element {
               unpublishedAvailable={unpublishedAvailable}
               canLaunch={canLaunch}
               onLaunch={handleSendToRender}
-              dryRunTitles={dryRunTitles}
               templates={templates}
               selectedTemplateId={selectedTemplateId}
               onSelectTemplate={setSelectedTemplateId}
             />
             {!canChooseBatch && myChannels.length > 0 && linkedSources.length === 0 && (
               <Banner kind="info">No source is linked to this channel yet. <Btn size="sm" variant="soft" onClick={() => setActive('channels')}>Link a source</Btn></Banner>
-            )}
-            {canChooseBatch && selectedTemplate && (
-              <div style={{ border: '1px solid var(--border)', borderRadius: 14, padding: 12, background: 'var(--bg-card)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Ready: <b style={{ color: 'var(--text-bright)' }}>{myChannels.find((c) => c.id === selectedChannelId)?.name}</b> · {drawCount} videos · {selectedTemplate.name} · {selectedTemplate.aspectRatio} · {selectedTemplate.captionStyle}</div>
-                <Btn variant="primary" disabled={!canLaunch} onClick={handleSendToRender}>{sendingBatch ? 'Starting batch…' : `Start ${drawCount}-video batch`}</Btn>
-              </div>
             )}
           </div>
         )}

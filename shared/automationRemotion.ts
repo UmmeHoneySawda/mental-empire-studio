@@ -1,5 +1,6 @@
 import type { AutomationStyleConfig } from './types'
 import type { AutoBrollDensity, HookPlan, JsonObject, TemplateManifest, VideoGradingPreset, VideoProject } from './video-engine'
+import { clampVideoGrading } from './video-engine/grading'
 import {
   NEW_HOOK_DEFINITIONS,
   isNewCaptionTemplateId,
@@ -18,13 +19,63 @@ const GRADE_PRESET_BY_STYLE: Readonly<Record<AutomationStyleConfig['videoStyle']
   Heartfelt: 'warm-doc'
 }
 
+const FILTER_PRESET_PATCHES: Record<string, Partial<import('./video-engine').VideoGrading>> = {
+  neutral: { exposure: 0, contrast: 0, saturation: 1, temperature: 0, tint: 0, vignette: 0, grain: 0 },
+  punch: { contrast: 0.18, saturation: 1.2, vignette: 0.12 },
+  'teal-orange': { contrast: 0.14, saturation: 1.15, temperature: 0.12, tint: -0.06, vignette: 0.15 },
+  'warm-film': { exposure: 0.05, contrast: 0.08, saturation: 1.08, temperature: 0.2, grain: 0.12, vignette: 0.18 },
+  'cold-doc': { contrast: 0.1, saturation: 0.85, temperature: -0.18, vignette: 0.1 },
+  noir: { contrast: 0.3, saturation: 0.12, vignette: 0.35, grain: 0.18 },
+  vhs: { exposure: 0.1, contrast: -0.08, saturation: 1.35, temperature: 0.08, grain: 0.32, vignette: 0.22 },
+  'clean-bright': { exposure: 0.12, contrast: 0.06, saturation: 1.05, temperature: 0.04 }
+}
+
+const EFFECT_DELTAS: Record<string, Partial<import('./video-engine').VideoGrading>> = {
+  'vignette-boost': { vignette: 0.3 },
+  'grain-heavy': { grain: 0.25 },
+  'contrast-punch': { contrast: 0.2, saturation: 0.15 },
+  'vhs-retro': { exposure: 0.1, contrast: -0.1, saturation: 0.3, grain: 0.3 },
+  'cinema-mood': { temperature: -0.1, tint: 0.05, vignette: 0.25 }
+}
+
 export function automationRemotionGrade(
   style: AutomationStyleConfig,
   presets: readonly VideoGradingPreset[]
 ): VideoGradingPreset['grading'] {
   const id = GRADE_PRESET_BY_STYLE[style.videoStyle]
-  return (presets.find((preset) => preset.id === id) ?? presets.find((preset) => preset.id === 'off'))?.grading
-    ?? { enabled: false, lutIntensity: 1, exposure: 0, contrast: 0, saturation: 1, temperature: 0, tint: 0, vignette: 0, grain: 0 }
+  const base =
+    (presets.find((preset) => preset.id === id) ?? presets.find((preset) => preset.id === 'off'))?.grading ??
+    ({ enabled: false, lutIntensity: 1, exposure: 0, contrast: 0, saturation: 1, temperature: 0, tint: 0, vignette: 0, grain: 0 } as const)
+  let grading: import('./video-engine').VideoGrading = { ...base } as import('./video-engine').VideoGrading
+  const filterId = (style as AutomationStyleConfig & { filterPresetId?: string }).filterPresetId
+  if (filterId) {
+    const patch = FILTER_PRESET_PATCHES[filterId]
+    if (patch) grading = { ...grading, ...patch, enabled: true }
+  }
+  const adjust = (style as AutomationStyleConfig & { adjust?: import('./video-engine').VideoGrading }).adjust
+  if (adjust && typeof adjust === 'object') {
+    grading = { ...grading, ...adjust, enabled: true }
+  }
+  const effects = (style as AutomationStyleConfig & { effectsPresetIds?: string[] }).effectsPresetIds
+  if (Array.isArray(effects)) {
+    for (const eid of effects) {
+      const delta = EFFECT_DELTAS[eid]
+      if (!delta) continue
+      const next: import('./video-engine').VideoGrading = { ...grading }
+      for (const k of Object.keys(delta) as Array<keyof typeof delta>) {
+        const d = delta[k] as number | undefined
+        if (typeof d !== 'number') continue
+        const cur = (grading as unknown as Record<string, number>)[k as string]
+        if (k === 'saturation') {
+          ;(next as Record<string, unknown>)[k as string] = (typeof cur === 'number' ? cur : 1) + d
+        } else {
+          ;(next as Record<string, unknown>)[k as string] = (typeof cur === 'number' ? cur : 0) + d
+        }
+      }
+      grading = clampVideoGrading({ ...(next as Record<string, unknown>), enabled: true } as import('./video-engine').VideoGrading)
+    }
+  }
+  return grading
 }
 
 export function automationRemotionBrollDensity(style: AutomationStyleConfig): AutoBrollDensity {

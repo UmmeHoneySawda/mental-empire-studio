@@ -11,6 +11,7 @@ export function ThumbShell({
     <div
       role="img"
       aria-label={label}
+      className="automation-thumb-shell"
       style={{
         width: '100%',
         aspectRatio: '16 / 9',

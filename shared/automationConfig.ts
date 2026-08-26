@@ -163,8 +163,63 @@ export function normalizeAutomationStyle(value: unknown, legacy: Partial<Automat
     brollPoolSize: Math.round(finiteNumber(raw.brollPoolSize, DEFAULT_AUTOMATION_STYLE.brollPoolSize, 1, 200)),
     ...(typeof raw.brollPoolKey === 'string' && raw.brollPoolKey.trim() ? { brollPoolKey: raw.brollPoolKey.trim().slice(0, 160) } : {}),
     brollFallbackPolicy: oneOf(raw.brollFallbackPolicy, ['selected-only', 'prefer-selected', 'all-sources'], DEFAULT_AUTOMATION_STYLE.brollFallbackPolicy),
-    brollShufflePolicy: oneOf(raw.brollShufflePolicy, ['per-video', 'ranked'], DEFAULT_AUTOMATION_STYLE.brollShufflePolicy)
+    brollShufflePolicy: oneOf(raw.brollShufflePolicy, ['per-video', 'ranked'], DEFAULT_AUTOMATION_STYLE.brollShufflePolicy),
+    ...(typeof raw.filterPresetId === 'string' && raw.filterPresetId.trim() ? { filterPresetId: raw.filterPresetId.trim().slice(0, 64) } : {}),
+    ...(Array.isArray(raw.effectsPresetIds)
+      ? { effectsPresetIds: [...new Set(raw.effectsPresetIds.filter((v): v is string => typeof v === 'string'))].slice(0, 20) }
+      : {}),
+    ...(typeof raw.transitionDurationFrames === 'number' && Number.isFinite(raw.transitionDurationFrames)
+      ? { transitionDurationFrames: Math.round(finiteNumber(raw.transitionDurationFrames, 30, 0, 90)) }
+      : {}),
+    ...(raw.adjust && typeof raw.adjust === 'object' && !Array.isArray(raw.adjust) ? { adjust: normalizeAdjust(raw.adjust as Record<string, unknown>) } : {}),
+    ...(raw.scrim && typeof raw.scrim === 'object' && !Array.isArray(raw.scrim) ? { scrim: normalizeScrim(raw.scrim as Record<string, unknown>) } : {}),
+    ...(Array.isArray(raw.textOverlays) ? { textOverlays: normalizeTextOverlays(raw.textOverlays) } : {})
   }
+}
+
+function normalizeAdjust(value: Record<string, unknown>): import('./video-engine').VideoGrading {
+  const out: Record<string, unknown> = { enabled: true }
+  const ranges: Record<string, [number, number, number]> = {
+    exposure: [0, -5, 5],
+    contrast: [0, -1, 1],
+    saturation: [1, 0, 2],
+    temperature: [0, -1, 1],
+    tint: [0, -1, 1],
+    vignette: [0, 0, 1],
+    grain: [0, 0, 1],
+    lutIntensity: [1, 0, 1]
+  }
+  for (const k of Object.keys(ranges) as Array<keyof typeof ranges>) {
+    const v = (value as Record<string, unknown>)[k]
+    if (typeof v === 'number' && Number.isFinite(v)) {
+      const [def, min, max] = ranges[k]!
+      out[k] = finiteNumber(v, def, min, max)
+    }
+  }
+  return out as import('./video-engine').VideoGrading
+}
+
+function normalizeScrim(value: Record<string, unknown>): { enabled: boolean; direction: 'bottom' | 'top' | 'left' | 'right'; size: number; opacity: number } {
+  return {
+    enabled: bool((value as Record<string, unknown>).enabled, false),
+    direction: oneOf((value as Record<string, unknown>).direction as string, ['bottom', 'top', 'left', 'right'], 'bottom' as const),
+    size: finiteNumber((value as Record<string, unknown>).size, 0.5, 0, 1),
+    opacity: finiteNumber((value as Record<string, unknown>).opacity, 0.5, 0, 1)
+  }
+}
+
+function normalizeTextOverlays(value: unknown[]): Array<{ id: string; text: string; preset: string; animation?: string; at: 'hook' | 'persistent' }> {
+  const out: Array<{ id: string; text: string; preset: string; animation?: string; at: 'hook' | 'persistent' }> = []
+  for (const entry of value.slice(0, 20)) {
+    const r = record(entry)
+    const id = typeof r.id === 'string' ? r.id.slice(0, 80) : `to-${Date.now()}`
+    const text = typeof r.text === 'string' ? r.text.slice(0, 500) : ''
+    const preset = typeof r.preset === 'string' ? r.preset.slice(0, 80) : 'display'
+    const at = r.at === 'persistent' ? 'persistent' : 'hook'
+    if (!text) continue
+    out.push({ id, text, preset, ...(typeof r.animation === 'string' ? { animation: r.animation.slice(0, 80) } : {}), at })
+  }
+  return out
 }
 
 export function normalizeAutomationRules(value: unknown): AutomationRules {

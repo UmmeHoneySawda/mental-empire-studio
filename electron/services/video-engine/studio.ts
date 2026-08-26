@@ -29,6 +29,7 @@ import { getSettings } from '../../store/settings'
 import { ffmpegPath, ffprobePath } from '../bin'
 import { cacheDir, envLibraryRoot, envVideoEngineRoot } from '../storage'
 import { brollLibraryDir } from '../broll'
+import { assetLibraryRoot } from '../asset-library'
 import { createVideoEngine } from './factory'
 import { VideoEngineError } from './errors'
 import { ensureDirectory, resolveInside } from './paths'
@@ -762,7 +763,7 @@ export function hyperframesPreviewUrl(projectId: string, stamp: string): string 
  *  that project's staged workspace, so a crafted URL cannot read arbitrary disk. */
 export function resolvePreviewRequest(
   url: string,
-  assetRoots: readonly string[] = [videoEngineDataRoot(), brollLibraryDir()]
+  assetRoots: readonly string[] = [videoEngineDataRoot(), brollLibraryDir(), assetLibraryRoot()]
 ): string {
   const parsed = new URL(url)
   const segments = parsed.pathname.split('/').filter(Boolean).map((part) => decodeURIComponent(part))

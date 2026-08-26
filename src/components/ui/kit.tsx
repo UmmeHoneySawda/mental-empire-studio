@@ -399,7 +399,7 @@ export function ToggleRow({
     <div style={{ display: 'flex', alignItems: 'center', gap: 10 }}>
       <div style={{ flex: 1, minWidth: 0 }}>
         <div style={{ fontSize: 12, color: on ? 'var(--text-bright)' : 'var(--text-soft)', fontWeight: on ? 600 : 500 }}>{label}</div>
-        {hint && <div style={{ fontSize: 10, color: 'var(--text-dim)', marginTop: 2, lineHeight: 1.35 }}>{hint}</div>}
+        {hint && <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 2, lineHeight: 1.35 }}>{hint}</div>}
       </div>
       <Switch on={on} onToggle={onToggle} disabled={disabled} label={label} />
     </div>
@@ -486,7 +486,7 @@ export function SliderRow({
         onPointerUp={debounceMs > 0 ? flush : undefined}
         onBlur={debounceMs > 0 ? flush : undefined}
       />
-      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 10, color: 'var(--text-soft)', textAlign: 'right' }}>{format ? format(local) : local}</span>
+      <span style={{ fontFamily: 'var(--font-mono)', fontSize: 11, color: 'var(--text-soft)', textAlign: 'right' }}>{format ? format(local) : local}</span>
     </label>
   )
 }
