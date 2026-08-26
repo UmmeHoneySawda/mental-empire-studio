@@ -10,10 +10,9 @@ import { CaptionThumb } from './AnimatedThumb/CaptionThumb'
 import { HookThumb } from './AnimatedThumb/HookThumb'
 import { GradeThumb } from './AnimatedThumb/GradeThumb'
 import { TransitionThumb } from './AnimatedThumb/TransitionThumb'
+import { mergeImagePaths as _mergeImagePaths } from './useAutomationDraft'
 
-export function mergeImagePaths(existing: string[], canonicals: string[]): string[] {
-  return Array.from(new Set([...(existing || []), ...(canonicals || [])]))
-}
+export const mergeImagePaths = _mergeImagePaths
 
 export function TemplateSheet({
   open,
@@ -39,7 +38,6 @@ export function TemplateSheet({
       role="dialog"
       aria-modal="true"
       aria-label="Edit production template"
-      className="automation-sheet"
       onMouseDown={(e) => {
         if (e.target === e.currentTarget) onClose()
       }}
@@ -47,14 +45,16 @@ export function TemplateSheet({
         position: 'fixed',
         inset: 0,
         background: 'rgba(0,0,0,.55)',
-        zIndex: 50,
+        zIndex: 900,
         display: 'flex',
         justifyContent: 'flex-end'
       }}
     >
       <div
-        className="automation-sheet-body ed-scroll"
+        className="automation-sheet automation-sheet-body ed-scroll"
         style={{
+          position: 'relative',
+          inset: 'auto',
           width: 'min(48vw, 560px)',
           maxWidth: '100vw',
           height: '100%',
@@ -68,7 +68,7 @@ export function TemplateSheet({
       >
         <div style={{ padding: 16, borderBottom: '1px solid var(--border)', display: 'flex', justifyContent: 'space-between', alignItems: 'center' }}>
           <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 14, fontWeight: 700 }}>Edit production template</h2>
-          <button type="button" onClick={onClose} aria-label="Close" style={{ border: 0, background: 'transparent', cursor: 'pointer' }}>✕</button>
+          <button type="button" onClick={onClose} aria-label="Close" className="ed-focus" style={{ width: 32, height: 32, display: 'grid', placeItems: 'center', border: '1px solid var(--border-2)', borderRadius: 8, background: 'var(--bg-card)', color: 'var(--text-muted)', cursor: 'pointer', flex: 'none' }}>✕</button>
         </div>
 
         {error && <div style={{ margin: 12, padding: 10, borderRadius: 8, background: 'rgba(255,90,110,.1)', color: 'var(--err-2)', fontSize: 12 }}>{error}</div>}
@@ -85,13 +85,15 @@ export function TemplateSheet({
           </div>
 
           {/* triptych preview */}
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6, minWidth: 0 }}>
             <GradeThumb grade={template.grade} />
             <CaptionThumb templateId={template.captionTemplateId || `remotion-caption-${template.captionStyle}`} props={template.captionProps} />
             <TransitionThumb transitionId={template.transition} durationFrames={template.transitionDurationFrames} />
           </div>
-          <div style={{ display: 'grid', gridTemplateColumns: '1fr', gap: 6 }}>
-            <HookThumb hookTemplateId={template.hookTemplateId} hookProps={template.hookProps} headline={template.hookLine} />
+          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 6, minWidth: 0 }}>
+            <div style={{ width: '100%', maxWidth: 360, justifySelf: 'center' }}>
+              <HookThumb hookTemplateId={template.hookTemplateId} hookProps={template.hookProps} headline={template.hookLine} />
+            </div>
           </div>
 
           {/* Delegated panels — controlled via props */}

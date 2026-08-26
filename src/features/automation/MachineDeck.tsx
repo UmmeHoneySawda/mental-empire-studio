@@ -48,12 +48,24 @@ export function MachineDeck({
     <div
       style={{
         display: 'grid',
-        gridTemplateColumns: 'repeat(auto-fill, minmax(280px, 1fr))',
-        gap: 12
+        gridTemplateColumns: 'repeat(auto-fill, minmax(300px, 1fr))',
+        gap: 12,
+        minWidth: 0,
+        alignItems: 'start'
       }}
     >
       {templates.map((t) => (
-        <div key={t.id} onClick={() => onSelect?.(t.id)} style={{ cursor: onSelect ? 'pointer' : 'default' }}>
+        <div
+          key={t.id}
+          role={onSelect ? 'button' : undefined}
+          tabIndex={onSelect ? 0 : undefined}
+          aria-pressed={onSelect ? selectedId === t.id : undefined}
+          aria-label={`Select template ${t.name}`}
+          onClick={() => onSelect?.(t.id)}
+          onKeyDown={(e) => { if (onSelect && (e.key === 'Enter' || e.key === ' ')) { e.preventDefault(); onSelect(t.id) } }}
+          className="ed-focus"
+          style={{ cursor: onSelect ? 'pointer' : 'default', minWidth: 0, borderRadius: 14 }}
+        >
           <MachineCard
             template={t}
             selected={selectedId === t.id}
@@ -63,7 +75,7 @@ export function MachineDeck({
           />
         </div>
       ))}
-      <button type="button" className="at-create-card" onClick={onCreate} style={{ minHeight: 220 }}>
+      <button type="button" className="at-create-card" onClick={onCreate} style={{ minHeight: 220, minWidth: 0 }}>
         <div className="at-create-icon">＋</div>
         <b>Create a production template</b>
         <p>Reuse one format, caption style, motion treatment, and hook setup.</p>

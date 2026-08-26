@@ -35,7 +35,7 @@ export function MachineCard({
         minWidth: 0
       }}
     >
-      <div style={{ display: 'grid', gridTemplateColumns: '1fr 1fr 1fr', gap: 6 }}>
+      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6, minWidth: 0 }}>
         <GradeThumb grade={template.grade} />
         <CaptionThumb
           templateId={template.captionTemplateId || `remotion-caption-${template.captionStyle}`}

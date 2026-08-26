@@ -1,8 +1,5 @@
 import { useEffect, useState } from 'react'
 
-export const THUMB_W = 160
-export const THUMB_H = 90
-
 export function ThumbShell({
   children,
   label
@@ -15,14 +12,18 @@ export function ThumbShell({
       role="img"
       aria-label={label}
       style={{
-        width: THUMB_W,
-        height: THUMB_H,
+        width: '100%',
+        aspectRatio: '16 / 9',
+        height: 'auto',
+        minWidth: 0,
+        maxWidth: '100%',
         borderRadius: 8,
         overflow: 'hidden',
         background: 'var(--bg-inset)',
         border: '1px solid var(--border)',
         position: 'relative',
-        flex: 'none'
+        flex: '1 1 0',
+        alignSelf: 'stretch'
       }}
     >
       {children}

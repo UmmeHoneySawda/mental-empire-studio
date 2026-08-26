@@ -167,86 +167,92 @@ export function Profiles(): JSX.Element {
         <div className={`at-status-pill ${activeJob ? 'active' : 'idle'}`}><span className="at-status-pulse" aria-hidden="true" />{activeJob ? 'Automation running' : 'Automation idle'}</div>
       </div>
 
-      <div className="at-tabs" role="tablist">
-        <button className={`at-tab-btn ${mainTab === 'channels' ? 'active' : ''}`} onClick={() => setMainTab('channels')} role="tab" aria-selected={mainTab === 'channels'}><span>Batches</span><span className="at-tab-badge">{myChannels.length}</span></button>
-        <button className={`at-tab-btn ${mainTab === 'templates' ? 'active' : ''}`} onClick={() => setMainTab('templates')} role="tab" aria-selected={mainTab === 'templates'}><span>Templates</span><span className="at-tab-badge">{templates.length}</span></button>
-        <button className={`at-tab-btn ${mainTab === 'jobs' ? 'active' : ''}`} onClick={() => setMainTab('jobs')} role="tab" aria-selected={mainTab === 'jobs'}><span>Run history</span><span className="at-tab-badge">{automationJobs.length}</span></button>
+      <div className="at-tabs" role="tablist" aria-label="Automation sections">
+        <button id="at-tab-channels" aria-controls="at-panel-channels" className={`at-tab-btn ${mainTab === 'channels' ? 'active' : ''}`} onClick={() => setMainTab('channels')} role="tab" aria-selected={mainTab === 'channels'} tabIndex={mainTab === 'channels' ? 0 : -1}><span>Batches</span><span className="at-tab-badge">{myChannels.length}</span></button>
+        <button id="at-tab-templates" aria-controls="at-panel-templates" className={`at-tab-btn ${mainTab === 'templates' ? 'active' : ''}`} onClick={() => setMainTab('templates')} role="tab" aria-selected={mainTab === 'templates'} tabIndex={mainTab === 'templates' ? 0 : -1}><span>Templates</span><span className="at-tab-badge">{templates.length}</span></button>
+        <button id="at-tab-jobs" aria-controls="at-panel-jobs" className={`at-tab-btn ${mainTab === 'jobs' ? 'active' : ''}`} onClick={() => setMainTab('jobs')} role="tab" aria-selected={mainTab === 'jobs'} tabIndex={mainTab === 'jobs' ? 0 : -1}><span>Run history</span><span className="at-tab-badge">{automationJobs.length}</span></button>
       </div>
 
-      {mainTab === 'channels' && (
-        <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
-          <FeedBar
-            channels={myChannels}
-            selectedChannelId={selectedChannelId}
-            onSelectChannel={setSelectedChannelId}
-            sources={linkedSources}
-            sourceIds={activeSourceIds}
-            onToggleSource={(id) => setActiveSourceIds((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id])}
-            batchCount={batchCount}
-            onBatchCount={setBatchCount}
-            drawCount={drawCount}
-            unpublishedAvailable={unpublishedAvailable}
-            canLaunch={canLaunch}
-            onLaunch={handleSendToRender}
-            dryRunTitles={dryRunTitles}
-            templates={templates}
-            selectedTemplateId={selectedTemplateId}
-            onSelectTemplate={setSelectedTemplateId}
-          />
-          {!canChooseBatch && myChannels.length > 0 && linkedSources.length === 0 && (
-            <Banner kind="info">No source is linked to this channel yet. <Btn size="sm" variant="soft" onClick={() => setActive('channels')}>Link a source</Btn></Banner>
-          )}
-          {canChooseBatch && selectedTemplate && (
-            <div style={{ border: '1px solid var(--border)', borderRadius: 14, padding: 12, background: 'var(--bg-card)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
-              <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Ready: <b style={{ color: 'var(--text-bright)' }}>{myChannels.find((c) => c.id === selectedChannelId)?.name}</b> · {drawCount} videos · {selectedTemplate.name} · {selectedTemplate.aspectRatio} · {selectedTemplate.captionStyle}</div>
-              <Btn variant="primary" disabled={!canLaunch} onClick={handleSendToRender}>{sendingBatch ? 'Starting batch…' : `Start ${drawCount}-video batch`}</Btn>
-            </div>
-          )}
-        </div>
-      )}
-
-      {mainTab === 'templates' && (
-        <div>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <p style={{ margin: 0, fontSize: 12, color: 'var(--text-dim)' }}>Production templates define format, B-roll density, typography, captions, and hook cards.</p>
-            <Btn variant="primary" onClick={() => setEditingTemplate({ id: `tpl-${Date.now()}`, name: 'New Production Template', mode: 'Auto B-roll', imagePaths: [], imageDurationSec: 5, density: 'Full', order: 'Shuffle', motion: 'Cinematic', transition: 'crossfade', grade: 'Cinematic', captionStyle: 'highlight', aspectRatio: '9:16', hookLine: '', zoomAtStart: true } as VisualTemplate)}>Create template</Btn>
-          </div>
-          <MachineDeck
-            templates={templates}
-            selectedId={selectedTemplateId}
-            onSelect={setSelectedTemplateId}
-            onEdit={setEditingTemplate}
-            onDuplicate={handleDuplicateTemplate}
-            onDelete={setTemplateToDelete}
-            onCreate={() => setEditingTemplate({ id: `tpl-${Date.now()}`, name: 'New Production Template', mode: 'Auto B-roll', imagePaths: [], imageDurationSec: 5, density: 'Full', order: 'Shuffle', motion: 'Cinematic', transition: 'crossfade', grade: 'Cinematic', captionStyle: 'highlight', aspectRatio: '9:16', hookLine: '', zoomAtStart: true } as VisualTemplate)}
-          />
-        </div>
-      )}
-
-      {mainTab === 'jobs' && (
-        <>
-          <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
-            <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'var(--fs-title)', fontWeight: 600, color: 'var(--text-bright)' }}>Automation runs</h2>
-            <Btn variant="soft" onClick={() => setMainTab('channels')}>Create a batch</Btn>
-          </div>
-          <Banner kind="info" style={{ marginBottom: 16, whiteSpace: 'normal' }}>Runs continue locally while you use another screen. With tray mode enabled, they also continue after you close the window.</Banner>
-          {jobsError && <div style={{ marginBottom: 12 }}><Banner kind="error">{jobsError}</Banner></div>}
-          {activeJob && <div className="automation-live-strip"><span><b>LIVE</b> · {activeJob.currentStep}</span><span>ETA {jobEta(activeJob)}</span></div>}
-          {automationJobs.length === 0 ? <EmptyState title="No automation runs yet" body="Create a batch by choosing a publishing channel, linked sources, batch size, and production template." action={<Btn variant="primary" onClick={() => setMainTab('channels')}>Create a batch</Btn>} /> : (
-            <Conveyor
-              jobs={automationJobs}
-              expanded={expanded}
-              onExpand={showDetails}
-              onPause={(id) => void runJobAction(id, pauseJob)}
-              onResume={(id) => void runJobAction(id, resumeJob)}
-              onRetry={(id) => void runJobAction(id, retryJob)}
-              onCancel={(id) => void runJobAction(id, cancelJob)}
-              onDelete={setJobToDelete}
-              onOpenProject={openAutomationProject}
+      <div id="at-panel-channels" role="tabpanel" aria-labelledby="at-tab-channels" hidden={mainTab !== 'channels'}>
+        {mainTab === 'channels' && (
+          <div style={{ display: 'flex', flexDirection: 'column', gap: 16 }}>
+            <FeedBar
+              channels={myChannels}
+              selectedChannelId={selectedChannelId}
+              onSelectChannel={setSelectedChannelId}
+              sources={linkedSources}
+              sourceIds={activeSourceIds}
+              onToggleSource={(id) => setActiveSourceIds((p) => p.includes(id) ? p.filter((x) => x !== id) : [...p, id])}
+              batchCount={batchCount}
+              onBatchCount={setBatchCount}
+              drawCount={drawCount}
+              unpublishedAvailable={unpublishedAvailable}
+              canLaunch={canLaunch}
+              onLaunch={handleSendToRender}
+              dryRunTitles={dryRunTitles}
+              templates={templates}
+              selectedTemplateId={selectedTemplateId}
+              onSelectTemplate={setSelectedTemplateId}
             />
-          )}
-        </>
-      )}
+            {!canChooseBatch && myChannels.length > 0 && linkedSources.length === 0 && (
+              <Banner kind="info">No source is linked to this channel yet. <Btn size="sm" variant="soft" onClick={() => setActive('channels')}>Link a source</Btn></Banner>
+            )}
+            {canChooseBatch && selectedTemplate && (
+              <div style={{ border: '1px solid var(--border)', borderRadius: 14, padding: 12, background: 'var(--bg-card)', display: 'flex', justifyContent: 'space-between', alignItems: 'center', flexWrap: 'wrap', gap: 8 }}>
+                <div style={{ fontSize: 12, color: 'var(--text-muted)' }}>Ready: <b style={{ color: 'var(--text-bright)' }}>{myChannels.find((c) => c.id === selectedChannelId)?.name}</b> · {drawCount} videos · {selectedTemplate.name} · {selectedTemplate.aspectRatio} · {selectedTemplate.captionStyle}</div>
+                <Btn variant="primary" disabled={!canLaunch} onClick={handleSendToRender}>{sendingBatch ? 'Starting batch…' : `Start ${drawCount}-video batch`}</Btn>
+              </div>
+            )}
+          </div>
+        )}
+      </div>
+
+      <div id="at-panel-templates" role="tabpanel" aria-labelledby="at-tab-templates" hidden={mainTab !== 'templates'}>
+        {mainTab === 'templates' && (
+          <div>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <p style={{ margin: 0, fontSize: 12, color: 'var(--text-dim)' }}>Production templates define format, B-roll density, typography, captions, and hook cards.</p>
+              <Btn variant="primary" onClick={() => setEditingTemplate({ id: `tpl-${Date.now()}`, name: 'New Production Template', mode: 'Auto B-roll', imagePaths: [], imageDurationSec: 5, density: 'Full', order: 'Shuffle', motion: 'Cinematic', transition: 'crossfade', grade: 'Cinematic', captionStyle: 'highlight', aspectRatio: '9:16', hookLine: '', zoomAtStart: true } as VisualTemplate)}>Create template</Btn>
+            </div>
+            <MachineDeck
+              templates={templates}
+              selectedId={selectedTemplateId}
+              onSelect={setSelectedTemplateId}
+              onEdit={setEditingTemplate}
+              onDuplicate={handleDuplicateTemplate}
+              onDelete={setTemplateToDelete}
+              onCreate={() => setEditingTemplate({ id: `tpl-${Date.now()}`, name: 'New Production Template', mode: 'Auto B-roll', imagePaths: [], imageDurationSec: 5, density: 'Full', order: 'Shuffle', motion: 'Cinematic', transition: 'crossfade', grade: 'Cinematic', captionStyle: 'highlight', aspectRatio: '9:16', hookLine: '', zoomAtStart: true } as VisualTemplate)}
+            />
+          </div>
+        )}
+      </div>
+
+      <div id="at-panel-jobs" role="tabpanel" aria-labelledby="at-tab-jobs" hidden={mainTab !== 'jobs'}>
+        {mainTab === 'jobs' && (
+          <>
+            <div style={{ display: 'flex', justifyContent: 'space-between', alignItems: 'center', marginBottom: 12 }}>
+              <h2 style={{ margin: 0, fontFamily: 'var(--font-display)', fontSize: 'var(--fs-title)', fontWeight: 600, color: 'var(--text-bright)' }}>Automation runs</h2>
+              <Btn variant="soft" onClick={() => setMainTab('channels')}>Create a batch</Btn>
+            </div>
+            <Banner kind="info" style={{ marginBottom: 16, whiteSpace: 'normal' }}>Runs continue locally while you use another screen. With tray mode enabled, they also continue after you close the window.</Banner>
+            {jobsError && <div style={{ marginBottom: 12 }}><Banner kind="error">{jobsError}</Banner></div>}
+            {activeJob && <div className="automation-live-strip"><span><b>LIVE</b> · {activeJob.currentStep}</span><span>ETA {jobEta(activeJob)}</span></div>}
+            {automationJobs.length === 0 ? <EmptyState title="No automation runs yet" body="Create a batch by choosing a publishing channel, linked sources, batch size, and production template." action={<Btn variant="primary" onClick={() => setMainTab('channels')}>Create a batch</Btn>} /> : (
+              <Conveyor
+                jobs={automationJobs}
+                expanded={expanded}
+                onExpand={showDetails}
+                onPause={(id) => void runJobAction(id, pauseJob)}
+                onResume={(id) => void runJobAction(id, resumeJob)}
+                onRetry={(id) => void runJobAction(id, retryJob)}
+                onCancel={(id) => void runJobAction(id, cancelJob)}
+                onDelete={setJobToDelete}
+                onOpenProject={openAutomationProject}
+              />
+            )}
+          </>
+        )}
+      </div>
 
       {editingTemplate && (
         <TemplateSheet

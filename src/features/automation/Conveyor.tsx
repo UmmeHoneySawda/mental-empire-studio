@@ -75,21 +75,8 @@ export function Conveyor({
               alignItems: 'flex-start'
             }}
           >
-            {/* printed mark rail */}
-            <div
-              className={`tp-mark is-${mark}`}
-              aria-hidden="true"
-              style={{
-                width: 16,
-                height: 16,
-                borderRadius: 2,
-                border: '1px solid var(--border)',
-                background: mark === 'active' ? 'var(--accent)' : mark === 'done' ? 'var(--ok)' : mark === 'void' ? 'transparent' : 'var(--bg-inset)',
-                flex: 'none',
-                marginTop: 2,
-                position: 'relative'
-              }}
-            />
+            {/* printed mark — shape-first status per DESIGN.md (global .tp-mark) */}
+            <div className={`tp-mark is-${mark}`} aria-hidden="true" style={{ marginTop: 3 }} />
 
             <div style={{ flex: 1, minWidth: 0 }}>
               <div style={{ display: 'flex', gap: 8, alignItems: 'center', flexWrap: 'wrap' }}>

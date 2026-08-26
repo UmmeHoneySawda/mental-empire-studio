@@ -639,3 +639,72 @@ button {
   padding: 9px 15px;
   font: 700 12.5px var(--font-body);
 }
+
+/* Printed-mark vocabulary — shape-first status for dense lists (DESIGN.md).
+   Extracted from talkingphotos.css so the Automations conveyor can share it
+   without importing the whole ledger. Every state is distinguished by form,
+   not hue alone, so the mark survives accent-theme collisions and colour
+   deficiency. */
+.tp-mark {
+  width: 9px;
+  height: 9px;
+  flex: none;
+  position: relative;
+  border: 1px solid var(--text-label);
+  background: transparent;
+}
+.tp-mark.is-queued {
+  border-color: var(--warn);
+}
+.tp-mark.is-queued::before {
+  content: '';
+  position: absolute;
+  inset: 2px;
+  background: var(--warn);
+}
+.tp-mark.is-submitted {
+  border-color: var(--accent);
+}
+.tp-mark.is-submitted::before {
+  content: '';
+  position: absolute;
+  inset: 50% 0 0 0;
+  background: var(--accent);
+}
+.tp-mark.is-active {
+  border-color: var(--accent);
+  background: var(--accent);
+  animation: tpPulse 1.6s ease-in-out infinite;
+}
+.tp-mark.is-done {
+  border-color: var(--ok);
+  background: var(--ok);
+}
+.tp-mark.is-done::after {
+  content: '';
+  position: absolute;
+  left: -1px;
+  right: -1px;
+  top: 50%;
+  border-top: 1px solid var(--bg-inset-2);
+}
+.tp-mark.is-void {
+  border-color: var(--err);
+  background: transparent;
+}
+.tp-mark.is-void::after {
+  content: '';
+  position: absolute;
+  left: -2px;
+  right: -2px;
+  top: 50%;
+  border-top: 1px solid var(--err);
+  transform: rotate(-45deg);
+}
+@keyframes tpPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.38; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .tp-mark.is-active { animation: none; }
+}
