@@ -91,7 +91,7 @@ export function CollapsedToolRail({
   )
 }
 
-function TransitionsToolPanel(): JSX.Element {
+export function TransitionsToolPanel(): JSX.Element {
   const project = useEditor((state) => state.project)
   const selection = useEditor((state) => state.selection)
   const busy = useEditor((state) => state.busy)

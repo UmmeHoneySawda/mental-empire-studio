@@ -6,11 +6,10 @@ import { CAPTION_STYLE_DEFINITIONS } from '@shared/video-engine/caption-style'
 import { NEW_CAPTION_DEFINITIONS, NEW_HOOK_DEFINITIONS } from '@shared/video-engine/new-templates'
 import { REMOTION_HOOK_TEMPLATE_IDS } from '@shared/video-engine/hook-style'
 import { Btn, Chip, Seg, SliderRow, ToggleRow, FieldLabel, Section } from '../../components/ui/kit'
-import { CaptionThumb } from './AnimatedThumb/CaptionThumb'
-import { HookThumb } from './AnimatedThumb/HookThumb'
-import { GradeThumb } from './AnimatedThumb/GradeThumb'
-import { TransitionThumb } from './AnimatedThumb/TransitionThumb'
 import { TemplateImagePool } from './TemplateImagePool'
+import { TemplateLiveStage } from './TemplateLiveStage'
+import { TransitionMicroThumb } from './TransitionMicroThumb'
+import { HookMicroThumb } from './HookMicroThumb'
 import { validateVisualTemplate } from './useAutomationDraft'
 
 const EFFECTS_PRESETS = [
@@ -175,16 +174,18 @@ export function TemplateSheet({
             />
           </div>
 
-          {/* triptych preview */}
-          <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6, minWidth: 0 }}>
-            <GradeThumb grade={template.grade} />
-            <CaptionThumb templateId={template.captionTemplateId || `remotion-caption-${template.captionStyle}`} props={template.captionProps} />
-            <TransitionThumb transitionId={template.transition} durationFrames={template.transitionDurationFrames} />
-          </div>
-          <div style={{ display: 'grid', gridTemplateColumns: 'minmax(0, 1fr)', gap: 6, minWidth: 0 }}>
-            <div style={{ width: '100%', maxWidth: 360, justifySelf: 'center' }}>
-              <HookThumb hookTemplateId={template.hookTemplateId} hookProps={template.hookProps} headline={template.hookLine} />
-            </div>
+          <div
+            style={{
+              position: 'sticky',
+              top: -14,
+              zIndex: 20,
+              background: 'var(--bg-window)',
+              paddingTop: 4,
+              paddingBottom: 10,
+              borderBottom: '1px solid var(--border-2)',
+            }}
+          >
+            <TemplateLiveStage template={template} />
           </div>
 
           {/* Format */}
@@ -281,19 +282,25 @@ export function TemplateSheet({
                         title={p.hint}
                         className="ed-focus"
                         style={{
-                          padding: '9px 10px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 10,
+                          padding: '8px 10px',
                           borderRadius: 8,
                           border: on ? '1px solid var(--accent)' : '1px solid var(--border-2)',
                           background: on ? 'var(--accent-soft)' : 'var(--bg-inset)',
                           color: on ? 'var(--accent)' : 'var(--text-muted)',
                           fontSize: 11,
-                          fontWeight: 600,
                           cursor: 'pointer',
-                          textAlign: 'left'
+                          textAlign: 'left',
+                          minWidth: 0
                         }}
                       >
-                        <div>{p.label}</div>
-                        <div style={{ fontSize: 11, color: 'var(--text-faint)', marginTop: 2 }}>{p.hint}</div>
+                        <TransitionMicroThumb presetId={p.id} active={on} />
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ fontWeight: 600, color: on ? 'var(--accent)' : 'var(--text-bright)' }}>{p.label}</div>
+                          <div style={{ fontSize: 10.5, color: 'var(--text-faint)', marginTop: 2, overflow: 'hidden', textOverflow: 'ellipsis', whiteSpace: 'nowrap' }}>{p.hint}</div>
+                        </div>
                       </button>
                     )
                   })}
@@ -489,18 +496,23 @@ export function TemplateSheet({
                     onClick={() => setHookTemplate('')}
                     className="ed-focus"
                     style={{
-                      padding: '9px 10px',
+                      display: 'flex',
+                      alignItems: 'center',
+                      gap: 10,
+                      padding: '8px 10px',
                       borderRadius: 8,
                       border: !template.hookTemplateId ? '1px solid var(--accent)' : '1px solid var(--border-2)',
                       background: !template.hookTemplateId ? 'var(--accent-soft)' : 'var(--bg-inset)',
                       color: !template.hookTemplateId ? 'var(--accent)' : 'var(--text-muted)',
                       textAlign: 'left',
                       cursor: 'pointer',
-                      fontSize: 11,
-                      fontWeight: 600
+                      fontSize: 11
                     }}
                   >
-                    Automatic (matches the colour grade)
+                    <HookMicroThumb hookId="" active={!template.hookTemplateId} />
+                    <div style={{ minWidth: 0, flex: 1, fontWeight: 600, color: !template.hookTemplateId ? 'var(--accent)' : 'var(--text-bright)' }}>
+                      Automatic (matches the colour grade)
+                    </div>
                   </button>
                   <div style={{ fontSize: 11, fontWeight: 600, color: 'var(--text-soft)', marginTop: 6 }}>Classic hooks</div>
                   {REMOTION_HOOK_TEMPLATE_IDS.filter((id) => id !== 'remotion-hook-custom').map((id) => {
@@ -513,6 +525,9 @@ export function TemplateSheet({
                         onClick={() => setHookTemplate(id)}
                         className="ed-focus"
                         style={{
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 10,
                           padding: '8px 10px',
                           borderRadius: 8,
                           border: on ? '1px solid var(--accent)' : '1px solid var(--border-2)',
@@ -523,7 +538,10 @@ export function TemplateSheet({
                           fontSize: 11
                         }}
                       >
-                        {label}
+                        <HookMicroThumb hookId={id} active={on} />
+                        <div style={{ minWidth: 0, flex: 1, textTransform: 'capitalize', fontWeight: 600, color: on ? 'var(--accent)' : 'var(--text-bright)' }}>
+                          {label}
+                        </div>
                       </button>
                     )
                   })}
@@ -537,7 +555,10 @@ export function TemplateSheet({
                         onClick={() => setHookTemplate(def.id)}
                         className="ed-focus"
                         style={{
-                          padding: '9px 10px',
+                          display: 'flex',
+                          alignItems: 'center',
+                          gap: 10,
+                          padding: '8px 10px',
                           borderRadius: 8,
                           border: on ? '1px solid var(--accent)' : '1px solid var(--border-2)',
                           background: on ? 'var(--accent-soft)' : 'var(--bg-inset)',
@@ -545,8 +566,11 @@ export function TemplateSheet({
                           cursor: 'pointer'
                         }}
                       >
-                        <div style={{ fontSize: 11, fontWeight: 600, color: on ? 'var(--accent)' : 'var(--text-bright)' }}>{def.name}</div>
-                        <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 2 }}>{def.description}</div>
+                        <HookMicroThumb hookId={def.id} active={on} />
+                        <div style={{ minWidth: 0, flex: 1 }}>
+                          <div style={{ fontSize: 11, fontWeight: 600, color: on ? 'var(--accent)' : 'var(--text-bright)' }}>{def.name}</div>
+                          <div style={{ fontSize: 11, color: 'var(--text-dim)', marginTop: 2 }}>{def.description}</div>
+                        </div>
                       </button>
                     )
                   })}

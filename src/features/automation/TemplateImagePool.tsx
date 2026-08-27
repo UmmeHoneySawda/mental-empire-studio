@@ -2,6 +2,7 @@ import { useRef, useState } from 'react'
 import { SliderRow, Btn, Banner } from '../../components/ui/kit'
 import { previewUrlForPath } from '../video-studio/editor/assetUrl'
 import { mergeImagePaths } from './useAutomationDraft'
+import { CINEMATIC_PORTRAIT_MOCKUP } from './mockupBackdrops'
 
 export function TemplateImagePool({
   paths,
@@ -152,8 +153,10 @@ export function TemplateImagePool({
                   alt=""
                   loading="lazy"
                   onError={(e) => {
-                    // Fallback: hide broken image, show filename instead (CSP block or missing file)
-                    ;(e.currentTarget as HTMLImageElement).style.display = 'none'
+                    const el = e.currentTarget as HTMLImageElement
+                    if (el.src !== CINEMATIC_PORTRAIT_MOCKUP) {
+                      el.src = CINEMATIC_PORTRAIT_MOCKUP
+                    }
                   }}
                   style={{ width: '100%', height: '100%', objectFit: 'cover', display: 'block' }}
                 />

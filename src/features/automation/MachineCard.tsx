@@ -2,9 +2,7 @@ import type { VisualTemplate } from '@shared/types'
 import { resolveTransitionPreset } from '@shared/video-engine/transition-presets'
 import { GRADE_PRESETS } from '../video-studio/editor/presets'
 import { NEW_HOOK_DEFINITIONS } from '@shared/video-engine/new-templates'
-import { GradeThumb } from './AnimatedThumb/GradeThumb'
-import { CaptionThumb } from './AnimatedThumb/CaptionThumb'
-import { TransitionThumb } from './AnimatedThumb/TransitionThumb'
+import { TemplatePreviewFrame } from './TemplatePreviewFrame'
 
 function humanHookLabel(id?: string): string | null {
   if (!id) return null
@@ -39,11 +37,7 @@ export function MachineCard({
 
   return (
     <div className={`automation-machine-card ${selected ? 'selected' : ''}`} style={{ padding: 12, display: 'flex', flexDirection: 'column', gap: 10, minWidth: 0 }}>
-      <div style={{ display: 'grid', gridTemplateColumns: 'repeat(3, minmax(0, 1fr))', gap: 6, minWidth: 0 }}>
-        <GradeThumb grade={template.grade} />
-        <CaptionThumb templateId={template.captionTemplateId || `remotion-caption-${template.captionStyle}`} props={template.captionProps} />
-        <TransitionThumb transitionId={preset.id} durationFrames={duration} />
-      </div>
+      <TemplatePreviewFrame template={template} hideCaveat />
 
       <div style={{ minWidth: 0 }}>
         <h3

@@ -1,23 +1,23 @@
 import { describe, it, expect } from 'vitest'
 
-describe('AnimatedThumb shell', () => {
-  it('exports CaptionThumb', async () => {
-    const mod = await import('../../../src/features/automation/AnimatedThumb/CaptionThumb')
-    expect(mod.CaptionThumb).toBeDefined()
+describe('Template preview components', () => {
+  it('exports TemplatePreviewFrame', async () => {
+    const mod = await import('../../../src/features/automation/TemplatePreviewFrame')
+    expect(mod.TemplatePreviewFrame).toBeDefined()
   })
 
-  it('exports TransitionThumb', async () => {
-    const mod = await import('../../../src/features/automation/AnimatedThumb/TransitionThumb')
-    expect(mod.TransitionThumb).toBeDefined()
+  it('exports TemplateLiveStage', async () => {
+    const mod = await import('../../../src/features/automation/TemplateLiveStage')
+    expect(mod.TemplateLiveStage).toBeDefined()
   })
 
-  it('exports GradeThumb', async () => {
-    const mod = await import('../../../src/features/automation/AnimatedThumb/GradeThumb')
-    expect(mod.GradeThumb).toBeDefined()
+  it('exports TransitionMicroThumb', async () => {
+    const mod = await import('../../../src/features/automation/TransitionMicroThumb')
+    expect(mod.TransitionMicroThumb).toBeDefined()
   })
 
-  it('exports HookThumb', async () => {
-    const mod = await import('../../../src/features/automation/AnimatedThumb/HookThumb')
-    expect(mod.HookThumb).toBeDefined()
+  it('exports HookMicroThumb', async () => {
+    const mod = await import('../../../src/features/automation/HookMicroThumb')
+    expect(mod.HookMicroThumb).toBeDefined()
   })
 })

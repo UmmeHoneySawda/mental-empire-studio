@@ -91,7 +91,7 @@ describe('TemplateSheet', () => {
     expect(screen.getByText('Format')).toBeTruthy()
     expect(screen.getByText('Look')).toBeTruthy()
     expect(screen.getByText('Captions')).toBeTruthy()
-    expect(screen.getByText('Hook')).toBeTruthy()
+    expect(screen.getAllByText('Hook').length).toBeGreaterThan(0)
     expect(screen.getByText('Media')).toBeTruthy()
   })
 
