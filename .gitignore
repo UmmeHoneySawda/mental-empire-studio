@@ -15,7 +15,10 @@ browser-test-out/
 # `npx skills install` — skills-lock.json pins every source + hash and IS tracked.
 # The .claude/skills/* entries are absolute symlinks into this checkout, so they are
 # machine-specific and must never be committed.
-/.agents/skills/
+/.agents/skills/*
+# Project-owned daily production skill; keep other installed skills local.
+!/.agents/skills/mental-empire-daily-production/
+!/.agents/skills/mental-empire-daily-production/**
 /.claude/skills/*
 .playwright-cli/
 .playwright-mcp/

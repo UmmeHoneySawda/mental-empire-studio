@@ -1,49 +1,56 @@
 # Current Objective
-Rebuild TalkingPhotos integration from scratch: turn a source-channel audio track into finished ~30-minute
-talking-head videos by cutting the audio into chunks, rendering each on app.talkingphotos.ai, merging them,
-and downloading the result. Design of record: `docs/superpowers/specs/2026-08-18-talkingphotos-long-form-design.md`.
+
+Package the verified daily-video workflow as a reusable project skill and document the complete 2026-08-31 implementation, decisions, failures, fixes, resumability, and verification.
 
 # Verified Completed
-- **M0 — previous TalkingPhotos implementation deleted.** 31 files (10,521 lines) removed, plus reference
-  removal in 14 shared files. Verified: `npm run typecheck` 0 errors across all 3 projects, `npm test`
-  796 passed / 0 failed (baseline was 1048 passed / 0 failed; the 252-test delta is exactly the 15 deleted
-  test files plus 2 removed automation-goal assertions), `npm run build` exit 0.
-- Removed with it: the `talkingphotos-video` automation goal, its supervisor step branch, its
-  `automationConfig` block, the `provider_connections` / `provider_jobs` / `provider_assets` /
-  `transcript_documents` tables and repositories, the `talkingPhotos` `NativeApi` namespace, the
-  `integrations.talkingPhotos` setting, the Settings card, the RenderQueue section, and the `.tp-*`/`.tv-*` CSS.
-- Data backed up first: `CLAUDE-BACKUP-20260818-182415`.
-- Windows user env vars set and verified in `HKCU\Environment`: `TALKINGPHOTOS_EMAIL`,
-  `TALKINGPHOTOS_PASSWORD`. Not visible to the app until it is fully restarted.
-- Live contract facts proven this session (see the spec's "Verified facts" table): plain-HTTP Symfony form
-  login works with no bot protection; own audio uploads via `POST /library/categories/upload/{catId}`
-  returning `{id, data.duration}`; **the account allows only 3 simultaneous logins** and that lockout
-  self-heals in ~15 min; `maxMergeVideoDuration` is 1800.
+
+- Requirements and workflow captured in `docs/DAILY-VIDEO-PRODUCTION-RUNBOOK.md`.
+- Meta `muse-spark-1.2-contributor` streaming request with `reasoning.effort: xhigh` returned HTTP 200 and `response.completed`.
+- Groq, Pexels, Pixabay, Coverr, TalkingPhotos, Ramani image folders, local B-roll library, FFmpeg ASS filters, and NVIDIA NVENC passed preflight on 2026-08-31.
+- Four source URLs passed yt-dlp simulation and are recorded in the runbook.
+- All four source MP3 files downloaded through the `web_embedded` client fallback and passed ffprobe: MindCipher 1168.335s, Neural Vault 1589.777s, Psyche Noir 1329.273s, Discipline Doctrine 1446.139s.
+- All four Groq word-timestamp transcripts and animated ASS caption files completed and passed an FFmpeg ASS parse test: 13,013 words total; every transcript ends within one second of its source audio.
+- Psyche Noir and Discipline Doctrine NVIDIA renders completed with their assigned Ramani folders and persisted image-loop manifests.
+- MindCipher completed as a 1920x1080 H.264/AAC NVIDIA render (1168.367s). Its Muse Spark Contributor/xhigh plan, 168 normalized seven-second slots, 14 timestamp-safe batches, and opening/middle/ending visual checks are persisted for resumability.
+- Neural Vault completed: six validated TalkingPhotos parts (5x300s + 89.78s), server-side merge project `1141334`, local NVIDIA caption render, and opening/middle/ending visual checks. Its saved state is `done` with all six parts and the merge marked `completed`.
+- Final four-file gate passed: MindCipher 1168.367s/780.9MB, NeuralVault 1589.800s/774.6MB, PsycheNoir 1329.273s/191.5MB, DisciplineDoctrine 1446.139s/222.3MB; every file is 1920x1080 H.264 with AAC audio and burned-in captions.
+- Reusable project skill created at `.agents/skills/mental-empire-daily-production`; the official `quick_validate.py` result is `Skill is valid!`.
+- Detailed implementation report created at `docs/DAILY-VIDEO-PRODUCTION-IMPLEMENTATION-REPORT.md`, including requirements, complete file map, failure analysis, fixes, rationale, resumability, external side effects, artifacts, verification, and rerun instructions.
+- The runbook now links the skill, progress checkpoint, implementation report, and all five production scripts. MindCipher and TalkingPhotos renderers now derive their date from the `YYYY-MM-DD` run directory for future runs.
+- Previous TalkingPhotos integration removal remains verified; this run uses the live web service/session evidence and does not restore the deleted app integration.
 
 # Current Problem
-None open. M0 is verified and M1 has not started.
+
+None. The verified workflow is packaged, documented, and skill-validated.
 
 # Relevant Files
-- docs/superpowers/specs/2026-08-18-talkingphotos-long-form-design.md   design of record
-- D:\talkingphotos-session\                                            reverse-engineering evidence (3 sessions)
-- docs/trace-mining/api-bodies-live/                                   16 captured live request/response bodies
-- electron/store/settings.ts                                           secret-field encryption + env fallback pattern
-- electron/services/bin.ts, electron/services/transcribe.ts             ffmpeg/ffprobe resolution + runFfmpeg wrapper
-- electron/services/downloader.ts, electron/services/audio.ts           audio download + probeDuration
+
+- `docs/DAILY-VIDEO-PRODUCTION-RUNBOOK.md`
+- `docs/DAILY-VIDEO-PRODUCTION-IMPLEMENTATION-REPORT.md`
+- `.agents/skills/mental-empire-daily-production/SKILL.md`
+- `.agents/skills/mental-empire-daily-production/agents/openai.yaml`
+- `scripts/production/`
+- `source-channels-and-publishing-channel-links-chattranscript.json`
+- `D:\talkingphotos-session\`
+- `D:\YT Channel Files\ramani_assets\ramani_one\`
+- `D:\YT Channel Files\ramani_assets\ramani_two\`
+- `D:\Mental Empire Studio\broll-library\`
+- `D:\MentalEmpire-Production\2026-08-31\`
 
 # Do Not Modify
-- `docs/trace-mining/` — captured API evidence, deliberately kept.
-- Anything under `.kilo/`, `.claude/worktrees/`, `scratchpad*` — historical worktrees.
-- Never edit source with PowerShell `Get-Content`/`Set-Content`: PS 5.1 reads ANSI and writes UTF-8-with-BOM,
-  which double-encodes every non-ASCII character. Use the editing tool, or .NET
-  `File.ReadAllText/WriteAllText` with `UTF8Encoding($false)`.
+
+- Existing user changes in `src/features/automation/TemplateSheet.tsx` and `test/unit/automation/template-sheet.test.ts`.
+- `docs/trace-mining/` captured API evidence.
+- Reusable Ramani images and local B-roll library; read them but do not alter or delete them.
+- Live app settings or user database unless a backup is taken first.
 
 # Next Action
-M1: HTTP client + login + credential resolution (env → settings → typed error), the Settings
-**TalkingPhotos** section, **Test connection**, and **Sign out**.
+
+For the next daily batch, invoke `$mental-empire-daily-production`, select a fresh dated run root and sources, and resume from `PROGRESS.md` if interrupted.
 
 # Verification
-- Per change: `npm run typecheck`
-- Milestone gate: `npm test` (expect 796 passed / 0 failed plus any new tests) and `npm run build`
-- M1 acceptance: Test connection reports the live role and remaining daily quota.
-- Before any DB migration: `npm run userdata:backup`
+
+- Per media stage: `ffprobe` stream, duration, resolution, and codec checks.
+- Per channel: inspect opening, middle, and ending frames plus caption timing.
+- Final gate passed: four playable MP4 files with H.264 video, AAC audio, 1920x1080 output, full narration, and burned-in captions.
+- Skill gate passed: bundled `quick_validate.py` returned `Skill is valid!`; all five production scripts passed `node --check`; all ten documented project files were present.

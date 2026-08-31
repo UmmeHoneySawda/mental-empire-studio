@@ -1,0 +1,4 @@
+interface:
+  display_name: "Mental Empire Daily Production"
+  short_description: "Produce the four daily Mental Empire videos"
+  default_prompt: "Use $mental-empire-daily-production to produce today's four channel videos with resumable checkpoints."
