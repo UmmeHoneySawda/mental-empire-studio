@@ -236,4 +236,45 @@ describe('TemplateSheet', () => {
     expect(screen.getByText('Automatic (matches the colour grade)')).toBeTruthy()
     expect(screen.getByText('Cine · Hard Light')).toBeTruthy()
   })
+
+  it('does not re-focus template name or steal focus on re-renders when template changes', async () => {
+    vi.useFakeTimers()
+    const { TemplateSheet } = await import('../../../src/features/automation/TemplateSheet')
+    const focusSpy = vi.spyOn(HTMLInputElement.prototype, 'focus')
+    focusSpy.mockClear()
+
+    const { rerender } = render(
+      React.createElement(TemplateSheet, {
+        open: true,
+        template: baseTemplate(),
+        onChange: vi.fn(),
+        onSave: vi.fn(),
+        onClose: () => {}
+      })
+    )
+
+    vi.advanceTimersByTime(100)
+    expect(focusSpy).toHaveBeenCalledTimes(1)
+
+    focusSpy.mockClear()
+
+    // Simulate parent re-render on slider/option change (new template and fresh onClose lambda)
+    rerender(
+      React.createElement(TemplateSheet, {
+        open: true,
+        template: baseTemplate({ transitionDurationFrames: 45 }),
+        onChange: vi.fn(),
+        onSave: vi.fn(),
+        onClose: () => {}
+      })
+    )
+
+    vi.advanceTimersByTime(200)
+    // On subsequent updates/re-renders, focus MUST NOT be re-triggered (which scrolls to top)
+    expect(focusSpy).not.toHaveBeenCalled()
+
+    vi.useRealTimers()
+    focusSpy.mockRestore()
+  })
 })
+

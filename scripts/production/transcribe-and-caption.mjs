@@ -206,6 +206,8 @@ async function processChannel(channel) {
   const wordsPath = join(channelRoot, 'transcript', 'words.json')
   const transcriptPath = join(channelRoot, 'transcript', 'transcript.txt')
   const assPath = join(channelRoot, 'captions', 'captions.ass')
+  mkdirSync(join(channelRoot, 'transcript'), { recursive: true })
+  mkdirSync(join(channelRoot, 'captions'), { recursive: true })
   const existing = loadWordFile(wordsPath)
   if (existing) {
     if (!existsSync(transcriptPath)) atomicText(transcriptPath, `${existing.map((word) => word.word).join(' ').replace(/\s+/g, ' ').trim()}\n`)

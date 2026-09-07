@@ -1,6 +1,6 @@
 # Daily Video Production Runbook
 
-Last verified: 2026-08-31 (Asia/Dhaka)
+Last verified: 2026-09-02 (Asia/Dhaka)
 
 ## Purpose
 
@@ -17,6 +17,7 @@ Do not save API-key values, session cookies, or authorization headers in this re
 - `scripts/production/render-ramani.mjs` — Psyche Noir and Discipline Doctrine renderer.
 - `scripts/production/plan-mindcipher.mjs` and `scripts/production/render-mindcipher.mjs` — MindCipher planning and rendering.
 - `scripts/production/run-talkingphotos.mjs` — resumable Neural Vault web generation and local caption rendering.
+- `docs/VIDEOEXPRESS-INTEGRATION.md`, `scripts/production/videoexpress-config.mjs`, and `scripts/production/run-videoexpress.mjs` — verified prompt-driven image-to-video clips in two workflows (`generated-still` and `direct-upload`), resumable state, and downloads.
 
 Read `PROGRESS.md` first when resuming. Read the implementation report only when troubleshooting or changing the workflow.
 
@@ -29,7 +30,7 @@ Produce four 16:9 videos per daily run:
 | Psyche Noir | Dr. Ramani audio over `ramani_one` still images, with animated captions |
 | Discipline Doctrine | Dr. Ramani audio over `ramani_two` still images, with animated captions |
 | Neural Vault | TalkingPhotos AI talking-person video, with captions added locally |
-| MindCipher | Transcript-driven B-roll edit planned with Meta Muse Spark 1.2 Contributor, with animated captions |
+| MindCipher | Transcript-driven B-roll edit planned with Meta Muse Spark 1.2 Contributor, optionally including Video Express motion clips from prepared images, with animated captions |
 
 Every final video must contain the complete source audio, visible animated captions, and a GPU-encoded H.264 video stream.
 
@@ -47,7 +48,7 @@ flowchart TD
     E1 --> F1[ramani_one images\n7 seconds each, loop, trim last]
     E2 --> F2[ramani_two images\n7 seconds each, loop, trim last]
     E3 --> F3[TalkingPhotos online\nsplit, render, merge, download]
-    E4 --> F4[Muse Spark 1.2 Contributor plans B-roll\nlocal library, then stock providers]
+    E4 --> F4[Muse Spark 1.2 Contributor plans B-roll\nlocal library, stock, optional Video Express clips]
     F1 --> G[Burn captions and encode with NVIDIA NVENC]
     F2 --> G
     F3 --> G
@@ -67,6 +68,7 @@ The following checks passed on 2026-08-31. Treat them as a snapshot and repeat t
 | Pixabay videos | `PIXABAY_API_KEY` | Video search succeeded |
 | Coverr videos | `COVERR_API_KEY` | Video search succeeded |
 | TalkingPhotos AI | `https://app.talkingphotos.ai` and captured session in `D:\talkingphotos-session` | Authentication succeeded; quota showed 0/100 and concurrency 0/5 |
+| Video Express | `VIDEOEXPRESS_EMAIL`, `VIDEOEXPRESS_PASSWORD`, and `https://app.videoexpress.ai` | Direct login succeeded; library `4`, AI media folders, and queue returned HTTP 200; queue was 0/5 |
 | NVIDIA GPU | GeForce GTX 1660 Ti, 6 GB | FFmpeg `h264_nvenc` one-second encode succeeded |
 | Subtitle support | FFmpeg ASS/subtitles filters plus local caption fonts | Available |
 | Psyche Noir images | `D:\YT Channel Files\ramani_assets\ramani_one` | 10 readable 1376x768 images |
@@ -117,11 +119,12 @@ Before sending, assert that `model` equals `muse-spark-1.2-contributor` exactly 
 4. Confirm Groq authentication and that `whisper-large-v3-turbo` is available.
 5. Inspect `D:\talkingphotos-session` before using TalkingPhotos. It is the authoritative local record of the current endpoints and behavior; do not guess the API.
 6. Check TalkingPhotos quota and concurrency before uploading.
-7. Confirm both Ramani image folders are readable and non-empty.
-8. Confirm the local B-roll directory is readable.
-9. Run a short FFmpeg `h264_nvenc` test and confirm the ASS/subtitles filters are present.
-10. Confirm enough free space on `D:` for source audio, intermediate video, and final renders.
-11. Use Context7 for current API/library documentation and Firecrawl for official web pages. Accept only first-party or official sources. If one helper cannot access a site, use the other or the normal browser restricted to the official domain.
+7. Before Video Express work, read `docs/VIDEOEXPRESS-INTEGRATION.md` and run `node scripts/production/run-videoexpress.mjs --preflight`; confirm login, AI folders, and active queue without consuming generation capacity.
+8. Confirm both Ramani image folders are readable and non-empty.
+9. Confirm the local B-roll directory is readable.
+10. Run a short FFmpeg `h264_nvenc` test and confirm the ASS/subtitles filters are present.
+11. Confirm enough free space on `D:` for source audio, intermediate video, and final renders.
+12. Use Context7 for current API/library documentation and Firecrawl for official web pages. Accept only first-party or official sources. If one helper cannot access a site, use the other or the normal browser restricted to the official domain.
 
 Stop only the dependent branch when a preflight fails. Continue checking and preparing the independent branches, then report the exact user action needed.
 
@@ -172,8 +175,8 @@ ASS rendering and image/video composition use normal FFmpeg filters and therefor
 1. Use the Neural Vault source audio in TalkingPhotos AI.
 2. Follow the current API behavior documented in `D:\talkingphotos-session`.
 3. Let TalkingPhotos split the audio into supported parts, upload them, and create a talking-person render for every part.
-4. Use an approved saved 16:9 character consistently unless a later brief requests character rotation.
-5. Wait for all parts to finish, then use TalkingPhotos' server-side project merge. Do not stitch the parts locally.
+4. Use the HAR-reproduced 16:9 character `010c1c4c-982c-4ba5-9f86-9d59c27c4a86`, generated from driving image media `4550164`, with `style: high_quality` and `motionId: 0`. Never inherit an unrelated template project's options. The runner uses this UUID by default; `TALKINGPHOTOS_CHARACTER_UUID` remains the explicit override.
+5. High-quality human projects have a verified 60-second limit, so split the narration into at most 60-second parts. Wait for all parts to finish, then use TalkingPhotos' server-side project merge. Do not stitch the parts locally.
 6. Download the merged result.
 7. Add and burn the ASS captions locally, then produce the NVENC final.
 
@@ -185,13 +188,28 @@ ASS rendering and image/video composition use normal FFmpeg filters and therefor
 4. Fill genuine gaps from Pexels, Pixabay, and Coverr. Cache downloaded media and record the provider, original page/asset URL, creator when supplied, and required attribution.
 5. Do not mass-download provider libraries. Search only for clips needed by the plan.
 6. Fit, crop, and trim B-roll to 1920x1080 without stretching it.
-7. Preserve the narration as the primary audio, burn the animated ASS captions, and encode with NVENC.
+7. When selected scenes use prepared still images that need prompt-directed motion, create an immutable `videoexpress-manifest.json` and run `node scripts/production/run-videoexpress.mjs "<job-root>"`. Choose the workflow first: `generated-still` uploads each image as a reference, has Video Express generate a new still from it, and animates that; `direct-upload` animates the uploaded image itself. Under `generated-still` the runner does create the intermediate stills, but neither workflow creates the original reference images.
+8. Preserve each Video Express prompt, generated still, state UUID, remote folder name, and downloaded clip. Never retry `submission_uncertain` without inspecting My AI Videos. Reset an exhausted `attempts` counter only when the item's `generationUuid` is `null`.
+9. Preserve the narration as the primary audio, burn the animated ASS captions, and encode with NVENC.
 
 Stock-source notes:
 
 - Pexels requires its API key in the `Authorization` header.
 - Pixabay video search uses its videos endpoint and a `key` parameter; cache results for the period required by its documentation.
 - Coverr accepts Bearer authentication and requests attribution/linking for API use. Preserve attribution data even when the final publishing description will be prepared later.
+
+## Thumbnail references
+
+Create one 16:9 thumbnail per channel with the built-in image-generation tool. Treat the sample as a style reference and the base portrait as the edit target, preserve the subject identity and established negative-space layout, then normalize the selected result to 1280x720 PNG.
+
+| Channel | Style reference | Edit target | Palette |
+| --- | --- | --- | --- |
+| MindCipher | `D:\YT Channel Files\sample doctor.png` | `D:\YT Channel Files\doctor\thumbnail_base.jpeg` | White and cyan on black/blue |
+| Neural Vault | `D:\YT Channel Files\sample charles.png` | `D:\YT Channel Files\chase hughes\A_YouTube-style_thumbnail_featuring_a_202606101111.jpeg` | White and yellow on black |
+| Psyche Noir | `D:\YT Channel Files\sample ramani one.png` | `D:\YT Channel Files\ramani_assets\ramani_one_thumbnail_base.jpeg` | White and yellow on black |
+| Discipline Doctrine | `D:\YT Channel Files\sample ramani two.png` | `D:\YT Channel Files\ramani_assets\ramani_two_thumbnail_base.jpeg` | White and red on black/red |
+
+Use concise uppercase copy derived from the selected title. Require verbatim spelling, mobile-readable condensed typography, and no extra words, logos, watermarks, duration badges, borders, or YouTube interface.
 
 ## Encoding and verification
 
@@ -206,6 +224,8 @@ For every final file, verify:
 - The Ramani image loop has no blank tail.
 - TalkingPhotos part boundaries have no missing audio or duplicate frames.
 - MindCipher has no unexplained black gaps and each external clip has provenance recorded.
+- Every Video Express clip used in a final passes ffprobe, full decode, and representative-frame checks sampled inside the slot actually kept; its manifest, generated stills, timing plan and resumable state remain with the run.
+- Clips trimmed to narration slots are cut on frame boundaries with `-frames:v`, not with `-t`, which rounds up and drifts late across a long timeline.
 
 Suggested run layout:
 
@@ -231,6 +251,7 @@ Keep intermediates until all four finals pass verification. A later cleanup must
 - NVIDIA: [Using FFmpeg with NVIDIA GPU acceleration](https://docs.nvidia.com/video-technologies/video-codec-sdk/13.1/ffmpeg-with-nvidia-gpu/index.html)
 - FFmpeg: [Official filter documentation for ASS and subtitles](https://ffmpeg.org/ffmpeg-filters.html)
 - TalkingPhotos: [Official application](https://app.talkingphotos.ai); use `D:\talkingphotos-session` for the verified captured API behavior.
+- Video Express: [Official application](https://app.videoexpress.ai/) and the user-supplied [library manager userscript](https://raw.githubusercontent.com/ayyfahim/vea_automator/main/videoexpress-manager.user.js); use `docs/VIDEOEXPRESS-INTEGRATION.md` for the locally verified contract.
 
 ## New-session handoff prompt
 

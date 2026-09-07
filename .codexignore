@@ -1,0 +1,37 @@
+# Dependencies & Build Artifacts
+node_modules/
+dist/
+build/
+out/
+__pycache__/
+*.pyc
+.cache/
+tmp/
+scratch/
+scratchpad/
+scratchpad-bodies/
+
+# Large media & binary files
+*.mp4
+*.mkv
+*.mov
+*.avi
+*.mp3
+*.wav
+*.zip
+*.tar.*
+*.7z
+*.png
+*.jpg
+*.jpeg
+*.webp
+*.gif
+
+# Large logs, traces & dumps
+*.log
+*.har
+*.dump
+browser-test-out/
+codex-session-exports/
+*.sqlite-wal
+*.sqlite-shm

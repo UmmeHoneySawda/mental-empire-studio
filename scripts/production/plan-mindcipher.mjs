@@ -50,6 +50,12 @@ const wordsDoc = loadJson(wordsPath)
 const words = wordsDoc.words
 if (!Array.isArray(words) || words.length === 0) throw new Error('MindCipher transcript has no words')
 const library = loadJson(libraryManifestPath)
+const sourceMetadataPath = join(channelRoot, 'source', 'source.json')
+let sourceTitle = 'MindCipher psychology narration'
+if (existsSync(sourceMetadataPath)) {
+  const metadata = loadJson(sourceMetadataPath)
+  if (typeof metadata.title === 'string' && metadata.title.trim()) sourceTitle = metadata.title.trim()
+}
 const keywordRows = library.keywords.filter((row) => Array.isArray(row.clips) && row.clips.some((clip) => existsSync(clip.path)))
 const keywordMap = new Map(keywordRows.map((row) => [row.keyword, row]))
 const keywords = [...keywordMap.keys()].filter((keyword) => !keyword.startsWith('same one-per-line'))
@@ -71,7 +77,7 @@ for (let index = 0; index < sceneCount; index += 1) {
   excerpts.push({ index: index + 1, start: Number(start.toFixed(3)), end: Number(end.toFixed(3)), text })
 }
 
-const prompt = `You are planning B-roll for a psychology video titled "The Psychology of People Who Waste Their Potential".
+const prompt = `You are planning B-roll for a psychology video titled "${sourceTitle}".
 
 Choose exactly one visual keyword for each of the 24 numbered transcript scenes below. You MUST copy each keyword exactly from the AVAILABLE KEYWORDS list. Prefer metaphorical matches when a literal match does not exist. Vary the choices; do not use the same keyword in adjacent scenes.
 
@@ -183,7 +189,7 @@ for (let index = 1; index < scenes.length; index += 1) {
 }
 
 const plan = {
-  title: 'The Psychology of People Who Waste Their Potential',
+  title: sourceTitle,
   model: exactModel,
   reasoningEffort,
   durationSec: duration,

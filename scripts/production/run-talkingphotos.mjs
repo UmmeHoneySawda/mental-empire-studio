@@ -11,11 +11,21 @@ import {
 import { Readable } from 'node:stream'
 import { pipeline } from 'node:stream/promises'
 import { basename, dirname, join, resolve } from 'node:path'
+import {
+  assertNeuralVaultStateProfile,
+  buildNeuralVaultProjectPayload,
+  neuralVaultPartSeconds,
+  neuralVaultStateProfile,
+  resolveTalkingPhotosIdentity
+} from './talkingphotos-config.mjs'
+import { isValidMediaMetadata } from './talkingphotos-media.mjs'
+import { availableSubmissionCapacity } from './talkingphotos-scheduler.mjs'
 
 const channelRoot = process.argv[2]
 if (!channelRoot) throw new Error('Usage: node run-talkingphotos.mjs <neural-vault-channel-root>')
 const runDate = basename(dirname(resolve(channelRoot)))
 if (!/^\d{4}-\d{2}-\d{2}$/.test(runDate)) throw new Error(`Channel root must be inside a YYYY-MM-DD run directory: ${channelRoot}`)
+const { characterUuid, runPrefix } = resolveTalkingPhotosIdentity(runDate)
 
 const email = process.env.TALKINGPHOTOS_EMAIL || ''
 const password = process.env.TALKINGPHOTOS_PASSWORD || ''
@@ -33,11 +43,7 @@ const statePath = join(workDir, 'state.json')
 const mergedPath = join(workDir, 'talkingphotos-merged.mp4')
 const finalPath = join(channelRoot, 'final', `NeuralVault-${runDate}.mp4`)
 const partialFinalPath = `${finalPath}.partial.mp4`
-const runPrefix = `ME-${runDate.replaceAll('-', '')}-NeuralVault`
-const partSeconds = 300
-const templateProjectId = 1112000
-const fallbackCharacterUuid = '64ccfdd9-0169-42b3-b561-152bca3783a3'
-const fallbackMotionId = 328
+const partSeconds = neuralVaultPartSeconds
 
 for (const path of [sourcePath, assPath]) {
   if (!existsSync(path)) throw new Error(`Required input is missing: ${path}`)
@@ -70,8 +76,15 @@ function durationOf(path) {
 }
 
 function validMedia(path, expectedDuration, tolerance = 2) {
-  if (!existsSync(path) || statSync(path).size < 1024 * 1024) return false
-  try { return Math.abs(durationOf(path) - expectedDuration) <= tolerance } catch { return false }
+  if (!existsSync(path)) return false
+  try {
+    return isValidMediaMetadata({
+      sizeBytes: statSync(path).size,
+      durationSec: durationOf(path)
+    }, expectedDuration, tolerance)
+  } catch {
+    return false
+  }
 }
 
 function runProcess(bin, args) {
@@ -85,7 +98,13 @@ function runProcess(bin, args) {
 function ensurePlan() {
   const sourceDuration = durationOf(sourcePath)
   const saved = readState()
-  if (saved?.runPrefix === runPrefix && Array.isArray(saved.parts) && saved.parts.length > 0) return saved
+  if (saved) {
+    assertNeuralVaultStateProfile(saved)
+    if (saved.runPrefix !== runPrefix || !Array.isArray(saved.parts) || saved.parts.length === 0) {
+      throw new Error('Saved TalkingPhotos state is incomplete or belongs to a different remote namespace')
+    }
+    return saved
+  }
   const parts = []
   for (let start = 0, ord = 1; start < sourceDuration - 2; start += partSeconds, ord += 1) {
     const end = Math.min(sourceDuration, start + partSeconds)
@@ -104,7 +123,8 @@ function ensurePlan() {
     })
   }
   const state = {
-    version: 1,
+    version: 2,
+    profile: neuralVaultStateProfile,
     runPrefix,
     sourceDurationSec: sourceDuration,
     categoryId: null,
@@ -294,53 +314,12 @@ async function uploadPart(state, part) {
   console.log(`NeuralVault: uploaded part ${part.ord}/${state.parts.length} as media ${part.mediaId}`)
 }
 
-async function loadTemplate(state) {
-  if (state.template?.options) return state.template
-  let project = null
-  try { project = await jsonApi(`/project/${templateProjectId}`) } catch { /* use proven fallback below */ }
-  const options = project?.options ? { ...project.options } : {
-    aspectRatio: '16:9',
-    characterPrompt: '', characterNegativePrompt: '',
-    motionId: fallbackMotionId, parentMotionId: 0, motionPrompt: '',
-    characterResultUuid: fallbackCharacterUuid,
-    characterDrivingMediaId: 0, characterGender: 'male', characterEthnicity: '',
-    characterAge: 'adult', characterStyle: 'realistic', characterBeard: 'shaven',
-    backgroundResultUuid: '', backgroundPrompt: '', backgroundMediaId: 0,
-    audioSource: 'library', audioMediaId: 0, audioVocalUrl: '', characterImageMediaId: 0,
-    ttsText: '', ttsLanguage: 'en-US', ttsVoice: '', ttsVoiceGender: '', ttsEmotion: '',
-    ttsSpeed: 50, ttsPitch: 50, voiceCloneCategory: 'cloned', voiceCloneLanguage: 1,
-    voiceCloneVoice: null, songPrompt: '', songLyrics: '', songLength: 'short',
-    songStylesSelectedList: [], songResultUuid: '', audioResultUuid: '',
-    replicateMotionUseSource: true, replicateUseVoiceChanger: false,
-    replicateMotionMode: 'animate', reverseVideoMode: true
-  }
-  options.aspectRatio = '16:9'
-  options.audioSource = 'library'
-  options.audioMediaId = 0
-  options.motionId = Number(options.motionId || fallbackMotionId)
-  options.parentMotionId = Number(options.parentMotionId || 0)
-  options.characterResultUuid = options.characterResultUuid || fallbackCharacterUuid
-  state.template = { type: 'human', style: 'normal', options }
-  saveState(state)
-  return state.template
-}
-
-function projectPayload(template, part) {
-  return {
-    id: 0,
-    parentId: null,
+function projectPayload(part) {
+  return buildNeuralVaultProjectPayload({
     title: part.remoteTitle,
-    userId: 0,
-    type: 'human',
-    style: 'normal',
-    status: 'draft',
-    taskUuid: null,
-    taskPrevUuid: null,
-    taskStepNumber: 0,
-    taskStepsTotal: 0,
-    options: { ...template.options, aspectRatio: '16:9', audioSource: 'library', audioMediaId: part.mediaId },
-    subtitlesOptions: []
-  }
+    audioMediaId: part.mediaId,
+    characterUuid
+  })
 }
 
 async function readConcurrency() {
@@ -351,7 +330,7 @@ async function readConcurrency() {
   }
 }
 
-async function submitPart(state, template, part) {
+async function submitPart(state, part) {
   const existing = await findProject(part.remoteTitle)
   if (existing) {
     part.projectId = existing.id
@@ -367,7 +346,7 @@ async function submitPart(state, template, part) {
     created = await jsonApi('/project', {
       method: 'POST',
       headers: { 'Content-Type': 'application/json' },
-      body: JSON.stringify(projectPayload(template, part)),
+      body: JSON.stringify(projectPayload(part)),
       signal: AbortSignal.timeout(120000)
     }, false)
   } catch (error) {
@@ -397,7 +376,7 @@ async function refreshParts(state) {
   if (changed) saveState(state)
 }
 
-async function submitAndAwaitParts(state, template) {
+async function submitAndAwaitParts(state) {
   while (state.parts.some((part) => part.status !== 'completed')) {
     await refreshParts(state)
     for (const part of state.parts.filter((item) => item.status === 'error')) {
@@ -412,10 +391,17 @@ async function submitAndAwaitParts(state, template) {
     const waiting = state.parts.filter((part) => !part.projectId)
     if (waiting.length > 0) {
       const concurrency = await readConcurrency()
-      let capacity = Math.max(0, concurrency.limit - concurrency.count)
+      const localActiveCount = state.parts.filter((part) => (
+        part.projectId && !['completed', 'error'].includes(part.status)
+      )).length
+      let capacity = availableSubmissionCapacity({
+        remoteCount: concurrency.count,
+        remoteLimit: concurrency.limit,
+        localActiveCount
+      })
       for (const part of waiting) {
         if (capacity <= 0) break
-        await submitPart(state, template, part)
+        await submitPart(state, part)
         capacity -= 1
       }
     }
@@ -540,8 +526,7 @@ try {
   console.log(`NeuralVault: quota ${dailyUsage}/${dailyLimit}; ${needed} new renders required`)
   await ensureCategory(state)
   for (const part of state.parts) await uploadPart(state, part)
-  const template = await loadTemplate(state)
-  await submitAndAwaitParts(state, template)
+  await submitAndAwaitParts(state)
   await ensureMerge(state)
   await downloadMerge(state)
   await renderFinal(state)
