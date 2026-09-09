@@ -1,7 +1,35 @@
 # Current Objective
 
-All four daily automation channel videos for 2026-09-05 are fully produced, captioned, encoded with NVENC, and verified against their narration tracks.
-All four matching 1280x720 publishing thumbnails are generated and visually verified.
+All four daily automation channel videos for 2026-09-08 are fully produced, captioned, encoded with NVENC, and verified against their narration tracks.
+15 new transcript-matching B-roll clips were added to the reusable local library.
+
+# Verified Completed (2026-09-08 Daily Batch)
+
+- Four channel thumbnails completed and visually verified under each channel's `publishing\thumbnail.png`; all are 1280x720 PNGs with exact uppercase copy and channel-specific reference palettes. The final prompt directions are preserved in `D:\MentalEmpire-Production\2026-09-08\THUMBNAIL-PROMPTS.md`.
+- Fresh four-channel batch completed under `D:\MentalEmpire-Production\2026-09-08`:
+  - **MindCipher**: `vMkStAjmCYE`, “Why Some People Are Meant to Walk Alone (Psychology Explains)”.
+    - Source audio: 1275.59s. Transcribed via Groq `whisper-large-v3-turbo` (3870 words, last word 1274.51s, 1.08s trailing gap).
+    - Planned with Meta `muse-spark-1.2-contributor` (`reasoning.effort: xhigh`): 24 scenes, 192 seven-second B-roll slots across 16 batches, manifest `D:\Mental Empire Studio\broll-library\niche-niche-82fcc549.json`.
+    - v1 final failed the black-gap gate (16 blackdetect segments, ~35s, incl. pure-black smoke tails). Repaired in `FIX-NOTES.md`: 13 slots re-cut to contact-sheet-verified bright offsets/footage (scene 9 -> today's new dense smoke clips), v1 preserved under `final\superseded\`.
+    - Final: `MindCipher-2026-09-08.mp4` (1920x1080 H.264/AAC, 1275.600s, delta +0.010s, 883.6 MB). Full `-xerror` decode passed; blackdetect shows only two 0.5s threshold dips (beats the accepted 2026-09-05 precedent, which itself flags 5.5s/7s dark stretches on re-scan).
+  - **Neural Vault**: `R5J4dctoCD8`, “The Dangerous Side of an Empath: What Happens When They Turn Dark”.
+    - Source audio: 1688.23s. Transcribed via Groq (3553 words).
+    - Split into 29 TalkingPhotos parts (28x60s + 8.23s); rendered `human/high_quality`, character `010c1c4c-982c-4ba5-9f86-9d59c27c4a86`, `motionId: 0` (state profile `human-high-quality-010c1c4c-motion0-v1`).
+    - Part projects `1159266`-`1159270`, `1159348`-`1159352`, `1159386`, `1159388`, `1159391`, `1159392`, `1159402`, `1159421`, `1159424`, `1159426`, `1159431`, `1159442`, `1159467`, `1159470`, `1159471`, `1159473`, `1159478`, `1159489`, `1159493`-`1159495`; server merge `1159524` completed, downloaded, captioned locally with NVENC.
+    - TalkingPhotos logins returned 302->/login for ~1h mid-run (transient service-side block; form/creds verified unchanged), then succeeded (302->/). No state was reset; the 5 first parts completed during the block. Orphaned runner PIDs 3468/17468 were cleared.
+    - Final: `NeuralVault-2026-09-08.mp4` (1920x1080 H.264/AAC 25fps, 1688.256s, delta +0.026s, 871.0 MB). Full decode passed, blackdetect zero segments, opening/middle/ending + 60s part-boundary frames show consistent identity and continuous captions.
+  - **Psyche Noir**: `IvFUc1jV48k`, “What Narcissists Secretly Think About You Will Shock you | DR RAMANI”.
+    - Source audio: 1153.92s. Transcribed via Groq (2595 words, first word 6.0s).
+    - Rendered over `ramani_one` (10 images, 165 seven-second slots) with burned ASS captions.
+    - Final: `PsycheNoir-2026-09-08.mp4` (1920x1080 H.264/AAC, 1153.915s, delta -0.005s, 166.6 MB). Full decode passed, blackdetect clean, 3-point frames verified (caption-free 5s opening is correct: narration starts at 6.0s).
+  - **The Discipline Doctrine**: `d5VtTHFnkXk`, “Dr. Ramani Reveals How Narcissists Know You Know”.
+    - Source audio: 674.10s. Transcribed via Groq (1935 words, first word 6.6s).
+    - Rendered over `ramani_two` (9 images, 97 seven-second slots) with burned ASS captions.
+    - Final: `DisciplineDoctrine-2026-09-08.mp4` (1920x1080 H.264/AAC, 674.100s, delta +0.000s, 107.9 MB). Full decode passed, blackdetect clean, 3-point frames verified.
+- All 4 ASS caption files passed FFmpeg burn-in parse tests before rendering.
+- B-roll library growth: `scripts/production/fetch-new-broll-20260908.py` added 15 Pexels clips (8 transcript-linked queries) to `niche-niche-82fcc549` + manifest (50 keywords, 0 missing files), logged in `MindCipher\intermediate\library-additions.json`. Pexels needed a browser UA for search and curl for CDN downloads (urllib 403). Coverr preflight endpoint 404 remains provider-blocked; Pexels+Pixabay cover gaps.
+- Prior source IDs were all excluded; all 4 yt-dlp simulations passed with `web_embedded`+node before download.
+- Post-gate cleanup (2026-09-08 root only, libraries untouched): deleted regenerable bulk (~2.0 GB) — `MindCipher\intermediate\broll-slots\`, `broll-batches\`, NeuralVault merged download + 29 part MP3s. Kept: all 4 finals, narration masters, transcripts, captions, B-roll plan/timeline/provenance, TalkingPhotos `state.json`, logs, `FIX-NOTES.md`. MindCipher v1 superseded file also kept as fix evidence.
 
 # Verified Completed (2026-09-05 Daily Batch)
 
