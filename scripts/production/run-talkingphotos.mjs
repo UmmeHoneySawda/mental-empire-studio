@@ -485,6 +485,17 @@ function filterPath(path) {
   return resolve(path).replaceAll('\\', '/').replace(/^([A-Za-z]):/, '$1\\:').replaceAll("'", "\\'")
 }
 
+// VIDEO_ENCODER=libx264 fallback: this machine's NVIDIA driver (591.86) is older
+// than this ffmpeg build's NVENC 13.1 minimum (610+). NVENC remains the default.
+function videoEncoderArgs(cq) {
+  if (process.env.VIDEO_ENCODER === 'libx264') {
+    return ['-c:v', 'libx264', '-preset', process.env.X264_PRESET || 'veryfast',
+      '-crf', process.env.X264_CRF || '20', '-maxrate', '12M', '-bufsize', '24M']
+  }
+  return ['-c:v', 'h264_nvenc', '-preset', 'p4', '-tune', 'hq',
+    '-rc', 'vbr', '-cq', String(cq), '-b:v', '0', '-maxrate', '12M', '-bufsize', '24M']
+}
+
 async function renderFinal(state) {
   if (validMedia(finalPath, state.sourceDurationSec, 8)) return
   const filter = [
@@ -498,8 +509,7 @@ async function renderFinal(state) {
     '-y', '-hide_banner', '-loglevel', 'warning', '-stats', '-stats_period', '15',
     '-i', mergedPath,
     '-vf', filter,
-    '-c:v', 'h264_nvenc', '-preset', 'p4', '-tune', 'hq',
-    '-rc', 'vbr', '-cq', '21', '-b:v', '0', '-maxrate', '12M', '-bufsize', '24M',
+    ...videoEncoderArgs(21),
     '-c:a', 'aac', '-b:a', '192k', '-ar', '48000',
     '-movflags', '+faststart',
     partialFinalPath

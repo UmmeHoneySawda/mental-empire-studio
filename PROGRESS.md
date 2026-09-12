@@ -1,7 +1,16 @@
 # Current Objective
 
-All four daily automation channel videos for 2026-09-08 are fully produced, captioned, encoded with NVENC, and verified against their narration tracks.
-15 new transcript-matching B-roll clips were added to the reusable local library.
+All four daily automation channel videos for 2026-09-12 are fully produced, captioned, and verified against their narration tracks. Thumbnails deferred per user request. Details in `D:\MentalEmpire-Production\2026-09-12\README.md`.
+
+# Verified Completed (2026-09-12 Daily Batch)
+
+- Fresh four-channel batch under `D:\MentalEmpire-Production\2026-09-12` (all prior source IDs excluded; all 4 yt-dlp simulations passed with `web_embedded`+node):
+  - **MindCipher**: `RSlc9IxdBw8`, TEDxSalinas talk, 1088.55s source, 2474 words. Planned with `muse-spark-1.2-contributor` xhigh: 24 scenes, 168 seven-second slots over remapped local manifest (50 keywords, 215 clips, 0 missing). Repaired slot 144 (inherently dark clip swapped for bright same-keyword clip) and trailing-pad logic (8.26s outro bed now covered, video 1088.13s vs audio 1088.55s). Final 1920x1080 H.264/AAC, full decode passed, blackdetect clean.
+  - **Neural Vault**: `zZyvbvitP7k`, 1210.32s source, 2893 words. 21 sixty-second TalkingPhotos parts (`human/high_quality`, `motionId: 0`), server merge, local caption pass. Final 1920x1080 H.264/AAC (delta +0.008s), full decode passed, blackdetect clean.
+  - **Psyche Noir**: `G9_qZvLQL9E` (Dr. Ramani), 998.06s source, 2429 words, `ramani_one` loop. Final 1920x1080 H.264/AAC (delta +0.003s), full decode passed, blackdetect clean.
+  - **The Discipline Doctrine**: `yOBLQ_KDmQc` (Dr. Ramani), 667.95s source, 1538 words, `ramani_two` loop. Final 1920x1080 H.264/AAC (delta +0.000s), full decode passed, blackdetect clean.
+- Machine adaptations this run (repo defaults unchanged, all env-gated): `GROQ_USE_CURL`/`META_USE_CURL` fallbacks (Node fetch fingerprinted 401 while curl succeeds; root cause was quoted env values, both fixed), `VIDEO_ENCODER=libx264` fallback (driver 591.86 predates ffmpeg NVENC 13.1 minimum 610+), B-roll manifest remapped to `D:\broll stock videos\broll-library`, MindCipher tpad now covers outro beds.
+- User B-roll rule added to `docs/DAILY-VIDEO-PRODUCTION-RUNBOOK.md` (MindCipher step 10) and the youtube-analytics-hub README.
 
 # Verified Completed (2026-09-08 Daily Batch)
 

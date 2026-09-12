@@ -191,6 +191,7 @@ ASS rendering and image/video composition use normal FFmpeg filters and therefor
 7. When selected scenes use prepared still images that need prompt-directed motion, create an immutable `videoexpress-manifest.json` and run `node scripts/production/run-videoexpress.mjs "<job-root>"`. Choose the workflow first: `generated-still` uploads each image as a reference, has Video Express generate a new still from it, and animates that; `direct-upload` animates the uploaded image itself. Under `generated-still` the runner does create the intermediate stills, but neither workflow creates the original reference images.
 8. Preserve each Video Express prompt, generated still, state UUID, remote folder name, and downloaded clip. Never retry `submission_uncertain` without inspecting My AI Videos. Reset an exhausted `attempts` counter only when the item's `generationUuid` is `null`.
 9. Preserve the narration as the primary audio, burn the animated ASS captions, and encode with NVENC.
+10. Use brand new B-roll videos if local ones are not matching with transcript. Match B-roll with transcript in correct position. Use a structured folder for everything as well. (User rule, 2026-09-12: prefer local library first, but fetch fresh provider clips whenever the local match is weak or off-position; keep every asset under the dated run root.)
 
 Stock-source notes:
 

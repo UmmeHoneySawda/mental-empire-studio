@@ -90,11 +90,38 @@ function sleep(ms) {
   return new Promise((resolve) => setTimeout(resolve, ms))
 }
 
+async function transcribeChunkViaCurl(path) {
+  // GROQ_USE_CURL=1 fallback: some networks fingerprint Node fetch as
+  // unauthorized (HTTP 401) while curl with the same key succeeds.
+  const curlBin = process.env.CURL_PATH || 'curl.exe'
+  const args = [
+    '-sS', '-m', '300',
+    '-X', 'POST', groqUrl,
+    '-H', `Authorization: Bearer ${apiKey}`,
+    '-F', `file=@${path};type=audio/mpeg`,
+    '-F', `model=${model}`,
+    '-F', 'response_format=verbose_json',
+    '-F', 'timestamp_granularities[]=word'
+  ]
+  const result = spawnSync(curlBin, args, { encoding: 'utf8', windowsHide: true, maxBuffer: 256 * 1024 * 1024 })
+  if (result.status !== 0) throw new Error(`curl exit ${result.status}: ${(result.stderr || '').slice(-300)}`)
+  let json
+  try {
+    json = JSON.parse(result.stdout)
+  } catch {
+    throw new Error(`curl non-JSON reply: ${(result.stdout || '').slice(0, 300)}`)
+  }
+  if (json?.error) throw new Error(`Groq: ${JSON.stringify(json.error).slice(0, 300)}`)
+  if (!Array.isArray(json.words) || json.words.length === 0) throw new Error('Groq returned no word timestamps')
+  return json.words
+}
+
 async function transcribeChunk(path, label) {
   const buffer = readFileSync(path)
   let lastError
   for (let attempt = 1; attempt <= 3; attempt += 1) {
     try {
+      if (process.env.GROQ_USE_CURL === '1') return await transcribeChunkViaCurl(path)
       const form = new FormData()
       form.append('file', new Blob([buffer], { type: 'audio/mpeg' }), 'audio.mp3')
       form.append('model', model)

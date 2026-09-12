@@ -64,6 +64,17 @@ function runProcess(bin, args, quiet = false) {
   })
 }
 
+// VIDEO_ENCODER=libx264 fallback: this machine's NVIDIA driver (591.86) is older
+// than this ffmpeg build's NVENC 13.1 minimum (610+). NVENC remains the default.
+function videoEncoderArgs(cq, maxrate, bufsize) {
+  if (process.env.VIDEO_ENCODER === 'libx264') {
+    return ['-c:v', 'libx264', '-preset', process.env.X264_PRESET || 'veryfast',
+      '-crf', process.env.X264_CRF || '20', '-maxrate', maxrate, '-bufsize', bufsize]
+  }
+  return ['-c:v', 'h264_nvenc', '-preset', 'p4', '-tune', 'hq',
+    '-rc', 'vbr', '-cq', String(cq), '-b:v', '0', '-maxrate', maxrate, '-bufsize', bufsize]
+}
+
 function slotPath(slot) {
   return join(slotsDir, `slot-${String(slot.index).padStart(4, '0')}.mp4`)
 }
@@ -79,8 +90,7 @@ async function renderSlot(slot) {
     '-t', Number(slot.durationSec).toFixed(3),
     '-vf', 'scale=1920:1080:force_original_aspect_ratio=increase,crop=1920:1080,setsar=1,fps=30,eq=contrast=1.04:brightness=-0.025:saturation=0.88,format=yuv420p',
     '-an',
-    '-c:v', 'h264_nvenc', '-preset', 'p4', '-tune', 'hq',
-    '-rc', 'vbr', '-cq', '23', '-b:v', '0', '-maxrate', '10M', '-bufsize', '20M',
+    ...videoEncoderArgs(23, '10M', '20M'),
     '-g', '60',
     partial
   ], true)
@@ -130,8 +140,7 @@ for (let start = 0; start < slots.length; start += batchSize) {
       ...inputArgs,
       '-filter_complex', filter,
       '-map', '[out]', '-an',
-      '-c:v', 'h264_nvenc', '-preset', 'p4', '-tune', 'hq',
-      '-rc', 'vbr', '-cq', '22', '-b:v', '0', '-maxrate', '11M', '-bufsize', '22M',
+      ...videoEncoderArgs(22, '11M', '22M'),
       '-g', '60', '-movflags', '+faststart', partial
     ], true)
     if (!validVideo(partial, expectedDuration, 0.75)) throw new Error(`MindCipher batch failed validation: ${partial}`)
@@ -150,12 +159,16 @@ function filterPath(path) {
 }
 
 if (!validVideo(finalPath, audioDuration, 1.5)) {
+  // Pad the joined B-roll past the narration end: sources with a trailing
+  // outro bed (last word seconds before audio end) need more than the
+  // historical 3s pad, otherwise the tail plays audio over frozen video.
+  const padDuration = Math.max(3, audioDuration - batchedDuration + 0.5)
   const resetFilters = batches.map((_, index) => `[${index}:v]setpts=PTS-STARTPTS[v${index}]`)
   const concatInputs = batches.map((_, index) => `[v${index}]`).join('')
   const filter = [
     ...resetFilters,
     `${concatInputs}concat=n=${batches.length}:v=1:a=0[joined]`,
-    `[joined]tpad=stop_mode=clone:stop_duration=3,trim=duration=${audioDuration.toFixed(3)},ass=filename='${filterPath(assPath)}':fontsdir='${filterPath(fontsDir)}',format=yuv420p[vout]`
+    `[joined]tpad=stop_mode=clone:stop_duration=${padDuration.toFixed(3)},trim=duration=${audioDuration.toFixed(3)},ass=filename='${filterPath(assPath)}':fontsdir='${filterPath(fontsDir)}',format=yuv420p[vout]`
   ].join(';')
   await runProcess(ffmpeg, [
     '-y', '-hide_banner', '-loglevel', 'warning', '-stats', '-stats_period', '15',
@@ -164,8 +177,7 @@ if (!validVideo(finalPath, audioDuration, 1.5)) {
     '-filter_complex', filter,
     '-map', '[vout]', '-map', `${batches.length}:a:0`,
     '-t', audioDuration.toFixed(3),
-    '-c:v', 'h264_nvenc', '-preset', 'p4', '-tune', 'hq',
-    '-rc', 'vbr', '-cq', '21', '-b:v', '0', '-maxrate', '12M', '-bufsize', '24M',
+    ...videoEncoderArgs(21, '12M', '24M'),
     '-c:a', 'aac', '-b:a', '192k', '-ar', '48000',
     '-movflags', '+faststart', partialFinalPath
   ])

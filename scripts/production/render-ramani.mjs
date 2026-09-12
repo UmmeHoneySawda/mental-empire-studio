@@ -94,6 +94,17 @@ const videoFilter = [
   'format=yuv420p'
 ].join(',')
 
+// VIDEO_ENCODER=libx264 fallback: this machine's NVIDIA driver (591.86) is older
+// than this ffmpeg build's NVENC 13.1 minimum (610+). NVENC remains the default.
+function videoEncoderArgs(cq) {
+  if (process.env.VIDEO_ENCODER === 'libx264') {
+    return ['-c:v', 'libx264', '-preset', process.env.X264_PRESET || 'veryfast',
+      '-crf', process.env.X264_CRF || '20', '-maxrate', '12M', '-bufsize', '24M']
+  }
+  return ['-c:v', 'h264_nvenc', '-preset', 'p4', '-tune', 'hq',
+    '-rc', 'vbr', '-cq', String(cq), '-b:v', '0', '-maxrate', '12M', '-bufsize', '24M']
+}
+
 const args = [
   '-y', '-hide_banner', '-loglevel', 'warning', '-stats', '-stats_period', '15',
   '-f', 'concat', '-safe', '0', '-i', manifestPath,
@@ -101,8 +112,7 @@ const args = [
   '-map', '0:v:0', '-map', '1:a:0',
   '-vf', videoFilter,
   '-t', duration.toFixed(3),
-  '-c:v', 'h264_nvenc', '-preset', 'p4', '-tune', 'hq',
-  '-rc', 'vbr', '-cq', '21', '-b:v', '0', '-maxrate', '12M', '-bufsize', '24M',
+  ...videoEncoderArgs(21),
   '-c:a', 'aac', '-b:a', '192k', '-ar', '48000',
   '-movflags', '+faststart',
   partialPath

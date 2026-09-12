@@ -1,5 +1,7 @@
-import { existsSync, readFileSync, renameSync, writeFileSync } from 'node:fs'
+import { existsSync, readFileSync, renameSync, writeFileSync, unlinkSync } from 'node:fs'
+import { tmpdir } from 'node:os'
 import { join } from 'node:path'
+import { spawnSync } from 'node:child_process'
 
 const channelRoot = process.argv[2]
 const libraryManifestPath = process.argv[3]
@@ -105,6 +107,43 @@ if (request.model !== exactModel || request.reasoning.effort !== reasoningEffort
   throw new Error('Refusing to send a non-Contributor or non-xhigh Meta request')
 }
 
+let outputText = ''
+let completed = false
+if (process.env.META_USE_CURL === '1') {
+  // META_USE_CURL=1 fallback: some networks fingerprint Node fetch as
+  // unauthorized (HTTP 401) while curl with the same key succeeds.
+  // Non-streaming request; the JSON body carries the same output shape.
+  const curlBin = process.env.CURL_PATH || 'curl.exe'
+  const bodyFile = join(tmpdir(), `me-mindcipher-${Date.now()}.json`)
+  writeFileSync(bodyFile, JSON.stringify({ ...request, stream: false }), 'utf8')
+  try {
+    const result = spawnSync(curlBin, [
+      '-sS', '-m', '300',
+      '-X', 'POST', 'https://api.meta.ai/v1/responses',
+      '-H', `Authorization: Bearer ${apiKey}`,
+      '-H', 'Content-Type: application/json',
+      '-H', 'Accept: application/json',
+      '--data-binary', `@${bodyFile}`
+    ], { encoding: 'utf8', windowsHide: true, maxBuffer: 64 * 1024 * 1024 })
+    if (result.status !== 0) throw new Error(`Meta Contributor curl exit ${result.status}: ${(result.stderr || '').slice(-300)}`)
+    let json
+    try {
+      json = JSON.parse(result.stdout)
+    } catch {
+      throw new Error(`Meta Contributor curl non-JSON reply: ${(result.stdout || '').slice(0, 300)}`)
+    }
+    if (json?.error) throw new Error(`Meta Contributor returned error: ${JSON.stringify(json.error).slice(0, 500)}`)
+    if (json?.status === 'failed') throw new Error(`Meta Contributor returned response.failed: ${JSON.stringify(json).slice(0, 500)}`)
+    completed = json?.status === 'completed'
+    const out = Array.isArray(json?.output) ? json.output : []
+    outputText = out
+      .flatMap((item) => item.content || [])
+      .map((content) => content.text || '')
+      .join('')
+  } finally {
+    try { unlinkSync(bodyFile) } catch { /* best effort */ }
+  }
+} else {
 const response = await fetch('https://api.meta.ai/v1/responses', {
   method: 'POST',
   headers: {
@@ -123,8 +162,6 @@ if (!response.ok || !response.body) {
 const reader = response.body.getReader()
 const decoder = new TextDecoder()
 let buffer = ''
-let outputText = ''
-let completed = false
 while (true) {
   const { value, done } = await reader.read()
   buffer += decoder.decode(value || new Uint8Array(), { stream: !done })
@@ -149,6 +186,7 @@ while (true) {
     if (event.type === 'response.failed') throw new Error(`Meta Contributor returned response.failed: ${JSON.stringify(event).slice(0, 500)}`)
   }
   if (done) break
+}
 }
 if (!completed) throw new Error('Meta Contributor stream ended without response.completed')
 
